@@ -1,0 +1,11 @@
+# The default build targets ChatGPT Sites / Cloudflare Workers. Netlify's
+# Next.js adapter must receive a native Next.js build instead.
+[build]
+  command = "npm run build:netlify"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Let Netlify manage the current Next.js adapter automatically.
+# Do not disable the adapter or publish dist/client: the app has server routes.

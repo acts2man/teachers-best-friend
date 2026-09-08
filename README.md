@@ -48,3 +48,10 @@ Use the retained Sites installation/build scripts and logical hosting manifest. 
 Run node --test tests/teacher-workflows.test.mjs for focused workflow checks and npx tsc --noEmit for TypeScript validation. Use the Sites build helper for the deployable build. The focused checks cover review gates, recognition omissions/duplicates, corrected-key evidence invalidation, intended-standard alignment, catalog scope, and prepared-lesson matching.
 
 This update has not undergone live browser testing or a real AI-provider call without a configured service key.
+
+
+## Netlify deployment
+
+Netlify uses `npm run build:netlify` to create the native `.next` output required by its Next.js adapter. The regular `npm run build` command remains the ChatGPT Sites / Cloudflare Worker build.
+
+The public Netlify deployment currently provides the interface only. The private working app still uses Sites-managed sign-in, D1 classroom storage, and R2 document storage. Connecting the repository does not transfer that backend or its data. Before teachers use the Netlify version, connect authenticated identity and durable storage there, migrate any required records and documents, and verify save/reload, uploads, access control, and revision conflicts.
