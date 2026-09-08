@@ -1,0 +1,704 @@
+[
+  {
+    "officialCode": "4.G.1",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Geometry",
+    "cluster": "Draw and identify lines and angles, and classify shapes by properties of their lines and angles.",
+    "wording": "Draw points, lines, line segments, rays, angles (right, acute, obtuse), and perpendicular and parallel lines. Identify these in two-dimensional figures.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/396"
+  },
+  {
+    "officialCode": "4.G.2",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Geometry",
+    "cluster": "Draw and identify lines and angles, and classify shapes by properties of their lines and angles.",
+    "wording": "Classify two-dimensional figures based on the presence or absence of parallel or perpendicular lines, or the presence or absence of angles of a specified size. Recognize right triangles as a category, and identify right triangles. (Two-dimensional shapes should include special triangles, e.g., equilateral, isosceles, scalene, and special quadrilaterals, e.g., rhombus, square, rectangle, parallelogram, trapezoid.) CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/397"
+  },
+  {
+    "officialCode": "4.G.3",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Geometry",
+    "cluster": "Draw and identify lines and angles, and classify shapes by properties of their lines and angles.",
+    "wording": "Recognize a line of symmetry for a two-dimensional figure as a line across the figure such that the figure can be folded along the line into matching parts. Identify line-symmetric figures and draw lines of symmetry.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/398"
+  },
+  {
+    "officialCode": "4.MD.1",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Solve problems involving measurement and conversion of measurements from a larger unit to a smaller unit.",
+    "wording": "Know relative sizes of measurement units within one system of units including km, m, cm; kg, g; lb, oz.; l, ml; hr, min, sec. Within a single system of measurement, express measurements in a larger unit in terms of a smaller unit. Record measurement equivalents in a two-column table. For example, know that 1 ft is 12 times as long as 1 in. Express the length of a 4 ft snake as 48 in. Generate a conversion table for feet and inches listing the number pairs (1, 12), (2, 24), (3, 36), . . .",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/388"
+  },
+  {
+    "officialCode": "4.MD.2",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Solve problems involving measurement and conversion of measurements from a larger unit to a smaller unit.",
+    "wording": "Use the four operations to solve word problems involving distances, intervals of time, liquid volumes, masses of objects, and money, including problems involving simple fractions or decimals, and problems that require expressing measurements given in a larger unit in terms of a smaller unit. Represent measurement quantities using diagrams such as number line diagrams that feature a measurement scale.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/389"
+  },
+  {
+    "officialCode": "4.MD.3",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Solve problems involving measurement and conversion of measurements from a larger unit to a smaller unit.",
+    "wording": "Apply the area and perimeter formulas for rectangles in real-world and mathematical problems. For example, find the width of a rectangular room given the area of the flooring and the length, by viewing the area formula as a multiplication equation with an unknown factor.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/390"
+  },
+  {
+    "officialCode": "4.MD.4",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Represent and interpret data.",
+    "wording": "Make a line plot to display a data set of measurements in fractions of a unit (1/2, 1/4, 1/8). Solve problems involving addition and subtraction of fractions by using information presented in line plots. For example, from a line plot find and interpret the difference in length between the longest and shortest specimens in an insect collection.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/391"
+  },
+  {
+    "officialCode": "4.MD.5.a",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Geometric measurement: understand concepts of angle and measure angles.",
+    "wording": "Recognize angles as geometric shapes that are formed wherever two rays share a common endpoint, and understand concepts of angle measurement: An angle is measured with reference to a circle with its center at the common endpoint of the rays, by considering the fraction of the circular arc between the points where the two rays intersect the circle. An angle that turns through 1/360 of a circle is called a “one-degree angle,” and can be used to measure angles.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/392"
+  },
+  {
+    "officialCode": "4.MD.5.b",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Geometric measurement: understand concepts of angle and measure angles.",
+    "wording": "Recognize angles as geometric shapes that are formed wherever two rays share a common endpoint, and understand concepts of angle measurement: An angle that turns through n one-degree angles is said to have an angle measure of n degrees.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/393"
+  },
+  {
+    "officialCode": "4.MD.6",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Geometric measurement: understand concepts of angle and measure angles.",
+    "wording": "Measure angles in whole-number degrees using a protractor. Sketch angles of specified measure.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/394"
+  },
+  {
+    "officialCode": "4.MD.7",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Measurement and Data",
+    "cluster": "Geometric measurement: understand concepts of angle and measure angles.",
+    "wording": "Recognize angle measure as additive. When an angle is decomposed into non-overlapping parts, the angle measure of the whole is the sum of the angle measures of the parts. Solve addition and subtraction problems to find unknown angles on a diagram in real-world and mathematical problems, e.g., by using an equation with a symbol for the unknown angle measure.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/395"
+  },
+  {
+    "officialCode": "4.NBT.1",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Generalize place value understanding for multi-digit whole numbers.",
+    "wording": "Recognize that in a multi-digit whole number, a digit in one place represents ten times what it represents in the place to its right. For example, recognize that 700 ÷ 70 = 10 by applying concepts of place value and division.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/370"
+  },
+  {
+    "officialCode": "4.NBT.2",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Generalize place value understanding for multi-digit whole numbers.",
+    "wording": "Read and write multi-digit whole numbers using base-ten numerals, number names, and expanded form. Compare two multidigit numbers based on meanings of the digits in each place, using >, =, and < symbols to record the results of comparisons.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/371"
+  },
+  {
+    "officialCode": "4.NBT.3",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Generalize place value understanding for multi-digit whole numbers.",
+    "wording": "Use place value understanding to round multi-digit whole numbers to any place.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/372"
+  },
+  {
+    "officialCode": "4.NBT.4",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to perform multi-digit arithmetic.",
+    "wording": "Fluently add and subtract multi-digit whole numbers using the standard algorithm.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/373"
+  },
+  {
+    "officialCode": "4.NBT.5",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to perform multi-digit arithmetic.",
+    "wording": "Multiply a whole number of up to four digits by a one-digit whole number, and multiply two two-digit numbers, using strategies based on place value and the properties of operations. Illustrate and explain the calculation by using equations, rectangular arrays, and/or area models.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/374"
+  },
+  {
+    "officialCode": "4.NBT.6",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to perform multi-digit arithmetic.",
+    "wording": "Find whole-number quotients and remainders with up to four-digit dividends and one-digit divisors, using strategies based on place value, the properties of operations, and/or the relationship between multiplication and division. Illustrate and explain the calculation by using equations, rectangular arrays, and/or area models.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/375"
+  },
+  {
+    "officialCode": "4.NF.1",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Extend understanding of fraction equivalence and ordering.",
+    "wording": "Explain why a fraction a/b is equivalent to a fraction (n × a)/(n × b) by using visual fraction models, with attention to how the number and size of the parts differ even though the two fractions themselves are the same size. Use this principle to recognize and generate equivalent fractions.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/376"
+  },
+  {
+    "officialCode": "4.NF.2",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Extend understanding of fraction equivalence and ordering.",
+    "wording": "Compare two fractions with different numerators and different denominators, e.g., by creating common denominators or numerators, or by comparing to a benchmark fraction such as 1/2. Recognize that comparisons are valid only when the two fractions refer to the same whole. Record the results of comparisons with symbols >, =, or <, and justify the conclusions, e.g., by using a visual fraction model.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/377"
+  },
+  {
+    "officialCode": "4.NF.3.a",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Understand a fraction a/b with a > 1 as a sum of fractions 1/b. Understand addition and subtraction of fractions as joining and separating parts referring to the same whole.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/378"
+  },
+  {
+    "officialCode": "4.NF.3.b",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Understand a fraction a/b with a > 1 as a sum of fractions 1/b. Decompose a fraction into a sum of fractions with the same denominator in more than one way, recording each decomposition by an equation. Justify decompositions, e.g., by using a visual fraction model. Examples: 3/8 = 1/8 + 1/8 + 1/8 ; 3/8 = 1/8 + 2/8 ; 2 1/8 = 1 + 1 + 1/8 = 8/8 + 8/8 + 1/8.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/379"
+  },
+  {
+    "officialCode": "4.NF.3.c",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Understand a fraction a/b with a > 1 as a sum of fractions 1/b. Add and subtract mixed numbers with like denominators, e.g., by replacing each mixed number with an equivalent fraction, and/or by using properties of operations and the relationship between addition and subtraction.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/380"
+  },
+  {
+    "officialCode": "4.NF.3.d",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Understand a fraction a/b with a > 1 as a sum of fractions 1/b. Solve word problems involving addition and subtraction of fractions referring to the same whole and having like denominators, e.g., by using visual fraction models and equations to represent the problem.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/381"
+  },
+  {
+    "officialCode": "4.NF.4.a",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Apply and extend previous understandings of multiplication to multiply a fraction by a whole number. Understand a fraction a/b as a multiple of 1/b. For example, use a visual fraction model to represent 5/4 as the product 5 × (1/4), recording the conclusion by the equation 5/4 = 5 × (1/4).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/382"
+  },
+  {
+    "officialCode": "4.NF.4.b",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Apply and extend previous understandings of multiplication to multiply a fraction by a whole number. Understand a multiple of a/b as a multiple of 1/b, and use this understanding to multiply a fraction by a whole number. For example, use a visual fraction model to express 3 × (2/5) as 6 × (1/5), recognizing this product as 6/5. (In general, n × (a/b) = (n × a)/b.)",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/383"
+  },
+  {
+    "officialCode": "4.NF.4.c",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Build fractions from unit fractions by applying and extending previous understandings of operations on whole numbers.",
+    "wording": "Apply and extend previous understandings of multiplication to multiply a fraction by a whole number. Solve word problems involving multiplication of a fraction by a whole number, e.g., by using visual fraction models and equations to represent the problem. For example, if each person at a party will eat 3/8 of a pound of roast beef, and there will be 5 people at the party, how many pounds of roast beef will be needed? Between what two whole numbers does your answer lie?",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/384"
+  },
+  {
+    "officialCode": "4.NF.5",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Understand decimal notation for fractions, and compare decimal fractions.",
+    "wording": "Express a fraction with denominator 10 as an equivalent fraction with denominator 100, and use this technique to add two fractions with respective denominators 10 and 100. For example, express 3/10 as 30/100, and add 3/10 + 4/100 = 34/100.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/385"
+  },
+  {
+    "officialCode": "4.NF.6",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Understand decimal notation for fractions, and compare decimal fractions.",
+    "wording": "Use decimal notation for fractions with denominators 10 or 100. For example, rewrite 0.62 as 62/100; describe a length as 0.62 meters; locate 0.62 on a number line diagram.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/386"
+  },
+  {
+    "officialCode": "4.NF.7",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Number and Operations—Fractions",
+    "cluster": "Understand decimal notation for fractions, and compare decimal fractions.",
+    "wording": "Compare two decimals to hundredths by reasoning about their size. Recognize that comparisons are valid only when the two decimals refer to the same whole. Record the results of comparisons with the symbols >, =, or <, and justify the conclusions, e.g., by using the number line or another visual model. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/387"
+  },
+  {
+    "officialCode": "4.OA.1",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Use the four operations with whole numbers to solve problems.",
+    "wording": "Interpret a multiplication equation as a comparison, e.g., interpret 35 = 5 × 7 as a statement that 35 is 5 times as many as 7 and 7 times as many as 5. Represent verbal statements of multiplicative comparisons as multiplication equations.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/365"
+  },
+  {
+    "officialCode": "4.OA.2",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Use the four operations with whole numbers to solve problems.",
+    "wording": "Multiply or divide to solve word problems involving multiplicative comparison, e.g., by using drawings and equations with a symbol for the unknown number to represent the problem, distinguishing multiplicative comparison from additive comparison.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/366"
+  },
+  {
+    "officialCode": "4.OA.3",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Use the four operations with whole numbers to solve problems.",
+    "wording": "Solve multistep word problems posed with whole numbers and having whole-number answers using the four operations, including problems in which remainders must be interpreted. Represent these problems using equations with a letter standing for the unknown quantity. Assess the reasonableness of answers using mental computation and estimation strategies including rounding.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/367"
+  },
+  {
+    "officialCode": "4.OA.4",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Gain familiarity with factors and multiples.",
+    "wording": "Find all factor pairs for a whole number in the range 1–100. Recognize that a whole number is a multiple of each of its factors. Determine whether a given whole number in the range 1–100 is a multiple of a given one-digit number. Determine whether a given whole number in the range 1–100 is prime or composite.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/368"
+  },
+  {
+    "officialCode": "4.OA.5",
+    "subject": "Math",
+    "grade": 4,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Generate and analyze patterns.",
+    "wording": "Generate a number or shape pattern that follows a given rule. Identify apparent features of the pattern that were not explicit in the rule itself. For example, given the rule “Add 3” and the starting number 1, generate terms in the resulting sequence and observe that the terms appear to alternate between odd and even numbers. Explain informally why the numbers will continue to alternate in this way.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/369"
+  },
+  {
+    "officialCode": "L.4.1",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English grammar and usage when writing or speaking. a. Use interrogative, relative pronouns (who, whose, whom, which, that) and relative adverbs (where, when, why). CA b. Form and use the progressive (e.g., I was walking; I am walking; I will be walking) verb tenses. c. Use modal auxiliaries (e.g., can, may, must) to convey various conditions. d. Order adjectives within sentences according to conventional patterns (e.g., a small red bag rather than a red small bag). e. Form and use prepositional phrases. f. Produce complete sentences, recognizing and correcting inappropriate fragments and run-ons.* g. Correctly use frequently confused words (e.g., to, too, two; there, their).* h. Write fluidly and legibly in cursive or joined italics. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5729"
+  },
+  {
+    "officialCode": "L.4.2",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English capitalization, punctuation, and spelling when writing. a. Use correct capitalization. b. Use commas and quotation marks to mark direct speech and quotations from a text. c. Use a comma before a coordinating conjunction in a compound sentence. d. Spell grade-appropriate words correctly, consulting references as needed.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5730"
+  },
+  {
+    "officialCode": "L.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Knowledge of Language",
+    "wording": "Use knowledge of language and its conventions when writing, speaking, reading, or listening. a. Choose words and phrases to convey ideas precisely.* b. Choose punctuation for effect.* c. Differentiate between contexts that call for formal English (e.g., presenting ideas) and situations where informal discourse is appropriate (e.g., small-group discussion).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5731"
+  },
+  {
+    "officialCode": "L.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Determine or clarify the meaning of unknown and multiple-meaning words and phrases based on grade 4 reading and content, choosing flexibly from a range of strategies. a. Use context (e.g., definitions, examples, or restatements in text) as a clue to the meaning of a word or phrase. b. Use common, grade-appropriate Greek and Latin affixes and roots as clues to the meaning of a word (e.g., telegraph, photograph, autograph). c. Consult reference materials (e.g., dictionaries, glossaries, thesauruses), both print and digital, to find the pronunciation and determine or clarify the precise meaning of key words and phrases and to identify alternate word choices in all content areas. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5732"
+  },
+  {
+    "officialCode": "L.4.5",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Demonstrate understanding of figurative language, word relationships, and nuances in word meanings. a. Explain the meaning of simple similes and metaphors (e.g., as pretty as a picture) in context. b. Recognize and explain the meaning of common idioms, adages, and proverbs. c. Demonstrate understanding of words by relating them to their opposites (antonyms) and to words with similar but not identical meanings (synonyms).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5733"
+  },
+  {
+    "officialCode": "L.4.6",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Acquire and use accurately grade-appropriate general academic and domain-specific words and phrases, including those that signal precise actions, emotions, or states of being (e.g., quizzed, whined, stammered) and that are basic to a particular topic (e.g., wildlife, conservation, and endangered when discussing animal preservation).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5734"
+  },
+  {
+    "officialCode": "RF.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Phonics and Word Recognition",
+    "wording": "Know and apply grade-level phonics and word analysis skills in decoding words. a. Use combined knowledge of all letter-sound correspondences, syllabication patterns, and morphology (e.g., roots and affixes) to read accurately unfamiliar multisyllabic words in context and out of context.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5711"
+  },
+  {
+    "officialCode": "RF.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Fluency",
+    "wording": "Read with sufficient accuracy and fluency to support comprehension. a. Read on-level text with purpose and understanding. b. Read on-level prose and poetry orally with accuracy, appropriate rate, and expression on successive readings. c. Use context to confirm or self-correct word recognition and understanding, rereading as necessary.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5712"
+  },
+  {
+    "officialCode": "RI.4.1",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Refer to details and examples in a text when explaining what the text says explicitly and when drawing inferences from the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5701"
+  },
+  {
+    "officialCode": "RI.4.10",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "By the end of year, read and comprehend informational texts, including history/social studies, science, and technical texts, in the grades 4–5 text complexity band proficiently, with scaffolding as needed at the high end of the range.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5710"
+  },
+  {
+    "officialCode": "RI.4.2",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Determine the main idea of a text and explain how it is supported by key details; summarize the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5702"
+  },
+  {
+    "officialCode": "RI.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Explain events, procedures, ideas, or concepts in a historical, scientific, or technical text, including what happened and why, based on specific information in the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5703"
+  },
+  {
+    "officialCode": "RI.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Determine the meaning of general academic and domain-specific words or phrases in a text relevant to a grade 4 topic or subject area. (See grade 4 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5704"
+  },
+  {
+    "officialCode": "RI.4.5",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Describe the overall structure (e.g., chronology, comparison, cause/effect, problem/solution) of events, ideas, concepts, or information in a text or part of a text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5705"
+  },
+  {
+    "officialCode": "RI.4.6",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Compare and contrast a firsthand and secondhand account of the same event or topic; describe the differences in focus and the information provided.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5706"
+  },
+  {
+    "officialCode": "RI.4.7",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Interpret information presented visually, orally, or quantitatively (e.g., in charts, graphs, diagrams, time lines, animations, or interactive elements on Web pages) and explain how the information contributes to an understanding of the text in which it appears.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5707"
+  },
+  {
+    "officialCode": "RI.4.8",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Explain how an author uses reasons and evidence to support particular points in a text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5708"
+  },
+  {
+    "officialCode": "RI.4.9",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Integrate information from two texts on the same topic in order to write or speak about the subject knowledgeably.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5709"
+  },
+  {
+    "officialCode": "RL.4.1",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Refer to details and examples in a text when explaining what the text says explicitly and when drawing inferences from the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5691"
+  },
+  {
+    "officialCode": "RL.4.10",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "By the end of the year, read and comprehend literature, including stories, dramas, and poetry, in the grades 4–5 text complexity band proficiently, with scaffolding as needed at the high end of the range.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5700"
+  },
+  {
+    "officialCode": "RL.4.2",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Determine a theme of a story, drama, or poem from details in the text; summarize the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5692"
+  },
+  {
+    "officialCode": "RL.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Describe in depth a character, setting, or event in a story or drama, drawing on specific details in the text (e.g., a character’s thoughts, words, or actions).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5693"
+  },
+  {
+    "officialCode": "RL.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Determine the meaning of words and phrases as they are used in a text, including those that allude to significant characters found in mythology (e.g., Herculean). (See grade 4 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5694"
+  },
+  {
+    "officialCode": "RL.4.5",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Explain major differences between poems, drama, and prose, and refer to the structural elements of poems (e.g., verse, rhythm, meter) and drama (e.g., casts of characters, settings, descriptions, dialogue, stage directions) when writing or speaking about a text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5695"
+  },
+  {
+    "officialCode": "RL.4.6",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Compare and contrast the point of view from which different stories are narrated, including the difference between first- and third-person narrations.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5696"
+  },
+  {
+    "officialCode": "RL.4.7",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Make connections between the text of a story or drama and a visual or oral presentation of the text, identifying where each version reflects specific descriptions and directions in the text.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5697"
+  },
+  {
+    "officialCode": "RL.4.8",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "(Not applicable to literature)",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5698"
+  },
+  {
+    "officialCode": "RL.4.9",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Compare and contrast the treatment of similar themes and topics (e.g., opposition of good and evil) and patterns of events (e.g., the quest) in stories, myths, and traditional literature from different cultures.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5699"
+  },
+  {
+    "officialCode": "SL.4.1",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Engage effectively in a range of collaborative discussions (one-on-one, in groups, and teacher-led) with diverse partners on grade 4 topics and texts, building on others’ ideas and expressing their own clearly. a. Come to discussions prepared, having read or studied required material; explicitly draw on that preparation and other information known about the topic to explore ideas under discussion. b. Follow agreed-upon rules for discussions and carry out assigned roles. c. Pose and respond to specific questions to clarify or follow up on information, and make comments that contribute to the discussion and link to the remarks of others. d.Review the key ideas expressed and explain their own ideas and understanding in light of the discussion.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5723"
+  },
+  {
+    "officialCode": "SL.4.2",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Paraphrase portions of a text read aloud or information presented in diverse media and formats, including visually, quantitatively, and orally.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5724"
+  },
+  {
+    "officialCode": "SL.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Identify the reasons and evidence a speaker of media source provides to support particular points. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5725"
+  },
+  {
+    "officialCode": "SL.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Report on a topic or text, tell a story, or recount an experience in an organized manner, using appropriate facts and relevant, descriptive details to support main ideas or themes; speak clearly at an understandable pace. a. Plan and deliver a narrative presentation that: relates ideas, observations, or recollections; provides a clear context; and includes clear insight into why the event or experience is memorable. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5726"
+  },
+  {
+    "officialCode": "SL.4.5",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Add audio recordings and visual displays to presentations when appropriate to enhance the development of main ideas or themes.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5727"
+  },
+  {
+    "officialCode": "SL.4.6",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Differentiate between contexts that call for formal English (e.g., presenting ideas) and situations where informal discourse is appropriate (e.g., small-group discussion); use formal English when appropriate to task and situation. (See grade 4 Language standards 1 and 3 for specific expectations.)",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5728"
+  },
+  {
+    "officialCode": "W.4.1",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write opinion pieces on topics or texts, supporting a point of view with reasons and information. a. Introduce a topic or text clearly, state an opinion, and create an organizational structure in which related ideas are grouped to support the writer’s purpose. b. Provide reasons that are supported by facts and details. c. Link opinion and reasons using words and phrases (e.g., for instance, in order to, in addition). d. Provide a concluding statement or section related to the opinion presented.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5713"
+  },
+  {
+    "officialCode": "W.4.10",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Range of Writing",
+    "wording": "Write routinely over extended time frames (time for research, reflection, and revision) and shorter time frames (a single sitting or a day or two) for a range of discipline-specific tasks, purposes, and audiences.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5722"
+  },
+  {
+    "officialCode": "W.4.2",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write informative/explanatory texts to examine a topic and convey ideas and information clearly. a. Introduce a topic clearly and group related information in paragraphs and sections; include formatting (e.g., headings), illustrations, and multimedia when useful to aiding comprehension. b. Develop the topic with facts, definitions, concrete details, quotations, or other information and examples related to the topic. c. Link ideas within categories of information using words and phrases (e.g., another, for example, also, because). d. Use precise language and domain-specific vocabulary to inform about or explain the topic. e. Provide a concluding statement or section related to the information or explanation presented.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5714"
+  },
+  {
+    "officialCode": "W.4.3",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write narratives to develop real or imagined experiences or events using effective technique, descriptive details, and clear event sequences. a. Orient the reader by establishing a situation and introducing a narrator and/or characters; organize an event sequence that unfolds naturally. b. Use dialogue and description to develop experiences and events or show the responses of characters to situations. c. Use a variety of transitional words and phrases to manage the sequence of events. d. Use concrete words and phrases and sensory details to convey experiences and events precisely. e. Provide a conclusion that follows from the narrated experiences or events.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5715"
+  },
+  {
+    "officialCode": "W.4.4",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "Produce clear and coherent writing (including multiple-paragraph texts) in which the development and organization are appropriate to task, purpose, and audience. (Grade-specific expectations for writing types are defined in standards 1–3 above.) CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5716"
+  },
+  {
+    "officialCode": "W.4.5",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "With guidance and support from peers and adults, develop and strengthen writing as needed by planning, revising, and editing. (Editing for conventions should demonstrate command of Language standards 1–3 up to and including grade 4.)",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5717"
+  },
+  {
+    "officialCode": "W.4.6",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "With some guidance and support from adults, use technology, including the Internet, to produce and publish writing as well as to interact and collaborate with others; demonstrate sufficient command of keyboarding skills to type a minimum of one page in a single sitting.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5718"
+  },
+  {
+    "officialCode": "W.4.7",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Conduct short research projects that build knowledge through investigation of different aspects of a topic.",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5719"
+  },
+  {
+    "officialCode": "W.4.8",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Recall relevant information from experiences or gather relevant information from print and digital sources; take notes, paraphrase, and categorize information, and provide a list of sources. CA",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5720"
+  },
+  {
+    "officialCode": "W.4.9",
+    "subject": "ELA",
+    "grade": 4,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Draw evidence from literary or informational texts to support analysis, reflection, and research. a. Apply grade 4 Reading standards to literature (e.g., “Describe in depth a character, setting, or event in a story or drama, drawing on specific details in the text [e.g., a character’s thoughts, words, or actions].”). b. Apply grade 4 Reading standards to informational texts (e.g., “Explain how an author uses reasons and evidence to support particular points in a text”).",
+    "source": "https://www2.cde.ca.gov/cacs/id/web/5721"
+  }
+]

@@ -1,32 +1,50 @@
 # A Teacher’s Best Friend
 
-A private instructional workspace built from the full 28-page product brief.
+A private teaching workspace that connects assignment alignment, an accurate answer key, individual student review, and focused reteaching.
+
+## The current workflow
+
+1. Choose the grade, Math or ELA, and intended standards. Upload the blank assignment or paste its questions.
+2. Review what each question measures. Upload or enter the teacher's answer key and confirm it.
+3. Scan one student's work. Review flagged answers, confirm clear answers together, and print an individual standards report.
+4. Carry the student and observed skill gap into a visual, hands-on, or auditory reteach plan.
+
+The home screen highlights the next useful action. Primary navigation is Overview, Assignments, Student work, Reteach, and Students, with a separate standards toolkit. An original book logo, quieter cards, responsive layouts, contextual hover states, and reduced-motion support keep the workspace approachable.
+
+See [current product alignment](docs/current-version-alignment.md) for the source-to-feature mapping and later ideas excluded from the main experience.
 
 ## Included
-- Teach Tomorrow dashboard with priorities, class understanding, recent assessments, saved lessons, and learning momentum.
-- PDF/image upload and mobile camera capture with persistent R2 document storage.
-- Assignment and student-response analysis through a server-side GPT-6 Astra adapter when an OpenAI API key is configured.
-- Manual question entry, editable answer keys and passages, standard verification, secondary standards, DOK, alignment, exclusions, and coverage reports.
-- Fictional 24-student sample classroom, separate empty classrooms, roster entry, diagnostics, cross-skill overlap, editable instructional groups, and standards heatmaps.
-- Multi-observation student mastery and teacher observations. Verified response corrections replace evidence rather than adding duplicate observations.
-- Reteach studio with original lessons, visual/hands-on/auditory approaches, an interactive multiplication area model, targeted practice, printable exit tickets, saved teaching dates, and follow-up result recording.
-- Original resource library across Watch, Teach, Practice, Manipulative, Game, Intervention, and Enrichment; teacher curriculum uploads and page references.
-- Grade 4 Common Core starter library with source links and custom framework/standard entry.
-- Workspace-scoped persistence, optimistic revision checks, data export/deletion, responsive navigation, keyboard-accessible controls, and reduced motion.
+
+- PDF/image upload and mobile camera capture with persistent, owner-scoped document storage.
+- Separate original assignment, teacher-key, and individual student documents, retained through manual and automatic review.
+- Question and passage editing, skill/standard verification, alignment, exclusions, and intended-standard coverage.
+- Explicit answer-key confirmation before automatic grading; changes invalidate affected student results.
+- Uncertain, missing, and incorrect answer flags; teacher decisions replace stale evidence instead of duplicating it.
+- Individual, provisional or confirmed assignment reports, observed misconceptions, and contextual reteaching.
+- Seven prepared reteach lessons with visual, hands-on, and auditory approaches, printable practice and exit tickets, saved teaching dates, and follow-up recording.
+- Teacher resources, curriculum uploads, and page references.
+- Official California Grade 4 Math and ELA wording and source links, seven Common Core starter standards, and custom standards for other grades/frameworks.
+- A clearly labeled fictional 24-student sample, separate empty classrooms, roster entry, and individual learning histories.
+- Workspace persistence, optimistic revision checks, export/deletion, accessible controls, and reduced motion.
 
 ## Runtime configuration
-Logical bindings are DB (D1) and BUCKET (R2). Use the Sites-managed private audience. API routes require the platform-provided authenticated-user ID, scope every read/write to that ID, and validate write origins.
 
-Configure OPENAI_API_KEY as a hosted secret and OPENAI_MODEL=gpt-6-astra. The application never requests an API key in a public browser form. Without the key, uploads and manual workflows operate normally and AI actions report their unconnected status. Sample results are explicitly labeled and are never generated for arbitrary uploaded work.
+Logical bindings are DB (D1) and BUCKET (R2). Use the Sites-managed private audience. API routes require the platform-provided authenticated-user ID, scope reads and writes to that ID, and validate write origins.
 
-AI requests use Responses with strict structured outputs, uploaded-file ownership checks, a catalog-constrained prompt, store:false, bounded document size, and teacher review before results contribute to mastery.
+The existing server-side Responses adapter uses the hosted OPENAI_API_KEY secret and OPENAI_MODEL setting. Keys are never requested in a public browser form. Without a configured key, uploads and manual workflows work and automatic actions show their unconnected status. Sample results are explicitly labeled and are never substituted for analysis of uploaded work.
+
+AI requests use strict structured outputs, uploaded-file ownership checks, supplied standards, store:false, bounded document sizes, and teacher review before results contribute to student evidence.
 
 ## Scope and data notes
-The included standard text is a teacher-friendly summary with links to official wording. California, Texas, Florida, Virginia, and district frameworks can be added by the teacher; their complete catalogs are not preloaded. Curriculum page mappings are entered by the teacher. There is no claim of automatic district-content indexing, guaranteed OCR accuracy, district SIS integration, or regulatory certification. Document photographs are passed to the vision model; a separate deskew/shadow-removal pipeline is not included.
 
-Mastery is the arithmetic mean of the three most recent dated records. A mastered label additionally requires at least three records and a mean of 80% or higher. Reteach groups target scores under 70%; the heatmap highlights scores under 65%. Priority is a transparent planning heuristic, not a calibrated predictive model. Cross-skill overlap is an investigative prompt, not a causal diagnosis.
+California Grade 4 official wording is sourced from the [California Department of Education](https://www2.cde.ca.gov/cacs/). Full catalogs for other grades are not preloaded. Curriculum page mappings are teacher-entered. No district-content indexing, SIS integration, or separate photo deskew/shadow-removal pipeline is implied.
 
-## Development
+An assignment report describes confirmed responses to that assignment. Existing learning histories use the arithmetic mean of the three latest dated observations; a mastered label additionally requires three records and a mean of at least 80%. An isolated score does not establish mastery or a diagnosis. Visual, hands-on, and auditory modes are flexible teaching approaches, not fixed learner types.
+
+## Development and verification
+
 Use the retained Sites installation/build scripts and logical hosting manifest. Generate schema changes with npm run db:generate and inspect migrations before publishing. Applied migrations are immutable.
 
-The focused domain checks are in tests/teacher-workflows.test.mjs. Run node --test tests/teacher-workflows.test.mjs. TypeScript can be checked with npx tsc --noEmit. This build has not undergone a live browser test or a real AI-provider call without an API key.
+Run node --test tests/teacher-workflows.test.mjs for focused workflow checks and npx tsc --noEmit for TypeScript validation. Use the Sites build helper for the deployable build. The focused checks cover review gates, recognition omissions/duplicates, corrected-key evidence invalidation, intended-standard alignment, catalog scope, and prepared-lesson matching.
+
+This update has not undergone live browser testing or a real AI-provider call without a configured service key.
