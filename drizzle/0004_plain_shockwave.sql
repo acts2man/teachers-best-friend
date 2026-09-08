@@ -1,0 +1,1 @@
+DROP TABLE `teacher_workspace_migration_chunks`;

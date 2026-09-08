@@ -8,6 +8,34 @@
       "when": 1788814672994,
       "tag": "0000_cool_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788877651107,
+      "tag": "0001_eager_vindicator",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788877876888,
+      "tag": "0002_hot_killmonger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788878031174,
+      "tag": "0003_stormy_bill_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788878698596,
+      "tag": "0004_plain_shockwave",
+      "breakpoints": true
     }
   ]
 }
