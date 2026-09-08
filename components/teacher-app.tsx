@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Toaster, toast } from "sonner";
 import { catalogFor } from "@/lib/teacher-catalog";
-import { createDemoWorkspace, standards } from "@/lib/teacher-data";
+import { standards } from "@/lib/teacher-data";
 import type { Workspace } from "@/lib/teacher-types";
 import { TeacherContext } from "./teacher-context";
 import { Pick, Action, Modal, Pill } from "./teacher-shared";
@@ -55,15 +55,29 @@ const nav = [
   { id: "students", label: "Students", icon: Users },
 ];
 const libraryNav = [{ id: "standards", label: "Standards", icon: Library }];
+type WorkspaceSnapshot = {
+  workspace: Workspace;
+  revision: number;
+  aiReady: boolean;
+  authProvider: "chatgpt" | "supabase";
+};
+
+// Keep the authoritative workspace alive while Next.js moves between pages.
+// A hard refresh intentionally starts empty so stale sample data never flashes.
+let workspaceSnapshot: WorkspaceSnapshot | null = null;
+
 export default function TeacherApp({ view }: { view: string }) {
-  const [w, setW] = useState<Workspace>(createDemoWorkspace);
-  const [revision, setRevision] = useState(0);
-  const [loaded, setLoaded] = useState(false);
+  const initialSnapshot = useRef(workspaceSnapshot).current;
+  const [w, setW] = useState<Workspace | null>(
+    initialSnapshot?.workspace ?? null,
+  );
+  const [revision, setRevision] = useState(initialSnapshot?.revision ?? 0);
+  const [loaded, setLoaded] = useState(Boolean(initialSnapshot));
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const [aiReady, setAiReady] = useState(false);
+  const [aiReady, setAiReady] = useState(initialSnapshot?.aiReady ?? false);
   const [authProvider, setAuthProvider] = useState<"chatgpt" | "supabase">(
-    "chatgpt",
+    initialSnapshot?.authProvider ?? "chatgpt",
   );
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -82,10 +96,17 @@ export default function TeacherApp({ view }: { view: string }) {
       }
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      setW(d.workspace);
-      setRevision(d.revision);
-      setAiReady(d.aiReady);
-      setAuthProvider(d.authProvider || "chatgpt");
+      const nextSnapshot: WorkspaceSnapshot = {
+        workspace: d.workspace,
+        revision: d.revision,
+        aiReady: Boolean(d.aiReady),
+        authProvider: d.authProvider || "chatgpt",
+      };
+      workspaceSnapshot = nextSnapshot;
+      setW(nextSnapshot.workspace);
+      setRevision(nextSnapshot.revision);
+      setAiReady(nextSnapshot.aiReady);
+      setAuthProvider(nextSnapshot.authProvider);
       setLoaded(true);
     } catch (e) {
       setError(
@@ -99,9 +120,14 @@ export default function TeacherApp({ view }: { view: string }) {
   useEffect(() => {
     document.documentElement.classList.toggle(
       "reduce-motion",
-      w.settings.reduceMotion,
+      w?.settings.reduceMotion ?? false,
     );
-  }, [w.settings.reduceMotion]);
+  }, [w?.settings.reduceMotion]);
+
+  if (!w) {
+    return <WorkspaceLoading error={error} retry={reload} />;
+  }
+
   async function save(next: Workspace, message?: string) {
     if (!loaded) {
       toast.error("Wait for your classroom to load before saving.");
@@ -118,6 +144,12 @@ export default function TeacherApp({ view }: { view: string }) {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      workspaceSnapshot = {
+        workspace: next,
+        revision: d.revision,
+        aiReady,
+        authProvider,
+      };
       setW(next);
       setRevision(d.revision);
       if (message) toast.success(message);
@@ -158,7 +190,7 @@ export default function TeacherApp({ view }: { view: string }) {
       { id: "settings", label: "Classroom settings" },
     ].find((n) => n.id === view)?.label || "Overview";
   async function createClass() {
-    if (!name.trim()) return;
+    if (!w || !name.trim()) return;
     const id = crypto.randomUUID();
     if (
       await save(
@@ -445,4 +477,59 @@ export default function TeacherApp({ view }: { view: string }) {
 }
 function ArrowUpRightIcon() {
   return <ArrowRight size={14} />;
+}
+
+function WorkspaceLoading({
+  error,
+  retry,
+}: {
+  error: string;
+  retry: () => void;
+}) {
+  return (
+    <div className="workspace-loading" data-state="loading" aria-busy={!error}>
+      <aside className="workspace-loading-sidebar" aria-hidden="true">
+        <div className="brand workspace-loading-brand">
+          <span className="brand-mark">
+            <img
+              src="/brand/teacher-book.png"
+              alt=""
+              width="44"
+              height="44"
+            />
+          </span>
+          <span>
+            a teacher’s
+            <span>
+              best friend<span className="brand-dot">.</span>
+            </span>
+          </span>
+        </div>
+        <div className="workspace-loading-side-block" />
+        <div className="workspace-loading-side-line wide" />
+        <div className="workspace-loading-side-line" />
+        <div className="workspace-loading-side-line" />
+        <div className="workspace-loading-side-line short" />
+      </aside>
+      <section className="workspace-loading-main">
+        <div className="workspace-loading-topbar" />
+        <div className="workspace-loading-content">
+          {error ? (
+            <div className="workspace-loading-error" role="alert">
+              <h1>Your classroom couldn’t be loaded.</h1>
+              <p>{error}</p>
+              <button className="action" onClick={retry}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div className="workspace-loading-status" role="status">
+              <LoaderCircle className="spin" size={22} />
+              <span>Opening your classroom…</span>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
