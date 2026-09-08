@@ -1,2 +1,59 @@
-import {owner,database,bucket,guardOrigin,apiError,HttpError} from "@/lib/teacher-server";
-export async function POST(request:Request){try{guardOrigin(request);const id=await owner();if(Number(request.headers.get("content-length"))>9*1024*1024)throw new HttpError(413,"Please choose a file smaller than 8 MB.");const form=await request.formData(),file=form.get("file");if(!(file instanceof File)||!file.size)throw new HttpError(400,"Choose a PDF or image first.");if(file.size>8*1024*1024)throw new HttpError(413,"Please choose a file smaller than 8 MB.");if(!["application/pdf","image/jpeg","image/png","image/webp"].includes(file.type))throw new HttpError(400,"Use a PDF, JPG, PNG, or WebP file.");const bytes=await file.arrayBuffer();const h=new Uint8Array(bytes.slice(0,12));const valid=file.type==="application/pdf"?String.fromCharCode(...h.slice(0,5))==="%PDF-":file.type==="image/png"?h[0]===137&&h[1]===80&&h[2]===78&&h[3]===71:file.type==="image/jpeg"?h[0]===255&&h[1]===216:file.type==="image/webp"?String.fromCharCode(...h.slice(0,4))==="RIFF"&&String.fromCharCode(...h.slice(8,12))==="WEBP":false;if(!valid)throw new HttpError(400,"This file doesn’t match its format. Try exporting it again.");const fid=crypto.randomUUID(),key=id+"/"+fid;await (await bucket()).put(key,bytes,{httpMetadata:{contentType:file.type}});try{await (await database()).prepare("INSERT INTO teacher_uploads (id,owner_id,name,object_key,mime,size,created_at) VALUES (?,?,?,?,?,?,?)").bind(fid,id,file.name.slice(0,180),key,file.type,file.size,new Date().toISOString()).run()}catch(e){await (await bucket()).delete(key);throw e}return Response.json({id:fid,name:file.name,size:file.size,mime:file.type})}catch(e){return apiError(e)}}
+import {
+  owner,
+  saveDocument,
+  guardOrigin,
+  apiError,
+  HttpError,
+} from "@/lib/teacher-server";
+
+export async function POST(request: Request) {
+  try {
+    guardOrigin(request);
+    const ownerId = await owner();
+    if (Number(request.headers.get("content-length")) > 9 * 1024 * 1024)
+      throw new HttpError(413, "Please choose a file smaller than 8 MB.");
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File) || !file.size)
+      throw new HttpError(400, "Choose a PDF or image first.");
+    if (file.size > 8 * 1024 * 1024)
+      throw new HttpError(413, "Please choose a file smaller than 8 MB.");
+    if (
+      !["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(
+        file.type,
+      )
+    )
+      throw new HttpError(400, "Use a PDF, JPG, PNG, or WebP file.");
+    const bytes = await file.arrayBuffer();
+    const header = new Uint8Array(bytes.slice(0, 12));
+    const valid =
+      file.type === "application/pdf"
+        ? String.fromCharCode(...header.slice(0, 5)) === "%PDF-"
+        : file.type === "image/png"
+          ? header[0] === 137 &&
+            header[1] === 80 &&
+            header[2] === 78 &&
+            header[3] === 71
+          : file.type === "image/jpeg"
+            ? header[0] === 255 && header[1] === 216
+            : file.type === "image/webp"
+              ? String.fromCharCode(...header.slice(0, 4)) === "RIFF" &&
+                String.fromCharCode(...header.slice(8, 12)) === "WEBP"
+              : false;
+    if (!valid)
+      throw new HttpError(
+        400,
+        "This file doesn’t match its format. Try exporting it again.",
+      );
+    const id = crypto.randomUUID();
+    await saveDocument(ownerId, id, file, bytes);
+    return Response.json({
+      id,
+      name: file.name,
+      size: file.size,
+      mime: file.type,
+    });
+  } catch (error) {
+    return apiError(error);
+  }
+}

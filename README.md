@@ -31,7 +31,9 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 
 ## Runtime configuration
 
-Logical bindings are DB (D1) and BUCKET (R2). Use the Sites-managed private audience. API routes require the platform-provided authenticated-user ID, scope reads and writes to that ID, and validate write origins.
+The Netlify deployment uses Supabase Auth, Postgres, and the private `teacher-documents` Storage bucket. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in both the build and runtime environments. Every public table and Storage object has owner-scoped row-level security based on `auth.uid()`.
+
+ChatGPT Sites retains its managed private audience, D1 `DB`, and R2 `BUCKET` bindings when the Supabase variables are absent. API routes select the available backend, validate authenticated ownership, and reject cross-origin writes.
 
 The existing server-side Responses adapter uses the hosted OPENAI_API_KEY secret and OPENAI_MODEL setting. Keys are never requested in a public browser form. Without a configured key, uploads and manual workflows work and automatic actions show their unconnected status. Sample results are explicitly labeled and are never substituted for analysis of uploaded work.
 
@@ -51,9 +53,10 @@ Run node --test tests/teacher-workflows.test.mjs for focused workflow checks and
 
 This update has not undergone live browser testing or a real AI-provider call without a configured service key.
 
-
 ## Netlify deployment
 
 Netlify uses `npm run build:netlify` to create the native `.next` output required by its Next.js adapter. The regular `npm run build` command remains the ChatGPT Sites / Cloudflare Worker build.
 
-The public Netlify deployment currently provides the interface only. The private working app still uses Sites-managed sign-in, D1 classroom storage, and R2 document storage. Connecting the repository does not transfer that backend or its data. Before teachers use the Netlify version, connect authenticated identity and durable storage there, migrate any required records and documents, and verify save/reload, uploads, access control, and revision conflicts.
+Netlify is connected to the dedicated `Teachers Best Friend` Supabase project. Unauthenticated visitors are sent to the branded `/login` experience. Authenticated teachers receive an owner-scoped workspace, revision-safe saving, and private document uploads.
+
+For confirmed email signups, add the production Netlify URL and `/auth/callback` route to the Supabase Auth URL configuration. Keep `OPENAI_API_KEY` server-only in Netlify and use `OPENAI_MODEL=gpt-6-astra` when AI analysis is enabled.

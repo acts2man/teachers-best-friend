@@ -1,8 +1,7 @@
 import { z } from "zod";
 import {
   owner,
-  database,
-  bucket,
+  readDocument,
   guardOrigin,
   apiError,
   HttpError,
@@ -109,27 +108,13 @@ export async function POST(request: Request) {
     const content: Record<string, unknown>[] = [];
     let total = 0;
     for (const fid of p.uploadIds) {
-      const file = await (
-        await database()
-      )
-        .prepare(
-          "SELECT object_key,name,mime,size FROM teacher_uploads WHERE id=? AND owner_id=?",
-        )
-        .bind(fid, user)
-        .first<{
-          object_key: string;
-          name: string;
-          mime: string;
-          size: number;
-        }>();
+      const file = await readDocument(user, fid);
       if (!file)
         throw new HttpError(404, "An uploaded document could not be found.");
       total += file.size;
       if (total > 12 * 1024 * 1024)
         throw new HttpError(413, "Analyze up to 12 MB of documents at a time.");
-      const o = await (await bucket()).get(file.object_key);
-      if (!o) throw new HttpError(404, "A document could not be opened.");
-      const b64 = Buffer.from(await o.arrayBuffer()).toString("base64");
+      const b64 = Buffer.from(file.bytes).toString("base64");
       content.push(
         file.mime === "application/pdf"
           ? {

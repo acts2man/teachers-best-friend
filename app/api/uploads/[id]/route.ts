@@ -1,3 +1,47 @@
-import {owner,database,bucket,guardOrigin,apiError,HttpError} from "@/lib/teacher-server";
-export async function GET(request:Request,{params}:{params:Promise<{id:string}>}){try{const user=await owner(),{id}=await params;const row=await (await database()).prepare("SELECT object_key,name,mime FROM teacher_uploads WHERE id=? AND owner_id=?").bind(id,user).first<{object_key:string;name:string;mime:string}>();if(!row)throw new HttpError(404,"Document not found.");const object=await (await bucket()).get(row.object_key);if(!object)throw new HttpError(404,"Document not found.");return new Response(object.body,{headers:{"Content-Type":row.mime,"Content-Disposition":"inline; filename*=UTF-8''"+encodeURIComponent(row.name),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}})}catch(e){return apiError(e)}}
-export async function DELETE(request:Request,{params}:{params:Promise<{id:string}>}){try{guardOrigin(request);const user=await owner(),{id}=await params;const row=await (await database()).prepare("SELECT object_key FROM teacher_uploads WHERE id=? AND owner_id=?").bind(id,user).first<{object_key:string}>();if(!row)throw new HttpError(404,"Document not found.");await (await bucket()).delete(row.object_key);await (await database()).prepare("DELETE FROM teacher_uploads WHERE id=? AND owner_id=?").bind(id,user).run();return Response.json({ok:true})}catch(e){return apiError(e)}}
+import {
+  owner,
+  readDocument,
+  deleteDocument,
+  guardOrigin,
+  apiError,
+  HttpError,
+} from "@/lib/teacher-server";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const ownerId = await owner();
+    const { id } = await params;
+    const document = await readDocument(ownerId, id);
+    if (!document) throw new HttpError(404, "Document not found.");
+    return new Response(document.bytes, {
+      headers: {
+        "Content-Type": document.mime,
+        "Content-Disposition":
+          "inline; filename*=UTF-8''" + encodeURIComponent(document.name),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  } catch (error) {
+    return apiError(error);
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    guardOrigin(request);
+    const ownerId = await owner();
+    const { id } = await params;
+    if (!(await deleteDocument(ownerId, id)))
+      throw new HttpError(404, "Document not found.");
+    return Response.json({ ok: true });
+  } catch (error) {
+    return apiError(error);
+  }
+}
