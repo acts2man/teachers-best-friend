@@ -103,7 +103,7 @@ export type Lesson = {
   date: string;
   completed: boolean;
   studentIds: string[];
-  origin: "template" | "ai";
+  origin: "template" | "ai" | "edited";
   framework?: string;
   grade?: number;
   assessmentId?: string;

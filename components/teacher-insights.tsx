@@ -354,7 +354,7 @@ export function StandardsView() {
               <Action
                 onClick={() =>
                   go(
-                    "/reteach?standard=" +
+                    "/lessons?standard=" +
                       encodeURIComponent(detail.code) +
                       "&framework=" +
                       encodeURIComponent(detail.framework) +
@@ -544,7 +544,7 @@ export function DiagnosticsView() {
         description="Find the patterns behind the scores, then choose a thoughtful next step."
       >
         <Action
-          onClick={() => go("/reteach?standard=" + focus)}
+          onClick={() => go("/lessons?standard=" + focus)}
           disabled={!focus}
         >
           <Lightbulb size={17} />
@@ -711,7 +711,7 @@ export function DiagnosticsView() {
                       + {priority.students.length - 5} more students
                     </span>
                   )}
-                  <Action onClick={() => go("/reteach?standard=" + focus)}>
+                  <Action onClick={() => go("/lessons?standard=" + focus)}>
                     Reteach this skill
                     <ArrowRight size={16} />
                   </Action>
@@ -908,7 +908,7 @@ export function DiagnosticsView() {
                     onClick={() =>
                       go(
                         g.standard
-                          ? "/reteach?standard=" + g.standard
+                          ? "/lessons?standard=" + g.standard
                           : "/resources?category=" +
                               (g.name === "Enrichment"
                                 ? "Enrichment"
@@ -990,7 +990,7 @@ export function DiagnosticsView() {
                 Review the response
                 <Pencil size={15} />
               </Action>
-              <Action onClick={() => go("/reteach?standard=" + focus)}>
+              <Action onClick={() => go("/lessons?standard=" + focus)}>
                 Build a targeted lesson
                 <ArrowRight size={15} />
               </Action>
@@ -1570,7 +1570,7 @@ export function StudentsView() {
                       variant="secondary small"
                       onClick={() =>
                         go(
-                          "/reteach?standard=" +
+                          "/lessons?standard=" +
                             encodeURIComponent(group.standard.code) +
                             "&students=" +
                             group.students

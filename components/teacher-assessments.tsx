@@ -78,6 +78,7 @@ import {
   makeManualQuestions,
   reconcileEvidence,
 } from "@/lib/teacher-data";
+import { extractUploadedPdfText } from "@/lib/pdf-text";
 import type {
   Assessment,
   Question,
@@ -86,7 +87,7 @@ import type {
 } from "@/lib/teacher-types";
 
 export function AssessmentView() {
-  const { w, assessments, students, save, busy, go } = useTeacher();
+  const { w, assessments, students, save, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null),
     [query, setQuery] = useState(""),
@@ -96,13 +97,21 @@ export function AssessmentView() {
     [responseEdit, setResponseEdit] = useState<StudentResponse | null>(null),
     [studentFilter, setStudentFilter] = useState("all"),
     [newText, setNewText] = useState(""),
-    [adding, setAdding] = useState(false);
+    [adding, setAdding] = useState(false),
+    [reading, setReading] = useState(false),
+    [readNotice, setReadNotice] = useState("");
+  const autoRead = useRef<string | null>(null);
   useEffect(() => {
     setSelected(params.get("id"));
     setTab(params.get("tab") || "questions");
   }, [params]);
   const a = assessments.find((x) => x.id === selected);
   const catalog = a ? catalogFor(w, a.grade, a.framework) : [];
+  const documents = a
+    ? a.assignmentUploadIds?.length
+      ? a.assignmentUploadIds
+      : a.uploadIds
+    : [];
   const suggestions = a ? alignmentSuggestions(a, catalog) : [];
   const clearQuestions =
     a?.questions.filter(
@@ -126,6 +135,90 @@ export function AssessmentView() {
       message,
     );
   }
+  async function readDocument(target = a) {
+    if (!target || reading || !documents.length) return;
+    setReadNotice("");
+    if (!target.targetStandards.length) {
+      setReadNotice(
+        "Choose the intended standards on the Standards report tab, then read the document.",
+      );
+      return;
+    }
+    setReading(true);
+    try {
+      if (aiReady) {
+        const r = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "assignment",
+              text: "",
+              uploadIds: documents,
+              grade: target.grade,
+              subject: target.subject,
+              framework: target.framework,
+              targetStandards: target.targetStandards,
+            }),
+          }),
+          d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        const questions = d.result.questions as Question[];
+        if (!questions.length)
+          throw new Error(
+            "No questions were recognized. Try a clearer scan, or add the questions manually.",
+          );
+        await saveAssessment(
+          {
+            ...target,
+            questions,
+            responses: [],
+            source: "ai",
+            status: "Needs review",
+            answerKeyVerified: false,
+            title:
+              target.title === "Untitled assessment" && d.result.title
+                ? d.result.title
+                : target.title,
+          },
+          questions.length + " questions read from your document",
+        );
+      } else {
+        let text = "";
+        for (const id of documents) text += (await extractUploadedPdfText(id)) + "\n\n";
+        const questions = makeManualQuestions(text);
+        if (!questions.length)
+          throw new Error(
+            "No typed text was found in the document. Photographs need an AI connection to read, or you can add the questions manually.",
+          );
+        await saveAssessment(
+          { ...target, questions, responses: [], status: "Needs review" },
+          questions.length + " questions read from the PDF",
+        );
+      }
+    } catch (e) {
+      setReadNotice(
+        e instanceof Error ? e.message : "The document couldn’t be read.",
+      );
+    } finally {
+      setReading(false);
+    }
+  }
+  // A freshly uploaded assessment reads its own questions automatically so
+  // the teacher never enters them a second time.
+  useEffect(() => {
+    if (
+      a &&
+      !a.questions.length &&
+      documents.length > 0 &&
+      a.source !== "sample" &&
+      a.targetStandards.length > 0 &&
+      autoRead.current !== a.id
+    ) {
+      autoRead.current = a.id;
+      readDocument(a);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a?.id, a?.questions.length, documents.length, aiReady]);
   function exportAssessment() {
     if (!a) return;
     downloadText(
@@ -194,7 +287,7 @@ export function AssessmentView() {
       return;
     }
     if (!preparationGaps(a).ready) {
-      toast.error("Confirm the assignment standards and answer key first.");
+      toast.error("Confirm the assessment standards and answer key first.");
       return;
     }
     const r = {
@@ -235,12 +328,12 @@ export function AssessmentView() {
         <>
           <PageTitle
             eyebrow="EVERY QUESTION TELLS A STORY"
-            title="Assignments"
-            description="Keep the assignment, answer key, and student work together."
+            title="Assessments"
+            description="Keep each assessment, its answer key, and student work together."
           >
             <Action onClick={() => go("/scan")}>
               <Plus size={17} />
-              New assignment
+              New assessment
             </Action>
           </PageTitle>
           <div className="filter-bar">
@@ -302,13 +395,13 @@ export function AssessmentView() {
               <EmptyState
                 title={
                   query
-                    ? "No matching assignments"
-                    : "Add your first assignment"
+                    ? "No matching assessments"
+                    : "Add your first assessment"
                 }
-                description="Upload an assignment or paste questions to begin."
+                description="Upload an assessment or paste questions to begin."
               >
                 <Action onClick={() => go("/scan")}>
-                  New assignment
+                  New assessment
                   <ArrowRight size={16} />
                 </Action>
               </EmptyState>
@@ -319,7 +412,7 @@ export function AssessmentView() {
         <>
           <button className="back-link" onClick={() => go("/assessments")}>
             <ArrowLeft size={16} />
-            All assignments
+            All assessments
           </button>
           <PageTitle
             eyebrow={
@@ -350,7 +443,7 @@ export function AssessmentView() {
               Export report
             </Action>
             <Action
-              onClick={() => go("/scan?mode=responses&assessment=" + a.id)}
+              onClick={() => setTab("responses")}
               disabled={!preparationGaps(a).ready}
             >
               <Plus size={16} />
@@ -400,7 +493,7 @@ export function AssessmentView() {
           )}
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="page-tabs">
-              <TabsTrigger value="questions">1. Assignment review</TabsTrigger>
+              <TabsTrigger value="questions">1. Assessment review</TabsTrigger>
               <TabsTrigger value="key">2. Answer key</TabsTrigger>
               <TabsTrigger value="responses">3. Student work</TabsTrigger>
               <TabsTrigger value="coverage">Standards report</TabsTrigger>
@@ -410,7 +503,7 @@ export function AssessmentView() {
                 <div className="review-notice">
                   <Target size={18} />
                   <p>
-                    Choose the intended standards to measure this assignment’s
+                    Choose the intended standards to measure this assessment’s
                     alignment.
                   </p>
                   <button
@@ -420,6 +513,30 @@ export function AssessmentView() {
                     Choose standards
                     <ArrowRight size={16} />
                   </button>
+                </div>
+              )}
+              {reading && (
+                <div className="read-document-status" role="status">
+                  <LoaderCircle className="spin" size={18} />
+                  <p>
+                    Reading the questions from your document. This takes a
+                    moment for a multi-page assessment.
+                  </p>
+                </div>
+              )}
+              {readNotice && (
+                <div className="review-notice" role="alert">
+                  <AlertCircle size={18} />
+                  <p>{readNotice}</p>
+                  {!a.targetStandards.length && (
+                    <button
+                      className="text-link"
+                      onClick={() => setTab("coverage")}
+                    >
+                      Choose standards
+                      <ArrowRight size={16} />
+                    </button>
+                  )}
                 </div>
               )}
               <div className="panel report-table">
@@ -454,6 +571,22 @@ export function AssessmentView() {
                       >
                         <CheckCheck size={16} />
                         Confirm {clearQuestions.length} clear matches
+                      </Action>
+                    )}
+                    {documents.length > 0 && (
+                      <Action
+                        variant="secondary small"
+                        disabled={reading || busy}
+                        onClick={() => readDocument()}
+                      >
+                        {reading ? (
+                          <LoaderCircle className="spin" size={15} />
+                        ) : (
+                          <ScanLine size={15} />
+                        )}
+                        {a.questions.length
+                          ? "Read document again"
+                          : "Read questions from document"}
                       </Action>
                     )}
                     <Action
@@ -539,11 +672,33 @@ export function AssessmentView() {
                   </Table>
                 ) : (
                   <EmptyState
-                    title="Add questions to start reviewing"
-                    description="Your document is saved. Paste questions manually while AI scanning is disconnected."
+                    title={
+                      reading
+                        ? "Reading your document…"
+                        : documents.length
+                          ? "The questions haven’t been read yet"
+                          : "Add questions to start reviewing"
+                    }
+                    description={
+                      documents.length
+                        ? "Your document is saved. Read the questions from it, or paste them manually."
+                        : "Paste the questions, or upload a revised assessment."
+                    }
                   >
-                    <Action onClick={() => setAdding(true)}>
-                      Add questions
+                    {documents.length > 0 && (
+                      <Action
+                        disabled={reading || busy}
+                        onClick={() => readDocument()}
+                      >
+                        <ScanLine size={16} />
+                        Read questions from document
+                      </Action>
+                    )}
+                    <Action
+                      variant={documents.length ? "secondary" : ""}
+                      onClick={() => setAdding(true)}
+                    >
+                      Add questions manually
                     </Action>
                   </EmptyState>
                 )}
@@ -661,7 +816,7 @@ export function AssessmentView() {
                         onClick={() => go("/scan?assessment=" + a.id)}
                       >
                         <Upload size={15} />
-                        Check a revised assignment
+                        Check a revised assessment
                       </Action>
                     </div>
                   )}

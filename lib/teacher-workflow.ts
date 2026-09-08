@@ -122,7 +122,7 @@ export function assignmentNextStep(a: Assessment) {
     };
   return {
     label: "Add student work",
-    href: "/scan?mode=responses&assessment=" + a.id,
+    href: "/assessments?id=" + a.id + "&tab=responses",
   };
 }
 

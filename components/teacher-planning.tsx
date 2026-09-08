@@ -30,6 +30,9 @@ import {
   LoaderCircle,
   CheckCircle2,
   Users,
+  Pencil,
+  Sparkles,
+  Undo2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
@@ -66,6 +69,7 @@ import {
   lessonContent,
   adaptations,
   resourceCatalog,
+  type LessonContent,
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
 import type { Lesson, Resource, Student, Standard } from "@/lib/teacher-types";
@@ -221,7 +225,9 @@ export function ReteachView() {
     [modality, setModality] = useState("Visual"),
     [duration, setDuration] = useState("15"),
     [tab, setTab] = useState("build"),
-    [lessonTab, setLessonTab] = useState("lesson"),
+    [lessonTab, setLessonTab] = useState("visual"),
+    [edited, setEdited] = useState(false),
+    [editing, setEditing] = useState(false),
     [notes, setNotes] = useState(""),
     [date, setDate] = useState(tomorrow()),
     [custom, setCustom] = useState<Lesson["custom"]>(),
@@ -250,11 +256,15 @@ export function ReteachView() {
         setDate(p.date);
         setCustom(p.custom);
         setSavedId(p.id);
+        setEdited(p.origin === "edited");
+        setEditing(false);
       }
     } else if (st) {
       setStandard(st);
       setCustom(undefined);
       setSavedId(null);
+      setEdited(false);
+      setEditing(false);
       const student = params.get("student"),
         groupIds = (params.get("students") || "").split(",").filter(Boolean);
       setAudience(groupIds.length ? "suggested" : student || "");
@@ -278,9 +288,12 @@ export function ReteachView() {
       setCustom(undefined);
       setSavedId(null);
       setNotes("");
+      setEdited(false);
+      setEditing(false);
     }
     setTab(params.get("tab") === "plan" ? "plan" : "build");
   }, [params, savedPlan?.id, sourceAssessment?.id]);
+  const modalityLabel = modality === "Kinesthetic" ? "Hands-on" : modality;
   const content = s
       ? custom || (hasCuratedLesson(s) ? lessonContent(s) : null)
       : null,
@@ -360,7 +373,7 @@ export function ReteachView() {
       date,
       completed: false,
       studentIds: group.map((s) => s.id),
-      origin: custom ? "ai" : "template",
+      origin: custom ? (edited ? "edited" : "ai") : "template",
       ...(custom ? { custom } : {}),
     };
     if (
@@ -398,7 +411,12 @@ export function ReteachView() {
         d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setCustom(d.result);
-      toast.success("Your new lesson is ready for review");
+      setEdited(false);
+      setEditing(false);
+      setLessonTab("lesson");
+      toast.success(
+        "Your lesson plan is ready. Review it, edit anything, then save it.",
+      );
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : "The lesson couldn’t be created.",
@@ -450,17 +468,19 @@ export function ReteachView() {
     setCustom(undefined);
     setSavedId(null);
     setNotes("");
+    setEdited(false);
+    setEditing(false);
   }
   return (
     <>
       <PageTitle
         eyebrow="FROM “NOW WHAT?” TO “I’VE GOT THIS.”"
-        title="Reteach"
-        description="Choose a different way to teach the skill this student needs."
+        title="Lesson plans"
+        description="Choose a different way to teach the skill, generate the plan, and keep it here."
       >
         <Action variant="secondary" onClick={() => setTab("plan")}>
           <CalendarDays size={16} />
-          My teaching plan<Pill>{plans.length}</Pill>
+          Saved lesson plans<Pill>{plans.length}</Pill>
         </Action>
       </PageTitle>
       {(sourceAssessment || group.length > 1) && (
@@ -499,9 +519,9 @@ export function ReteachView() {
       )}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="page-tabs">
-          <TabsTrigger value="build">Choose an approach</TabsTrigger>
+          <TabsTrigger value="build">Build a reteach lesson</TabsTrigger>
           <TabsTrigger value="plan">
-            My teaching plan <span>{plans.length}</span>
+            Saved lesson plans <span>{plans.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="build">
@@ -621,28 +641,12 @@ export function ReteachView() {
                     disabled={busy || !date || !group.length}
                   >
                     <Plus size={16} />
-                    {savedId ? "Update teaching plan" : "Add to teaching plan"}
+                    {savedId ? "Update saved plan" : "Save to lesson plans"}
                   </Action>
-                  <button
-                    className="ai-variation"
-                    onClick={generateAI}
-                    disabled={!aiReady || aiBusy}
-                  >
-                    {aiBusy ? (
-                      <LoaderCircle className="spin" size={16} />
-                    ) : (
-                      <BookOpen size={16} />
-                    )}{" "}
-                    {aiBusy
-                      ? "Preparing a new approach…"
-                      : "Adapt this lesson with AI"}
-                  </button>
-                  {!aiReady && (
-                    <span className="field-help">
-                      Prepared lessons work now. Adapting a lesson automatically
-                      needs an AI connection.
-                    </span>
-                  )}
+                  <span className="field-help">
+                    Below the plan, generate an AI lesson built around the
+                    approach you chose.
+                  </span>
                 </div>
               </aside>
               <div className="lesson-workspace">
@@ -651,8 +655,10 @@ export function ReteachView() {
                     <Pill tone="green">{s.code}</Pill>
                     <Pill>
                       {custom
-                        ? "AI draft · Review before teaching"
-                        : "Curated lesson · Editable plan"}
+                        ? edited
+                          ? "Edited lesson · Saved with your changes"
+                          : "AI lesson plan · Review before teaching"
+                        : "Prepared lesson · Editable"}
                     </Pill>
                     <h2>{s.title}</h2>
                     <p>{content.objective}</p>
@@ -665,10 +671,54 @@ export function ReteachView() {
                     <Printer size={20} />
                   </button>
                 </div>
+                <div className="editor-bar">
+                  <span>
+                    {editing
+                      ? "Editing this plan. Your changes stay with the lesson when you save it."
+                      : "This plan is editable. Change any phase, practice task, or exit question."}
+                  </span>
+                  <div>
+                    {custom && hasCuratedLesson(s) && (
+                      <Action
+                        variant="secondary small"
+                        disabled={aiBusy}
+                        onClick={() => {
+                          setCustom(undefined);
+                          setEdited(false);
+                          setEditing(false);
+                        }}
+                      >
+                        <Undo2 size={14} />
+                        Restore prepared lesson
+                      </Action>
+                    )}
+                    <Action
+                      variant={editing ? "small" : "secondary small"}
+                      disabled={aiBusy}
+                      onClick={() => {
+                        if (!editing && !custom)
+                          setCustom(structuredClone(content));
+                        setEditing(!editing);
+                      }}
+                    >
+                      {editing ? <Check size={14} /> : <Pencil size={14} />}
+                      {editing ? "Done editing" : "Edit lesson"}
+                    </Action>
+                  </div>
+                </div>
+                {editing && custom ? (
+                  <LessonEditor
+                    content={custom}
+                    onChange={(next) => {
+                      setCustom(next);
+                      setEdited(true);
+                    }}
+                  />
+                ) : (
                 <Tabs value={lessonTab} onValueChange={setLessonTab}>
                   <TabsList className="text-tabs">
-                    <TabsTrigger value="lesson">Lesson flow</TabsTrigger>
                     <TabsTrigger value="visual">Teaching approach</TabsTrigger>
+                    <TabsTrigger value="lesson">Lesson flow</TabsTrigger>
                     <TabsTrigger value="practice">
                       Targeted practice
                     </TabsTrigger>
@@ -896,6 +946,57 @@ export function ReteachView() {
                     </div>
                   </TabsContent>
                 </Tabs>
+                )}
+                <div className="ai-plan-cta">
+                  <span className="soft-icon">
+                    <Sparkles size={22} />
+                  </span>
+                  <div>
+                    <h3>
+                      Generate a {modalityLabel.toLowerCase()} lesson plan with
+                      AI
+                    </h3>
+                    <p>
+                      A complete {duration}-minute plan for {s.title} built
+                      around the {modalityLabel.toLowerCase()} approach:
+                      objective, materials, timed phases, five practice tasks,
+                      and an exit ticket. Edit anything, then save it to your
+                      lesson plans.
+                    </p>
+                  </div>
+                  <div>
+                    <Action
+                      onClick={generateAI}
+                      disabled={!aiReady || aiBusy || busy}
+                    >
+                      {aiBusy ? (
+                        <LoaderCircle className="spin" size={16} />
+                      ) : (
+                        <Sparkles size={16} />
+                      )}
+                      {aiBusy ? "Building your plan…" : "Generate an AI lesson plan"}
+                    </Action>
+                    <Action
+                      variant="secondary"
+                      onClick={saveLesson}
+                      disabled={busy || aiBusy || !date || !group.length}
+                    >
+                      <Plus size={16} />
+                      {savedId ? "Update saved plan" : "Save to lesson plans"}
+                    </Action>
+                  </div>
+                </div>
+                {!aiReady && (
+                  <p className="field-help">
+                    Generating a plan needs the AI connection under Settings.
+                    The lesson above can be edited and saved now.
+                  </p>
+                )}
+                {!group.length && (
+                  <p className="field-help">
+                    Choose the student or group this plan is for before saving.
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -907,6 +1008,10 @@ export function ReteachView() {
               creating={aiBusy}
               notes={notes}
               onNotes={setNotes}
+              modality={modality}
+              onModality={setModality}
+              duration={duration}
+              onDuration={setDuration}
             />
           )}
         </TabsContent>
@@ -943,7 +1048,7 @@ export function ReteachView() {
                       variant="secondary small"
                       onClick={() => {
                         setTab("build");
-                        go("/reteach?lesson=" + l.id);
+                        go("/lessons?lesson=" + l.id);
                       }}
                     >
                       <Eye size={15} />
@@ -973,10 +1078,10 @@ export function ReteachView() {
           ) : (
             <EmptyState
               title="A little planning. A lot more clarity."
-              description="Build a focused lesson and add it here. Your notes and teaching dates will be saved."
+              description="Generate or build a reteach lesson and save it here. Your edits, notes, and teaching dates stay with each plan."
             >
               <Action onClick={() => setTab("build")}>
-                Build your first lesson
+                Build your first lesson plan
                 <ArrowRight size={16} />
               </Action>
             </EmptyState>
@@ -1061,6 +1166,10 @@ function ReteachStart({
   creating,
   notes,
   onNotes,
+  modality,
+  onModality,
+  duration,
+  onDuration,
 }: {
   standard: Standard | undefined;
   catalog: Standard[];
@@ -1069,6 +1178,10 @@ function ReteachStart({
   creating: boolean;
   notes: string;
   onNotes: (value: string) => void;
+  modality: string;
+  onModality: (value: string) => void;
+  duration: string;
+  onDuration: (value: string) => void;
 }) {
   const { assessments, students, aiReady, go } = useTeacher();
   const params = useSearchParams();
@@ -1146,7 +1259,7 @@ function ReteachStart({
         </h2>
         <p>
           {standard
-            ? "Choose an approach for this standard. A specific lesson can be prepared from the standard and your observation."
+            ? "Choose an approach for this standard, then generate a complete lesson plan from the standard and your observation."
             : "Open a student’s confirmed results to keep the reteaching connected to their work."}
         </p>
         {!standard && assessmentsWithNeeds.length > 0 && (
@@ -1169,7 +1282,7 @@ function ReteachStart({
                   key={question.id}
                   onClick={() =>
                     go(
-                      "/reteach?standard=" +
+                      "/lessons?standard=" +
                         encodeURIComponent(question.standard) +
                         "&assessment=" +
                         assessmentId +
@@ -1202,7 +1315,7 @@ function ReteachStart({
               className="saved-support-row"
               onClick={() =>
                 go(
-                  "/reteach?standard=" +
+                  "/lessons?standard=" +
                     encodeURIComponent(q!.standard) +
                     "&student=" +
                     student!.id +
@@ -1222,7 +1335,7 @@ function ReteachStart({
             </button>
           ))}
         {!standard && !assessmentsWithNeeds.length && !suggestions.length && (
-          <Action onClick={() => go("/review")}>
+          <Action onClick={() => go("/assessments")}>
             Review student work
             <ArrowRight size={16} />
           </Action>
@@ -1247,6 +1360,33 @@ function ReteachStart({
                 );
               })}
             </div>
+            <div className="form-grid">
+              <label>
+                Teaching approach
+                <Pick
+                  label="Teaching approach"
+                  value={modality}
+                  onChange={onModality}
+                  options={[
+                    { value: "Visual", label: "Visual" },
+                    { value: "Kinesthetic", label: "Hands-on" },
+                    { value: "Auditory", label: "Auditory" },
+                  ]}
+                />
+              </label>
+              <label>
+                Time together
+                <Pick
+                  label="Lesson duration"
+                  value={duration}
+                  onChange={onDuration}
+                  options={["10", "15", "20"].map((v) => ({
+                    value: v,
+                    label: v + " minutes",
+                  }))}
+                />
+              </label>
+            </div>
             <label className="block-label">
               What did you notice in the student’s work?
               <textarea
@@ -1259,9 +1399,9 @@ function ReteachStart({
               {creating ? (
                 <LoaderCircle size={17} className="spin" />
               ) : (
-                <BookOpen size={17} />
+                <Sparkles size={17} />
               )}
-              Prepare a reteach lesson
+              {creating ? "Building your plan…" : "Generate an AI lesson plan"}
             </Action>
             {!aiReady && (
               <p className="field-help">
@@ -1299,6 +1439,182 @@ function ReteachStart({
           </TextLink>
         </div>
       </section>
+    </div>
+  );
+}
+
+function LessonEditor({
+  content,
+  onChange,
+}: {
+  content: LessonContent;
+  onChange: (next: LessonContent) => void;
+}) {
+  // Materials are edited as one comma-separated line and committed on blur.
+  const [materials, setMaterials] = useState(content.materials.join(", "));
+  const update = (patch: Partial<LessonContent>) =>
+    onChange({ ...content, ...patch });
+  const pairs = (
+    key: "practice" | "exit",
+    title: string,
+    addLabel: string,
+  ) => (
+    <div className="editor-group">
+      <header>
+        <h3>{title}</h3>
+        <Action
+          variant="secondary small"
+          onClick={() => update({ [key]: [...content[key], { q: "", a: "" }] })}
+        >
+          <Plus size={14} />
+          {addLabel}
+        </Action>
+      </header>
+      {content[key].map((item, index) => (
+        <div className="editor-row" key={index}>
+          <span>{index + 1}</span>
+          <div>
+            <textarea
+              aria-label={title + " question " + (index + 1)}
+              value={item.q}
+              placeholder="Question or task"
+              onChange={(e) =>
+                update({
+                  [key]: content[key].map((x, i) =>
+                    i === index ? { ...x, q: e.target.value } : x,
+                  ),
+                })
+              }
+            />
+            <input
+              aria-label={title + " answer " + (index + 1)}
+              value={item.a}
+              placeholder="Teacher answer key"
+              onChange={(e) =>
+                update({
+                  [key]: content[key].map((x, i) =>
+                    i === index ? { ...x, a: e.target.value } : x,
+                  ),
+                })
+              }
+            />
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={"Remove " + title.toLowerCase() + " item " + (index + 1)}
+            disabled={content[key].length <= 1}
+            onClick={() =>
+              update({ [key]: content[key].filter((_, i) => i !== index) })
+            }
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div className="lesson-editor">
+      <label>
+        Objective
+        <textarea
+          value={content.objective}
+          onChange={(e) => update({ objective: e.target.value })}
+        />
+      </label>
+      <label>
+        Materials (separate with commas)
+        <input
+          value={materials}
+          onChange={(e) => setMaterials(e.target.value)}
+          onBlur={() =>
+            update({
+              materials: materials
+                .split(",")
+                .map((m) => m.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </label>
+      <div className="editor-group">
+        <header>
+          <h3>Lesson phases</h3>
+          <Action
+            variant="secondary small"
+            onClick={() =>
+              update({
+                phases: [
+                  ...content.phases,
+                  { time: "", name: "New phase", text: "" },
+                ],
+              })
+            }
+          >
+            <Plus size={14} />
+            Add phase
+          </Action>
+        </header>
+        {content.phases.map((phase, index) => (
+          <div className="editor-row" key={index}>
+            <span>{index + 1}</span>
+            <div>
+              <div className="two">
+                <input
+                  aria-label={"Minutes for phase " + (index + 1)}
+                  value={phase.time}
+                  placeholder="0–2"
+                  onChange={(e) =>
+                    update({
+                      phases: content.phases.map((x, i) =>
+                        i === index ? { ...x, time: e.target.value } : x,
+                      ),
+                    })
+                  }
+                />
+                <input
+                  aria-label={"Name for phase " + (index + 1)}
+                  value={phase.name}
+                  placeholder="Phase name"
+                  onChange={(e) =>
+                    update({
+                      phases: content.phases.map((x, i) =>
+                        i === index ? { ...x, name: e.target.value } : x,
+                      ),
+                    })
+                  }
+                />
+              </div>
+              <textarea
+                aria-label={"Notes for phase " + (index + 1)}
+                value={phase.text}
+                placeholder="What you and the students do during this phase"
+                onChange={(e) =>
+                  update({
+                    phases: content.phases.map((x, i) =>
+                      i === index ? { ...x, text: e.target.value } : x,
+                    ),
+                  })
+                }
+              />
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={"Remove phase " + (index + 1)}
+              disabled={content.phases.length <= 1}
+              onClick={() =>
+                update({ phases: content.phases.filter((_, i) => i !== index) })
+              }
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {pairs("practice", "Targeted practice", "Add task")}
+      {pairs("exit", "Exit ticket", "Add question")}
     </div>
   );
 }
@@ -1644,7 +1960,11 @@ export function SettingsView() {
     [framework, setFramework] = useState(classroom.framework),
     [reduced, setReduced] = useState(w.settings.reduceMotion),
     [erase, setErase] = useState(false),
-    [erasing, setErasing] = useState(false);
+    [erasing, setErasing] = useState(false),
+    [classEdits, setClassEdits] = useState<Record<string, string>>({}),
+    [newClass, setNewClass] = useState(""),
+    [newGrade, setNewGrade] = useState(String(classroom.grade)),
+    [removeId, setRemoveId] = useState<string | null>(null);
   useEffect(() => {
     setTeacher(w.settings.teacherName);
     setSchool(w.settings.school);
@@ -1661,6 +1981,79 @@ export function SettingsView() {
     w.settings.school,
     w.settings.reduceMotion,
   ]);
+  async function addClassroom() {
+    if (!newClass.trim()) return;
+    const id = crypto.randomUUID();
+    if (
+      await save(
+        {
+          ...w,
+          classes: [
+            ...w.classes,
+            {
+              id,
+              name: newClass.trim(),
+              grade: Number(newGrade),
+              framework: "California",
+              demo: false,
+            },
+          ],
+        },
+        "Classroom added. Switch to it from the top bar whenever you like.",
+      )
+    )
+      setNewClass("");
+  }
+  async function renameClassroom(id: string) {
+    const name = (classEdits[id] ?? "").trim();
+    if (!name) return;
+    if (
+      await save(
+        {
+          ...w,
+          classes: w.classes.map((c) => (c.id === id ? { ...c, name } : c)),
+        },
+        "Classroom renamed",
+      )
+    )
+      setClassEdits((previous) => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
+  }
+  async function removeClassroom() {
+    if (!removeId || w.classes.length < 2) return;
+    const id = removeId;
+    const remaining = w.classes.filter((c) => c.id !== id);
+    const uploads = new Set([
+      ...w.assessments.filter((a) => a.classId === id).flatMap((a) => a.uploadIds),
+      ...w.resources
+        .filter((r) => r.classId === id)
+        .map((r) => r.uploadId)
+        .filter((x): x is string => !!x),
+    ]);
+    if (
+      await save(
+        {
+          ...w,
+          classes: remaining,
+          activeClassId:
+            w.activeClassId === id ? remaining[0].id : w.activeClassId,
+          students: w.students.filter((s) => s.classId !== id),
+          assessments: w.assessments.filter((a) => a.classId !== id),
+          lessons: w.lessons.filter((l) => l.classId !== id),
+          groups: w.groups.filter((g) => g.classId !== id),
+          resources: w.resources.filter((r) => r.classId !== id),
+        },
+        "Classroom removed",
+      )
+    ) {
+      setRemoveId(null);
+      for (const uploadId of uploads)
+        fetch("/api/uploads/" + uploadId, { method: "DELETE" }).catch(() => {});
+    }
+  }
   async function eraseData() {
     setErasing(true);
     try {
@@ -1690,8 +2083,8 @@ export function SettingsView() {
       <div className="settings-layout">
         <section className="panel settings-card">
           <SectionTitle
-            title="You & your classroom"
-            description="Use the names that make this space familiar."
+            title="You & this classroom"
+            description="Your name, plus the details of the classroom that’s open right now."
           />
           <form
             onSubmit={(e) => {
@@ -1866,6 +2259,109 @@ export function SettingsView() {
             </p>
           </section>
         </aside>
+        <section className="panel settings-card classrooms-card" id="classrooms">
+          <SectionTitle
+            title="Classrooms"
+            description="One classroom per period or group. Switch between them from the top bar. Each keeps its own students, assessments, evidence, and lesson plans."
+          />
+          <div className="classroom-list">
+            {w.classes.map((c) => {
+              const active = c.id === classroom.id;
+              const draft = classEdits[c.id];
+              const counts = {
+                students: w.students.filter((s) => s.classId === c.id).length,
+                assessments: w.assessments.filter((a) => a.classId === c.id)
+                  .length,
+                lessons: w.lessons.filter((l) => l.classId === c.id).length,
+              };
+              return (
+                <div
+                  className={"classroom-row " + (active ? "active" : "")}
+                  key={c.id}
+                >
+                  <div>
+                    <input
+                      aria-label={"Name for " + c.name}
+                      value={draft ?? c.name}
+                      maxLength={70}
+                      onChange={(e) =>
+                        setClassEdits({ ...classEdits, [c.id]: e.target.value })
+                      }
+                    />
+                    <div className="classroom-meta">
+                      Grade {c.grade} · {c.framework} · {counts.students}{" "}
+                      students · {counts.assessments} assessments ·{" "}
+                      {counts.lessons} lesson plans
+                      {c.demo ? " · Sample classroom" : ""}
+                    </div>
+                  </div>
+                  <div>
+                    {active ? (
+                      <Pill tone="green">Open now</Pill>
+                    ) : (
+                      <Action
+                        variant="secondary small"
+                        disabled={busy}
+                        onClick={() => save({ ...w, activeClassId: c.id })}
+                      >
+                        Open
+                      </Action>
+                    )}
+                  </div>
+                  <div>
+                    {draft !== undefined && draft.trim() !== c.name && (
+                      <Action
+                        variant="small"
+                        disabled={busy || !draft.trim()}
+                        onClick={() => renameClassroom(c.id)}
+                      >
+                        <Check size={14} />
+                        Save name
+                      </Action>
+                    )}
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={"Remove " + c.name}
+                      disabled={w.classes.length < 2 || busy}
+                      onClick={() => setRemoveId(c.id)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <form
+            className="classroom-add"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addClassroom();
+            }}
+          >
+            <input
+              aria-label="New classroom name"
+              value={newClass}
+              maxLength={70}
+              placeholder="e.g. Period 5 · ELA"
+              onChange={(e) => setNewClass(e.target.value)}
+            />
+            <Pick
+              label="New classroom grade"
+              value={newGrade}
+              onChange={setNewGrade}
+              options={Array.from({ length: 13 }, (_, i) => ({
+                value: String(i),
+                label: i === 0 ? "Kindergarten" : "Grade " + i,
+              }))}
+            />
+            <Action type="submit" disabled={busy || !newClass.trim()}>
+              <Plus size={16} />
+              Add classroom
+            </Action>
+          </form>
+        </section>
         <section className="panel settings-card data-settings">
           <SectionTitle
             title="Your data stays in your hands"
@@ -1892,6 +2388,32 @@ export function SettingsView() {
           </div>
         </section>
       </div>
+      <AlertDialog
+        open={!!removeId}
+        onOpenChange={(v) => !v && setRemoveId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this classroom?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes its students, assessments, evidence, groups, and
+              lesson plans. Other classrooms are not affected. Export a copy
+              from the section below first if you need one.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Keep classroom</AlertDialogCancel>
+            <button
+              className="action danger"
+              disabled={busy}
+              onClick={removeClassroom}
+            >
+              <Trash2 size={16} />
+              Remove classroom
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={erase} onOpenChange={setErase}>
         <AlertDialogContent>
           <AlertDialogHeader>

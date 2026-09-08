@@ -1,25 +1,26 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   BookOpen,
+  Camera,
   Check,
   CheckCheck,
-  ClipboardCheck,
   FileText,
   Flag,
+  LoaderCircle,
   Pencil,
   Plus,
   Printer,
-  Search,
+  Upload,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
   Avatar,
   EmptyState,
-  PageTitle,
   Pick,
   Pill,
   SectionTitle,
@@ -28,104 +29,15 @@ import {
 import {
   activeQuestions,
   assignmentNextStep,
+  parseAnswerKey,
   preparationGaps,
   responseFlag,
   studentReport,
   studentReview,
 } from "@/lib/teacher-workflow";
+import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
-
-export function ReviewWorkView() {
-  const { assessments, students, go } = useTeacher();
-  const [query, setQuery] = useState("");
-  const filtered = assessments.filter((a) =>
-    a.title.toLowerCase().includes(query.toLowerCase()),
-  );
-  return (
-    <>
-      <PageTitle
-        eyebrow=""
-        title="Student work"
-        description="Choose an assignment, then review one student at a time."
-      />
-      <div className="filter-bar">
-        <label className="search-box">
-          <Search size={17} />
-          <input
-            aria-label="Find an assignment to review"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find an assignment…"
-          />
-        </label>
-      </div>
-      <section className="panel work-queue">
-        <SectionTitle title="Assignments to review" />
-        {filtered.map((a) => {
-          const ids = [...new Set(a.responses.map((r) => r.studentId))];
-          const pending = a.responses.filter((r) => !r.verified).length;
-          const ready = preparationGaps(a).ready;
-          return (
-            <button
-              key={a.id}
-              className="assignment-list-row"
-              onClick={() =>
-                go(
-                  ready || a.responses.length
-                    ? "/assessments?id=" + a.id + "&tab=responses"
-                    : assignmentNextStep(a).href,
-                )
-              }
-            >
-              <span className="document-icon">
-                <ClipboardCheck size={22} />
-              </span>
-              <div className="assignment-row-copy">
-                <h3>{a.title}</h3>
-                <p>
-                  {a.subject} · {ids.length} of {students.length} students added
-                </p>
-              </div>
-              <div className="assignment-row-next">
-                <Pill tone={pending ? "amber" : "neutral"}>
-                  {pending
-                    ? pending + " answers to confirm"
-                    : ids.length
-                      ? "Reviewed work available"
-                      : ready
-                        ? "Ready to scan"
-                        : "Finish assignment setup"}
-                </Pill>
-                <span>
-                  {pending
-                    ? "Continue review"
-                    : ids.length
-                      ? "Open student work"
-                      : ready
-                        ? "Add student work"
-                        : "Review assignment"}
-                  <ArrowRight size={16} />
-                </span>
-              </div>
-            </button>
-          );
-        })}
-        {!filtered.length && (
-          <EmptyState
-            title={query ? "No assignments found" : "Add the assignment first"}
-            description="Choose the standards and confirm the answer key before checking student work."
-          >
-            <Action onClick={() => go("/scan")}>
-              New assignment
-              <Plus size={16} />
-            </Action>
-          </EmptyState>
-        )}
-      </section>
-    </>
-  );
-}
 
 export function StudentResponseReview({
   assessment: a,
@@ -136,11 +48,16 @@ export function StudentResponseReview({
   onEdit: (r: StudentResponse) => void;
   onSave: (next: Assessment, message: string) => Promise<boolean>;
 }) {
-  const { students, busy, go } = useTeacher();
+  const { students, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState(params.get("student") || "");
   const [filter, setFilter] = useState("flagged");
   const [limit, setLimit] = useState(12);
+  const [uploading, setUploading] = useState(false),
+    [status, setStatus] = useState(""),
+    [notice, setNotice] = useState("");
+  const input = useRef<HTMLInputElement>(null),
+    camera = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const desired = params.get("student");
     if (desired && students.some((s) => s.id === desired)) setSelected(desired);
@@ -203,6 +120,130 @@ export function StudentResponseReview({
       summary.clear.length + " clear answers confirmed",
     );
   }
+
+  async function uploadPages(list: FileList | null) {
+    if (!list?.length || !selected || uploading) return;
+    if (!prep.ready) {
+      toast.error("Confirm the standards and answer key before adding student work.");
+      return;
+    }
+    const incoming = Array.from(list);
+    if (incoming.length > 6) {
+      toast.error("Add up to six pages for one student at a time.");
+      return;
+    }
+    setUploading(true);
+    setNotice("");
+    setStatus("Uploading pages…");
+    const ids: string[] = [];
+    let pdfText = "";
+    try {
+      for (const file of incoming) {
+        const form = new FormData();
+        form.append("file", file);
+        const r = await fetch("/api/uploads", { method: "POST", body: form }),
+          d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        ids.push(d.id);
+        if (!aiReady && file.type === "application/pdf")
+          pdfText += (await extractPdfText(await file.arrayBuffer())) + "\n";
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The pages couldn’t be uploaded.");
+    } finally {
+      if (input.current) input.current.value = "";
+      if (camera.current) camera.current.value = "";
+    }
+    if (!ids.length) {
+      setUploading(false);
+      setStatus("");
+      return;
+    }
+    const withFiles: Assessment = {
+      ...a,
+      uploadIds: [...new Set([...a.uploadIds, ...ids])],
+      studentUploadIds: {
+        ...a.studentUploadIds,
+        [selected]: [...new Set([...(a.studentUploadIds?.[selected] || []), ...ids])],
+      },
+    };
+    if (aiReady) {
+      setStatus("Reading the student’s answers against your key…");
+      try {
+        const r = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "responses",
+              text: "",
+              uploadIds: ids,
+              grade: a.grade,
+              subject: a.subject,
+              framework: a.framework,
+              assessmentId: a.id,
+              studentId: selected,
+            }),
+          }),
+          d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        await onSave(
+          {
+            ...withFiles,
+            responses: [
+              ...a.responses.filter((r) => r.studentId !== selected),
+              ...(d.result.responses as StudentResponse[]),
+            ],
+          },
+          "Student work is ready to review",
+        );
+        setFilter("flagged");
+        setLimit(12);
+      } catch (e) {
+        await onSave(withFiles, "Pages saved");
+        setNotice(
+          (e instanceof Error ? e.message : "The pages couldn’t be read.") +
+            " The pages are saved. Enter the answers below.",
+        );
+      }
+    } else {
+      const parsed = parseAnswerKey(pdfText, activeQuestions(a));
+      const captured = Object.entries(parsed).map(([questionId, answer]) => ({
+        id: crypto.randomUUID(),
+        questionId,
+        studentId: selected,
+        answer,
+        correct: false,
+        match: 0,
+        confidence: 100,
+        verified: false,
+        misconception: "Compare this answer with the teacher key before confirming.",
+      }));
+      await onSave(
+        captured.length
+          ? {
+              ...withFiles,
+              responses: [
+                ...a.responses.filter(
+                  (r) => r.studentId !== selected || parsed[r.questionId] === undefined,
+                ),
+                ...captured,
+              ],
+            }
+          : withFiles,
+        captured.length
+          ? captured.length + " answers read from the PDF"
+          : "Pages saved",
+      );
+      setNotice(
+        captured.length
+          ? "Answers were read from the typed PDF. Check each one against your key before confirming."
+          : "Pages are saved. Automatic reading of photographs needs an AI connection, so enter each answer with Enter answer below.",
+      );
+    }
+    setUploading(false);
+    setStatus("");
+  }
+
   if (!students.length)
     return (
       <EmptyState
@@ -227,6 +268,7 @@ export function StudentResponseReview({
               setSelected(value);
               setFilter("flagged");
               setLimit(12);
+              setNotice("");
             }}
             options={students.map((s) => ({
               value: s.id,
@@ -245,7 +287,7 @@ export function StudentResponseReview({
             onClick={() =>
               student &&
               printContent(
-                student.name + " · Assignment report",
+                student.name + " · Assessment report",
                 studentReport(a, student),
               )
             }
@@ -253,27 +295,13 @@ export function StudentResponseReview({
             <Printer size={16} />
             Student report
           </Action>
-          <Action
-            onClick={() =>
-              go(
-                "/scan?mode=responses&assessment=" +
-                  a.id +
-                  "&student=" +
-                  selected,
-              )
-            }
-            disabled={!prep.ready}
-          >
-            <Plus size={16} />
-            Scan student work
-          </Action>
         </div>
       </div>
       {!prep.ready && (
         <div className="review-notice">
           <FileText size={19} />
           <p>
-            Confirm the assignment’s standards and answer key before grading.
+            Confirm the assessment’s standards and answer key before grading.
           </p>
           <button
             className="text-link"
@@ -283,6 +311,70 @@ export function StudentResponseReview({
             <ArrowRight size={16} />
           </button>
         </div>
+      )}
+      {student && (
+        <div className="student-upload-panel">
+          <div>
+            <h3>Add {student.name}’s pages</h3>
+            <p>
+              Upload a PDF or photograph this student’s completed work. Keep
+              one student’s pages together.{" "}
+              {aiReady
+                ? "Each answer is compared with your confirmed key automatically."
+                : "Typed PDFs are read automatically; photographs need manual entry until AI is connected."}
+            </p>
+          </div>
+          <div>
+            <Action
+              disabled={uploading || busy || !prep.ready}
+              onClick={() => input.current?.click()}
+            >
+              {uploading ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Upload size={16} />
+              )}
+              Upload pages
+            </Action>
+            <Action
+              variant="secondary"
+              disabled={uploading || busy || !prep.ready}
+              onClick={() => camera.current?.click()}
+            >
+              <Camera size={16} />
+              Take a photo
+            </Action>
+            <input
+              ref={input}
+              type="file"
+              className="sr-only"
+              multiple
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              aria-label={"Upload pages for " + student.name}
+              onChange={(e) => uploadPages(e.target.files)}
+            />
+            <input
+              ref={camera}
+              type="file"
+              className="sr-only"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              aria-label={"Photograph pages for " + student.name}
+              onChange={(e) => uploadPages(e.target.files)}
+            />
+          </div>
+        </div>
+      )}
+      {status && (
+        <div className="read-document-status" role="status">
+          <LoaderCircle className="spin" size={18} />
+          <p>{status}</p>
+        </div>
+      )}
+      {notice && (
+        <p className="key-notice" role="status">
+          {notice}
+        </p>
       )}
       {student && (
         <div className="student-review-summary">
@@ -302,7 +394,7 @@ export function StudentResponseReview({
             </strong>
             <span>
               {summary.complete
-                ? "Confirmed assignment score"
+                ? "Confirmed assessment score"
                 : "Provisional · reviewed answers only"}
             </span>
           </div>
@@ -472,9 +564,9 @@ export function StudentResponseReview({
             title={
               summary.responses.length
                 ? "Answers not yet added"
-                : "Add this student’s work"
+                : "No answers recorded yet"
             }
-            description="Scan their pages, or enter an answer manually."
+            description="Upload or photograph the pages above, or enter an answer manually."
           />
           {summary.missing.slice(0, 12).map((q) => (
             <div key={q.id}>
@@ -509,7 +601,7 @@ export function StudentResponseReview({
       {summary.reviewed.length > 0 && (
         <section className="panel student-standards-report">
           <SectionTitle
-            title="What this assignment tells you"
+            title="What this assessment tells you"
             description="These results describe this student’s confirmed answers, not long-term mastery."
           />
           {[
@@ -557,14 +649,14 @@ export function StudentResponseReview({
                     ? "Review in progress"
                     : correct < rs.length
                       ? "Reteach opportunity"
-                      : "Understood on this assignment"}
+                      : "Understood on this assessment"}
                 </Pill>
                 {support.includes(code) && (
                   <button
                     className="text-link"
                     onClick={() =>
                       go(
-                        "/reteach?standard=" +
+                        "/lessons?standard=" +
                           encodeURIComponent(code) +
                           "&student=" +
                           selected +
@@ -574,7 +666,7 @@ export function StudentResponseReview({
                     }
                   >
                     <BookOpen size={16} />
-                    Choose an approach
+                    Plan a reteach lesson
                     <ArrowRight size={16} />
                   </button>
                 )}

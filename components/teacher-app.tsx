@@ -6,8 +6,6 @@ import {
   House,
   ScanLine,
   Files,
-  ClipboardCheck,
-  Lightbulb,
   Users,
   Library,
   Settings,
@@ -38,7 +36,7 @@ import type { Workspace } from "@/lib/teacher-types";
 import { TeacherContext } from "./teacher-context";
 import { Pick, Action, Modal, Pill } from "./teacher-shared";
 import HomeView from "./teacher-home";
-import { ReviewWorkView } from "./teacher-review";
+import GuideView from "./teacher-guide";
 import { AssessmentView } from "./teacher-assessments";
 import { ScanView } from "./teacher-scan";
 import {
@@ -49,12 +47,14 @@ import {
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 const nav = [
   { id: "home", label: "Overview", icon: House },
-  { id: "assessments", label: "Assignments", icon: Files },
-  { id: "review", label: "Student work", icon: ClipboardCheck },
-  { id: "reteach", label: "Reteach", icon: BookOpen },
+  { id: "assessments", label: "Assessments", icon: Files },
+  { id: "lessons", label: "Lesson plans", icon: BookOpen },
   { id: "students", label: "Students", icon: Users },
 ];
-const libraryNav = [{ id: "standards", label: "Standards", icon: Library }];
+const libraryNav = [
+  { id: "standards", label: "Standards", icon: Library },
+  { id: "guide", label: "How to use", icon: HelpCircle },
+];
 type WorkspaceSnapshot = {
   workspace: Workspace;
   revision: number;
@@ -81,7 +81,6 @@ export default function TeacherApp({ view }: { view: string }) {
   );
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [help, setHelp] = useState(false);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
   const router = useRouter();
@@ -186,8 +185,10 @@ export default function TeacherApp({ view }: { view: string }) {
     [
       ...nav,
       ...libraryNav,
-      { id: "scan", label: "Scan assignment" },
-      { id: "settings", label: "Classroom settings" },
+      { id: "scan", label: "New assessment" },
+      { id: "settings", label: "Settings" },
+      { id: "resources", label: "Teaching resources" },
+      { id: "diagnostics", label: "Class insights" },
     ].find((n) => n.id === view)?.label || "Overview";
   async function createClass() {
     if (!w || !name.trim()) return;
@@ -244,7 +245,7 @@ export default function TeacherApp({ view }: { view: string }) {
           <SidebarContent className="side-content">
             <button className="new-scan" onClick={() => router.push("/scan")}>
               <ScanLine size={18} />
-              New assignment
+              New assessment
               <Plus size={16} />
             </button>
             <div className="nav-label">YOUR WORKSPACE</div>
@@ -284,10 +285,10 @@ export default function TeacherApp({ view }: { view: string }) {
             </SidebarMenu>
           </SidebarContent>
           <SidebarFooter className="side-footer">
-            <button className="footer-link" onClick={() => setHelp(true)}>
+            <Link href="/guide" className="footer-link">
               <HelpCircle size={18} />
               How it works
-            </button>
+            </Link>
             <Link href="/settings" className="footer-link">
               <Settings size={18} />
               Settings
@@ -334,13 +335,16 @@ export default function TeacherApp({ view }: { view: string }) {
                 </span>
               )}
               <div className="class-switch">
+                <span className="switch-label-text">Classroom</span>
                 <Pick
-                  label="Choose classroom"
+                  label="Switch classroom"
                   value={classroom.id}
                   onChange={(v) =>
                     v === "new"
                       ? setCreateOpen(true)
-                      : save({ ...w, activeClassId: v })
+                      : v === "manage"
+                        ? router.push("/settings")
+                        : save({ ...w, activeClassId: v })
                   }
                   options={[
                     ...w.classes.map((c) => ({
@@ -348,6 +352,7 @@ export default function TeacherApp({ view }: { view: string }) {
                       label: c.name + " · Grade " + c.grade,
                     })),
                     { value: "new", label: "+ New classroom" },
+                    { value: "manage", label: "Manage classrooms…" },
                   ]}
                 />
               </div>
@@ -378,8 +383,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <HomeView />
               ) : view === "assessments" ? (
                 <AssessmentView />
-              ) : view === "review" ? (
-                <ReviewWorkView />
+              ) : view === "guide" ? (
+                <GuideView />
               ) : view === "scan" ? (
                 <ScanView />
               ) : view === "standards" ? (
@@ -388,7 +393,7 @@ export default function TeacherApp({ view }: { view: string }) {
                 <DiagnosticsView />
               ) : view === "students" ? (
                 <StudentsView />
-              ) : view === "reteach" ? (
+              ) : view === "lessons" ? (
                 <ReteachView />
               ) : view === "resources" ? (
                 <ResourcesView />
@@ -403,8 +408,8 @@ export default function TeacherApp({ view }: { view: string }) {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create your classroom"
-        description="Add your students and choose your first assignment."
+        title="Create a classroom"
+        description="One classroom per period or group. Each keeps its own students, assessments, and lesson plans."
       >
         <form
           onSubmit={(e) => {
@@ -420,7 +425,7 @@ export default function TeacherApp({ view }: { view: string }) {
               maxLength={70}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Room 12 · Morning class"
+              placeholder="e.g. Period 3 · Math"
             />
           </label>
           <label>
@@ -444,33 +449,6 @@ export default function TeacherApp({ view }: { view: string }) {
             <ArrowRight size={16} />
           </Action>
         </form>
-      </Modal>
-      <Modal
-        open={help}
-        onClose={() => setHelp(false)}
-        title="From assignment to reteaching"
-        description="Follow one assignment from standards to student support."
-      >
-        <div className="help-steps">
-          {[
-            "Choose the grade, subject, and standards you want to assess.",
-            "Upload the assignment, check its alignment, and confirm the answer key.",
-            "Photograph one student’s work. Review flagged answers and approve the clear ones together.",
-            "Choose a visual, hands-on, or auditory approach for the skill that needs support.",
-          ].map((x, i) => (
-            <div key={x}>
-              <span>{i + 1}</span>
-              <p>{x}</p>
-            </div>
-          ))}
-        </div>
-        <div className="insight">
-          <ShieldCheck />
-          <p>
-            Start with student aliases. You control corrections, exports, and
-            deletion in your private workspace.
-          </p>
-        </div>
       </Modal>
     </TeacherContext.Provider>
   );

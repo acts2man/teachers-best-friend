@@ -4,13 +4,13 @@ A private teaching workspace that connects assignment alignment, an accurate ans
 
 ## The current workflow
 
-1. Choose the grade, Math or ELA, and intended standards. Upload the blank assignment or paste its questions.
+1. Choose the grade, Math or ELA, and intended standards. Upload the blank assessment or paste its questions. Questions are read into the assessment automatically.
 2. Review each question's alignment, DOK, and Costa's level. Use the improvement guidance and upload a revised assignment when needed.
-3. Upload or enter the teacher's answer key and confirm it.
-4. Scan one student's work. Review answer-match percentages and flagged answers, confirm clear answers together, and print an individual standards report.
-5. Choose an assessment and missed problem in Reteach, or carry an individual/shared skill gap into a visual, hands-on, or auditory plan.
+3. Upload or photograph the teacher's answer key on the second tab; the answers fill in automatically. Confirm the key.
+4. Upload or photograph one student's work on the third tab. Review answer-match percentages and flagged answers, confirm clear answers together, and print an individual standards report.
+5. In Lesson plans, choose a missed problem or skill gap, pick a visual, hands-on, or auditory approach, generate an AI lesson plan for that approach, edit it, and save it to Saved lesson plans.
 
-The home screen highlights the next useful action. Primary navigation is Overview, Assignments, Student work, Reteach, and Students, with a separate standards toolkit. An original book logo, quieter cards, responsive layouts, contextual hover states, and reduced-motion support keep the workspace approachable.
+The home screen highlights the next useful action. Primary navigation is Overview, Assessments, Lesson plans, and Students, with a toolkit holding Standards and a step-by-step How to use guide. Student work lives inside each assessment. An original book logo, quieter cards, responsive layouts, contextual hover states, and reduced-motion support keep the workspace approachable.
 
 See [current product alignment](docs/current-version-alignment.md) for the source-to-feature mapping and later ideas excluded from the main experience.
 
@@ -23,7 +23,9 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 - Uncertain, missing, and incorrect answer flags; teacher decisions replace stale evidence instead of duplicating it.
 - Individual, provisional or confirmed assignment reports, observed misconceptions, and contextual reteaching.
 - High/Mid/Low student bands and flexible groups based on shared standard gaps, with whole-class suggestions when at least half the class shares a gap.
-- Seven prepared reteach lessons with visual, hands-on, and auditory approaches, printable practice and exit tickets, saved teaching dates, and follow-up recording.
+- Seven prepared reteach lessons plus AI-generated lesson plans for any standard, all editable in place, with printable practice and exit tickets, saved teaching dates, and follow-up recording.
+- Multiple classrooms (one per period or group) with an always-visible switcher and a Classrooms manager in Settings.
+- Client-side text extraction for typed PDFs, so questions and answer keys populate even without the AI service.
 - Teacher resources, curriculum uploads, and page references.
 - Official California Grade 4 Math and ELA wording and source links, seven Common Core starter standards, and custom standards for other grades/frameworks.
 - A clearly labeled fictional 24-student sample, separate empty classrooms, roster entry, and individual learning histories.

@@ -20,6 +20,7 @@ import { useTeacher } from "./teacher-context";
 import { Action, EmptyState, PageTitle, Pick, Pill } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
+import { extractPdfText } from "@/lib/pdf-text";
 import {
   activeQuestions,
   parseAnswerKey,
@@ -48,6 +49,7 @@ export function ScanView() {
   const [uploading, setUploading] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [error, setError] = useState(""),
+    [readNotice, setReadNotice] = useState(""),
     [drag, setDrag] = useState(false);
   const [assessmentId, setAssessmentId] = useState(
       params.get("assessment") || "",
@@ -129,6 +131,21 @@ export function ScanView() {
         setFiles((previous) => [...previous, d]);
         if (!title && mode === "assignment")
           setTitle(f.name.replace(/\.[^.]+$/, ""));
+        // Without an AI connection, a typed PDF can still fill the questions
+        // or answers automatically.
+        if (!aiReady && f.type === "application/pdf") {
+          const extracted = await extractPdfText(await f.arrayBuffer());
+          if (extracted) {
+            setText((previous) =>
+              (previous.trim() ? previous.trimEnd() + "\n\n" : "") + extracted,
+            );
+            setReadNotice(
+              mode === "responses"
+                ? "Answers were read from the PDF. Save to review them against your key."
+                : "Questions were read from the PDF. Save the assessment to review them.",
+            );
+          }
+        }
       }
     } catch (e) {
       setError(
@@ -148,7 +165,7 @@ export function ScanView() {
     return {
       id: editing?.id || crypto.randomUUID(),
       classId: classroom.id,
-      title: title.trim() || suggestedTitle || "Untitled assignment",
+      title: title.trim() || suggestedTitle || "Untitled assessment",
       subject,
       grade: Number(grade),
       framework,
@@ -183,7 +200,7 @@ export function ScanView() {
             : [a, ...w.assessments],
           students: editing ? reconcileEvidence(w.students, a) : w.students,
         },
-        editing ? "Revised assignment saved for review" : "Assignment saved",
+        editing ? "Revised assessment saved for review" : "Assessment saved",
       )
     )
       go("/assessments?id=" + a.id);
@@ -282,8 +299,8 @@ export function ScanView() {
               students: editing ? reconcileEvidence(w.students, a) : w.students,
             },
             editing
-              ? "Revised assignment ready for review"
-              : "Assignment ready for review",
+              ? "Revised assessment ready for review"
+              : "Assessment ready for review",
           )
         )
           go("/assessments?id=" + a.id);
@@ -327,10 +344,16 @@ export function ScanView() {
     <>
       <button
         className="back-link"
-        onClick={() => go(mode === "responses" ? "/review" : "/assessments")}
+        onClick={() =>
+          go(
+            mode === "responses" && chosen
+              ? "/assessments?id=" + chosen.id + "&tab=responses"
+              : "/assessments",
+          )
+        }
       >
         <ArrowLeft size={16} />
-        {mode === "responses" ? "Student work" : "All assignments"}
+        {mode === "responses" ? "Back to student work" : "All assessments"}
       </button>
       <PageTitle
         eyebrow=""
@@ -338,20 +361,20 @@ export function ScanView() {
           mode === "responses"
             ? "Scan student work"
             : editing
-              ? "Upload a revised assignment"
-              : "New assignment"
+              ? "Upload a revised assessment"
+              : "New assessment"
         }
         description={
           mode === "responses"
             ? "Add one student’s pages. We’ll compare their answers with your confirmed key."
             : editing
               ? "Keep the same intended standards, then check how the revised questions align."
-              : "Start with the standards you want the assignment to measure."
+              : "Start with the standards you want the assessment to measure."
         }
       />
       <div className="focused-scan">
         {mode === "assignment" && (
-          <div className="scan-progress" aria-label="Assignment setup">
+          <div className="scan-progress" aria-label="Assessment setup">
             <button
               onClick={() => setPhase(1)}
               aria-current={phase === 1 ? "step" : undefined}
@@ -364,7 +387,7 @@ export function ScanView() {
               disabled={!selected.length}
               aria-current={phase === 2 ? "step" : undefined}
             >
-              <span>2</span>Upload assignment
+              <span>2</span>Upload assessment
             </button>
           </div>
         )}
@@ -372,13 +395,13 @@ export function ScanView() {
           <section className="panel setup-panel">
             <div className="scan-scope-layout">
               <div className="scope-controls">
-                <h2>Assignment details</h2>
+                <h2>Assessment details</h2>
                 <p>Choose the grade and subject first.</p>
                 <div className="form-grid">
                   <label>
                     Grade
                     <Pick
-                      label="Assignment grade"
+                      label="Assessment grade"
                       value={grade}
                       onChange={(v) => scopeChange("grade", v)}
                       options={Array.from({ length: 13 }, (_, i) => ({
@@ -390,7 +413,7 @@ export function ScanView() {
                   <label>
                     Subject
                     <Pick
-                      label="Assignment subject"
+                      label="Assessment subject"
                       value={subject}
                       onChange={(v) => scopeChange("subject", v)}
                       options={["Math", "ELA"]}
@@ -416,7 +439,7 @@ export function ScanView() {
               <div className="standards-menu">
                 <div className="target-picker-heading">
                   <div>
-                    <h2>What should this assignment assess?</h2>
+                    <h2>What should this assessment measure?</h2>
                     <p>Select the standards you’re teaching.</p>
                   </div>
                   <Pill tone={selected.length ? "green" : "neutral"}>
@@ -515,9 +538,9 @@ export function ScanView() {
               <section className="panel setup-panel scan-student-context">
                 <div className="form-grid">
                   <label>
-                    Assignment
+                    Assessment
                     <Pick
-                      label="Assignment to grade"
+                      label="Assessment to grade"
                       value={assessmentId}
                       onChange={setAssessmentId}
                       options={assessments.map((a) => ({
@@ -549,7 +572,7 @@ export function ScanView() {
                 {!prepared && (
                   <div className="review-notice">
                     <p>
-                      Confirm this assignment’s standards and answer key before
+                      Confirm this assessment’s standards and answer key before
                       scanning student work.
                     </p>
                     <button
@@ -558,7 +581,7 @@ export function ScanView() {
                         go(chosen ? "/assessments?id=" + chosen.id : "/scan")
                       }
                     >
-                      Review assignment
+                      Review assessment
                       <ArrowRight size={16} />
                     </button>
                   </div>
@@ -587,7 +610,7 @@ export function ScanView() {
             <section className="panel setup-panel upload-work-panel">
               {mode === "assignment" && (
                 <label className="block-label assignment-title-input">
-                  Assignment name
+                  Assessment name
                   <input
                     value={title}
                     maxLength={150}
@@ -627,7 +650,7 @@ export function ScanView() {
                         ? "Uploading…"
                         : mode === "responses"
                           ? "Add this student’s pages"
-                          : "Add the blank assignment"}
+                          : "Add the blank assessment"}
                     </h2>
                     <p>
                       {mode === "responses"
@@ -737,17 +760,24 @@ export function ScanView() {
               )}
               {mode === "assignment" && (
                 <p className="field-help key-step-note">
-                  Next, you’ll review the questions and add or confirm your
-                  answer key.
+                  Next, the questions are read into the assessment for your
+                  review. Then you’ll add or confirm your answer key.
                 </p>
               )}
             </section>
-            {!aiReady && (
+            {readNotice && (
+              <div className="review-notice" role="status">
+                <FileText size={19} />
+                <p>{readNotice}</p>
+              </div>
+            )}
+            {!aiReady && !readNotice && (
               <div className="review-notice">
                 <FileText size={19} />
                 <p>
-                  Automatic reading needs an AI connection. You can save the
-                  upload and enter questions and answers manually.
+                  Typed PDFs are read automatically. Reading photographs needs
+                  an AI connection; you can save the upload and enter questions
+                  and answers manually.
                 </p>
               </div>
             )}
@@ -762,7 +792,7 @@ export function ScanView() {
                     disabled={busy || uploading || analyzing || !contentReady}
                     onClick={saveManual}
                   >
-                    {aiReady ? "Review manually" : "Save assignment"}
+                    {aiReady ? "Save without reading" : "Save assessment"}
                     <ArrowRight size={17} />
                   </Action>
                 )}
@@ -786,7 +816,7 @@ export function ScanView() {
                       ? "Reading the work…"
                       : mode === "responses"
                         ? "Check student work"
-                        : "Check assignment alignment"}
+                        : "Read the assessment"}
                   </Action>
                 )}
                 {!aiReady && mode === "responses" && (
