@@ -1,52 +1,684 @@
-import type {Workspace,Standard,Student,Assessment,Question,Priority,Evidence} from "./teacher-types";
-export const standards:Standard[]=[
-{code:"4.OA.A.3",title:"Multi-step word problems",subject:"Math",grade:4,domain:"Operations & Algebraic Thinking",cluster:"Use the four operations",summary:"Solve multi-step whole-number problems, interpret remainders, represent unknowns with equations, and check whether answers are reasonable.",skills:["Identify relevant information","Choose an operation","Sequence multiple steps","Interpret a remainder","Estimate and check"],prerequisites:["3.OA.D.8","4.NBT.B.5"],next:["5.OA.A.2"],vocabulary:["remainder","equation","estimate","unknown"],misconception:"Students can calculate but may choose an operation before identifying what the question asks.",example:"There are 6 boxes of 24 pencils. After 38 pencils are used, how many remain? Explain each step.",dok:2,source:"https://www.thecorestandards.org/Math/Content/4/OA/A/3/",framework:"Common Core"},
-{code:"4.NBT.B.5",title:"Multi-digit multiplication",subject:"Math",grade:4,domain:"Number & Operations in Base Ten",cluster:"Perform multi-digit arithmetic",summary:"Multiply up to four digits by one digit, and two digits by two digits. Use place value and operation properties, then illustrate and explain the calculation.",skills:["Decompose numbers","Use partial products","Apply the distributive property","Regroup accurately","Explain with an area model"],prerequisites:["3.NBT.A.3","3.OA.A.1"],next:["5.NBT.B.5"],vocabulary:["factor","product","partial product","distributive property"],misconception:"A correct fact may be combined with an incorrect regrouped ten. Inspect written work before deciding the cause.",example:"Solve 23 × 4 with an area model. Explain why 80 + 12 = 92.",dok:2,source:"https://www.thecorestandards.org/Math/Content/4/NBT/B/5/",framework:"Common Core"},
-{code:"4.NBT.A.2",title:"Place value & comparison",subject:"Math",grade:4,domain:"Number & Operations in Base Ten",cluster:"Generalize place-value understanding",summary:"Read and write whole numbers in standard, word, and expanded forms. Compare numbers using the value of their digits.",skills:["Identify digit values","Use expanded form","Compare corresponding places","Use comparison symbols"],prerequisites:["3.NBT.A.1"],next:["5.NBT.A.3"],vocabulary:["place value","expanded form","greater than","less than"],misconception:"Comparing isolated digits rather than their place values.",example:"Compare 42,306 and 42,360. Explain which place determines the answer.",dok:2,source:"https://www.thecorestandards.org/Math/Content/4/NBT/A/2/",framework:"Common Core"},
-{code:"4.NBT.B.4",title:"Whole-number addition",subject:"Math",grade:4,domain:"Number & Operations in Base Ten",cluster:"Perform multi-digit arithmetic",summary:"Add and subtract multi-digit whole numbers fluently with the standard algorithm.",skills:["Align place values","Regroup tens","Regroup across zeros","Check with inverse operations"],prerequisites:["3.NBT.A.2"],next:["5.NBT.B.7"],vocabulary:["sum","difference","regroup","inverse"],misconception:"Subtracting the smaller digit from the larger regardless of its position.",example:"Find 4,026 − 1,758. Check your answer using addition.",dok:1,source:"https://www.thecorestandards.org/Math/Content/4/NBT/B/4/",framework:"Common Core"},
-{code:"RI.4.2",title:"Main idea & supporting details",subject:"ELA",grade:4,domain:"Reading: Informational Text",cluster:"Key ideas and details",summary:"Identify the main idea, explain how key details support it, and summarize an informational text.",skills:["Identify the topic","Distinguish an idea from a detail","Connect evidence across paragraphs","Write a concise summary"],prerequisites:["RI.3.2"],next:["RI.5.2"],vocabulary:["main idea","supporting detail","summary","topic"],misconception:"Selecting a memorable fact that does not explain the whole passage.",example:"Which idea connects every paragraph? Identify two details that support it.",dok:2,source:"https://www.thecorestandards.org/ELA-Literacy/RI/4/2/",framework:"Common Core"},
-{code:"RL.4.1",title:"Inference & textual evidence",subject:"ELA",grade:4,domain:"Reading: Literature",cluster:"Key ideas and details",summary:"Use details and examples when explaining what a literary text states and when drawing inferences.",skills:["Find explicit details","Infer from character actions","Connect clues","Cite relevant evidence"],prerequisites:["RL.3.1"],next:["RL.5.1"],vocabulary:["inference","evidence","detail","conclusion"],misconception:"An inference may be plausible but unsupported by the passage.",example:"Why does the character return? Use a specific action or detail as evidence.",dok:2,source:"https://www.thecorestandards.org/ELA-Literacy/RL/4/1/",framework:"Common Core"},
-{code:"RI.4.4",title:"Vocabulary in context",subject:"ELA",grade:4,domain:"Reading: Informational Text",cluster:"Craft and structure",summary:"Determine the meanings of academic and subject-specific words in a grade 4 informational text.",skills:["Locate context clues","Try a substitute meaning","Use word parts","Check meaning in the paragraph"],prerequisites:["RI.3.4"],next:["RI.5.4"],vocabulary:["context","prefix","suffix","root"],misconception:"Using a familiar definition that does not fit the context.",example:"What does conserve mean in a passage about saving water? Which phrase helps?",dok:2,source:"https://www.thecorestandards.org/ELA-Literacy/RI/4/4/",framework:"Common Core"}
+import type {
+  Workspace,
+  Standard,
+  Student,
+  Assessment,
+  Question,
+  Priority,
+  Evidence,
+} from "./teacher-types";
+export const standards: Standard[] = [
+  {
+    code: "4.OA.A.3",
+    title: "Multi-step word problems",
+    subject: "Math",
+    grade: 4,
+    domain: "Operations & Algebraic Thinking",
+    cluster: "Use the four operations",
+    summary:
+      "Solve multi-step whole-number problems, interpret remainders, represent unknowns with equations, and check whether answers are reasonable.",
+    skills: [
+      "Identify relevant information",
+      "Choose an operation",
+      "Sequence multiple steps",
+      "Interpret a remainder",
+      "Estimate and check",
+    ],
+    prerequisites: ["3.OA.D.8", "4.NBT.B.5"],
+    next: ["5.OA.A.2"],
+    vocabulary: ["remainder", "equation", "estimate", "unknown"],
+    misconception:
+      "Students can calculate but may choose an operation before identifying what the question asks.",
+    example:
+      "There are 6 boxes of 24 pencils. After 38 pencils are used, how many remain? Explain each step.",
+    dok: 2,
+    source: "https://www.thecorestandards.org/Math/Content/4/OA/A/3/",
+    framework: "Common Core",
+  },
+  {
+    code: "4.NBT.B.5",
+    title: "Multi-digit multiplication",
+    subject: "Math",
+    grade: 4,
+    domain: "Number & Operations in Base Ten",
+    cluster: "Perform multi-digit arithmetic",
+    summary:
+      "Multiply up to four digits by one digit, and two digits by two digits. Use place value and operation properties, then illustrate and explain the calculation.",
+    skills: [
+      "Decompose numbers",
+      "Use partial products",
+      "Apply the distributive property",
+      "Regroup accurately",
+      "Explain with an area model",
+    ],
+    prerequisites: ["3.NBT.A.3", "3.OA.A.1"],
+    next: ["5.NBT.B.5"],
+    vocabulary: [
+      "factor",
+      "product",
+      "partial product",
+      "distributive property",
+    ],
+    misconception:
+      "A correct fact may be combined with an incorrect regrouped ten. Inspect written work before deciding the cause.",
+    example: "Solve 23 × 4 with an area model. Explain why 80 + 12 = 92.",
+    dok: 2,
+    source: "https://www.thecorestandards.org/Math/Content/4/NBT/B/5/",
+    framework: "Common Core",
+  },
+  {
+    code: "4.NBT.A.2",
+    title: "Place value & comparison",
+    subject: "Math",
+    grade: 4,
+    domain: "Number & Operations in Base Ten",
+    cluster: "Generalize place-value understanding",
+    summary:
+      "Read and write whole numbers in standard, word, and expanded forms. Compare numbers using the value of their digits.",
+    skills: [
+      "Identify digit values",
+      "Use expanded form",
+      "Compare corresponding places",
+      "Use comparison symbols",
+    ],
+    prerequisites: ["3.NBT.A.1"],
+    next: ["5.NBT.A.3"],
+    vocabulary: ["place value", "expanded form", "greater than", "less than"],
+    misconception: "Comparing isolated digits rather than their place values.",
+    example:
+      "Compare 42,306 and 42,360. Explain which place determines the answer.",
+    dok: 2,
+    source: "https://www.thecorestandards.org/Math/Content/4/NBT/A/2/",
+    framework: "Common Core",
+  },
+  {
+    code: "4.NBT.B.4",
+    title: "Whole-number addition",
+    subject: "Math",
+    grade: 4,
+    domain: "Number & Operations in Base Ten",
+    cluster: "Perform multi-digit arithmetic",
+    summary:
+      "Add and subtract multi-digit whole numbers fluently with the standard algorithm.",
+    skills: [
+      "Align place values",
+      "Regroup tens",
+      "Regroup across zeros",
+      "Check with inverse operations",
+    ],
+    prerequisites: ["3.NBT.A.2"],
+    next: ["5.NBT.B.7"],
+    vocabulary: ["sum", "difference", "regroup", "inverse"],
+    misconception:
+      "Subtracting the smaller digit from the larger regardless of its position.",
+    example: "Find 4,026 − 1,758. Check your answer using addition.",
+    dok: 1,
+    source: "https://www.thecorestandards.org/Math/Content/4/NBT/B/4/",
+    framework: "Common Core",
+  },
+  {
+    code: "RI.4.2",
+    title: "Main idea & supporting details",
+    subject: "ELA",
+    grade: 4,
+    domain: "Reading: Informational Text",
+    cluster: "Key ideas and details",
+    summary:
+      "Identify the main idea, explain how key details support it, and summarize an informational text.",
+    skills: [
+      "Identify the topic",
+      "Distinguish an idea from a detail",
+      "Connect evidence across paragraphs",
+      "Write a concise summary",
+    ],
+    prerequisites: ["RI.3.2"],
+    next: ["RI.5.2"],
+    vocabulary: ["main idea", "supporting detail", "summary", "topic"],
+    misconception:
+      "Selecting a memorable fact that does not explain the whole passage.",
+    example:
+      "Which idea connects every paragraph? Identify two details that support it.",
+    dok: 2,
+    source: "https://www.thecorestandards.org/ELA-Literacy/RI/4/2/",
+    framework: "Common Core",
+  },
+  {
+    code: "RL.4.1",
+    title: "Inference & textual evidence",
+    subject: "ELA",
+    grade: 4,
+    domain: "Reading: Literature",
+    cluster: "Key ideas and details",
+    summary:
+      "Use details and examples when explaining what a literary text states and when drawing inferences.",
+    skills: [
+      "Find explicit details",
+      "Infer from character actions",
+      "Connect clues",
+      "Cite relevant evidence",
+    ],
+    prerequisites: ["RL.3.1"],
+    next: ["RL.5.1"],
+    vocabulary: ["inference", "evidence", "detail", "conclusion"],
+    misconception:
+      "An inference may be plausible but unsupported by the passage.",
+    example:
+      "Why does the character return? Use a specific action or detail as evidence.",
+    dok: 2,
+    source: "https://www.thecorestandards.org/ELA-Literacy/RL/4/1/",
+    framework: "Common Core",
+  },
+  {
+    code: "RI.4.4",
+    title: "Vocabulary in context",
+    subject: "ELA",
+    grade: 4,
+    domain: "Reading: Informational Text",
+    cluster: "Craft and structure",
+    summary:
+      "Determine the meanings of academic and subject-specific words in a grade 4 informational text.",
+    skills: [
+      "Locate context clues",
+      "Try a substitute meaning",
+      "Use word parts",
+      "Check meaning in the paragraph",
+    ],
+    prerequisites: ["RI.3.4"],
+    next: ["RI.5.4"],
+    vocabulary: ["context", "prefix", "suffix", "root"],
+    misconception: "Using a familiar definition that does not fit the context.",
+    example:
+      "What does conserve mean in a passage about saving water? Which phrase helps?",
+    dok: 2,
+    source: "https://www.thecorestandards.org/ELA-Literacy/RI/4/4/",
+    framework: "Common Core",
+  },
 ];
-export const classroomColors=["#e2e8fc","#ffead7","#d9efe8","#f1e0f5","#ffe1e5","#dfeef8"];
-const names=["Amelia R.","Benjamin L.","Chloe M.","Daniel K.","Ella S.","Ethan W.","Grace T.","Henry C.","Isabella P.","Jack A.","Liam B.","Lucas D.","Mason F.","Mia H.","Noah J.","Olivia N.","Owen Q.","Sarah V.","Sofia G.","Theo E.","Violet U.","William O.","Zoe I.","Aiden Z."];
-const q=(number:number,text:string,standard:string,skill:string,answer:string,extra:Partial<Question>={}):Question=>({id:"q"+number,number,text,standard,skill,answer,secondary:"",passage:"",dok:2,alignment:96,confidence:94,level:"On grade",reasoning:"The task elicits the component skill described by the standard.",verified:number<5,excluded:false,...extra});
-const mathQuestions=[
-q(1,"Solve 34 × 7. Show your partial products.","4.NBT.B.5","Partial products","238",{alignment:98}),
-q(2,"Compare 42,306 and 42,360 using <, >, or =. Explain your reasoning.","4.NBT.A.2","Compare place values","42,306 < 42,360",{alignment:97}),
-q(3,"Find 8 + 7.","4.NBT.B.4","Addition facts","15",{dok:1,alignment:28,level:"Below grade",reasoning:"This is a single-digit fact, not the multi-digit fluency required by 4.NBT.B.4. It more closely matches 2.OA.B.2."}),
-q(4,"A class has 6 boxes of 24 pencils. Students use 38 pencils. How many pencils remain? Show both steps.","4.OA.A.3","Select and sequence operations","106",{alignment:99,secondary:"4.NBT.B.5",reasoning:"Requires multiplication followed by subtraction and interpretation of both quantities."}),
-q(5,"There are 157 students going on a field trip. Each van holds 8 students. How many vans are needed? Explain your answer.","4.OA.A.3","Interpret a remainder","20 vans",{alignment:98,reasoning:"Division produces a remainder. The context requires one additional van, not simply rounding down."}),
-q(6,"Solve 47 × 5 using an area model. Explain why your model works.","4.NBT.B.5","Model and explain multiplication","235",{alignment:99}),
-q(7,"Calculate 4,026 − 1,758. Check using addition.","4.NBT.B.4","Regroup across zeros","2268",{alignment:95,dok:1}),
-q(8,"A shop sells 4 packs of stickers with 18 stickers in each pack. Then 25 stickers are donated. How many are left?","4.OA.A.3","Multi-step reasoning","47",{alignment:98})
+export const classroomColors = [
+  "#e2e8fc",
+  "#ffead7",
+  "#d9efe8",
+  "#f1e0f5",
+  "#ffe1e5",
+  "#dfeef8",
 ];
-export const gardenPassage="Our school garden does more than grow vegetables. Students measure plant growth every week and record their observations. In science, they investigate how roots take in water. In math, they use the garden beds to explore area. Families share recipes using the vegetables at harvest time. The garden has become a place where learning and community grow together.";
-const elaQuestions=[
-q(1,"What is the main idea of the passage?","RI.4.2","Main idea","The school garden supports learning and brings people together.",{passage:gardenPassage}),
-q(2,"Which two details best support the main idea? Explain the connection.","RI.4.2","Connect supporting details","Students use garden beds to learn area, and families share recipes.",{passage:gardenPassage,dok:3}),
-q(3,"Summarize the passage in two sentences.","RI.4.2","Summarize","The garden supports science and math learning. It also brings families together at harvest time.",{passage:gardenPassage}),
-q(4,"What does observations mean in the passage? Use a context clue.","RI.4.4","Context clues","Things students notice and record, such as plant growth.",{passage:gardenPassage}),
-q(5,"Why might Maya have returned to the garden? Use evidence.","RL.4.1","Inference and evidence","She wanted to help care for the plants. She noticed dry soil and brought water.",{passage:"Maya was already halfway home when she stopped. She remembered the dry soil around the seedlings. A few minutes later, she was back at the garden carrying a full watering can."}),
-q(6,"Explain how the garden supports math learning.","RI.4.2","Supporting detail","Students use the beds to explore area.",{passage:gardenPassage,alignment:65,dok:1,reasoning:"Identifies a detail but does not independently assess main-idea identification or summarization."})
+const names = [
+  "Amelia R.",
+  "Benjamin L.",
+  "Chloe M.",
+  "Daniel K.",
+  "Ella S.",
+  "Ethan W.",
+  "Grace T.",
+  "Henry C.",
+  "Isabella P.",
+  "Jack A.",
+  "Liam B.",
+  "Lucas D.",
+  "Mason F.",
+  "Mia H.",
+  "Noah J.",
+  "Olivia N.",
+  "Owen Q.",
+  "Sarah V.",
+  "Sofia G.",
+  "Theo E.",
+  "Violet U.",
+  "William O.",
+  "Zoe I.",
+  "Aiden Z.",
 ];
-export function createDemoWorkspace():Workspace{
-const students:Student[]=names.map((name,i)=>({id:"s"+(i+1),classId:"demo",name,color:classroomColors[i%6],notes:"",evidence:standards.flatMap((s,j)=>{
- const base=j===0?(i<12?40+i%4*4:82+i%5*3):j===4?(i<9?48+i%3*5:82+i%4*4):j===1?(i<5?51+i%3*4:80+i%5*4):j===5?(i<6?55+i%3*4:83+i%4*4):j===6?(i<4?58+i%4*2:84+i%4*4):85+i%4*3;
- return [0,1,2,3].map(n=>({id:"e-"+i+"-"+j+"-"+n,standard:s.code,score:Math.min(100,Math.max(15,base-(3-n)*7+(n===2?2:0))),date:["2026-08-18","2026-08-24","2026-08-31","2026-09-04"][n],source:["Beginning-of-unit check","Guided practice","Exit ticket","Weekly check-in"][n]}));
-})}));
-const math:Assessment={id:"math-demo",classId:"demo",title:"Whole numbers, real-world thinking",subject:"Math",grade:4,framework:"Common Core",createdAt:"2026-09-04T09:00:00.000Z",status:"Needs review",questions:mathQuestions,responses:[],uploadIds:[],source:"sample",targetStandards:["4.NBT.B.5","4.NBT.A.2","4.NBT.B.4","4.OA.A.3"]};
-const ela:Assessment={id:"ela-demo",classId:"demo",title:"Reading between the lines",subject:"ELA",grade:4,framework:"Common Core",createdAt:"2026-09-03T09:00:00.000Z",status:"Ready",questions:elaQuestions.map(x=>({...x,verified:true})),responses:[],uploadIds:[],source:"sample",targetStandards:["RI.4.2","RL.4.1","RI.4.4"]};
-for(const a of [math,ela])a.responses=students.flatMap((student,i)=>a.questions.map(question=>{
- const incorrect=(a.subject==="Math"?question.standard==="4.OA.A.3"?i<12:question.standard==="4.NBT.B.5"?i<5:question.number===7?i<3:false:question.standard==="RI.4.2"?i<9:question.standard==="RL.4.1"?i<6:i<4);
- return {id:a.id+"-"+student.id+"-"+question.id,studentId:student.id,questionId:question.id,answer:incorrect?(a.subject==="ELA"?"Students measure plant growth every week.":question.number===1?"218":question.number===4?"182":question.number===5?"19 vans":question.number===6?"215":question.number===8?"97":"3272"):question.answer,correct:!incorrect,misconception:incorrect?(a.subject==="ELA"?question.standard==="RI.4.2"?"Confuses a supporting detail with the main idea":"Needs evidence connected to the answer":question.number===5?"Did not interpret the remainder":question.standard==="4.OA.A.3"?"Operation selection":"Regrouping accuracy"):"",confidence:incorrect?82:99,verified:true};
-}));
-return {classes:[{id:"demo",name:"The Explorers",grade:4,framework:"Common Core",demo:true}],activeClassId:"demo",students,assessments:[math,ela],lessons:[],groups:[],resources:[],customStandards:[],settings:{teacherName:"",school:"",reduceMotion:false}};
+const q = (
+  number: number,
+  text: string,
+  standard: string,
+  skill: string,
+  answer: string,
+  extra: Partial<Question> = {},
+): Question => ({
+  id: "q" + number,
+  number,
+  text,
+  standard,
+  skill,
+  answer,
+  secondary: "",
+  passage: "",
+  dok: 2,
+  alignment: 96,
+  confidence: 94,
+  level: "On grade",
+  reasoning: "The task elicits the component skill described by the standard.",
+  verified: number < 5,
+  excluded: false,
+  ...extra,
+});
+const mathQuestions = [
+  q(
+    1,
+    "Solve 34 × 7. Show your partial products.",
+    "4.NBT.B.5",
+    "Partial products",
+    "238",
+    { alignment: 98 },
+  ),
+  q(
+    2,
+    "Compare 42,306 and 42,360 using <, >, or =. Explain your reasoning.",
+    "4.NBT.A.2",
+    "Compare place values",
+    "42,306 < 42,360",
+    { alignment: 97 },
+  ),
+  q(3, "Find 8 + 7.", "4.NBT.B.4", "Addition facts", "15", {
+    dok: 1,
+    alignment: 28,
+    level: "Below grade",
+    reasoning:
+      "This is a single-digit fact, not the multi-digit fluency required by 4.NBT.B.4. It more closely matches 2.OA.B.2.",
+  }),
+  q(
+    4,
+    "A class has 6 boxes of 24 pencils. Students use 38 pencils. How many pencils remain? Show both steps.",
+    "4.OA.A.3",
+    "Select and sequence operations",
+    "106",
+    {
+      alignment: 99,
+      secondary: "4.NBT.B.5",
+      reasoning:
+        "Requires multiplication followed by subtraction and interpretation of both quantities.",
+    },
+  ),
+  q(
+    5,
+    "There are 157 students going on a field trip. Each van holds 8 students. How many vans are needed? Explain your answer.",
+    "4.OA.A.3",
+    "Interpret a remainder",
+    "20 vans",
+    {
+      alignment: 98,
+      reasoning:
+        "Division produces a remainder. The context requires one additional van, not simply rounding down.",
+    },
+  ),
+  q(
+    6,
+    "Solve 47 × 5 using an area model. Explain why your model works.",
+    "4.NBT.B.5",
+    "Model and explain multiplication",
+    "235",
+    { alignment: 99 },
+  ),
+  q(
+    7,
+    "Calculate 4,026 − 1,758. Check using addition.",
+    "4.NBT.B.4",
+    "Regroup across zeros",
+    "2268",
+    { alignment: 95, dok: 1 },
+  ),
+  q(
+    8,
+    "A shop sells 4 packs of stickers with 18 stickers in each pack. Then 25 stickers are donated. How many are left?",
+    "4.OA.A.3",
+    "Multi-step reasoning",
+    "47",
+    { alignment: 98 },
+  ),
+];
+export const gardenPassage =
+  "Our school garden does more than grow vegetables. Students measure plant growth every week and record their observations. In science, they investigate how roots take in water. In math, they use the garden beds to explore area. Families share recipes using the vegetables at harvest time. The garden has become a place where learning and community grow together.";
+const elaQuestions = [
+  q(
+    1,
+    "What is the main idea of the passage?",
+    "RI.4.2",
+    "Main idea",
+    "The school garden supports learning and brings people together.",
+    { passage: gardenPassage },
+  ),
+  q(
+    2,
+    "Which two details best support the main idea? Explain the connection.",
+    "RI.4.2",
+    "Connect supporting details",
+    "Students use garden beds to learn area, and families share recipes.",
+    { passage: gardenPassage, dok: 3 },
+  ),
+  q(
+    3,
+    "Summarize the passage in two sentences.",
+    "RI.4.2",
+    "Summarize",
+    "The garden supports science and math learning. It also brings families together at harvest time.",
+    { passage: gardenPassage },
+  ),
+  q(
+    4,
+    "What does observations mean in the passage? Use a context clue.",
+    "RI.4.4",
+    "Context clues",
+    "Things students notice and record, such as plant growth.",
+    { passage: gardenPassage },
+  ),
+  q(
+    5,
+    "Why might Maya have returned to the garden? Use evidence.",
+    "RL.4.1",
+    "Inference and evidence",
+    "She wanted to help care for the plants. She noticed dry soil and brought water.",
+    {
+      passage:
+        "Maya was already halfway home when she stopped. She remembered the dry soil around the seedlings. A few minutes later, she was back at the garden carrying a full watering can.",
+    },
+  ),
+  q(
+    6,
+    "Explain how the garden supports math learning.",
+    "RI.4.2",
+    "Supporting detail",
+    "Students use the beds to explore area.",
+    {
+      passage: gardenPassage,
+      alignment: 65,
+      dok: 1,
+      reasoning:
+        "Identifies a detail but does not independently assess main-idea identification or summarization.",
+    },
+  ),
+];
+export function createDemoWorkspace(): Workspace {
+  const students: Student[] = names.map((name, i) => ({
+    id: "s" + (i + 1),
+    classId: "demo",
+    name,
+    color: classroomColors[i % 6],
+    notes: "",
+    evidence: standards.flatMap((s, j) => {
+      const base =
+        j === 0
+          ? i < 12
+            ? 40 + (i % 4) * 4
+            : 82 + (i % 5) * 3
+          : j === 4
+            ? i < 9
+              ? 48 + (i % 3) * 5
+              : 82 + (i % 4) * 4
+            : j === 1
+              ? i < 5
+                ? 51 + (i % 3) * 4
+                : 80 + (i % 5) * 4
+              : j === 5
+                ? i < 6
+                  ? 55 + (i % 3) * 4
+                  : 83 + (i % 4) * 4
+                : j === 6
+                  ? i < 4
+                    ? 58 + (i % 4) * 2
+                    : 84 + (i % 4) * 4
+                  : 85 + (i % 4) * 3;
+      return [0, 1, 2, 3].map((n) => ({
+        id: "e-" + i + "-" + j + "-" + n,
+        standard: s.code,
+        score: Math.min(
+          100,
+          Math.max(15, base - (3 - n) * 7 + (n === 2 ? 2 : 0)),
+        ),
+        date: ["2026-08-18", "2026-08-24", "2026-08-31", "2026-09-04"][n],
+        source: [
+          "Beginning-of-unit check",
+          "Guided practice",
+          "Exit ticket",
+          "Weekly check-in",
+        ][n],
+      }));
+    }),
+  }));
+  const math: Assessment = {
+    id: "math-demo",
+    classId: "demo",
+    title: "Whole numbers, real-world thinking",
+    subject: "Math",
+    grade: 4,
+    framework: "Common Core",
+    createdAt: "2026-09-04T09:00:00.000Z",
+    status: "Needs review",
+    questions: mathQuestions,
+    responses: [],
+    uploadIds: [],
+    source: "sample",
+    targetStandards: ["4.NBT.B.5", "4.NBT.A.2", "4.NBT.B.4", "4.OA.A.3"],
+  };
+  const ela: Assessment = {
+    id: "ela-demo",
+    classId: "demo",
+    title: "Reading between the lines",
+    subject: "ELA",
+    grade: 4,
+    framework: "Common Core",
+    createdAt: "2026-09-03T09:00:00.000Z",
+    status: "Ready",
+    questions: elaQuestions.map((x) => ({ ...x, verified: true })),
+    responses: [],
+    uploadIds: [],
+    source: "sample",
+    targetStandards: ["RI.4.2", "RL.4.1", "RI.4.4"],
+  };
+  for (const a of [math, ela])
+    a.responses = students.flatMap((student, i) =>
+      a.questions.map((question) => {
+        const incorrect =
+          a.subject === "Math"
+            ? question.standard === "4.OA.A.3"
+              ? i < 12
+              : question.standard === "4.NBT.B.5"
+                ? i < 5
+                : question.number === 7
+                  ? i < 3
+                  : false
+            : question.standard === "RI.4.2"
+              ? i < 9
+              : question.standard === "RL.4.1"
+                ? i < 6
+                : i < 4;
+        return {
+          id: a.id + "-" + student.id + "-" + question.id,
+          studentId: student.id,
+          questionId: question.id,
+          answer: incorrect
+            ? a.subject === "ELA"
+              ? "Students measure plant growth every week."
+              : question.number === 1
+                ? "218"
+                : question.number === 4
+                  ? "182"
+                  : question.number === 5
+                    ? "19 vans"
+                    : question.number === 6
+                      ? "215"
+                      : question.number === 8
+                        ? "97"
+                        : "3272"
+            : question.answer,
+          correct: !incorrect,
+          misconception: incorrect
+            ? a.subject === "ELA"
+              ? question.standard === "RI.4.2"
+                ? "Confuses a supporting detail with the main idea"
+                : "Needs evidence connected to the answer"
+              : question.number === 5
+                ? "Did not interpret the remainder"
+                : question.standard === "4.OA.A.3"
+                  ? "Operation selection"
+                  : "Regrouping accuracy"
+            : "",
+          confidence: incorrect ? 82 : 99,
+          verified: true,
+        };
+      }),
+    );
+  return {
+    classes: [
+      {
+        id: "demo",
+        name: "The Explorers",
+        grade: 4,
+        framework: "Common Core",
+        demo: true,
+      },
+    ],
+    activeClassId: "demo",
+    students,
+    assessments: [math, ela],
+    lessons: [],
+    groups: [],
+    resources: [],
+    customStandards: [],
+    settings: { teacherName: "", school: "", reduceMotion: false },
+  };
 }
-export function mastery(student:Student,code:string):number|null{const e=student.evidence.filter(x=>x.standard===code).sort((a,b)=>a.date.localeCompare(b.date)).slice(-3);return e.length?Math.round(e.reduce((sum,x)=>sum+x.score,0)/e.length):null}
-export function masteryStatus(student:Student,code:string){const n=student.evidence.filter(x=>x.standard===code).length,m=mastery(student,code);return m===null?"No evidence":n<3?"Building evidence":m>=80?"Mastered":m>=65?"Developing":"Needs support"}
-export function classMastery(students:Student[],code:string){const vals=students.map(x=>mastery(x,code)).filter((x):x is number=>x!==null);return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0}
-export function priorities(students:Student[],all:Standard[]=standards):Priority[]{return all.map(standard=>{const struggling=students.filter(s=>{const m=mastery(s,standard.code);return m!==null&&m<70});const rate=students.length?struggling.length/students.length:0;const prerequisiteImpact=standard.code==="4.OA.A.3"?1.4:standard.code==="4.NBT.B.5"?1.3:1.1;return {standard,students:struggling,mastery:classMastery(students,standard.code),score:Math.round(rate*1*prerequisiteImpact*struggling.length*10),tier:rate>=.5?"Whole class":"Small group"};}).filter(p=>p.students.length).sort((a,b)=>b.score-a.score)}
-export function alignment(a:Assessment){const qs=a.questions.filter(q=>!q.excluded);return qs.length?Math.round(qs.reduce((sum,q)=>sum+(a.targetStandards.length&&!a.targetStandards.includes(q.standard)?0:q.alignment),0)/qs.length):0}
-export function makeManualQuestions(text:string):Question[]{return text.split(/\n\s*\n|\n(?=\s*\d+[.)]\s)/).map(x=>x.trim()).filter(Boolean).slice(0,60).map((text,i)=>q(i+1,text.replace(/^\d+[.)]\s*/,""),"","","",{id:crypto.randomUUID(),alignment:0,confidence:0,verified:false,reasoning:"Teacher review needed. Choose the standard, skill, cognitive demand, and alignment score."}));}
-export function reconcileEvidence(students:Student[],a:Assessment):Student[]{return students.map(s=>{if(s.classId!==a.classId)return s;if(a.answerKeyVerified===false)return {...s,evidence:s.evidence.filter(e=>e.assessmentId!==a.id)};const rs=a.responses.filter(r=>r.studentId===s.id&&r.verified);const codes=[...new Set(a.questions.filter(q=>!q.excluded&&q.verified&&q.standard).map(q=>q.standard))];const evidence:Evidence[]=codes.flatMap(code=>{const ids=a.questions.filter(q=>q.standard===code&&!q.excluded&&q.verified).map(q=>q.id);const selected=rs.filter(r=>ids.includes(r.questionId));return selected.length?[{id:a.id+"-"+s.id+"-"+code,assessmentId:a.id,standard:code,score:Math.round(selected.filter(x=>x.correct).length/selected.length*100),date:new Date().toISOString().slice(0,10),source:a.title}]:[]});return {...s,evidence:[...s.evidence.filter(e=>e.assessmentId!==a.id),...evidence]};});}
+export function mastery(student: Student, code: string): number | null {
+  const e = student.evidence
+    .filter((x) => x.standard === code)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-3);
+  return e.length
+    ? Math.round(e.reduce((sum, x) => sum + x.score, 0) / e.length)
+    : null;
+}
+export function masteryStatus(student: Student, code: string) {
+  const n = student.evidence.filter((x) => x.standard === code).length,
+    m = mastery(student, code);
+  return m === null
+    ? "No evidence"
+    : n < 3
+      ? "Building evidence"
+      : m >= 80
+        ? "Mastered"
+        : m >= 65
+          ? "Developing"
+          : "Needs support";
+}
+export function classMastery(students: Student[], code: string) {
+  const vals = students
+    .map((x) => mastery(x, code))
+    .filter((x): x is number => x !== null);
+  return vals.length
+    ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+    : 0;
+}
+export function priorities(
+  students: Student[],
+  all: Standard[] = standards,
+): Priority[] {
+  return all
+    .map((standard) => {
+      const struggling = students.filter((s) => {
+        const m = mastery(s, standard.code);
+        return m !== null && m < 70;
+      });
+      const rate = students.length ? struggling.length / students.length : 0;
+      const prerequisiteImpact =
+        standard.code === "4.OA.A.3"
+          ? 1.4
+          : standard.code === "4.NBT.B.5"
+            ? 1.3
+            : 1.1;
+      return {
+        standard,
+        students: struggling,
+        mastery: classMastery(students, standard.code),
+        score: Math.round(
+          rate * 1 * prerequisiteImpact * struggling.length * 10,
+        ),
+        tier: rate >= 0.5 ? "Whole class" : "Small group",
+      };
+    })
+    .filter((p) => p.students.length)
+    .sort((a, b) => b.score - a.score);
+}
+export function alignment(a: Assessment) {
+  const qs = a.questions.filter((q) => !q.excluded);
+  return qs.length
+    ? Math.round(
+        qs.reduce(
+          (sum, q) =>
+            sum +
+            (a.targetStandards.length && !a.targetStandards.includes(q.standard)
+              ? 0
+              : q.alignment),
+          0,
+        ) / qs.length,
+      )
+    : 0;
+}
+export function makeManualQuestions(text: string): Question[] {
+  return text
+    .split(/\n\s*\n|\n(?=\s*\d+[.)]\s)/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, 60)
+    .map((text, i) =>
+      q(i + 1, text.replace(/^\d+[.)]\s*/, ""), "", "", "", {
+        id: crypto.randomUUID(),
+        alignment: 0,
+        confidence: 0,
+        verified: false,
+        reasoning:
+          "Teacher review needed. Choose the standard, skill, cognitive demand, and alignment score.",
+      }),
+    );
+}
+export function reconcileEvidence(
+  students: Student[],
+  a: Assessment,
+): Student[] {
+  return students.map((s) => {
+    if (s.classId !== a.classId) return s;
+    if (a.answerKeyVerified === false)
+      return {
+        ...s,
+        evidence: s.evidence.filter((e) => e.assessmentId !== a.id),
+      };
+    const rs = a.responses.filter((r) => r.studentId === s.id && r.verified);
+    const codes = [
+      ...new Set(
+        a.questions
+          .filter((q) => !q.excluded && q.verified && q.standard)
+          .map((q) => q.standard),
+      ),
+    ];
+    const evidence: Evidence[] = codes.flatMap((code) => {
+      const ids = a.questions
+        .filter((q) => q.standard === code && !q.excluded && q.verified)
+        .map((q) => q.id);
+      const selected = rs.filter((r) => ids.includes(r.questionId));
+      return selected.length
+        ? [
+            {
+              id: a.id + "-" + s.id + "-" + code,
+              assessmentId: a.id,
+              standard: code,
+              score: Math.round(
+                selected.reduce(
+                  (sum, response) =>
+                    sum + (response.match ?? (response.correct ? 100 : 0)),
+                  0,
+                ) / selected.length,
+              ),
+              date: new Date().toISOString().slice(0, 10),
+              source: a.title,
+            },
+          ]
+        : [];
+    });
+    return {
+      ...s,
+      evidence: [
+        ...s.evidence.filter((e) => e.assessmentId !== a.id),
+        ...evidence,
+      ],
+    };
+  });
+}

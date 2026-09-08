@@ -6,17 +6,20 @@ This implementation follows the current workflow described in the product brief 
 | --- | --- |
 | Start from the teacher's instructional intent | Choose grade, Math or ELA, framework, and intended standards before uploading an assignment. |
 | Check the actual assignment | Preserve question text and passages; review the actual skill, standard, alignment, and reasoning. Questions outside the intended standards lower the assignment's alignment. |
+| Improve the assignment | Show specific guidance for weak or missing alignment, then let the teacher upload a revision and run the comparison again. |
 | Use the teacher's answer key | Upload a separate key, paste numbered answers, or edit suggested answers. Explicit confirmation is required before scanning student work. |
 | Review one student's work efficiently | Carry the assignment and student into the scan. Flag missing, uncertain, and incorrect answers; allow the teacher to confirm clear answers together. |
 | Keep teacher judgment in control | Suggestions are unconfirmed until accepted. Correcting a key reopens affected student answers and removes stale assessment evidence. |
 | Understand individual performance | Show a question-level comparison, teacher-reviewed observations, and an individual standards report. Partial scores are labeled provisional. |
-| Choose a useful next teaching step | Carry the student, assignment, standard, and confirmed observations into visual, hands-on, or auditory reteaching. |
+| Compare cognitive demand | Report Webb's DOK and Costa's Levels of Questioning separately for each problem and across the assignment. |
+| Choose a useful next teaching step | Select an assessment and confirmed missed problem, then carry the student, group, standard, and observations into visual, hands-on, or auditory reteaching. |
+| Form flexible instructional groups | View High/Mid/Low bands or group students who share a standard gap. Label whole-class opportunities when at least half of the class shares the gap. |
 | Keep the app approachable | The primary navigation is Overview, Assignments, Student work, Reteach, and Students. Standards are in the toolkit; resources are accessible through reteaching. |
 | Replace generic AI branding | An original book-and-learning-partnership logo replaces sparkle branding. Motion is restrained and respects reduced-motion preferences. |
 
 ## Later development
 
-Generating whole assignments from standards, Science and Social Studies, class-wide diagnostic pattern analysis, a separate individualized-goal/special-education product, and billing/trial rollout are outside this update. Existing saved data and legacy analysis routes are retained for compatibility; class-wide analysis is removed from the main navigation and home screen.
+Generating whole assignments from standards, Science and Social Studies, a separate individualized-goal/special-education product, and billing/trial rollout are outside this update. The current grouping view uses confirmed evidence and transparent score ranges; it does not diagnose causes or assign permanent ability groups.
 
 ## Available content and practical limits
 

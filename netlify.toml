@@ -9,3 +9,4 @@
 
 # Let Netlify manage the current Next.js adapter automatically.
 # Do not disable the adapter or publish dist/client: the app has server routes.
+

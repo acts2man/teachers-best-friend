@@ -5,9 +5,10 @@ A private teaching workspace that connects assignment alignment, an accurate ans
 ## The current workflow
 
 1. Choose the grade, Math or ELA, and intended standards. Upload the blank assignment or paste its questions.
-2. Review what each question measures. Upload or enter the teacher's answer key and confirm it.
-3. Scan one student's work. Review flagged answers, confirm clear answers together, and print an individual standards report.
-4. Carry the student and observed skill gap into a visual, hands-on, or auditory reteach plan.
+2. Review each question's alignment, DOK, and Costa's level. Use the improvement guidance and upload a revised assignment when needed.
+3. Upload or enter the teacher's answer key and confirm it.
+4. Scan one student's work. Review answer-match percentages and flagged answers, confirm clear answers together, and print an individual standards report.
+5. Choose an assessment and missed problem in Reteach, or carry an individual/shared skill gap into a visual, hands-on, or auditory plan.
 
 The home screen highlights the next useful action. Primary navigation is Overview, Assignments, Student work, Reteach, and Students, with a separate standards toolkit. An original book logo, quieter cards, responsive layouts, contextual hover states, and reduced-motion support keep the workspace approachable.
 
@@ -21,6 +22,7 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 - Explicit answer-key confirmation before automatic grading; changes invalidate affected student results.
 - Uncertain, missing, and incorrect answer flags; teacher decisions replace stale evidence instead of duplicating it.
 - Individual, provisional or confirmed assignment reports, observed misconceptions, and contextual reteaching.
+- High/Mid/Low student bands and flexible groups based on shared standard gaps, with whole-class suggestions when at least half the class shares a gap.
 - Seven prepared reteach lessons with visual, hands-on, and auditory approaches, printable practice and exit tickets, saved teaching dates, and follow-up recording.
 - Teacher resources, curriculum uploads, and page references.
 - Official California Grade 4 Math and ELA wording and source links, seven Common Core starter standards, and custom standards for other grades/frameworks.
