@@ -30,3 +30,27 @@ Mastery is the arithmetic mean of the three most recent dated records. A mastere
 Use the retained Sites installation/build scripts and logical hosting manifest. Generate schema changes with npm run db:generate and inspect migrations before publishing. Applied migrations are immutable.
 
 The focused domain checks are in tests/teacher-workflows.test.mjs. Run node --test tests/teacher-workflows.test.mjs. TypeScript can be checked with npx tsc --noEmit. This build has not undergone a live browser test or a real AI-provider call without an API key.
+
+## Netlify deployment preparation
+
+`netlify.toml` uses `npm run build:netlify`, Node 22, and the `.next` publish
+directory. The existing `npm run build` command builds a Vinext Cloudflare
+Worker in `dist/`; it does not produce the `.next` output required by
+`@netlify/plugin-nextjs`. Keep Netlify's automatically managed Next.js adapter
+enabled, and do not publish `dist/client` as a static application.
+
+**Backend migration is still required before a functional Netlify launch.**
+The current app uses Sites-managed sign-in, D1, and R2. These bindings are not
+provided by Netlify, and connecting the source repository does not copy the
+database, documents, secrets, or authentication. The native Next.js build
+loads Workers bindings only when an API request needs them, and returns an
+explicit 503 when they are unavailable. It does not bypass sign-in, trust
+client-supplied identity headers on Netlify, simulate successful saves, or
+replace durable storage with browser storage.
+
+Before production use on Netlify, connect a verified identity provider and
+durable database/document storage, migrate any existing records and files,
+and verify save/reload, uploads, access control, and revision conflicts.
+The original private Sites deployment remains the working application until
+that migration is complete. The Sites build scripts, bindings, and migrations
+are retained.
