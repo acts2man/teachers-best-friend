@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    // Student work now lives inside each assessment.
+    return [
+      { source: "/review", destination: "/assessments", permanent: false },
+    ];
+  },
   webpack(config, { isServer }) {
     if (isServer) {
       // Workers bindings are loaded on demand by teacher-server. Keep this

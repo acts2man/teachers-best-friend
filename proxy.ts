@@ -5,8 +5,10 @@ export async function proxy(request: NextRequest) {
   return updateSession(request);
 }
 
+// The app's screens are static pages that never read the session on the
+// server, so the Supabase session refresh only needs to run where the session
+// is actually used: the API routes and the auth callbacks. Keeping it off page
+// navigation removes a network round trip from every screen switch.
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ttf)$).*)",
-  ],
+  matcher: ["/api/:path*", "/auth/:path*"],
 };

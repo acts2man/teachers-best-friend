@@ -1,6 +1,9 @@
 import TeacherApp from "@/components/teacher-app";
-import { notFound, redirect } from "next/navigation";
 
+// Every screen is rendered entirely on the client from the teacher's saved
+// workspace, so the pages themselves are static files. Netlify serves them from
+// its edge cache and the sidebar links prefetch them, which makes switching
+// screens instant instead of waiting on a server function for each click.
 const views = [
   "assessments",
   "scan",
@@ -15,14 +18,18 @@ const views = [
   "guide",
 ];
 
+export const dynamic = "force-static";
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return views.map((view) => ({ view }));
+}
+
 export default async function Page({
   params,
 }: {
   params: Promise<{ view: string }>;
 }) {
   const { view } = await params;
-  // Student work now lives inside each assessment.
-  if (view === "review") redirect("/assessments");
-  if (!views.includes(view)) notFound();
   return <TeacherApp view={view === "reteach" ? "lessons" : view} />;
 }

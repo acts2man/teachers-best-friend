@@ -62,11 +62,31 @@ type WorkspaceSnapshot = {
   revision: number;
   aiReady: boolean;
   authProvider: "chatgpt" | "supabase";
+  fetchedAt: number;
 };
 
 // Keep the authoritative workspace alive while Next.js moves between pages.
 // A hard refresh intentionally starts empty so stale sample data never flashes.
 let workspaceSnapshot: WorkspaceSnapshot | null = null;
+// Re-check the server only when the in-memory copy is older than this, or when
+// the tab comes back into focus after being away. Switching screens reuses the
+// copy already in memory instead of downloading the whole workspace again.
+const STALE_AFTER_MS = 2 * 60 * 1000;
+const isStale = () =>
+  !workspaceSnapshot || Date.now() - workspaceSnapshot.fetchedAt > STALE_AFTER_MS;
+// Screens reached from buttons rather than sidebar links, prefetched once so
+// they open as quickly as the sidebar destinations.
+const prefetchRoutes = [
+  "/assessments",
+  "/lessons",
+  "/classes",
+  "/students",
+  "/scan",
+  "/standards",
+  "/settings",
+  "/guide",
+  "/resources",
+];
 
 export default function TeacherApp({ view }: { view: string }) {
   const initialSnapshot = useRef(workspaceSnapshot).current;
@@ -86,6 +106,7 @@ export default function TeacherApp({ view }: { view: string }) {
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
   const [framework, setFramework] = useState("California");
+  const [pendingView, setPendingView] = useState<string | null>(null);
   const router = useRouter();
   async function reload() {
     try {
@@ -103,6 +124,7 @@ export default function TeacherApp({ view }: { view: string }) {
         revision: d.revision,
         aiReady: Boolean(d.aiReady),
         authProvider: d.authProvider || "chatgpt",
+        fetchedAt: Date.now(),
       };
       workspaceSnapshot = nextSnapshot;
       setW(nextSnapshot.workspace);
@@ -117,8 +139,20 @@ export default function TeacherApp({ view }: { view: string }) {
     }
   }
   useEffect(() => {
-    reload();
+    if (isStale()) reload();
+    for (const route of prefetchRoutes) router.prefetch(route);
+    const onFocus = () => {
+      if (document.visibilityState === "visible" && isStale()) reload();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    return () => document.removeEventListener("visibilitychange", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // The destination view arrives with the new page; clear the optimistic
+  // highlight once it does.
+  useEffect(() => {
+    setPendingView(null);
+  }, [view]);
   useEffect(() => {
     document.documentElement.classList.toggle(
       "reduce-motion",
@@ -152,6 +186,7 @@ export default function TeacherApp({ view }: { view: string }) {
         revision: d.revision,
         aiReady,
         authProvider,
+        fetchedAt: Date.now(),
       };
       setW(next);
       setRevision(d.revision);
@@ -187,6 +222,7 @@ export default function TeacherApp({ view }: { view: string }) {
     reload,
     go: (url: string) => router.push(url),
   };
+  const shownView = pendingView ?? view;
   const title =
     [
       ...nav,
@@ -196,7 +232,7 @@ export default function TeacherApp({ view }: { view: string }) {
       { id: "settings", label: "Settings" },
       { id: "resources", label: "Teaching resources" },
       { id: "diagnostics", label: "Class insights" },
-    ].find((n) => n.id === view)?.label || "Overview";
+    ].find((n) => n.id === shownView)?.label || "Overview";
   async function createClass() {
     if (!w || !name.trim()) return;
     const id = crypto.randomUUID();
@@ -261,13 +297,18 @@ export default function TeacherApp({ view }: { view: string }) {
                 <SidebarMenuItem key={n.id}>
                   <SidebarMenuButton
                     asChild
-                    isActive={view === n.id}
+                    isActive={shownView === n.id}
                     className="nav-link"
                   >
-                    <Link href={n.id === "home" ? "/" : "/" + n.id}>
+                    <Link
+                      href={n.id === "home" ? "/" : "/" + n.id}
+                      onClick={() => setPendingView(n.id)}
+                    >
                       <n.icon size={19} />
                       <span>{n.label}</span>
-                      {view === n.id && <span className="nav-active-dot" />}
+                      {shownView === n.id && (
+                        <span className="nav-active-dot" />
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -279,10 +320,10 @@ export default function TeacherApp({ view }: { view: string }) {
                 <SidebarMenuItem key={n.id}>
                   <SidebarMenuButton
                     asChild
-                    isActive={view === n.id}
+                    isActive={shownView === n.id}
                     className="nav-link"
                   >
-                    <Link href={"/" + n.id}>
+                    <Link href={"/" + n.id} onClick={() => setPendingView(n.id)}>
                       <n.icon size={18} />
                       <span>{n.label}</span>
                     </Link>
