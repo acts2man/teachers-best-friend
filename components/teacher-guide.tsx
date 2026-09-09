@@ -17,18 +17,17 @@ import { Action, PageTitle, Pill } from "./teacher-shared";
 
 const steps = [
   {
-    title: "Set up your classroom",
-    where: "Classroom switcher at the top · Students · Settings",
-    lead: "Every classroom keeps its own students, assessments, and lesson plans, so the record builds from one assessment to the next.",
+    title: "Set up your classes",
+    where: "Classes · the classroom switcher at the top",
+    lead: "One class per period or group. Every class keeps its own roster, assessments, evidence, and lesson plans, so the record builds from one assessment to the next.",
     points: [
-      "Use the classroom switcher in the top bar to open a classroom or add a new one. Name each one the way you think about it, such as Period 3 · Math.",
-      "Open Students and paste a roster. First names with an initial, or aliases, are enough.",
-      "Rename, add, or remove classrooms anytime under Settings → Classrooms.",
+      "Open Classes and press Add class. Name it the way you think about it, such as Period 3 · Math 7, and choose your state’s standards.",
+      "Open the class and press Add students. Photograph a printed roster or upload a PDF and the names fill in for your review, or type them one per line.",
+      "Switch between classes anytime with the classroom switcher in the top bar.",
     ],
-    tip: "The Explorers sample classroom is fictional. Use it to explore, then create your own classroom when you’re ready.",
+    tip: "The Explorers sample class is fictional. Use it to explore, then add your own classes when you’re ready.",
     actions: [
-      { label: "Add students", href: "/students" },
-      { label: "Manage classrooms", href: "/settings" },
+      { label: "Open classes", href: "/classes" },
     ],
   },
   {
@@ -36,7 +35,8 @@ const steps = [
     where: "Assessments → New assessment",
     lead: "Start with what you intend to measure, then let the app read the assessment for you.",
     points: [
-      "Choose the grade, subject, and framework, then check the standards this assessment should assess.",
+      "Choose the grade, subject, and your state, then check the standards this assessment should assess. California Grade 4 is built in; any other state or grade is retrieved with AI the first time and saved to your library.",
+      "Teach the same course to several periods? Tick the other classes under Use this assessment in. The questions and key are shared; each class keeps its own student work.",
       "Upload the blank assessment as a PDF or photo, or paste the questions. The questions are read into the assessment automatically. You never retype them.",
       "On 1. Assessment review, check each question’s standard, skill, DOK, and Costa’s level. Confirm clear matches together, or open a question to adjust it.",
       "The Standards report tab shows coverage of your intended standards and suggests how to strengthen weak questions.",
@@ -70,14 +70,14 @@ const steps = [
   },
   {
     title: "See the whole class",
-    where: "Students",
+    where: "Classes → open a class",
     lead: "Confirmed answers become dated evidence for each standard, and that evidence carries from assessment to assessment.",
     points: [
       "Open a student to see mastery by standard, progress over time, and your notes.",
       "Switch to High / Mid / Low for flexible performance bands, or Shared skill gaps to see who needs the same standard.",
       "Mastery uses the three latest observations. A single score never marks a standard as mastered.",
     ],
-    actions: [{ label: "Open students", href: "/students" }],
+    actions: [{ label: "Open the roster", href: "/students" }],
   },
   {
     title: "Plan the reteach lesson",
@@ -116,18 +116,18 @@ const legend = [
   },
   {
     icon: Users,
-    name: "Students",
-    text: "Rosters, mastery by standard, performance bands, and shared skill gaps.",
+    name: "Classes",
+    text: "Every period with its roster, mastery by standard, performance bands, and shared skill gaps.",
   },
   {
     icon: Library,
     name: "Standards",
-    text: "Official California Grade 4 Math and ELA wording, plus your district standards.",
+    text: "California Grade 4 built in, every other state retrieved on request, plus your district standards.",
   },
   {
     icon: Settings,
     name: "Settings",
-    text: "Classrooms, your name, motion preferences, AI connection, export, and deletion.",
+    text: "Color themes, gentler motion, your name, AI connection, export, and deletion.",
   },
 ];
 
@@ -187,8 +187,12 @@ export default function GuideView() {
                   : "AI reading is not connected yet. Typed PDFs are still read automatically; photographs need manual entry until the app owner adds the AI key under Settings."}
               </li>
               <li>
-                Use aliases for students where you can. Your classrooms and
+                Use aliases for students where you can. Your classes and
                 documents are private to your account.
+              </li>
+              <li>
+                Make it yours under Settings: ten color themes, from Pine and
+                Ocean to Blossom and Slate.
               </li>
               <li>
                 Export a copy of your workspace or delete everything from

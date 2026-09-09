@@ -9,6 +9,7 @@ const views = [
   "lessons",
   "reteach",
   "students",
+  "classes",
   "resources",
   "settings",
   "guide",

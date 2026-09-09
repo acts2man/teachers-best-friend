@@ -634,8 +634,9 @@ export function reconcileEvidence(
   students: Student[],
   a: Assessment,
 ): Student[] {
+  const classIds = [a.classId, ...(a.classIds || [])];
   return students.map((s) => {
-    if (s.classId !== a.classId) return s;
+    if (!classIds.includes(s.classId)) return s;
     if (a.answerKeyVerified === false)
       return {
         ...s,

@@ -84,6 +84,7 @@ export type Assessment = {
   assignmentUploadIds?: string[];
   studentUploadIds?: Record<string, string[]>;
   answerKeyVerified?: boolean;
+  classIds?: string[];
 };
 export type Classroom = {
   id: string;
@@ -141,7 +142,12 @@ export type Workspace = {
   resources: Resource[];
   customStandards: Standard[];
   groups: Group[];
-  settings: { teacherName: string; school: string; reduceMotion: boolean };
+  settings: {
+    teacherName: string;
+    school: string;
+    reduceMotion: boolean;
+    theme?: string;
+  };
 };
 export type Priority = {
   standard: Standard;

@@ -58,6 +58,8 @@ import {
   downloadText,
 } from "./teacher-shared";
 import { allStandards } from "@/lib/teacher-catalog";
+import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
+import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import {
   performanceBands,
   sharedGapGroups,
@@ -177,17 +179,10 @@ export function StandardsView() {
           label="Standards framework"
           value={framework}
           onChange={setFramework}
-          options={[
-            ...new Set([
-              "Common Core",
-              "California",
-              "Texas",
-              "Florida",
-              "Virginia",
-              "District standards",
-              ...w.customStandards.map((s) => s.framework),
-            ]),
-          ]}
+          options={frameworkOptions([
+            "District standards",
+            ...w.customStandards.map((s) => s.framework),
+          ])}
         />
         <Pick
           label="Grade"
@@ -210,14 +205,29 @@ export function StandardsView() {
           <GitBranch size={22} />
         </span>
         <div>
-          <strong>Choose a grade, subject, and framework.</strong>
+          <strong>{frameworkLabel(framework)}</strong>
           <p>
-            California Grade 4 includes the state’s published Math and ELA
-            standards.
+            California Grade 4 Math and ELA are built in with official wording.
+            Every other state and grade is retrieved with AI and saved here.
           </p>
         </div>
         <Pill>{filtered.length} standards</Pill>
       </div>
+      {filtered.length > 0 &&
+        stateFor(framework) &&
+        !(framework === "California" && Number(grade) === 4) && (
+          <div className="standards-note">
+            <Lightbulb size={15} />
+            <span>
+              These standards were retrieved with AI. Check codes and wording
+              against the official {stateFor(framework)!.framework} document
+              before relying on them.{" "}
+              <a href={stateFor(framework)!.site} target="_blank" rel="noreferrer">
+                Official source
+              </a>
+            </span>
+          </div>
+        )}
       <div className="standards-grid">
         {filtered.map((s) => (
           <button
@@ -245,12 +255,19 @@ export function StandardsView() {
           </button>
         ))}
       </div>
+      {!filtered.length && !query && (stateFor(framework) || framework === "Common Core") && (
+        <StandardsLoader
+          grade={Number(grade)}
+          framework={framework}
+          subject={subject === "All subjects" ? undefined : subject}
+        />
+      )}
       {!filtered.length && (
         <EmptyState
           title={
             query
               ? "No standards match that search"
-              : "Bring your framework into focus"
+              : "Or add a standard by hand"
           }
           description={
             query
@@ -1094,9 +1111,11 @@ export function StudentsView() {
   );
   const bands = performanceBands(students, catalog);
   const gapGroups = sharedGapGroups(students, catalog);
-  async function addStudents() {
-    const list = names
-      .split(/[\n,]/)
+  async function addStudents(fromRoster?: string[]) {
+    const list = (
+      fromRoster ||
+      names.split(/[\n,]/)
+    )
       .map((x) => x.trim())
       .filter(Boolean)
       .slice(0, 100);
@@ -1330,10 +1349,20 @@ export function StudentsView() {
         </>
       ) : (
         <>
+          <button className="back-link" onClick={() => go("/classes")}>
+            ← All classes
+          </button>
           <PageTitle
             eyebrow="SEE THE LEARNER BEHIND THE NUMBER"
-            title="Students"
-            description="Keep student work and confirmed learning evidence together."
+            title={classroom.name}
+            description={
+              (classroom.grade === 0 ? "Kindergarten" : "Grade " + classroom.grade) +
+              " · " +
+              frameworkLabel(classroom.framework) +
+              " · " +
+              students.length +
+              (students.length === 1 ? " student" : " students")
+            }
           >
             <Action onClick={() => setAdd(true)}>
               <Plus size={17} />
@@ -1606,11 +1635,14 @@ export function StudentsView() {
         open={add}
         onClose={() => setAdd(false)}
         title="Meet your learners"
-        description="Use aliases or first names with an initial. Put each student on a new line."
+        description="Photograph a roster, or type names with each student on a new line."
       >
         <div className="form-stack">
+          <RosterScanner
+            onAdd={(list) => addStudents(list)}
+          />
           <label>
-            Student names or aliases
+            Or type student names or aliases
             <textarea
               value={names}
               className="question-paste"
@@ -1618,7 +1650,7 @@ export function StudentsView() {
               placeholder={"Amelia R.\nBenjamin L.\nChloe M."}
             />
           </label>
-          <Action disabled={busy || !names.trim()} onClick={addStudents}>
+          <Action disabled={busy || !names.trim()} onClick={() => addStudents()}>
             Add to classroom
             <ArrowRight size={16} />
           </Action>

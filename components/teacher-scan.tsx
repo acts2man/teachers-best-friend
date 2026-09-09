@@ -21,6 +21,8 @@ import { Action, EmptyState, PageTitle, Pick, Pill } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
 import { extractPdfText } from "@/lib/pdf-text";
+import { frameworkOptions } from "@/lib/states";
+import { StandardsLoader } from "./teacher-classes";
 import {
   activeQuestions,
   parseAnswerKey,
@@ -43,7 +45,8 @@ export function ScanView() {
       classroom.demo ? "California" : classroom.framework,
     );
   const [targets, setTargets] = useState<string[]>([]),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [linked, setLinked] = useState<string[]>([]);
   const [text, setText] = useState(""),
     [files, setFiles] = useState<Uploaded[]>([]);
   const [uploading, setUploading] = useState(false),
@@ -182,6 +185,11 @@ export function ScanView() {
       source: origin,
       targetStandards: selected,
       answerKeyVerified: false,
+      ...(editing
+        ? { classIds: editing.classIds }
+        : linked.length
+          ? { classIds: [...new Set([classroom.id, ...linked])] }
+          : {}),
     };
   }
   async function saveManual() {
@@ -425,16 +433,45 @@ export function ScanView() {
                       label="Standards framework"
                       value={framework}
                       onChange={(v) => scopeChange("framework", v)}
-                      options={[
-                        ...new Set([
-                          "California",
-                          "Common Core",
-                          ...w.customStandards.map((s) => s.framework),
-                        ]),
-                      ]}
+                      options={frameworkOptions(
+                        w.customStandards.map((s) => s.framework),
+                      )}
                     />
                   </label>
                 </div>
+                {!editing && w.classes.length > 1 && (
+                  <div className="link-classes">
+                    <strong>Use this assessment in</strong>
+                    <p>
+                      Questions and the answer key are shared. Each class keeps
+                      its own student work.
+                    </p>
+                    <label className="locked">
+                      <Checkbox checked disabled aria-label={classroom.name} />
+                      {classroom.name} (this class)
+                    </label>
+                    {w.classes
+                      .filter((c) => c.id !== classroom.id)
+                      .map((c) => (
+                        <label key={c.id}>
+                          <Checkbox
+                            checked={linked.includes(c.id)}
+                            onCheckedChange={(v) =>
+                              setLinked((previous) =>
+                                v
+                                  ? [...previous, c.id]
+                                  : previous.filter((x) => x !== c.id),
+                              )
+                            }
+                          />
+                          {c.name}
+                          <span className="cell-meta">
+                            {c.grade === 0 ? "K" : "Grade " + c.grade}
+                          </span>
+                        </label>
+                      ))}
+                  </div>
+                )}
               </div>
               <div className="standards-menu">
                 <div className="target-picker-heading">
@@ -509,18 +546,11 @@ export function ScanView() {
                     )}
                   </>
                 ) : (
-                  <EmptyState
-                    title="Add standards for this grade"
-                    description="California Grade 4 Math and ELA are included. Add your school’s standards for another grade or framework."
-                  >
-                    <Action
-                      variant="secondary"
-                      onClick={() => go("/standards")}
-                    >
-                      Open standards library
-                      <ArrowRight size={16} />
-                    </Action>
-                  </EmptyState>
+                  <StandardsLoader
+                    grade={Number(grade)}
+                    framework={framework}
+                    subject={subject}
+                  />
                 )}
               </div>
             </div>

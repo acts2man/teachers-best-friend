@@ -70,6 +70,7 @@ const dataSchema = z.object({
     teacherName: z.string().max(100),
     school: z.string().max(200),
     reduceMotion: z.boolean(),
+    theme: z.string().max(40).optional(),
   }),
 });
 

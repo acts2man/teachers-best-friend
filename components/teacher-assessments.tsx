@@ -79,6 +79,7 @@ import {
   reconcileEvidence,
 } from "@/lib/teacher-data";
 import { extractUploadedPdfText } from "@/lib/pdf-text";
+import { classesFor } from "@/lib/teacher-classes";
 import type {
   Assessment,
   Question,
@@ -99,7 +100,8 @@ export function AssessmentView() {
     [newText, setNewText] = useState(""),
     [adding, setAdding] = useState(false),
     [reading, setReading] = useState(false),
-    [readNotice, setReadNotice] = useState("");
+    [readNotice, setReadNotice] = useState(""),
+    [linking, setLinking] = useState<string[] | null>(null);
   const autoRead = useRef<string | null>(null);
   useEffect(() => {
     setSelected(params.get("id"));
@@ -474,6 +476,26 @@ export function AssessmentView() {
               </strong>
             </div>
           </div>
+          {w.classes.length > 1 && (
+            <div className="linked-classes">
+              <Users size={14} />
+              <span>Used in</span>
+              {classesFor(w, a).map((c) => (
+                <Pill key={c.id} tone={c.id === a.classId ? "green" : "neutral"}>
+                  {c.name}
+                </Pill>
+              ))}
+              <button
+                className="text-link"
+                onClick={() =>
+                  setLinking(classesFor(w, a).map((c) => c.id))
+                }
+              >
+                Change
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
           {(a.assignmentUploadIds || a.uploadIds).length > 0 && (
             <div className="source-documents">
               <span>Source documents</span>
@@ -1105,6 +1127,54 @@ export function AssessmentView() {
           )}
         </SheetContent>
       </Sheet>
+      <Modal
+        open={!!linking}
+        onClose={() => setLinking(null)}
+        title="Use this assessment in"
+        description="Questions and the answer key are shared. Each class keeps its own student work and evidence."
+      >
+        {linking && a && (
+          <div className="form-stack">
+            <div className="link-classes">
+              {w.classes.map((c) => (
+                <label key={c.id} className={c.id === a.classId ? "locked" : ""}>
+                  <Checkbox
+                    checked={c.id === a.classId || linking.includes(c.id)}
+                    disabled={c.id === a.classId}
+                    onCheckedChange={(v) =>
+                      setLinking((previous) =>
+                        v
+                          ? [...(previous || []), c.id]
+                          : (previous || []).filter((x) => x !== c.id),
+                      )
+                    }
+                  />
+                  {c.name}
+                  {c.id === a.classId && (
+                    <span className="cell-meta">created here</span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <Action
+              disabled={busy}
+              onClick={async () => {
+                const classIds = [...new Set([a.classId, ...linking])];
+                if (
+                  await saveAssessment(
+                    { ...a, classIds },
+                    "Assessment shared with " + classIds.length + (classIds.length === 1 ? " class" : " classes"),
+                  )
+                )
+                  setLinking(null);
+              }}
+            >
+              <Check size={16} />
+              Save classes
+            </Action>
+          </div>
+        )}
+      </Modal>
       <Modal
         open={adding}
         onClose={() => setAdding(false)}

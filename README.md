@@ -24,10 +24,12 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 - Individual, provisional or confirmed assignment reports, observed misconceptions, and contextual reteaching.
 - High/Mid/Low student bands and flexible groups based on shared standard gaps, with whole-class suggestions when at least half the class shares a gap.
 - Seven prepared reteach lessons plus AI-generated lesson plans for any standard, all editable in place, with printable practice and exit tickets, saved teaching dates, and follow-up recording.
-- Multiple classrooms (one per period or group) with an always-visible switcher and a Classrooms manager in Settings.
+- Multiple classes (one per period or group) under Classes, with roster photo scanning, an always-visible switcher, and assessments that can be shared across classes while each class keeps its own student work.
+- Every US state's standards framework in the dropdown. California Grade 4 Math and ELA are built in with official wording; other states and grades are retrieved with the AI service on request, saved to the teacher's library, and labeled for verification against the official source.
+- Ten color themes under Settings, applied through hue-shiftable CSS so warnings and accents stay recognizable.
 - Client-side text extraction for typed PDFs, so questions and answer keys populate even without the AI service.
 - Teacher resources, curriculum uploads, and page references.
-- Official California Grade 4 Math and ELA wording and source links, seven Common Core starter standards, and custom standards for other grades/frameworks.
+- Official California Grade 4 Math and ELA wording and source links, seven Common Core starter standards, AI-retrieved catalogs for any state and grade, and custom standards.
 - A clearly labeled fictional 24-student sample, separate empty classrooms, roster entry, and individual learning histories.
 - Workspace persistence, optimistic revision checks, export/deletion, accessible controls, and reduced motion.
 

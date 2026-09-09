@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -72,6 +72,7 @@ import {
   type LessonContent,
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
+import { themes, themeById } from "@/lib/themes";
 import type { Lesson, Resource, Student, Standard } from "@/lib/teacher-types";
 
 function tomorrow() {
@@ -1952,108 +1953,16 @@ export function ResourcesView() {
 }
 
 export function SettingsView() {
-  const { w, classroom, students, save, busy, aiReady, reload } = useTeacher();
+  const { w, save, busy, aiReady, reload, go } = useTeacher();
   const [teacher, setTeacher] = useState(w.settings.teacherName),
     [school, setSchool] = useState(w.settings.school),
-    [className, setClassName] = useState(classroom.name),
-    [grade, setGrade] = useState(String(classroom.grade)),
-    [framework, setFramework] = useState(classroom.framework),
-    [reduced, setReduced] = useState(w.settings.reduceMotion),
     [erase, setErase] = useState(false),
-    [erasing, setErasing] = useState(false),
-    [classEdits, setClassEdits] = useState<Record<string, string>>({}),
-    [newClass, setNewClass] = useState(""),
-    [newGrade, setNewGrade] = useState(String(classroom.grade)),
-    [removeId, setRemoveId] = useState<string | null>(null);
+    [erasing, setErasing] = useState(false);
   useEffect(() => {
     setTeacher(w.settings.teacherName);
     setSchool(w.settings.school);
-    setClassName(classroom.name);
-    setGrade(String(classroom.grade));
-    setFramework(classroom.framework);
-    setReduced(w.settings.reduceMotion);
-  }, [
-    classroom.id,
-    classroom.name,
-    classroom.grade,
-    classroom.framework,
-    w.settings.teacherName,
-    w.settings.school,
-    w.settings.reduceMotion,
-  ]);
-  async function addClassroom() {
-    if (!newClass.trim()) return;
-    const id = crypto.randomUUID();
-    if (
-      await save(
-        {
-          ...w,
-          classes: [
-            ...w.classes,
-            {
-              id,
-              name: newClass.trim(),
-              grade: Number(newGrade),
-              framework: "California",
-              demo: false,
-            },
-          ],
-        },
-        "Classroom added. Switch to it from the top bar whenever you like.",
-      )
-    )
-      setNewClass("");
-  }
-  async function renameClassroom(id: string) {
-    const name = (classEdits[id] ?? "").trim();
-    if (!name) return;
-    if (
-      await save(
-        {
-          ...w,
-          classes: w.classes.map((c) => (c.id === id ? { ...c, name } : c)),
-        },
-        "Classroom renamed",
-      )
-    )
-      setClassEdits((previous) => {
-        const next = { ...previous };
-        delete next[id];
-        return next;
-      });
-  }
-  async function removeClassroom() {
-    if (!removeId || w.classes.length < 2) return;
-    const id = removeId;
-    const remaining = w.classes.filter((c) => c.id !== id);
-    const uploads = new Set([
-      ...w.assessments.filter((a) => a.classId === id).flatMap((a) => a.uploadIds),
-      ...w.resources
-        .filter((r) => r.classId === id)
-        .map((r) => r.uploadId)
-        .filter((x): x is string => !!x),
-    ]);
-    if (
-      await save(
-        {
-          ...w,
-          classes: remaining,
-          activeClassId:
-            w.activeClassId === id ? remaining[0].id : w.activeClassId,
-          students: w.students.filter((s) => s.classId !== id),
-          assessments: w.assessments.filter((a) => a.classId !== id),
-          lessons: w.lessons.filter((l) => l.classId !== id),
-          groups: w.groups.filter((g) => g.classId !== id),
-          resources: w.resources.filter((r) => r.classId !== id),
-        },
-        "Classroom removed",
-      )
-    ) {
-      setRemoveId(null);
-      for (const uploadId of uploads)
-        fetch("/api/uploads/" + uploadId, { method: "DELETE" }).catch(() => {});
-    }
-  }
+  }, [w.settings.teacherName, w.settings.school]);
+  const theme = themeById(w.settings.theme).id;
   async function eraseData() {
     setErasing(true);
     try {
@@ -2078,124 +1987,63 @@ export function SettingsView() {
       <PageTitle
         eyebrow="YOUR SPACE, YOUR WAY"
         title="Settings"
-        description="Manage your classroom, preferences, and data."
+        description="Choose how the workspace looks and manage your account and data."
       />
       <div className="settings-layout">
         <section className="panel settings-card">
           <SectionTitle
-            title="You & this classroom"
-            description="Your name, plus the details of the classroom that’s open right now."
+            title="Appearance"
+            description="Pick a color theme. The layout stays the same; only the palette changes."
           />
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              save(
-                {
-                  ...w,
-                  settings: {
-                    ...w.settings,
-                    teacherName: teacher,
-                    school,
-                    reduceMotion: reduced,
-                  },
-                  classes: w.classes.map((c) =>
-                    c.id === classroom.id
-                      ? {
-                          ...c,
-                          name: className.trim(),
-                          grade: Number(grade),
-                          framework,
-                        }
-                      : c,
-                  ),
-                },
-                "Your classroom settings are saved",
-              );
-            }}
-            className="form-stack"
-          >
-            <div className="form-grid">
-              <label>
-                Your name
-                <input
-                  value={teacher}
-                  maxLength={100}
-                  onChange={(e) => setTeacher(e.target.value)}
-                  placeholder="What should we call you?"
-                />
-              </label>
-              <label>
-                School or district (optional)
-                <input
-                  value={school}
-                  maxLength={200}
-                  onChange={(e) => setSchool(e.target.value)}
-                />
-              </label>
-              <label className="full">
-                Classroom name
-                <input
-                  required
-                  value={className}
-                  onChange={(e) => setClassName(e.target.value)}
-                  maxLength={70}
-                />
-              </label>
-              <label>
-                Grade
-                <Pick
-                  label="Classroom grade"
-                  value={grade}
-                  onChange={setGrade}
-                  options={Array.from({ length: 13 }, (_, i) => ({
-                    value: String(i),
-                    label: i === 0 ? "Kindergarten" : "Grade " + i,
-                  }))}
-                />
-              </label>
-              <label>
-                Framework
-                <Pick
-                  label="Classroom framework"
-                  value={framework}
-                  onChange={setFramework}
-                  options={[
-                    ...new Set([
-                      "Common Core",
-                      "California",
-                      "Texas",
-                      "Florida",
-                      "Virginia",
-                      "District standards",
-                      ...w.customStandards.map((s) => s.framework),
-                    ]),
-                  ]}
-                />
-              </label>
-            </div>
-            <p className="field-help">
-              California Grade 4 Math and ELA standards are included, alongside
-              the Common Core starter set. Add school-approved standards for
-              other grades or frameworks.
-            </p>
-            <div className="setting-toggle">
-              <div>
-                <strong>Gentler motion</strong>
-                <span>
-                  Reduce animated entrances, chart effects, and transitions.
+          <div className="theme-grid" role="group" aria-label="Color theme">
+            {themes.map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                className={"theme-swatch " + (theme === t.id ? "selected" : "")}
+                style={
+                  { "--th": t.hue + "deg", "--ts": String(t.saturation) } as CSSProperties
+                }
+                aria-pressed={theme === t.id}
+                disabled={busy}
+                onClick={() =>
+                  save(
+                    { ...w, settings: { ...w.settings, theme: t.id } },
+                    t.name + " theme applied",
+                  )
+                }
+              >
+                <span className="preview" aria-hidden="true">
+                  <i />
+                  <span>
+                    <b />
+                    <b />
+                  </span>
                 </span>
-              </div>
-              <Switch
-                aria-label="Reduce motion"
-                checked={reduced}
-                onCheckedChange={setReduced}
-              />
+                <strong>
+                  {t.name}
+                  {theme === t.id && <Check size={13} />}
+                </strong>
+                <small>{t.description}</small>
+              </button>
+            ))}
+          </div>
+          <div className="setting-toggle">
+            <div>
+              <strong>Gentler motion</strong>
+              <span>
+                Reduce animated entrances, chart effects, and transitions.
+              </span>
             </div>
-            <Action type="submit" disabled={busy || !className.trim()}>
-              Save settings
-              <Check size={16} />
-            </Action>
-          </form>
+            <Switch
+              aria-label="Reduce motion"
+              checked={w.settings.reduceMotion}
+              disabled={busy}
+              onCheckedChange={(v) =>
+                save({ ...w, settings: { ...w.settings, reduceMotion: v } })
+              }
+            />
+          </div>
         </section>
         <aside>
           <section className="panel settings-card ai-settings">
@@ -2210,8 +2058,8 @@ export function SettingsView() {
             <h2>Your instructional AI</h2>
             <p>
               {aiReady
-                ? "AI can read uploaded work and create teaching suggestions for your review."
-                : "Connect AI to read PDFs and photographs, suggest standards, analyze written work, and create fresh lesson variations."}
+                ? "AI reads uploaded work, retrieves state standards, and creates lesson plans for your review."
+                : "Connect AI to read PDFs and photographs, retrieve state standards, analyze written work, and generate lesson plans."}
             </p>
             <div className="connection-detail">
               <span>Model</span>
@@ -2259,108 +2107,62 @@ export function SettingsView() {
             </p>
           </section>
         </aside>
-        <section className="panel settings-card classrooms-card" id="classrooms">
+        <section className="panel settings-card">
           <SectionTitle
-            title="Classrooms"
-            description="One classroom per period or group. Switch between them from the top bar. Each keeps its own students, assessments, evidence, and lesson plans."
+            title="Your profile"
+            description="The name shown in the sidebar and on printed reports."
           />
-          <div className="classroom-list">
-            {w.classes.map((c) => {
-              const active = c.id === classroom.id;
-              const draft = classEdits[c.id];
-              const counts = {
-                students: w.students.filter((s) => s.classId === c.id).length,
-                assessments: w.assessments.filter((a) => a.classId === c.id)
-                  .length,
-                lessons: w.lessons.filter((l) => l.classId === c.id).length,
-              };
-              return (
-                <div
-                  className={"classroom-row " + (active ? "active" : "")}
-                  key={c.id}
-                >
-                  <div>
-                    <input
-                      aria-label={"Name for " + c.name}
-                      value={draft ?? c.name}
-                      maxLength={70}
-                      onChange={(e) =>
-                        setClassEdits({ ...classEdits, [c.id]: e.target.value })
-                      }
-                    />
-                    <div className="classroom-meta">
-                      Grade {c.grade} · {c.framework} · {counts.students}{" "}
-                      students · {counts.assessments} assessments ·{" "}
-                      {counts.lessons} lesson plans
-                      {c.demo ? " · Sample classroom" : ""}
-                    </div>
-                  </div>
-                  <div>
-                    {active ? (
-                      <Pill tone="green">Open now</Pill>
-                    ) : (
-                      <Action
-                        variant="secondary small"
-                        disabled={busy}
-                        onClick={() => save({ ...w, activeClassId: c.id })}
-                      >
-                        Open
-                      </Action>
-                    )}
-                  </div>
-                  <div>
-                    {draft !== undefined && draft.trim() !== c.name && (
-                      <Action
-                        variant="small"
-                        disabled={busy || !draft.trim()}
-                        onClick={() => renameClassroom(c.id)}
-                      >
-                        <Check size={14} />
-                        Save name
-                      </Action>
-                    )}
-                    <button
-                      className="icon-button"
-                      type="button"
-                      aria-label={"Remove " + c.name}
-                      disabled={w.classes.length < 2 || busy}
-                      onClick={() => setRemoveId(c.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
           <form
-            className="classroom-add"
             onSubmit={(e) => {
               e.preventDefault();
-              addClassroom();
+              save(
+                {
+                  ...w,
+                  settings: { ...w.settings, teacherName: teacher, school },
+                },
+                "Your profile is saved",
+              );
             }}
+            className="form-stack"
           >
-            <input
-              aria-label="New classroom name"
-              value={newClass}
-              maxLength={70}
-              placeholder="e.g. Period 5 · ELA"
-              onChange={(e) => setNewClass(e.target.value)}
-            />
-            <Pick
-              label="New classroom grade"
-              value={newGrade}
-              onChange={setNewGrade}
-              options={Array.from({ length: 13 }, (_, i) => ({
-                value: String(i),
-                label: i === 0 ? "Kindergarten" : "Grade " + i,
-              }))}
-            />
-            <Action type="submit" disabled={busy || !newClass.trim()}>
-              <Plus size={16} />
-              Add classroom
+            <div className="form-grid">
+              <label>
+                Your name
+                <input
+                  value={teacher}
+                  maxLength={100}
+                  onChange={(e) => setTeacher(e.target.value)}
+                  placeholder="What should we call you?"
+                />
+              </label>
+              <label>
+                School or district (optional)
+                <input
+                  value={school}
+                  maxLength={200}
+                  onChange={(e) => setSchool(e.target.value)}
+                />
+              </label>
+            </div>
+            <Action
+              type="submit"
+              disabled={
+                busy ||
+                (teacher === w.settings.teacherName &&
+                  school === w.settings.school)
+              }
+            >
+              Save profile
+              <Check size={16} />
             </Action>
           </form>
+          <div className="settings-note">
+            <Users size={17} />
+            <span>
+              Class names, grades, standards, and rosters live under Classes.
+            </span>
+            <TextLink onClick={() => go("/classes")}>Open classes</TextLink>
+          </div>
         </section>
         <section className="panel settings-card data-settings">
           <SectionTitle
@@ -2388,32 +2190,6 @@ export function SettingsView() {
           </div>
         </section>
       </div>
-      <AlertDialog
-        open={!!removeId}
-        onOpenChange={(v) => !v && setRemoveId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove this classroom?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes its students, assessments, evidence, groups, and
-              lesson plans. Other classrooms are not affected. Export a copy
-              from the section below first if you need one.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Keep classroom</AlertDialogCancel>
-            <button
-              className="action danger"
-              disabled={busy}
-              onClick={removeClassroom}
-            >
-              <Trash2 size={16} />
-              Remove classroom
-            </button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <AlertDialog open={erase} onOpenChange={setErase}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -2421,7 +2197,7 @@ export function SettingsView() {
               Delete all of your workspace data?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This deletes every classroom’s students, assessments, evidence,
+              This deletes every class’s students, assessments, evidence,
               lesson plans, custom standards, and uploaded documents from this
               app. Export a copy first if you need one. This cannot be undone.
             </AlertDialogDescription>

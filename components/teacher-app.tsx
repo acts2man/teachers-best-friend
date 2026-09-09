@@ -31,13 +31,15 @@ import {
 } from "@/components/ui/sidebar";
 import { Toaster, toast } from "sonner";
 import { catalogFor } from "@/lib/teacher-catalog";
-import { standards } from "@/lib/teacher-data";
+import { assessmentInClass } from "@/lib/teacher-classes";
+import { frameworkOptions } from "@/lib/states";
 import type { Workspace } from "@/lib/teacher-types";
 import { TeacherContext } from "./teacher-context";
 import { Pick, Action, Modal, Pill } from "./teacher-shared";
 import HomeView from "./teacher-home";
 import GuideView from "./teacher-guide";
 import { AssessmentView } from "./teacher-assessments";
+import { ClassesView } from "./teacher-classes";
 import { ScanView } from "./teacher-scan";
 import {
   StandardsView,
@@ -49,7 +51,7 @@ const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
   { id: "lessons", label: "Lesson plans", icon: BookOpen },
-  { id: "students", label: "Students", icon: Users },
+  { id: "classes", label: "Classes", icon: Users },
 ];
 const libraryNav = [
   { id: "standards", label: "Standards", icon: Library },
@@ -83,6 +85,7 @@ export default function TeacherApp({ view }: { view: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
+  const [framework, setFramework] = useState("California");
   const router = useRouter();
   async function reload() {
     try {
@@ -121,7 +124,8 @@ export default function TeacherApp({ view }: { view: string }) {
       "reduce-motion",
       w?.settings.reduceMotion ?? false,
     );
-  }, [w?.settings.reduceMotion]);
+    document.documentElement.dataset.theme = w?.settings.theme || "pine";
+  }, [w?.settings.reduceMotion, w?.settings.theme]);
 
   if (!w) {
     return <WorkspaceLoading error={error} retry={reload} />;
@@ -166,7 +170,9 @@ export default function TeacherApp({ view }: { view: string }) {
   const classroom =
       w.classes.find((c) => c.id === w.activeClassId) || w.classes[0],
     students = w.students.filter((s) => s.classId === classroom.id),
-    assessments = w.assessments.filter((a) => a.classId === classroom.id),
+    assessments = w.assessments.filter((a) =>
+      assessmentInClass(a, classroom.id),
+    ),
     catalog = catalogFor(w, classroom.grade, classroom.framework);
   const value = {
     w,
@@ -186,6 +192,7 @@ export default function TeacherApp({ view }: { view: string }) {
       ...nav,
       ...libraryNav,
       { id: "scan", label: "New assessment" },
+      { id: "students", label: "Roster" },
       { id: "settings", label: "Settings" },
       { id: "resources", label: "Teaching resources" },
       { id: "diagnostics", label: "Class insights" },
@@ -203,18 +210,18 @@ export default function TeacherApp({ view }: { view: string }) {
               id,
               name: name.trim(),
               grade: Number(grade),
-              framework: "California",
+              framework,
               demo: false,
             },
           ],
           activeClassId: id,
         },
-        "Your classroom is ready",
+        name.trim() + " is ready. Add its roster next.",
       )
     ) {
       setCreateOpen(false);
       setName("");
-      router.push("/");
+      router.push("/students");
     }
   }
   return (
@@ -339,7 +346,7 @@ export default function TeacherApp({ view }: { view: string }) {
                     v === "new"
                       ? setCreateOpen(true)
                       : v === "manage"
-                        ? router.push("/settings")
+                        ? router.push("/classes")
                         : save({ ...w, activeClassId: v })
                   }
                   options={[
@@ -347,8 +354,8 @@ export default function TeacherApp({ view }: { view: string }) {
                       value: c.id,
                       label: c.name + " · Grade " + c.grade,
                     })),
-                    { value: "new", label: "+ New classroom" },
-                    { value: "manage", label: "Manage classrooms…" },
+                    { value: "new", label: "+ New class" },
+                    { value: "manage", label: "All classes…" },
                   ]}
                 />
               </div>
@@ -381,6 +388,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <AssessmentView />
               ) : view === "guide" ? (
                 <GuideView />
+              ) : view === "classes" ? (
+                <ClassesView />
               ) : view === "scan" ? (
                 <ScanView />
               ) : view === "standards" ? (
@@ -404,8 +413,8 @@ export default function TeacherApp({ view }: { view: string }) {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create a classroom"
-        description="One classroom per period or group. Each keeps its own students, assessments, and lesson plans."
+        title="Create a class"
+        description="One class per period or group. Each keeps its own students, assessments, and lesson plans."
       >
         <form
           onSubmit={(e) => {
@@ -415,7 +424,7 @@ export default function TeacherApp({ view }: { view: string }) {
           className="form-stack"
         >
           <label>
-            Classroom name
+            Class name
             <input
               required
               maxLength={70}
@@ -436,12 +445,23 @@ export default function TeacherApp({ view }: { view: string }) {
               }))}
             />
           </label>
+          <label>
+            Standards
+            <Pick
+              label="Standards framework"
+              value={framework}
+              onChange={setFramework}
+              options={frameworkOptions(
+                w.customStandards.map((s) => s.framework),
+              )}
+            />
+          </label>
           <p className="field-help">
-            California Grade 4 Math and ELA standards are included. Other grades
-            can use standards you add to the library.
+            Choose your state. California Grade 4 is built in; other states and
+            grades are retrieved with AI the first time you need them.
           </p>
           <Action type="submit" disabled={busy || !name.trim()}>
-            Create classroom
+            Create class
             <ArrowRight size={16} />
           </Action>
         </form>

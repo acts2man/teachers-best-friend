@@ -9,6 +9,8 @@ import {
   readWorkspace,
 } from "@/lib/teacher-server";
 import { catalogFor, allStandards } from "@/lib/teacher-catalog";
+import { stateFor } from "@/lib/states";
+import { assessmentClassIds } from "@/lib/teacher-classes";
 import {
   normalizeRecognizedResponses,
   preparationGaps,
@@ -65,6 +67,22 @@ const answerKeySchema = obj({
     }),
   ),
 });
+const catalogSchema = obj({
+  standards: arr(
+    obj({
+      code: str,
+      title: str,
+      domain: str,
+      cluster: str,
+      wording: str,
+      skills: arr(str),
+      dok: { type: "integer", minimum: 1, maximum: 4 },
+      misconception: str,
+      example: str,
+    }),
+  ),
+});
+const rosterSchema = obj({ students: arr(obj({ name: str })) });
 const lessonSchema = obj({
   objective: str,
   materials: arr(str),
@@ -84,7 +102,14 @@ export async function POST(request: Request) {
       );
     const input = z
       .object({
-        mode: z.enum(["assignment", "responses", "answer_key", "lesson"]),
+        mode: z.enum([
+          "assignment",
+          "responses",
+          "answer_key",
+          "lesson",
+          "catalog",
+          "roster",
+        ]),
         text: z.string().max(60000).default(""),
         uploadIds: z.array(z.string()).max(6).default([]),
         grade: z.number().int().min(0).max(12).default(4),
@@ -160,7 +185,11 @@ export async function POST(request: Request) {
       const a = w.assessments.find((a) => a.id === p.assessmentId);
       if (
         !a ||
-        !w.students.some((s) => s.id === p.studentId && s.classId === a.classId)
+        !w.students.some(
+          (s) =>
+            s.id === p.studentId &&
+            assessmentClassIds(a).includes(s.classId),
+        )
       )
         throw new HttpError(
           400,
@@ -208,6 +237,39 @@ export async function POST(request: Request) {
         p.text;
       schema = answerKeySchema;
     }
+    if (p.mode === "catalog") {
+      const state = stateFor(p.framework);
+      if (!state && p.framework !== "Common Core")
+        throw new HttpError(400, "Choose a state or Common Core first.");
+      if (!["Math", "ELA"].includes(p.subject))
+        throw new HttpError(400, "Choose Math or ELA.");
+      const label = state
+        ? state.state + " (" + state.framework + ")"
+        : "the Common Core State Standards";
+      task =
+        "List the currently adopted, official " +
+        (p.subject === "ELA" ? "English Language Arts" : "Mathematics") +
+        " academic standards for grade " +
+        (p.grade === 0 ? "K" : p.grade) +
+        " in " +
+        label +
+        ". Use the exact standard codes and the official wording as published by the state education agency" +
+        (state ? " at " + state.site : "") +
+        ". If the state uses the Common Core or a close derivative, use the state's published codes. Include every grade-level standard, one entry per standard, in the published order. Do not include broader anchor standards, substandards folded into a parent, or standards from other grades. For each standard give a short teacher-friendly title, its domain or strand, its cluster or topic, three component skills a student must show, the typical Webb DOK level, one likely misconception, and one example task. If you are not confident of the official wording for a standard, keep the code and write the wording as closely as you can; the teacher will verify against the official document. Return at most 90 standards. Grade " +
+        p.grade +
+        ", subject " +
+        p.subject +
+        ".";
+      schema = catalogSchema;
+    }
+    if (p.mode === "roster") {
+      if (!content.length && !p.text.trim())
+        throw new HttpError(400, "Upload or photograph the roster first.");
+      task =
+        "Read this class roster. Return each student's name exactly as printed, one entry per student, in the order shown. Ignore headers, teacher names, dates, ID numbers, grades, emails, and any text that is not a student's name. Do not invent names for unreadable rows; skip them. Additional text: " +
+        p.text;
+      schema = rosterSchema;
+    }
     if (p.mode === "lesson") {
       const s = allStandards(w).find(
         (s) =>
@@ -250,7 +312,7 @@ export async function POST(request: Request) {
             schema,
           },
         },
-        max_output_tokens: 14000,
+        max_output_tokens: p.mode === "catalog" ? 24000 : 14000,
       }),
     });
     if (!result.ok)
@@ -378,6 +440,74 @@ export async function POST(request: Request) {
             ? matches[0]
             : { questionId: q.id, answer: "", confidence: 0 };
         });
+    }
+    if (p.mode === "catalog") {
+      const parsed = z
+        .object({
+          standards: z
+            .array(
+              z.object({
+                code: z.string().min(1).max(40),
+                title: z.string().max(120),
+                domain: z.string().max(160),
+                cluster: z.string().max(300),
+                wording: z.string().max(1500),
+                skills: z.array(z.string().max(120)).max(6),
+                dok: z.number().int().min(1).max(4),
+                misconception: z.string().max(400),
+                example: z.string().max(400),
+              }),
+            )
+            .max(120),
+        })
+        .safeParse(output);
+      if (!parsed.success)
+        throw new HttpError(422, "The standards list needs review. Try again.");
+      const state = stateFor(p.framework);
+      const seen = new Set<string>();
+      output.standards = parsed.data.standards
+        .filter((item) => {
+          const key = item.code.trim();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((item) => ({
+          code: item.code.trim(),
+          title: item.title.trim() || item.cluster.slice(0, 60),
+          subject: p.subject,
+          grade: p.grade,
+          domain: item.domain,
+          cluster: item.cluster,
+          summary: item.wording,
+          wording: item.wording,
+          skills: item.skills.filter(Boolean),
+          prerequisites: [],
+          next: [],
+          vocabulary: [],
+          misconception: item.misconception,
+          example: item.example,
+          dok: item.dok,
+          source: state?.site || "https://www.thecorestandards.org",
+          framework: p.framework,
+        }));
+    }
+    if (p.mode === "roster") {
+      const parsed = z
+        .object({ students: z.array(z.object({ name: z.string().max(80) })).max(80) })
+        .safeParse(output);
+      if (!parsed.success)
+        throw new HttpError(422, "The roster couldn’t be read reliably.");
+      const seen = new Set<string>();
+      output.students = parsed.data.students
+        .map((item) => item.name.replace(/\s+/g, " ").trim())
+        .filter((name) => {
+          const key = name.toLowerCase();
+          if (!name || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 60);
     }
     return Response.json({ result: output, model: config.model });
   } catch (e) {
