@@ -396,8 +396,8 @@ input,textarea,.pick {font-size:1rem}
 .getting-started{display:flex;align-items:center;gap:14px;padding:16px 20px;background:#243e38;color:#eaf0ed;border-radius:12px;margin-bottom:26px}
 .getting-started .soft-icon{background:#3b544b;color:#d5ed9b;margin:0}
 .getting-started>div{flex:1;min-width:0}
-.getting-started strong{display:block;font-size:14px;font-weight:600;color:#fff}
-.getting-started span{display:block;font-size:12px;color:#c3d0c8;margin-top:3px;line-height:1.6}
+.getting-started>div>strong{display:block;font-size:14px;font-weight:600;color:#fff}
+.getting-started>div>span{display:block;font-size:12px;color:#c3d0c8;margin-top:3px;line-height:1.6}
 .getting-started .action{background:#d5ed9b;color:#243e38;border-color:#d5ed9b;white-space:nowrap}
 .getting-started>button.dismiss{color:#9fb3a8;font-size:12px;padding:6px 8px;white-space:nowrap}
 .guide-intro{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;margin-bottom:28px}
