@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import type { Workspace } from "@/lib/teacher-types";
 
 type Statement = {
@@ -115,23 +116,108 @@ export async function aiConfig() {
   };
 }
 
+const RPC_FAILURE_MESSAGE =
+  "We couldn’t complete that request. Your changes haven’t been discarded. Please try again.";
+
+function rpcFailure(name: string, error: { code?: string; message: string }) {
+  console.error(
+    `Workspace RPC ${name} failed`,
+    error.code ?? "",
+    error.message,
+  );
+  return new HttpError(500, RPC_FAILURE_MESSAGE);
+}
+
+/**
+ * Reads the workspace revision counter. This never touches the JSON blob:
+ * the relational facade (get_workspace_json / sync_workspace) owns the
+ * document, and the row only supplies the optimistic-concurrency revision.
+ */
+async function workspaceRevision(id: string) {
+  const { data, error } = await createServiceClient()
+    .from("teacher_workspaces")
+    .select("revision")
+    .eq("owner_id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? Number(data.revision) : null;
+}
+
+/**
+ * Writes the full workspace through the sync_workspace RPC. There is no
+ * fallback to the blob: if the RPC fails the request fails with a 500.
+ */
+async function syncWorkspace(id: string, workspace: Workspace) {
+  const { error } = await createServiceClient().rpc("sync_workspace", {
+    p_teacher: id,
+    p_data: workspace,
+  });
+  if (error) throw rpcFailure("sync_workspace", error);
+}
+
+function numeric(value: unknown) {
+  if (typeof value === "number") return value;
+  if (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    !Number.isNaN(Number(value))
+  )
+    return Number(value);
+  return value;
+}
+
+/**
+ * get_workspace_json stores grade as text and strips false booleans, while
+ * the client (and the PUT schema) expect the blob's numeric grade and an
+ * explicit demo flag. Coerce those fields so the JSON the client receives
+ * keeps the same shape it always had.
+ */
+function normalizeWorkspace(data: Workspace): Workspace {
+  const record = data as unknown as Record<string, unknown>;
+  const list = (key: string) =>
+    Array.isArray(record[key])
+      ? (record[key] as Record<string, unknown>[])
+      : [];
+  const settings = (record.settings ?? {}) as Partial<Workspace["settings"]>;
+  return {
+    ...data,
+    classes: list("classes").map((item) => ({
+      ...item,
+      grade: numeric(item.grade),
+      demo: Boolean(item.demo),
+    })),
+    assessments: list("assessments").map((item) => ({
+      ...item,
+      grade: numeric(item.grade),
+    })),
+    customStandards: list("customStandards").map((item) => ({
+      ...item,
+      grade: numeric(item.grade),
+    })),
+    settings: {
+      ...settings,
+      teacherName: settings.teacherName ?? "",
+      school: settings.school ?? "",
+      reduceMotion: Boolean(settings.reduceMotion),
+    },
+  } as Workspace;
+}
+
 export async function readWorkspace(id: string) {
   if (hasSupabaseConfig()) {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("teacher_workspaces")
-      .select("data, revision")
-      .eq("owner_id", id)
-      .maybeSingle();
-    if (error) throw error;
-    return data
-      ? { data: data.data as Workspace, revision: data.revision as number }
-      : null;
+    // Revision first: a save landing between the two reads then surfaces as
+    // a 409 on the next PUT instead of silently overwriting newer data.
+    const revision = await workspaceRevision(id);
+    if (revision === null) return null;
+    const { data, error } = await createServiceClient().rpc(
+      "get_workspace_json",
+      { p_teacher: id },
+    );
+    if (error) throw rpcFailure("get_workspace_json", error);
+    return { data: normalizeWorkspace(data as Workspace), revision };
   }
 
-  const row = await (
-    await sitesDatabase()
-  )
+  const row = await (await sitesDatabase())
     .prepare("SELECT data,revision FROM teacher_workspaces WHERE owner_id=?")
     .bind(id)
     .first<{ data: string; revision: number }>();
@@ -140,14 +226,7 @@ export async function readWorkspace(id: string) {
 
 export async function initializeWorkspace(id: string, workspace: Workspace) {
   if (hasSupabaseConfig()) {
-    const supabase = await createClient();
-    const { error } = await supabase.from("teacher_workspaces").insert({
-      owner_id: id,
-      data: workspace,
-      revision: 0,
-      updated_at: new Date().toISOString(),
-    });
-    if (error && error.code !== "23505") throw error;
+    await syncWorkspace(id, workspace);
     return readWorkspace(id);
   }
 
@@ -167,25 +246,13 @@ export async function updateWorkspace(
   revision: number,
 ) {
   if (hasSupabaseConfig()) {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("teacher_workspaces")
-      .update({
-        data: workspace,
-        revision: revision + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("owner_id", id)
-      .eq("revision", revision)
-      .select("revision")
-      .maybeSingle();
-    if (error) throw error;
-    return data ? Number(data.revision) : null;
+    const current = await workspaceRevision(id);
+    if (current === null || current !== revision) return null;
+    await syncWorkspace(id, workspace);
+    return (await workspaceRevision(id)) ?? revision + 1;
   }
 
-  const result = await (
-    await sitesDatabase()
-  )
+  const result = await (await sitesDatabase())
     .prepare(
       "UPDATE teacher_workspaces SET data=?,revision=revision+1,updated_at=? WHERE owner_id=? AND revision=?",
     )
@@ -196,29 +263,11 @@ export async function updateWorkspace(
 
 export async function replaceWorkspace(id: string, workspace: Workspace) {
   if (hasSupabaseConfig()) {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("teacher_workspaces")
-      .select("revision")
-      .eq("owner_id", id)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error("The classroom could not be found.");
-    const { error: updateError } = await supabase
-      .from("teacher_workspaces")
-      .update({
-        data: workspace,
-        revision: Number(data.revision) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("owner_id", id);
-    if (updateError) throw updateError;
+    await syncWorkspace(id, workspace);
     return;
   }
 
-  await (
-    await sitesDatabase()
-  )
+  await (await sitesDatabase())
     .prepare(
       "UPDATE teacher_workspaces SET data=?,revision=revision+1,updated_at=? WHERE owner_id=?",
     )
@@ -260,9 +309,7 @@ export async function saveDocument(
     httpMetadata: { contentType: file.type },
   });
   try {
-    await (
-      await sitesDatabase()
-    )
+    await (await sitesDatabase())
       .prepare(
         "INSERT INTO teacher_uploads (id,owner_id,name,object_key,mime,size,created_at) VALUES (?,?,?,?,?,?,?)",
       )
@@ -311,9 +358,7 @@ export async function readDocument(
     };
   }
 
-  const row = await (
-    await sitesDatabase()
-  )
+  const row = await (await sitesDatabase())
     .prepare(
       "SELECT id,owner_id,name,object_key,mime,size FROM teacher_uploads WHERE id=? AND owner_id=?",
     )
