@@ -285,10 +285,6 @@ export default function TeacherApp({ view }: { view: string }) {
             </SidebarMenu>
           </SidebarContent>
           <SidebarFooter className="side-footer">
-            <Link href="/guide" className="footer-link">
-              <HelpCircle size={18} />
-              How it works
-            </Link>
             <Link href="/settings" className="footer-link">
               <Settings size={18} />
               Settings

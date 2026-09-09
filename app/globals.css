@@ -394,7 +394,7 @@ input,textarea,.pick {font-size:1rem}
 
 /* Guide, getting-started strip, inline uploads, lesson editor, classroom manager */
 .getting-started{display:flex;align-items:center;gap:14px;padding:16px 20px;background:#243e38;color:#eaf0ed;border-radius:12px;margin-bottom:26px}
-.getting-started .soft-icon{background:#3b544b;color:#d5ed9b}
+.getting-started .soft-icon{background:#3b544b;color:#d5ed9b;margin:0}
 .getting-started>div{flex:1;min-width:0}
 .getting-started strong{display:block;font-size:14px;font-weight:600;color:#fff}
 .getting-started span{display:block;font-size:12px;color:#c3d0c8;margin-top:3px;line-height:1.6}
@@ -424,7 +424,7 @@ input,textarea,.pick {font-size:1rem}
 .guide-step .guide-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
 .guide-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:20px}
 .guide-legend>div{display:flex;gap:12px;padding:16px;background:#fff;border:1px solid #e4e9e5;border-radius:12px}
-.guide-legend .soft-icon{width:38px;height:38px}
+.guide-legend .soft-icon{width:38px;height:38px;margin:0}
 .guide-legend strong{display:block;font-size:14px;color:#25352f}
 .guide-legend strong+span{display:block;font-size:12px;line-height:1.6;color:#738078;margin-top:4px}
 .guide-section{margin-top:34px}
@@ -452,7 +452,7 @@ input,textarea,.pick {font-size:1rem}
 .editor-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px;padding:12px 14px;background:#f2f5ee;border:1px solid #dfe8d9;border-radius:10px;font-size:13px;color:#496441}
 .editor-bar>div{display:flex;gap:8px;flex-wrap:wrap}
 .ai-plan-cta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 18px;align-items:start;margin-top:28px;padding:22px 24px;background:#243e38;color:#eaf0ed;border-radius:14px}
-.ai-plan-cta .soft-icon{background:#3b544b;color:#d5ed9b}
+.ai-plan-cta .soft-icon{background:#3b544b;color:#d5ed9b;margin:0}
 .ai-plan-cta h3{font-size:16px;color:#fff}
 .ai-plan-cta p{font-size:13px;line-height:1.7;color:#c3d0c8;margin-top:5px}
 .ai-plan-cta>div:last-child{grid-column:2;display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
