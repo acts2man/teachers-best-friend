@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
     // Student work now lives inside each assessment.
     return [
       { source: "/review", destination: "/assessments", permanent: false },
+      // The landing page's "Start free" buttons; sign-up lives on /login.
+      { source: "/signup", destination: "/login", permanent: false },
     ];
   },
   webpack(config, { isServer }) {

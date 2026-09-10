@@ -5,7 +5,7 @@ import { BookOpen, LoaderCircle, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 function safeNext(value: string | null) {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/";
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/app";
 }
 
 export default function LoginPage() {

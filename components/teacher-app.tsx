@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   ShieldCheck,
   BookOpen,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Toaster, toast } from "sonner";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { assessmentInClass } from "@/lib/teacher-classes";
 import { frameworkOptions } from "@/lib/states";
 import type { Workspace } from "@/lib/teacher-types";
@@ -101,6 +103,7 @@ export default function TeacherApp({ view }: { view: string }) {
   const [authProvider, setAuthProvider] = useState<"chatgpt" | "supabase">(
     initialSnapshot?.authProvider ?? "chatgpt",
   );
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
@@ -148,6 +151,32 @@ export default function TeacherApp({ view }: { view: string }) {
     return () => document.removeEventListener("visibilitychange", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    // The /admin link is shown only when the signed-in profile has
+    // is_admin = true. Read with the user's own session: RLS lets a user
+    // select their own profiles row. The database's is_admin() check still
+    // guards every admin page, so this is display-only.
+    if (authProvider !== "supabase") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createBrowserSupabase();
+        const { data: auth } = await supabase.auth.getUser();
+        if (!auth.user) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", auth.user.id)
+          .maybeSingle();
+        if (!cancelled) setIsAdmin(Boolean(data?.is_admin));
+      } catch {
+        // Not signed in or Supabase is not configured: no admin link.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authProvider]);
   // The destination view arrives with the new page; clear the optimistic
   // highlight once it does.
   useEffect(() => {
@@ -268,7 +297,7 @@ export default function TeacherApp({ view }: { view: string }) {
       >
         <Sidebar className="app-sidebar">
           <SidebarHeader className="brand-area">
-            <Link href="/" className="brand">
+            <Link href="/app" className="brand">
               <span className="brand-mark">
                 <img
                   src="/brand/teacher-book.png"
@@ -301,7 +330,7 @@ export default function TeacherApp({ view }: { view: string }) {
                     className="nav-link"
                   >
                     <Link
-                      href={n.id === "home" ? "/" : "/" + n.id}
+                      href={n.id === "home" ? "/app" : "/" + n.id}
                       onClick={() => setPendingView(n.id)}
                     >
                       <n.icon size={19} />
@@ -337,6 +366,12 @@ export default function TeacherApp({ view }: { view: string }) {
               <Settings size={18} />
               Settings
             </Link>
+            {isAdmin && (
+              <Link href="/admin" className="footer-link">
+                <LayoutDashboard size={18} />
+                Admin
+              </Link>
+            )}
             {authProvider === "supabase" && (
               <form action="/auth/signout" method="post">
                 <button className="footer-link" type="submit">
@@ -357,6 +392,11 @@ export default function TeacherApp({ view }: { view: string }) {
               </div>
               <ShieldCheck size={16} />
             </div>
+            <nav className="footer-legal" aria-label="Policies">
+              <Link href="/legal/privacy">Privacy</Link>
+              <Link href="/legal/student-data-privacy">Student data</Link>
+              <Link href="/legal/how-we-use-ai">How we use AI</Link>
+            </nav>
           </SidebarFooter>
         </Sidebar>
         <div className="app-main">

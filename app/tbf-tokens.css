@@ -1,0 +1,127 @@
+/* A Teacher's Best Friend — design tokens
+   Import once from app/layout.tsx after globals.css. */
+
+:root {
+  /* Paper and ink */
+  --paper:        #FBFBF9;
+  --paper-deep:   #F1F1EC;
+  --ink:          #1B2A41;
+  --ink-soft:     #4A5568;
+  --ink-mute:     #8A94A6;
+
+  /* The ruled line on notebook paper */
+  --rule:         #A8C5E8;
+  --rule-faint:   #DCE7F5;
+
+  /* Marking-pen green: the color a teacher marks "correct" with */
+  --mark:         #2F7D4F;
+  --mark-deep:    #235F3C;
+  --mark-tint:    #E4F2EA;
+
+  /* Highlighter, used only on the hero worksheet */
+  --highlight:    #FFF3B0;
+
+  /* Correction red, used sparingly and only for errors */
+  --correct-red:  #B9433D;
+  --red-tint:     #F8E7E6;
+
+  /* Type */
+  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --font-body:    var(--font-atkinson), "Segoe UI", system-ui, sans-serif;
+
+  /* Scale — Elements of Typographic Style, 1.25 major third */
+  --t-1: 3.815rem;
+  --t-2: 3.052rem;
+  --t-3: 2.441rem;
+  --t-4: 1.953rem;
+  --t-5: 1.563rem;
+  --t-6: 1.25rem;
+  --t-7: 1rem;
+  --t-8: 0.8rem;
+
+  --measure: 68ch;
+  --radius: 6px;
+}
+
+.tbf {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-7);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tbf h1, .tbf h2, .tbf h3, .tbf .display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  font-variation-settings: "opsz" 144, "SOFT" 30;
+}
+
+.tbf h1 { font-size: clamp(2.4rem, 5vw, var(--t-1)); }
+.tbf h2 { font-size: clamp(1.8rem, 3.2vw, var(--t-3)); }
+.tbf h3 { font-size: var(--t-5); }
+
+.tbf p { max-width: var(--measure); }
+
+/* The ruled line: a section divider that means something on this site */
+.rule {
+  border: 0;
+  height: 1px;
+  background: var(--rule);
+  margin: 0;
+}
+
+.tbf a { color: var(--mark-deep); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.tbf a:hover { color: var(--ink); }
+
+.tbf :focus-visible {
+  outline: 2px solid var(--mark);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .8rem 1.25rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none !important;
+  border: 1px solid transparent;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.btn-mark  { background: var(--mark); color: #fff !important; }
+.btn-mark:hover { background: var(--mark-deep); }
+.btn-quiet { background: transparent; color: var(--ink) !important; border-color: var(--rule); }
+.btn-quiet:hover { border-color: var(--ink); }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tbf * { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Admin surface ---------- */
+.admin { background: var(--paper-deep); min-height: 100dvh; }
+.admin .panel {
+  background: var(--paper);
+  border: 1px solid var(--rule-faint);
+  border-radius: var(--radius);
+}
+.admin table { width: 100%; border-collapse: collapse; font-size: var(--t-8); }
+.admin th { text-align: left; font-weight: 600; color: var(--ink-soft);
+            padding: .6rem .75rem; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.admin td { padding: .6rem .75rem; border-bottom: 1px solid var(--rule-faint); vertical-align: top; }
+.admin tr:hover td { background: #fff; }
+.admin .num { text-align: right; font-variant-numeric: tabular-nums; }
+.admin input, .admin select, .admin textarea {
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: .45rem .6rem; font: inherit; color: var(--ink);
+}
+.pill { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+.pill-ok    { background: var(--mark-tint); color: var(--mark-deep); }
+.pill-warn  { background: var(--highlight); color: #6B5900; }
+.pill-bad   { background: var(--red-tint); color: var(--correct-red); }
+.pill-mute  { background: var(--paper-deep); color: var(--ink-soft); }

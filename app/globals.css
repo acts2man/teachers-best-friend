@@ -536,3 +536,4 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .scope-controls .pick,.filter-bar .pick,.classroom-add .pick{width:100%!important;max-width:100%!important;min-width:0!important}
 .pick [data-slot=select-value]{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .roster-actions .switch-label{margin-bottom:0}
+.footer-legal{display:flex;flex-wrap:wrap;gap:4px 12px;padding:10px 5px 0;font-size:12px}.footer-legal a{color:hsl(calc(143deg + var(--th)) calc(12% * var(--ts)) 65%);text-decoration:none}.footer-legal a:hover{color:hsl(calc(77deg + var(--th)) calc(67% * var(--ts)) 83.1%)}
