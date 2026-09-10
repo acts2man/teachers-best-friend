@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowRight,
   BookOpen,
@@ -170,22 +171,16 @@ export function StudentResponseReview({
     if (aiReady) {
       setStatus("Reading the student’s answers against your key…");
       try {
-        const r = await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode: "responses",
-              text: "",
-              uploadIds: ids,
-              grade: a.grade,
-              subject: a.subject,
-              framework: a.framework,
-              assessmentId: a.id,
-              studentId: selected,
-            }),
-          }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await analyzeRequest({
+          mode: "responses",
+          text: "",
+          uploadIds: ids,
+          grade: a.grade,
+          subject: a.subject,
+          framework: a.framework,
+          assessmentId: a.id,
+          studentId: selected,
+        });
         await onSave(
           {
             ...withFiles,

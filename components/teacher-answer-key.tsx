@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { analyzeRequest } from "@/lib/analyze-client";
 import {
   Camera,
   Check,
@@ -120,21 +121,15 @@ export function AnswerKeyReview({
     setReading(true);
     setNotice("");
     try {
-      const r = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "answer_key",
-            assessmentId: a.id,
-            uploadIds,
-            text: paste,
-            grade: a.grade,
-            subject: a.subject,
-            framework: a.framework,
-          }),
-        }),
-        d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await analyzeRequest({
+        mode: "answer_key",
+        assessmentId: a.id,
+        uploadIds,
+        text: paste,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+      });
       const found = d.result.answers as {
         questionId: string;
         answer: string;

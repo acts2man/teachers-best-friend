@@ -43,6 +43,10 @@ The existing server-side Responses adapter uses the hosted OPENAI_API_KEY secret
 
 AI requests use strict structured outputs, uploaded-file ownership checks, supplied standards, store:false, bounded document sizes, and teacher review before results contribute to student evidence.
 
+### Background analysis (optional)
+
+Netlify serverless functions are capped at ~26 seconds, so a long assessment scan can outlast the request. Setting `ANALYZE_ASYNC=1` (Supabase deployment only) switches `/api/analyze` to OpenAI background mode: the route starts the model job, returns a scan id immediately, and the client polls `/api/analyze/{scanId}` until the analysis finishes. The scan row (from the `scans` table) tracks the job; apply the `20260910000000_scan_async_results.sql` migration before enabling the flag. Background jobs are stored on OpenAI (`store:true`, required for polling) and deleted by the poll route as soon as the result is read. With the flag unset the synchronous path is unchanged and stores nothing on the provider.
+
 ## Scope and data notes
 
 California Grade 4 official wording is sourced from the [California Department of Education](https://www2.cde.ca.gov/cacs/). Full catalogs for other grades are not preloaded. Curriculum page mappings are teacher-entered. No district-content indexing, SIS integration, or separate photo deskew/shadow-removal pipeline is implied.

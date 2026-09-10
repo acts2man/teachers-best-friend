@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -149,21 +150,15 @@ export function AssessmentView() {
     setReading(true);
     try {
       if (aiReady) {
-        const r = await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode: "assignment",
-              text: "",
-              uploadIds: documents,
-              grade: target.grade,
-              subject: target.subject,
-              framework: target.framework,
-              targetStandards: target.targetStandards,
-            }),
-          }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await analyzeRequest({
+          mode: "assignment",
+          text: "",
+          uploadIds: documents,
+          grade: target.grade,
+          subject: target.subject,
+          framework: target.framework,
+          targetStandards: target.targetStandards,
+        });
         const questions = d.result.questions as Question[];
         if (!questions.length)
           throw new Error(

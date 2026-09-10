@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -362,13 +363,11 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
       }
       let names: string[] = [];
       if (ids.length && aiReady) {
-        const r = await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "roster", uploadIds: ids, text: "" }),
-          }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await analyzeRequest({
+          mode: "roster",
+          uploadIds: ids,
+          text: "",
+        });
         names = d.result.students as string[];
       } else if (text.trim()) names = namesFromText(text);
       else if (ids.length && !aiReady)
@@ -463,13 +462,13 @@ export function StandardsLoader({
     try {
       let added: Standard[] = [];
       for (const s of subjects) {
-        const r = await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "catalog", grade, framework, subject: s, text: "" }),
-          }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await analyzeRequest({
+          mode: "catalog",
+          grade,
+          framework,
+          subject: s,
+          text: "",
+        });
         const existing = new Set(
           [...w.customStandards, ...added]
             .filter((x) => x.framework === framework && x.grade === grade && x.subject === s)
