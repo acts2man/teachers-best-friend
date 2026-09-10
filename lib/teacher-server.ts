@@ -75,6 +75,9 @@ export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    // Optional internal detail (e.g. an upstream provider's status and error
+    // body) recorded for diagnosis but never shown to the user.
+    public detail?: string,
   ) {
     super(message);
   }

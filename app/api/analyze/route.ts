@@ -125,7 +125,9 @@ export async function POST(request: Request) {
           model: settings.model,
           isLesson: p.mode === "lesson",
           usage: undefined,
-          errorMessage: e instanceof Error ? e.message : String(e),
+          errorMessage:
+            (e instanceof HttpError && e.detail) ||
+            (e instanceof Error ? e.message : String(e)),
         });
         throw e;
       }
@@ -165,7 +167,9 @@ export async function POST(request: Request) {
       output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
       ok = true;
     } catch (e) {
-      errorMessage = e instanceof Error ? e.message : String(e);
+      errorMessage =
+        (e instanceof HttpError && e.detail) ||
+        (e instanceof Error ? e.message : String(e));
       if (
         e instanceof Error &&
         (e.name === "TimeoutError" || e.name === "AbortError")

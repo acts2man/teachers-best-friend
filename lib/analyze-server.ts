@@ -17,6 +17,21 @@ const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
 const AI_UNAVAILABLE =
   "The AI service couldn’t complete this analysis. Your documents are saved; please try again later.";
 
+// Builds the user-facing 502 while recording the provider's real status and
+// error body as internal detail, so an opaque failure can be diagnosed from the
+// scans table instead of inferred.
+async function aiUnavailable(where: string, result: Response) {
+  let body = "";
+  try {
+    body = (await result.text()).slice(0, 400);
+  } catch {
+    // ignore — the status alone is still useful
+  }
+  const detail = `openai ${where} ${result.status}${body ? ": " + body : ""}`;
+  console.error("OpenAI request failed", detail);
+  return new HttpError(502, AI_UNAVAILABLE, detail);
+}
+
 // ChatGPT Sites has no pipeline_config table, so that host keeps its fixed
 // per-mode routing. The Supabase deployment reads routing from the table
 // and has no hardcoded fallback.
@@ -203,7 +218,7 @@ export async function runModelSync(
       requestBody(settings, content, mode, schema, { store: false }),
     ),
   });
-  if (!result.ok) throw new HttpError(502, AI_UNAVAILABLE);
+  if (!result.ok) throw await aiUnavailable("sync", result);
   return (await result.json()) as ResponsesResult;
 }
 
@@ -233,9 +248,9 @@ export async function startModelBackground(
       }),
     ),
   });
-  if (!result.ok) throw new HttpError(502, AI_UNAVAILABLE);
+  if (!result.ok) throw await aiUnavailable("create", result);
   const data = (await result.json()) as { id?: string };
-  if (!data.id) throw new HttpError(502, AI_UNAVAILABLE);
+  if (!data.id) throw new HttpError(502, AI_UNAVAILABLE, "openai create: no id");
   return data.id;
 }
 
@@ -248,7 +263,7 @@ export async function getBackgroundResponse(
     headers: { Authorization: "Bearer " + key },
     signal: AbortSignal.timeout(20000),
   });
-  if (!result.ok) throw new HttpError(502, AI_UNAVAILABLE);
+  if (!result.ok) throw await aiUnavailable("poll", result);
   return (await result.json()) as ResponsesResult;
 }
 
