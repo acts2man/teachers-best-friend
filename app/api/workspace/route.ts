@@ -46,7 +46,12 @@ const dataSchema = z.object({
             assessmentId: z.string().optional(),
           }),
         ),
-        notes: z.string(),
+        // Accept a missing or null note (the store can hold either) and save it
+        // as empty text, so an unset note never rejects the whole classroom.
+        notes: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ""),
       }),
     )
     .max(3000),

@@ -210,6 +210,13 @@ function normalizeWorkspace(data: Workspace): Workspace {
       ...item,
       grade: numeric(item.grade),
     })),
+    // The relational facade returns an empty student note as null, but the
+    // client and the save schema treat notes as a plain string. Coerce it so a
+    // teacher can always save their classroom.
+    students: list("students").map((item) => ({
+      ...item,
+      notes: typeof item.notes === "string" ? item.notes : "",
+    })),
     customStandards: list("customStandards").map((item) => ({
       ...item,
       grade: numeric(item.grade),
