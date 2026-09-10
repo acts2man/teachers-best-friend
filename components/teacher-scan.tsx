@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { readJson } from "@/lib/utils";
+import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowLeft,
   ArrowRight,
@@ -279,23 +279,17 @@ export function ScanView() {
     setAnalyzing(true);
     setError("");
     try {
-      const r = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode,
-            text,
-            uploadIds: files.map((f) => f.id),
-            grade: mode === "responses" ? chosen!.grade : Number(grade),
-            subject: mode === "responses" ? chosen!.subject : subject,
-            framework: mode === "responses" ? chosen!.framework : framework,
-            targetStandards: selected,
-            assessmentId,
-            studentId,
-          }),
-        }),
-        d = await readJson(r);
-      if (!r.ok) throw new Error(d.error);
+      const d = await analyzeRequest({
+        mode,
+        text,
+        uploadIds: files.map((f) => f.id),
+        grade: mode === "responses" ? chosen!.grade : Number(grade),
+        subject: mode === "responses" ? chosen!.subject : subject,
+        framework: mode === "responses" ? chosen!.framework : framework,
+        targetStandards: selected,
+        assessmentId,
+        studentId,
+      });
       if (mode === "assignment") {
         const a = makeAssessment(d.result.questions, "ai", d.result.title);
         if (

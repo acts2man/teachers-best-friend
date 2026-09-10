@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
-import { readJson } from "@/lib/utils";
+import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -397,21 +397,15 @@ export function ReteachView() {
     if (!s || !aiReady) return;
     setAiBusy(true);
     try {
-      const r = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "lesson",
-            standard: s.code,
-            duration: Number(duration),
-            modality,
-            text: notes,
-            framework: contextFramework,
-            grade: contextGrade,
-          }),
-        }),
-        d = await readJson(r);
-      if (!r.ok) throw new Error(d.error);
+      const d = await analyzeRequest({
+        mode: "lesson",
+        standard: s.code,
+        duration: Number(duration),
+        modality,
+        text: notes,
+        framework: contextFramework,
+        grade: contextGrade,
+      });
       setCustom(d.result);
       setEdited(false);
       setEditing(false);
