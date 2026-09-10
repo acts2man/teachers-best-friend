@@ -80,10 +80,15 @@ export async function GET(
     if (status !== "completed") {
       if (!TERMINAL_FAILURES.has(status))
         return Response.json({ status: "analyzing" });
-      const message =
+      const userMessage =
         status === "incomplete"
           ? "This document needs a smaller batch. Try fewer pages."
           : "The analysis couldn’t be completed. Your documents are saved.";
+      // Persist the provider's own terminal reason (e.g. max_output_tokens,
+      // content_filter) to scans.error so a failure can be diagnosed from the
+      // table without re-running it.
+      const reason = remote.incomplete_details?.reason;
+      const storedMessage = `${status}${reason ? ": " + reason : ""} — ${userMessage}`;
       await failScan(
         svc,
         scanId,
@@ -91,10 +96,10 @@ export async function GET(
         providerId,
         model,
         isLesson,
-        message,
+        storedMessage,
         remote.usage,
       );
-      return Response.json({ status: "failed", error: message });
+      return Response.json({ status: "failed", error: userMessage });
     }
 
     const text = responseText(remote);

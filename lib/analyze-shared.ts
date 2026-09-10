@@ -33,6 +33,7 @@ export type ResponsesUsage = {
 
 export type ResponsesResult = {
   status?: string;
+  incomplete_details?: { reason?: string } | null;
   usage?: ResponsesUsage;
   output?: { content?: { type: string; text?: string }[] }[];
 };
@@ -246,9 +247,9 @@ export function buildPrompt(
       (p.grade === 0 ? "K" : p.grade) +
       " in " +
       label +
-      ". Use the exact standard codes and the official wording as published by the state education agency" +
+      ". Use the exact standard codes as published by the state education agency" +
       (state ? " at " + state.site : "") +
-      ". If the state uses the Common Core or a close derivative, use the state's published codes. Include every grade-level standard, one entry per standard, in the published order. Do not include broader anchor standards, substandards folded into a parent, or standards from other grades. For each standard give a short teacher-friendly title, its domain or strand, its cluster or topic, three component skills a student must show, the typical Webb DOK level, one likely misconception, and one example task. If you are not confident of the official wording for a standard, keep the code and write the wording as closely as you can; the teacher will verify against the official document. Return at most 90 standards. Grade " +
+      ". If the state uses the Common Core or a close derivative, use the state's published codes. Include every grade-level standard, one entry per standard, in the published order. Do not include broader anchor standards, substandards folded into a parent, or standards from other grades. For each standard give a short teacher-friendly title, its domain or strand, its cluster or topic, a concise one- to two-sentence plain-language description of what the standard requires (a brief summary, NOT the full official paragraph), three component skills a student must show, the typical Webb DOK level, one likely misconception, and one example task. Keep every field brief so the whole grade fits in one response; the teacher will verify against the official document. Return at most 90 standards. Grade " +
       p.grade +
       ", subject " +
       p.subject +
