@@ -1,12 +1,8 @@
 # Marketing images
 
-Drop the real photos in here at these exact paths (any landscape photo works —
-each is `object-fit: cover`'d into its frame). Replacing a file with a real
-photo and removing the `placeholder` prop on its `<Figure>` in
-`app/(marketing)/page.tsx` clears the "Photo placeholder" tag.
-
-The files currently in this folder are tiny brand-tinted **placeholders** so the
-layout renders before the real photos exist.
+The real photos are in place. To swap any of them later, drop a new file at the
+same path (any landscape photo works — each is `object-fit: cover`'d into its
+frame); no code change is needed.
 
 | File | Where it appears | Suggested source (from the brief) | Aspect used |
 |------|------------------|-----------------------------------|-------------|
