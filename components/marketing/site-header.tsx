@@ -43,8 +43,19 @@ export function SiteHeader() {
   return (
     <header className={`mk-header${scrolled || open ? " is-scrolled" : ""}${open ? " is-open" : ""}`}>
       <div className="mk-wrap mk-nav">
-        <Link href="/" className="mk-brand" onClick={close}>
-          A Teacher’s <em>Best Friend</em>
+        <Link
+          href="/"
+          className="mk-brand"
+          onClick={close}
+          aria-label="A Teacher’s Best Friend — home"
+        >
+          <span className="mk-brand-mark">
+            {/* same asset as the sign-in page and the app sidebar */}
+            <img src="/brand/teacher-book.png" alt="" width="40" height="40" />
+          </span>
+          <span className="mk-brand-word">
+            A Teacher’s <em>Best Friend</em>
+          </span>
         </Link>
         <nav aria-label="Main">
           {LINKS.map((l) => <Link key={l.href} href={l.href}>{l.label}</Link>)}

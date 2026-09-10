@@ -139,17 +139,26 @@
 .mk-menu-btn svg { width: 22px; height: 22px; }
 .mk-menu-btn:hover { background: rgba(27,42,65,0.06); }
 .mk-mobile-nav { display: none; }
-.mk-brand {
+.mk-brand { display: inline-flex; align-items: center; gap: 0.6rem; text-decoration: none; color: var(--ink); }
+.mk-brand-mark {
+  display: grid; place-items: center; flex: none;
+  width: 38px; height: 38px; border-radius: 10px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--hair-soft), 0 1px 2px rgba(27,42,65,0.06);
+  transition: box-shadow 0.25s var(--ease-out);
+}
+.mk-brand-mark img { width: 28px; height: 28px; display: block; }
+.mk-brand-word {
   font-family: var(--font-display);
-  font-size: 1.32rem;
+  font-size: 1.28rem;
   color: var(--ink);
-  text-decoration: none;
   font-variation-settings: "opsz" 48, "SOFT" 30;
   letter-spacing: -0.015em;
   white-space: nowrap;
+  line-height: 1;
 }
-.mk-brand em { font-style: italic; color: var(--mark-deep); font-variation-settings: "opsz" 48, "SOFT" 100; }
-.mk-brand:hover { color: var(--ink); }
+.mk-brand-word em { font-style: italic; color: var(--mark-deep); font-variation-settings: "opsz" 48, "SOFT" 100; }
+.mk-brand:hover .mk-brand-mark { box-shadow: inset 0 0 0 1px var(--hair), 0 6px 14px -8px rgba(27,42,65,0.3); }
 
 /* ---------- sections ---------- */
 .section { padding-block: clamp(4rem, 9vw, 7.5rem); }
@@ -325,7 +334,24 @@
 
 /* ---------- pricing ---------- */
 .pricing-intro { max-width: 58ch; font-size: 1.125rem; }
-.plans { list-style: none; margin: 2.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; align-items: stretch; }
+/* One rail of cards that fills the row when it fits and scrolls when it
+   doesn't — so four or five tiers both read cleanly without cramping. */
+.plans {
+  list-style: none; margin: 2.5rem 0 0; padding: 0.5rem 0 1rem;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(210px, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair) transparent;
+}
+.plans::-webkit-scrollbar { height: 8px; }
+.plans::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 999px; }
+.plans .plan { scroll-snap-align: start; }
 .plan {
   position: relative;
   display: flex; flex-direction: column;
@@ -417,7 +443,7 @@
   .steps { grid-template-columns: 1fr 1fr; }
   .steps-rail { display: none; }
   .privacy .section-body, .districts .section-body { grid-template-columns: 1fr; gap: 2rem; }
-  .plans { grid-template-columns: 1fr 1fr; }
+  /* .plans stays a horizontal scroll rail here — cards keep their width */
 }
 @media (max-width: 860px) {
   .mk-nav nav { display: none; }
@@ -457,7 +483,8 @@
   .scan-panel { width: 100%; margin: 0.75rem 0 0; }
   .steps { grid-template-columns: 1fr; gap: 1.75rem; }
   .privacy-facts { grid-template-columns: 1fr; }
-  .plans { grid-template-columns: 1fr; }
+  /* stack the plans instead of scrolling once we're on a phone */
+  .plans { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: 1fr; overflow-x: visible; }
   .coverage { display: block; overflow-x: auto; }
   .mk-footer-grid { grid-template-columns: 1fr; gap: 1.5rem; }
   .districts-quote { padding: 1.6rem 1.4rem 1.4rem; font-size: 1.15rem; }
@@ -467,4 +494,119 @@
   .mk .em path { animation: none; stroke-dashoffset: 0; }
   .mk .btn:hover { transform: none; }
   .plan:hover { transform: none; }
+}
+
+/* ============================================================
+   Additions: brand imagery, story/trust/testimonial bands.
+   ============================================================ */
+
+/* ---------- figures ---------- */
+.mk-figure {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--paper-deep);
+  box-shadow: var(--shadow-2);
+}
+.mk-figure-img { object-fit: cover; }
+.mk-figure.is-placeholder { outline: 1px dashed rgba(35, 95, 60, 0.4); outline-offset: -1px; }
+.mk-figure-tag {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 2;
+  background: rgba(27, 42, 65, 0.72); color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.72rem; font-weight: 600;
+  padding: 0.3rem 0.6rem; border-radius: 999px;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+
+/* ---------- story band (under hero) ---------- */
+.story-band { padding-block: clamp(2.5rem, 5vw, 4rem); display: grid; gap: clamp(1.25rem, 3vw, 2rem); }
+.story-figure { aspect-ratio: 16 / 9 !important; }
+.story-caption { max-width: 62ch; }
+.story-kicker {
+  font-family: var(--font-caveat), "Segoe Print", cursive;
+  color: var(--mark-deep); font-size: 1.3rem; line-height: 1;
+  transform: rotate(-1.5deg); display: inline-block; margin-bottom: 0.6rem;
+}
+.story-line {
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.6vw, 2rem); line-height: 1.28;
+  letter-spacing: -0.015em; color: var(--ink); max-width: 30ch;
+  font-variation-settings: "opsz" 72, "SOFT" 40;
+}
+
+/* ---------- how-it-works lead image ---------- */
+.how-figure { margin-bottom: clamp(1.75rem, 4vw, 2.75rem); aspect-ratio: 16 / 8.2 !important; }
+
+/* ---------- trust band ---------- */
+.trust-band { padding-block: clamp(1.25rem, 3vw, 2rem); }
+.trust-strip {
+  list-style: none; margin: 0;
+  padding: clamp(1.1rem, 2.5vw, 1.6rem) clamp(1.2rem, 3vw, 2rem);
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4rem 2rem;
+  background: var(--mark-tint);
+  border: 1px solid rgba(47, 125, 79, 0.16);
+  border-radius: 16px;
+}
+.trust-strip li { display: flex; gap: 0.7rem; align-items: flex-start; }
+.trust-strip svg { width: 20px; height: 20px; color: var(--mark-deep); flex: none; margin-top: 2px; }
+.trust-strip span { font-size: 0.9rem; line-height: 1.42; color: var(--ink-soft); }
+.trust-strip strong { display: block; color: var(--ink); font-size: 0.95rem; margin-bottom: 0.15rem; }
+
+/* ---------- testimonials ---------- */
+.testi-band { padding-block: clamp(3rem, 7vw, 5.5rem); }
+.testi-head { max-width: 54ch; margin-bottom: clamp(1.5rem, 3vw, 2.25rem); }
+.testi-head h2 { margin-top: 0.4rem; }
+.testi-sub { color: var(--ink-mute); font-size: 0.9rem; font-style: italic; margin-top: 0.75rem; }
+.testi-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+.testi-card {
+  display: flex; flex-direction: column; justify-content: space-between; gap: 1.25rem;
+  padding: 1.6rem 1.5rem;
+  background: #fff; border: 1px solid var(--hair-soft); border-radius: 14px;
+  box-shadow: var(--shadow-1);
+}
+.testi-quote {
+  font-family: var(--font-display);
+  font-size: 1.12rem; line-height: 1.42; letter-spacing: -0.01em; color: var(--ink);
+  font-variation-settings: "opsz" 40, "SOFT" 50;
+}
+.testi-by { color: var(--ink-mute); font-size: 0.85rem; font-weight: 700; }
+.testi-photo { display: grid; }
+.testi-photo .mk-figure { aspect-ratio: auto !important; height: 100%; min-height: 240px; border-radius: 14px; }
+
+/* ---------- footer additions ---------- */
+.mk-foot-brand .mk-brand { margin-bottom: 0.95rem; }
+.mk-foot-tagline { color: var(--ink-soft); max-width: 34ch; font-size: 0.95rem; margin-bottom: 1.15rem; line-height: 1.55; }
+.mk-foot-legal { color: var(--ink-mute); }
+
+/* ---------- responsive: additions ---------- */
+@media (max-width: 900px) {
+  .testi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .trust-strip { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .trust-strip { grid-template-columns: 1fr; }
+  .testi-grid { grid-template-columns: 1fr; }
+  .testi-photo .mk-figure { min-height: 200px; }
+  .story-figure { aspect-ratio: 4 / 3 !important; }
+  .mk-brand-word { font-size: 1.14rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-brand:hover .mk-brand-mark { box-shadow: inset 0 0 0 1px var(--hair-soft), 0 1px 2px rgba(27,42,65,0.06); }
+}
+
+/* keep the top bar uncramped on small phones: logo mark stands in for the
+   full wordmark, so the icon + Start free + menu button always fit */
+@media (max-width: 460px) {
+  .mk-brand-word { display: none; }
+  .mk-brand-mark { width: 40px; height: 40px; }
+  .mk-brand-mark img { width: 30px; height: 30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-mobile-nav { animation: none !important; }
 }

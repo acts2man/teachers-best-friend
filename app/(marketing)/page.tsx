@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { ShieldCheck, UserX, Trash2, Ban } from "lucide-react";
 import { LiveScanHero } from "@/components/marketing/live-scan-hero";
+import { Figure } from "@/components/marketing/figure";
 import { Reveal, RevealGroup, RevealItem, StepsRail } from "@/components/marketing/motion";
 
 /* Pricing is read from the same table the app meters against, so the page
@@ -16,7 +18,8 @@ async function getPlans() {
     { id: "free", name: "Free", price_cents: 0, scan_quota: 20, seat_based: false, sort_order: 1 },
     { id: "starter", name: "Starter", price_cents: 900, scan_quota: 150, seat_based: false, sort_order: 2 },
     { id: "pro", name: "Pro", price_cents: 1900, scan_quota: 500, seat_based: false, sort_order: 3 },
-    { id: "team", name: "Team", price_cents: 1500, scan_quota: 500, seat_based: true, sort_order: 4 },
+    { id: "elite", name: "Elite", price_cents: 2999, scan_quota: 1000, seat_based: false, sort_order: 4 },
+    { id: "team", name: "Team", price_cents: 1500, scan_quota: 500, seat_based: true, sort_order: 5 },
   ];
 }
 
@@ -36,8 +39,16 @@ const GOOD_FOR: Record<string, string> = {
   free: "Trying it on one assignment",
   starter: "One class, weekly checks",
   pro: "Multiple periods, or checking every assignment",
+  elite: "Every assignment, every class, all year",
   team: "A grade-level team or department, five or more",
 };
+
+/* $0 and whole-dollar plans read cleanly; a plan with cents (Elite, $29.99)
+   keeps them instead of rounding up to $30. */
+function priceLabel(cents: number) {
+  if (cents === 0) return "$0";
+  return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+}
 
 export default async function LandingPage() {
   const plans = await getPlans();
@@ -78,6 +89,27 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* ---------------- Story band: the problem, in a face ---------------- */}
+      <Reveal as="section" className="mk-wrap story-band">
+        <Figure
+          src="/images/teacher-overwhelmed.png"
+          alt="A teacher at her desk after school, working through a tall stack of student papers"
+          width={1600}
+          height={1040}
+          sizes="(max-width: 1200px) 100vw, 1160px"
+          className="story-figure"
+          placeholder
+        />
+        <div className="story-caption">
+          <p className="story-kicker">The Sunday that never ends</p>
+          <p className="story-line">
+            The stack doesn’t get smaller. Every paper holds a different reason a
+            student missed question three — and finding it is the part that eats
+            the weekend.
+          </p>
+        </div>
+      </Reveal>
+
       <hr className="hairline mk-wrap" />
 
       {/* ---------------- The Sunday-night problem ---------------- */}
@@ -105,6 +137,17 @@ export default async function LandingPage() {
           <SectionHead no="02">How it works</SectionHead>
         </Reveal>
         <div className="section-body">
+          <Reveal>
+            <Figure
+              src="/images/scanning-worksheet.png"
+              alt="A teacher photographing a worksheet on a classroom counter with a phone"
+              width={1280}
+              height={854}
+              sizes="(max-width: 1200px) 100vw, 1160px"
+              className="how-figure"
+              placeholder
+            />
+          </Reveal>
           <StepsRail count={4}>
             <RevealGroup as="ol" className="steps">
               <RevealItem as="li">
@@ -141,6 +184,28 @@ export default async function LandingPage() {
           </StepsRail>
         </div>
       </section>
+
+      {/* ---------------- Trust band: privacy at a glance ---------------- */}
+      <Reveal as="section" className="mk-wrap trust-band" aria-label="Privacy at a glance">
+        <ul className="trust-strip">
+          <li>
+            <ShieldCheck aria-hidden="true" />
+            <span><strong>SOPIPA-compliant</strong>Covered whether or not your district signs anything.</span>
+          </li>
+          <li>
+            <UserX aria-hidden="true" />
+            <span><strong>Names optional</strong>Every feature works with initials or a seat number.</span>
+          </li>
+          <li>
+            <Trash2 aria-hidden="true" />
+            <span><strong>Photos auto-deleted</strong>The analysis stays. The photograph doesn’t.</span>
+          </li>
+          <li>
+            <Ban aria-hidden="true" />
+            <span><strong>Never trained on</strong>Not by us, not by our AI provider. In the contract.</span>
+          </li>
+        </ul>
+      </Reveal>
 
       <hr className="hairline mk-wrap" />
 
@@ -233,6 +298,61 @@ export default async function LandingPage() {
         </div>
       </Reveal>
 
+      {/* ---------------- Testimonials (placeholder) ---------------- */}
+      <section className="mk-wrap testi-band" aria-label="What teachers say">
+        <Reveal className="testi-head">
+          <p className="story-kicker">What teachers tell us</p>
+          <h2>The reteaching part, finally, is the fast part.</h2>
+          <p className="testi-sub">
+            Quotes are placeholders until we publish real ones — the photos are
+            placeholders too.
+          </p>
+        </Reveal>
+        <RevealGroup as="ul" className="testi-grid">
+          <RevealItem as="li" className="testi-card">
+            <p className="testi-quote">
+              “[Placeholder quote — a teacher describing getting a Sunday back
+              because the misconceptions were already grouped for her.]”
+            </p>
+            <p className="testi-by">[Placeholder Name] · 4th grade</p>
+          </RevealItem>
+          <RevealItem as="li" className="testi-photo">
+            <Figure
+              src="/images/one-on-one.png"
+              alt="A teacher working through a math problem beside a young student"
+              width={1280}
+              height={854}
+              sizes="(max-width: 700px) 100vw, 33vw"
+              placeholder
+            />
+          </RevealItem>
+          <RevealItem as="li" className="testi-card">
+            <p className="testi-quote">
+              “[Placeholder quote — a middle-school teacher on trusting the
+              standard alignment because it comes from the official list.]”
+            </p>
+            <p className="testi-by">[Placeholder Name] · middle-school math</p>
+          </RevealItem>
+          <RevealItem as="li" className="testi-photo">
+            <Figure
+              src="/images/marking-work.png"
+              alt="A teacher’s handwritten feedback in the margin of a student’s narrative writing"
+              width={1280}
+              height={854}
+              sizes="(max-width: 700px) 100vw, 33vw"
+              placeholder
+            />
+          </RevealItem>
+          <RevealItem as="li" className="testi-card">
+            <p className="testi-quote">
+              “[Placeholder quote — an instructional coach on how the privacy
+              stance made district approval a short conversation.]”
+            </p>
+            <p className="testi-by">[Placeholder Name] · instructional coach</p>
+          </RevealItem>
+        </RevealGroup>
+      </section>
+
       <hr className="hairline mk-wrap" />
 
       {/* ---------------- Pricing ---------------- */}
@@ -252,7 +372,7 @@ export default async function LandingPage() {
                 {p.id === "pro" && <span className="plan-tag">Recommended</span>}
                 <span className="plan-name">{p.name}</span>
                 <div className="plan-price">
-                  <span className="price">{p.price_cents === 0 ? "$0" : `$${(p.price_cents / 100).toFixed(0)}`}</span>
+                  <span className="price">{priceLabel(p.price_cents)}</span>
                   <span className="per">{p.price_cents === 0 ? "" : p.seat_based ? "/seat/month" : "/month"}</span>
                 </div>
                 <p className="plan-quota">
