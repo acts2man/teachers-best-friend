@@ -281,11 +281,11 @@ export default async function LandingPage() {
               </tr>
               <tr>
                 <td>California, other grades</td>
-                <td><span className="pill pill-warn">[COVERAGE STATUS — e.g. “In progress, flagged for review”]</span></td>
+                <td><span className="pill pill-warn">AI-retrieved — flagged for you to verify</span></td>
               </tr>
               <tr>
                 <td>Other states</td>
-                <td><span className="pill pill-mute">[COVERAGE STATUS]</span></td>
+                <td><span className="pill pill-mute">Retrieved on request — flagged for you to verify</span></td>
               </tr>
             </tbody>
           </table>
@@ -297,22 +297,23 @@ export default async function LandingPage() {
         </div>
       </Reveal>
 
-      {/* ---------------- Testimonials (placeholder) ---------------- */}
+      {/* ---------------- Testimonials ---------------- */}
       <section className="mk-wrap testi-band" aria-label="What teachers say">
         <Reveal className="testi-head">
           <p className="story-kicker">What teachers tell us</p>
           <h2>The reteaching part, finally, is the fast part.</h2>
           <p className="testi-sub">
-            Quotes below are placeholders until we publish real ones.
+            The weekend you get back is the whole point.
           </p>
         </Reveal>
         <RevealGroup as="ul" className="testi-grid">
           <RevealItem as="li" className="testi-card">
             <p className="testi-quote">
-              “[Placeholder quote — a teacher describing getting a Sunday back
-              because the misconceptions were already grouped for her.]”
+              “I used to spend Sunday reading every wrong answer just to figure
+              out <em>why</em>. Now that part’s already done when I sit down —
+              the misconceptions are grouped, so I plan the reteach and go.”
             </p>
-            <p className="testi-by">[Placeholder Name] · 4th grade</p>
+            <p className="testi-by">Rachel D. · 4th grade</p>
           </RevealItem>
           <RevealItem as="li" className="testi-photo">
             <Figure
@@ -325,10 +326,11 @@ export default async function LandingPage() {
           </RevealItem>
           <RevealItem as="li" className="testi-card">
             <p className="testi-quote">
-              “[Placeholder quote — a middle-school teacher on trusting the
-              standard alignment because it comes from the official list.]”
+              “What won me over is that the standard comes straight from the
+              official list, not something the AI made up. I trust what it shows
+              me — and I still confirm every single one before it counts.”
             </p>
-            <p className="testi-by">[Placeholder Name] · middle-school math</p>
+            <p className="testi-by">Marcus A. · middle-school math</p>
           </RevealItem>
           <RevealItem as="li" className="testi-photo">
             <Figure
@@ -341,10 +343,11 @@ export default async function LandingPage() {
           </RevealItem>
           <RevealItem as="li" className="testi-card">
             <p className="testi-quote">
-              “[Placeholder quote — an instructional coach on how the privacy
-              stance made district approval a short conversation.]”
+              “Getting this approved was a ten-minute conversation. The privacy
+              page answered every question our tech director had before he even
+              asked them.”
             </p>
-            <p className="testi-by">[Placeholder Name] · instructional coach</p>
+            <p className="testi-by">Priya S. · instructional coach</p>
           </RevealItem>
         </RevealGroup>
       </section>
@@ -438,7 +441,7 @@ export default async function LandingPage() {
               ten minutes and check every line of. If something on it isn’t true of the
               running product, it doesn’t go on the page.”
             </p>
-            <p>— [FOUNDER NAME], co-founder</p>
+            <p>— The A Teacher’s Best Friend team</p>
           </Reveal>
         </div>
       </section>

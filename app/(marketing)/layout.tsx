@@ -69,12 +69,12 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
             <div>
               <p className="mk-foot-head">Company</p>
               <Link href="/#districts">For districts</Link>
-              <a href="mailto:[PRIVACY CONTACT EMAIL]">[PRIVACY CONTACT EMAIL]</a>
+              <a href="mailto:privacy@ateachersbestfriend.com">privacy@ateachersbestfriend.com</a>
               <Link href="/contact">Contact us</Link>
             </div>
           </div>
           <div className="mk-wrap mk-foot-copy">
-            <span>© {new Date().getFullYear()} [LEGAL ENTITY NAME]. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} A Teacher’s Best Friend. All rights reserved.</span>
             <span className="mk-foot-legal">
               SOPIPA-compliant · No advertising · Never trained on student work
             </span>
