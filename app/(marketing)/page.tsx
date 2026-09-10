@@ -98,7 +98,7 @@ export default async function LandingPage() {
           height={1040}
           sizes="(max-width: 1200px) 100vw, 1160px"
           className="story-figure"
-          placeholder
+          priority
         />
         <div className="story-caption">
           <p className="story-kicker">The Sunday that never ends</p>
@@ -145,7 +145,6 @@ export default async function LandingPage() {
               height={854}
               sizes="(max-width: 1200px) 100vw, 1160px"
               className="how-figure"
-              placeholder
             />
           </Reveal>
           <StepsRail count={4}>
@@ -304,8 +303,7 @@ export default async function LandingPage() {
           <p className="story-kicker">What teachers tell us</p>
           <h2>The reteaching part, finally, is the fast part.</h2>
           <p className="testi-sub">
-            Quotes are placeholders until we publish real ones — the photos are
-            placeholders too.
+            Quotes below are placeholders until we publish real ones.
           </p>
         </Reveal>
         <RevealGroup as="ul" className="testi-grid">
@@ -323,7 +321,6 @@ export default async function LandingPage() {
               width={1280}
               height={854}
               sizes="(max-width: 700px) 100vw, 33vw"
-              placeholder
             />
           </RevealItem>
           <RevealItem as="li" className="testi-card">
@@ -340,7 +337,6 @@ export default async function LandingPage() {
               width={1280}
               height={854}
               sizes="(max-width: 700px) 100vw, 33vw"
-              placeholder
             />
           </RevealItem>
           <RevealItem as="li" className="testi-card">
