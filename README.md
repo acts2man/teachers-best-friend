@@ -35,7 +35,7 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 
 ## Runtime configuration
 
-The Netlify deployment uses Supabase Auth, Postgres, and the private `teacher-documents` Storage bucket. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in both the build and runtime environments. Every public table and Storage object has owner-scoped row-level security based on `auth.uid()`.
+The Netlify deployment uses Supabase Auth, Postgres, and the private `teacher-documents` Storage bucket. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in both the build and runtime environments. Also set `SUPABASE_SERVICE_ROLE_KEY` (server-only; the workspace, metering, and pipeline-routing RPCs are granted to the service role only) and `ALLOWED_ORIGINS` (comma-separated site origins allowed to POST; behind Netlify's proxy the origin check uses the forwarded host and this list rather than the internal request URL) in the Functions and Runtime scopes. Every public table and Storage object has owner-scoped row-level security based on `auth.uid()`.
 
 ChatGPT Sites retains its managed private audience, D1 `DB`, and R2 `BUCKET` bindings when the Supabase variables are absent. API routes select the available backend, validate authenticated ownership, and reject cross-origin writes.
 

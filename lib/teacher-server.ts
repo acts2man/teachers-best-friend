@@ -80,9 +80,29 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Rejects cross-origin writes. Behind Netlify's proxy request.url is an
+ * internal address, so the site origin is rebuilt from the forwarded host
+ * headers and the ALLOWED_ORIGINS allow-list instead of request.url.
+ */
 export function guardOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  if (!origin) return; // same-origin GETs, server-to-server
+  const h = request.headers;
+  const forwardedHost = h.get("x-forwarded-host") ?? h.get("host");
+  const forwardedProto = h.get("x-forwarded-proto") ?? "https";
+  const allowed = new Set<string>();
+  if (forwardedHost) allowed.add(`${forwardedProto}://${forwardedHost}`);
+  // Explicit allow-list from env, comma-separated, e.g.
+  // https://ateachersbestfriend.com,https://www.ateachersbestfriend.com
+  for (const o of (process.env.ALLOWED_ORIGINS ?? "").split(","))
+    if (o.trim()) allowed.add(o.trim());
+  try {
+    allowed.add(new URL(request.url).origin);
+  } catch {
+    // request.url can be relative or opaque behind a proxy; ignore it.
+  }
+  if (!allowed.has(origin))
     throw new HttpError(403, "This request could not be verified.");
 }
 
