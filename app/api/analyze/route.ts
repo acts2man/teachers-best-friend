@@ -20,6 +20,13 @@ import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pipelineStage, type ReasoningEffort } from "@/lib/pipeline-config";
 
+// Netlify functions default to a 10s timeout and cap at 26s for a synchronous
+// invocation. Without this the platform kills a slow analysis mid-flight and
+// returns its own HTML gateway page, which the browser then fails to parse as
+// JSON. Requesting the ceiling gives real analyses room to finish. The Sites /
+// Cloudflare Worker build ignores this Next.js route export.
+export const maxDuration = 26;
+
 type ServiceClient = ReturnType<typeof createServiceClient>;
 type Mode =
   | "assignment"
@@ -470,6 +477,12 @@ export async function POST(request: Request) {
     let resultData: ResponsesResult | undefined;
     let ok = false;
     let errorMessage = "";
+    // On the Supabase/Netlify deployment the surrounding function is capped at
+    // 26s, so abort the model call a little sooner and return a graceful JSON
+    // error instead of letting the platform terminate the request into an HTML
+    // gateway page. The Sites/Cloudflare build has no such cap and keeps the
+    // longer budget.
+    const aiTimeoutMs = hasSupabaseConfig() ? 24000 : 110000;
     try {
       const result = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
@@ -477,7 +490,7 @@ export async function POST(request: Request) {
           Authorization: "Bearer " + config.key,
           "Content-Type": "application/json",
         },
-        signal: AbortSignal.timeout(110000),
+        signal: AbortSignal.timeout(aiTimeoutMs),
         body: JSON.stringify({
           model: settings.model,
           store: false,
@@ -690,6 +703,14 @@ export async function POST(request: Request) {
       ok = true;
     } catch (e) {
       errorMessage = e instanceof Error ? e.message : String(e);
+      if (
+        e instanceof Error &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+      )
+        throw new HttpError(
+          504,
+          "This analysis took too long to finish. Your documents are saved — please try again with fewer pages.",
+        );
       throw e;
     } finally {
       if (svc && scanId)

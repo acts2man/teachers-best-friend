@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
+import { readJson } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -409,7 +410,7 @@ export function ReteachView() {
             grade: contextGrade,
           }),
         }),
-        d = await r.json();
+        d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       setCustom(d.result);
       setEdited(false);

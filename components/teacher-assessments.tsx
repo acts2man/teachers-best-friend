@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { readJson } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -162,7 +163,7 @@ export function AssessmentView() {
               targetStandards: target.targetStandards,
             }),
           }),
-          d = await r.json();
+          d = await readJson(r);
         if (!r.ok) throw new Error(d.error);
         const questions = d.result.questions as Question[];
         if (!questions.length)

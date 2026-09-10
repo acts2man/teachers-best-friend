@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { readJson } from "@/lib/utils";
 import {
   ArrowRight,
   BookOpen,
@@ -184,7 +185,7 @@ export function StudentResponseReview({
               studentId: selected,
             }),
           }),
-          d = await r.json();
+          d = await readJson(r);
         if (!r.ok) throw new Error(d.error);
         await onSave(
           {

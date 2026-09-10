@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { readJson } from "@/lib/utils";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -367,7 +368,7 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode: "roster", uploadIds: ids, text: "" }),
           }),
-          d = await r.json();
+          d = await readJson(r);
         if (!r.ok) throw new Error(d.error);
         names = d.result.students as string[];
       } else if (text.trim()) names = namesFromText(text);
@@ -468,7 +469,7 @@ export function StandardsLoader({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode: "catalog", grade, framework, subject: s, text: "" }),
           }),
-          d = await r.json();
+          d = await readJson(r);
         if (!r.ok) throw new Error(d.error);
         const existing = new Set(
           [...w.customStandards, ...added]

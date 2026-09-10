@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { readJson } from "@/lib/utils";
 import {
   ArrowLeft,
   ArrowRight,
@@ -293,7 +294,7 @@ export function ScanView() {
             studentId,
           }),
         }),
-        d = await r.json();
+        d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       if (mode === "assignment") {
         const a = makeAssessment(d.result.questions, "ai", d.result.title);

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { readJson } from "@/lib/utils";
 import {
   Camera,
   Check,
@@ -133,7 +134,7 @@ export function AnswerKeyReview({
             framework: a.framework,
           }),
         }),
-        d = await r.json();
+        d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       const found = d.result.answers as {
         questionId: string;
