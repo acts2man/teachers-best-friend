@@ -36,11 +36,22 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
 
         <footer className="mk-footer">
           <div className="mk-wrap mk-footer-grid">
-            <div>
-              <p className="mk-brand" style={{ marginBottom: ".6rem" }}>A Teacher’s <em>Best Friend</em></p>
-              <p style={{ color: "var(--ink-soft)", maxWidth: "30ch", fontSize: ".95rem" }}>
-                Built by two teachers who were tired of Sunday nights.
+            <div className="mk-foot-brand">
+              <Link href="/" className="mk-brand" aria-label="A Teacher’s Best Friend — home">
+                <span className="mk-brand-mark">
+                  <img src="/brand/teacher-book.png" alt="" width="40" height="40" />
+                </span>
+                <span className="mk-brand-word">
+                  A Teacher’s <em>Best Friend</em>
+                </span>
+              </Link>
+              <p className="mk-foot-tagline">
+                Photograph the worksheet. See what to reteach. Built by two
+                teachers who were tired of Sunday nights.
               </p>
+              <Link href="/signup" className="btn btn-mark btn-sm mk-foot-cta">
+                Start free
+              </Link>
             </div>
             <div>
               <p className="mk-foot-head">Product</p>
@@ -56,15 +67,17 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               <Link href="/legal/privacy">Privacy policy</Link>
             </div>
             <div>
-              <p className="mk-foot-head">Contact</p>
+              <p className="mk-foot-head">Company</p>
+              <Link href="/#districts">For districts</Link>
               <a href="mailto:[PRIVACY CONTACT EMAIL]">[PRIVACY CONTACT EMAIL]</a>
-              <p style={{ color: "var(--ink-soft)", fontSize: ".85rem", marginTop: ".5rem" }}>
-                SOPIPA-compliant. No advertising. No training on student work.
-              </p>
+              <Link href="/contact">Contact us</Link>
             </div>
           </div>
           <div className="mk-wrap mk-foot-copy">
-            <span>© {new Date().getFullYear()} [LEGAL ENTITY NAME]</span>
+            <span>© {new Date().getFullYear()} [LEGAL ENTITY NAME]. All rights reserved.</span>
+            <span className="mk-foot-legal">
+              SOPIPA-compliant · No advertising · Never trained on student work
+            </span>
           </div>
         </footer>
       </MarketingMotion>
