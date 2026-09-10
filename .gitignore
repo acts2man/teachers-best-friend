@@ -43,3 +43,6 @@ next-env.d.ts
 
 !.env.example
 *.tsbuildinfo
+
+# vinext (Sites) build cache
+.vinext/
