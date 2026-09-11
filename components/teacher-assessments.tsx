@@ -25,6 +25,9 @@ import {
   Users,
   Pencil,
   Trash2,
+  Printer,
+  Mail,
+  BookOpen,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -58,8 +61,12 @@ import {
   Modal,
   Insight,
   downloadText,
+  printContent,
+  emailContent,
   TextLink,
+  Avatar,
 } from "./teacher-shared";
+import { classAnalysis, classAnalysisReport } from "@/lib/teacher-class-analysis";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
   alignmentSuggestions,
@@ -514,6 +521,7 @@ export function AssessmentView() {
               <TabsTrigger value="key">2. Answer key</TabsTrigger>
               <TabsTrigger value="responses">3. Student work</TabsTrigger>
               <TabsTrigger value="coverage">Standards report</TabsTrigger>
+              <TabsTrigger value="analysis">Class analysis</TabsTrigger>
             </TabsList>
             <TabsContent value="questions">
               {!a.targetStandards.length && (
@@ -926,6 +934,9 @@ export function AssessmentView() {
                 onEdit={setResponseEdit}
                 onSave={saveAssessment}
               />
+            </TabsContent>
+            <TabsContent value="analysis">
+              <ClassAnalysisPanel assessment={a} students={students} catalog={catalog} go={go} />
             </TabsContent>
           </Tabs>
         </>
@@ -1364,5 +1375,201 @@ export function AssessmentView() {
         </div>
       </Modal>
     </>
+  );
+}
+
+function ClassAnalysisPanel({
+  assessment: a,
+  students,
+  catalog,
+  go,
+}: {
+  assessment: Assessment;
+  students: import("@/lib/teacher-types").Student[];
+  catalog: import("@/lib/teacher-types").Standard[];
+  go: (url: string) => void;
+}) {
+  const graded = a.responses.some((r) => r.verified);
+  if (!graded)
+    return (
+      <EmptyState
+        title="No graded responses yet"
+        description="Review at least one student's work on the Student work tab. Class analysis appears here instantly, computed from that grading — no extra AI step."
+      />
+    );
+  const analysis = classAnalysis(a, students, catalog);
+  if (!analysis.length)
+    return (
+      <EmptyState
+        title="No standards to analyze yet"
+        description="Assign standards to this assessment's questions, then class analysis appears here."
+      />
+    );
+  const report = classAnalysisReport(a, analysis);
+  const fileName =
+    a.title.trim().replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60) ||
+    "assessment";
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Class analysis"
+        description="Computed instantly from this assessment's graded responses — grouped by standard so you know who needs what."
+      >
+        <div className="review-heading-actions">
+          <Action
+            variant="secondary small"
+            onClick={() => printContent(a.title + " · Class analysis", report)}
+          >
+            <Printer size={15} />
+            Print
+          </Action>
+          <Action
+            variant="secondary small"
+            onClick={() => downloadText(fileName + "-class-analysis.txt", report)}
+          >
+            <Download size={15} />
+            Download report
+          </Action>
+          <Action
+            variant="secondary small"
+            onClick={() => emailContent(a.title + " · Class analysis", report)}
+          >
+            <Mail size={15} />
+            Email to me
+          </Action>
+        </div>
+      </SectionTitle>
+      <div className="student-groups-grid skill-gap-groups">
+        {analysis.map((row) => (
+          <section className="panel student-group-card skill" key={row.standard.code}>
+            <header>
+              <span className="group-icon">
+                <Target size={21} />
+              </span>
+              <Pill
+                tone={
+                  row.instruction === "Whole class"
+                    ? "amber"
+                    : row.instruction === "Small group"
+                      ? "neutral"
+                      : "green"
+                }
+              >
+                {row.instruction === "On track" ? "On track" : row.instruction}
+              </Pill>
+            </header>
+            <h2>{row.standard.title}</h2>
+            <p>
+              {row.standard.code} ·{" "}
+              {row.percentMastered === null
+                ? "Not yet graded"
+                : row.percentMastered + "% of graded students mastered this"}
+            </p>
+            {row.percentMastered !== null && (
+              <Meter
+                value={row.percentMastered}
+                tone={
+                  row.percentMastered >= 80
+                    ? "green"
+                    : row.percentMastered >= 65
+                      ? ""
+                      : "orange"
+                }
+              />
+            )}
+            {row.strong.length > 0 && (
+              <>
+                <span className="cell-meta">Strong ({row.strong.length})</span>
+                <div className="group-members">
+                  {row.strong.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() =>
+                        go(
+                          "/students?id=" +
+                            member.id +
+                            "&standard=" +
+                            row.standard.code,
+                        )
+                      }
+                    >
+                      <Avatar student={member} size="small" />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {row.weak.length > 0 && (
+              <>
+                <span className="cell-meta">Needs reteaching ({row.weak.length})</span>
+                <div className="group-members">
+                  {row.weak.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() =>
+                        go(
+                          "/students?id=" +
+                            member.id +
+                            "&standard=" +
+                            row.standard.code,
+                        )
+                      }
+                    >
+                      <Avatar student={member} size="small" />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {row.notGraded.length > 0 && (
+              <span className="cell-meta">
+                {row.notGraded.length} student{row.notGraded.length === 1 ? "" : "s"} not
+                yet graded on this standard
+              </span>
+            )}
+            {row.weak.length > 0 && (
+              <div className="review-heading-actions">
+                <Action
+                  variant="secondary small"
+                  onClick={() =>
+                    go(
+                      "/lessons?standard=" +
+                        encodeURIComponent(row.standard.code) +
+                        "&assessment=" +
+                        a.id +
+                        "&students=" +
+                        row.weak.map((member) => member.id).join(","),
+                    )
+                  }
+                >
+                  <BookOpen size={15} />
+                  Reteach {row.weak.length === 1 ? "this student" : "this group"}
+                </Action>
+                <Action
+                  variant="secondary small"
+                  onClick={() =>
+                    go(
+                      "/lessons?standard=" +
+                        encodeURIComponent(row.standard.code) +
+                        "&assessment=" +
+                        a.id,
+                    )
+                  }
+                >
+                  Reteach whole class
+                </Action>
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+      <p className="method-note group-method-note">
+        Mastery is 70% or higher average match on this assessment&apos;s
+        reviewed questions for that standard. Only teacher-confirmed responses
+        count.
+      </p>
+    </div>
   );
 }
