@@ -3,6 +3,8 @@ import { HttpError } from "@/lib/teacher-server";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pipelineStage } from "@/lib/pipeline-config";
+import { stateFor } from "@/lib/states";
+import type { Standard } from "@/lib/teacher-types";
 import type {
   Mode,
   ModelSettings,
@@ -295,4 +297,79 @@ export async function deleteBackgroundResponse(id: string, key: string) {
  */
 export function analyzeAsyncEnabled() {
   return hasSupabaseConfig() && process.env.ANALYZE_ASYNC === "1";
+}
+
+/* ---------- Shared standards library ----------
+   A standards lookup ("catalog") is expensive and identical for every
+   teacher in the same state, grade, and subject. Once any teacher unlocks
+   it, the result is saved as shared rows in public.standards and served to
+   everyone else from there: no AI call, no scan, no cost. */
+
+type CatalogScope = { framework: string; grade: number; subject: string };
+
+function catalogJurisdiction(framework: string) {
+  return stateFor(framework)?.abbr ?? "CA";
+}
+
+/** Standards already in the shared library for this scope, in the client's shape. */
+export async function sharedCatalog(svc: ServiceClient, p: CatalogScope): Promise<Standard[]> {
+  const { data, error } = await svc
+    .from("standards")
+    .select("code, short_label, description, domain, cluster, subject, grade, framework, meta")
+    .is("teacher_id", null)
+    .eq("active", true)
+    .eq("framework", p.framework)
+    .eq("grade", String(p.grade))
+    .eq("subject", p.subject)
+    .order("code");
+  if (error) {
+    console.error("Shared catalog lookup failed", error.message);
+    return [];
+  }
+  const site = stateFor(p.framework)?.site ?? "https://www.thecorestandards.org";
+  return (data ?? []).map((r) => {
+    const meta = (r.meta ?? {}) as Partial<{ skills: string[]; dok: number; misconception: string; example: string; source: string }>;
+    return {
+      code: r.code,
+      title: r.short_label ?? r.code,
+      subject: r.subject as Standard["subject"],
+      grade: Number(r.grade),
+      domain: r.domain ?? "",
+      cluster: r.cluster ?? "",
+      summary: r.description ?? "",
+      wording: r.description ?? "",
+      skills: Array.isArray(meta.skills) ? meta.skills : [],
+      prerequisites: [],
+      next: [],
+      vocabulary: [],
+      misconception: meta.misconception ?? "",
+      example: meta.example ?? "",
+      dok: Number(meta.dok ?? 2),
+      source: meta.source ?? site,
+      framework: r.framework,
+    };
+  });
+}
+
+/** Saves a fresh catalog lookup to the shared library so every teacher gets it. Never throws. */
+export async function shareCatalog(svc: ServiceClient, p: CatalogScope, standards: Standard[]) {
+  if (!standards.length) return;
+  const rows = standards.map((s) => ({
+    jurisdiction: catalogJurisdiction(p.framework),
+    framework: s.framework || p.framework,
+    subject: s.subject,
+    grade: String(s.grade ?? p.grade),
+    code: s.code,
+    short_label: s.title,
+    description: s.wording ?? s.summary,
+    domain: s.domain,
+    cluster: s.cluster,
+    meta: { skills: s.skills, dok: s.dok, misconception: s.misconception, example: s.example, source: s.source },
+  }));
+  try {
+    const { error } = await svc.rpc("upsert_global_standards", { p_rows: rows });
+    if (error) console.error("Sharing catalog failed", error.code ?? "", error.message);
+  } catch (error) {
+    console.error("Sharing catalog threw", error instanceof Error ? error.message : String(error));
+  }
 }

@@ -6,7 +6,7 @@ import {
   readWorkspace,
 } from "@/lib/teacher-server";
 import { catalogFor } from "@/lib/teacher-catalog";
-import type { Workspace } from "@/lib/teacher-types";
+import type { Standard, Workspace } from "@/lib/teacher-types";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { analyzeInput, finalizeAnalysis, responseText } from "@/lib/analyze-shared";
@@ -14,6 +14,7 @@ import {
   deleteBackgroundResponse,
   getBackgroundResponse,
   recordScanUsage,
+  shareCatalog,
 } from "@/lib/analyze-server";
 
 export const maxDuration = 26;
@@ -127,6 +128,8 @@ export async function GET(
     let output: Record<string, unknown>;
     try {
       output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
+      if (p.mode === "catalog")
+        await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
     } catch (e) {
       const message =
         e instanceof HttpError ? e.message : "The analysis needs manual review.";

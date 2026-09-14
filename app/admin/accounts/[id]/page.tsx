@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getAccount, getTeacherScans, getTeacherAudit, getPipeline, getCostBreakdown, supabaseAdmin } from "@/lib/supabase-admin";
 import { setPlan, setStatus, setAdminRole, resetTeacher, addInternalNote, clearFailedScans } from "@/app/admin/actions";
-import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtInt, stageInfo, modelLabel } from "@/components/admin/format";
+import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
 
 const TARGET_COST_PER_SCAN = 0.01;
 
@@ -205,8 +205,7 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
                 {audit.map((r) => (
                   <tr key={r.id}>
                     <td className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(r.created_at)}</td>
-                    <td><strong>{r.action}</strong> <span className="muted">by {r.actor_email}</span>
-                      {r.detail && <div className="mono muted" style={{ fontSize: ".72rem" }}>{JSON.stringify(r.detail)}</div>}</td>
+                    <td title={r.detail ? JSON.stringify(r.detail) : undefined}>{describeAudit(r.action, r.detail as Record<string, unknown> | null)} <span className="muted">by {r.actor_email}</span></td>
                   </tr>
                 ))}
               </tbody>
