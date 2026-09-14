@@ -27,6 +27,7 @@ import {
   startScan,
   sharedCatalog,
   shareCatalog,
+  isAdminUser,
 } from "@/lib/analyze-server";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
@@ -88,7 +89,10 @@ export async function POST(request: Request) {
     const svc = hasSupabaseConfig() ? createServiceClient() : null;
     // A standards lookup another teacher already unlocked is served from the
     // shared library: no scan, no model call, no cost.
-    if (svc && p.mode === "catalog") {
+    // Admins unlock standards for everyone from the dashboard: those loads
+    // are not billed to their own quota and may refresh what is already shared.
+    const adminCatalog = Boolean(svc && p.mode === "catalog" && (await isAdminUser(svc!, user)));
+    if (svc && p.mode === "catalog" && !(adminCatalog && p.refresh)) {
       const shared = await sharedCatalog(svc, p);
       if (shared.length)
         return Response.json({ result: { standards: shared }, model: "shared-library" });
@@ -99,7 +103,7 @@ export async function POST(request: Request) {
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode);
+      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, !adminCatalog);
     }
 
     // Background path: start the model job, hand the client a scan id to poll,

@@ -57,6 +57,8 @@ export const analyzeInput = z.object({
   subject: z.string().default("Math"),
   framework: z.string().default("Common Core"),
   targetStandards: z.array(z.string()).max(100).default([]),
+  // Admin-only: re-run a standards lookup even when the shared library already has it.
+  refresh: z.boolean().optional(),
   assessmentId: z.string().optional(),
   studentId: z.string().optional(),
   standard: z.string().optional(),

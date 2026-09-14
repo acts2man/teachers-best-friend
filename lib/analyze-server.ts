@@ -91,6 +91,7 @@ export async function startScan(
   assessment: { id: string; class_id: string | null } | null,
   student: { id: string; class_id: string | null } | null,
   stage: string,
+  billable = true,
 ) {
   const { data, error } = await svc.rpc("create_scan", {
     p_teacher: teacher,
@@ -98,7 +99,7 @@ export async function startScan(
     p_assessment_id: assessment?.id ?? null,
     p_student_id: student?.id ?? null,
     p_upload_id: null, // Phase 3 wires uploads
-    p_billable: true,
+    p_billable: billable,
     p_stage: stage, // what kind of work this is, for the cost breakdown
   });
   if (error) {
@@ -372,4 +373,10 @@ export async function shareCatalog(svc: ServiceClient, p: CatalogScope, standard
   } catch (error) {
     console.error("Sharing catalog threw", error instanceof Error ? error.message : String(error));
   }
+}
+
+/** Whether the signed-in user is an admin (profiles.is_admin). */
+export async function isAdminUser(svc: ServiceClient, userId: string) {
+  const { data } = await svc.from("profiles").select("is_admin").eq("id", userId).maybeSingle();
+  return Boolean(data?.is_admin);
 }

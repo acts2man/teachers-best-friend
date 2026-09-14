@@ -1,7 +1,10 @@
-import { getStandardsCoverage, supabaseAdmin } from "@/lib/supabase-admin";
+import { getStandardsCoverage, getSharedLibrary, supabaseAdmin } from "@/lib/supabase-admin";
+import { UnlockStandards } from "@/components/admin/unlock-standards";
+import { fmtRel } from "@/components/admin/format";
 
 export default async function StandardsPage() {
-  const cov = await getStandardsCoverage();
+  const [cov, shared] = await Promise.all([getStandardsCoverage(), getSharedLibrary()]);
+  const sharedTotal = shared.reduce((a, r) => a + r.standards, 0);
   const { count: custom } = await supabaseAdmin().from("standards").select("*", { count: "exact", head: true }).not("teacher_id", "is", null);
   const { data: unlinked } = await supabaseAdmin()
     .from("assessment_questions").select("standard_code").is("standard_id", null).not("standard_code", "is", null).limit(1000);
@@ -15,13 +18,47 @@ export default async function StandardsPage() {
   return (
     <>
       <h1>Standards</h1>
-      <p className="ad-sub">{total} official standards loaded · {embedded} with embeddings · {custom ?? 0} teacher-created</p>
+      <p className="ad-sub">{sharedTotal} shared standards · {embedded} with embeddings · {custom ?? 0} in teachers’ own libraries</p>
 
-      {total === 0 && (
+      {sharedTotal === 0 && (
         <div className="panel" style={{ padding: "1rem 1.1rem", borderLeft: "3px solid var(--correct-red)", marginBottom: "1rem" }}>
-          <strong>The standards table is empty.</strong> Alignment is running on model recall, which invents codes. Run <code>npx tsx scripts/seed-standards.ts</code> from a machine with the service key.
+          <strong>No standards are shared yet.</strong> Unlock a grade below, or run <code>npx tsx scripts/seed-standards.ts</code> from a machine with the service key.
         </div>
       )}
+
+      <section className="panel ad-panel" style={{ marginBottom: "16px" }}>
+        <div className="ad-panel-head">
+          <div className="ad-panel-title"><h2>Unlock standards for everyone</h2></div>
+        </div>
+        <UnlockStandards />
+      </section>
+
+      <section className="panel ad-panel" style={{ marginBottom: "16px" }}>
+        <div className="ad-panel-head">
+          <div className="ad-panel-title"><h2>Shared library</h2><span className="ad-count">{sharedTotal} standards</span></div>
+          <span className="ad-meta">available to every teacher</span>
+        </div>
+        {shared.length === 0 ? <p className="muted" style={{ margin: 0 }}>Nothing shared yet.</p> : (
+          <div className="ad-table-wrap">
+            <table>
+              <thead><tr><th>Framework</th><th>Grade</th><th>Subject</th><th className="num">Standards</th><th className="num">Full detail</th><th>Status</th><th>Updated</th></tr></thead>
+              <tbody>
+                {shared.map((r) => {
+                  const full = r.detailed === r.standards;
+                  return (
+                    <tr key={`${r.framework}|${r.grade}|${r.subject}`}>
+                      <td>{r.framework}</td><td>{r.grade === "0" ? "K" : r.grade}</td><td>{r.subject}</td>
+                      <td className="num">{r.standards}</td><td className="num">{r.detailed}</td>
+                      <td>{full ? <span className="pill pill-ok">complete</span> : <span className="pill pill-warn" title="Codes and wording only. Use Refresh above to add skills, depth of knowledge, misconception, and example.">needs refresh</span>}</td>
+                      <td className="muted">{fmtRel(r.updated_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="ad-grid two">
         <section className="panel">

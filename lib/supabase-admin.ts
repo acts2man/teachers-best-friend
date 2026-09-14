@@ -185,6 +185,24 @@ export async function getAudit(limit = 200): Promise<AuditRow[]> {
   return data as AuditRow[];
 }
 
+export type SharedLibraryRow = { framework: string; grade: string; subject: string; standards: number; detailed: number; updated_at: string | null };
+
+/** Shared standards (usable by every teacher) grouped by framework, grade, and subject. */
+export async function getSharedLibrary(): Promise<SharedLibraryRow[]> {
+  const { data, error } = await supabaseAdmin().from("standards").select("framework, grade, subject, meta, updated_at").is("teacher_id", null).eq("active", true);
+  if (error) throw error;
+  const groups = new Map<string, SharedLibraryRow>();
+  for (const r of data ?? []) {
+    const key = `${r.framework}|${r.grade}|${r.subject}`;
+    const g = groups.get(key) ?? { framework: r.framework, grade: r.grade, subject: r.subject, standards: 0, detailed: 0, updated_at: null };
+    g.standards += 1;
+    if (r.meta && typeof r.meta === "object" && Array.isArray((r.meta as { skills?: unknown }).skills)) g.detailed += 1;
+    if (!g.updated_at || (r.updated_at && r.updated_at > g.updated_at)) g.updated_at = r.updated_at;
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => a.framework.localeCompare(b.framework) || Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject));
+}
+
 export async function getStandardsCoverage(): Promise<StandardsCoverage[]> {
   const { data, error } = await supabaseAdmin().from("admin_standards_coverage").select("*");
   if (error) throw error;
