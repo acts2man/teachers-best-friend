@@ -90,3 +90,11 @@ export async function addInternalNote(fd: FormData) {
   await db.rpc("admin_log", { p_actor: admin.id, p_action: "internal_note", p_target_type: "teacher", p_target_id: teacher, p_detail: null, p_ip: await ip() });
   revalidatePath(`/admin/accounts/${teacher}`);
 }
+
+export async function clearFailedScans(fd: FormData) {
+  const admin = await requireAdmin();
+  const teacher = str(fd, "teacher_id");
+  const { error } = await supabaseAdmin().rpc("admin_clear_failed_scans", { p_actor: admin.id, p_teacher: teacher });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/accounts/${teacher}`); revalidatePath("/admin/accounts"); revalidatePath("/admin/usage"); revalidatePath("/admin");
+}

@@ -56,7 +56,7 @@ export default async function PipelinePage() {
                         {models.map((m) => <option key={m.model} value={m.model}>{m.model} — {fmtUsd(m.input_per_mtok, 2)} / {fmtUsd(m.output_per_mtok, 2)}</option>)}
                       </select>
                       <select name="reasoning_effort" defaultValue={s.reasoning_effort}>
-                        {["minimal", "low", "medium", "high"].map((e) => <option key={e} value={e}>{e}</option>)}
+                        {["none", "minimal", "low", "medium", "high"].map((e) => <option key={e} value={e}>{e}</option>)}
                       </select>
                       <input name="max_output_tokens" type="number" min={100} max={32000} step={100} defaultValue={s.max_output_tokens} style={{ width: "6.5rem" }} />
                       <button className="btn btn-quiet btn-sm">Save</button>

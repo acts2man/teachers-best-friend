@@ -17,7 +17,7 @@ export type Mode =
   | "catalog"
   | "roster";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 export type ModelSettings = {
   model: string;

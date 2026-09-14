@@ -191,10 +191,27 @@ export async function getStandardsCoverage(): Promise<StandardsCoverage[]> {
   return data as StandardsCoverage[];
 }
 
+export type CostBreakdown = {
+  teacher_id: string; period: string; stage: string; model: string;
+  calls: number; completed: number; failed: number; cost_usd: number; avg_cost_complete: number | null;
+};
+
+/** Cost grouped by the kind of work and the model that did it. Current month unless `allTime`. */
+export async function getCostBreakdown(opts: { teacherId?: string; allTime?: boolean } = {}): Promise<CostBreakdown[]> {
+  const now = new Date();
+  const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  let q = supabaseAdmin().from("admin_cost_breakdown").select("*");
+  if (opts.teacherId) q = q.eq("teacher_id", opts.teacherId);
+  if (!opts.allTime) q = q.eq("period", monthStart);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CostBreakdown[];
+}
+
 export async function getTeacherScans(teacherId: string, limit = 50) {
   const { data, error } = await supabaseAdmin()
     .from("scans")
-    .select("id, status, created_at, completed_at, cost_usd, extract_model, reteach_model, library_hits, library_misses, error")
+    .select("id, status, stage, created_at, completed_at, cost_usd, extract_model, reteach_model, library_hits, library_misses, error")
     .eq("teacher_id", teacherId)
     .order("created_at", { ascending: false })
     .limit(limit);

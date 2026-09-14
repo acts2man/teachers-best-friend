@@ -88,6 +88,7 @@ export async function startScan(
   teacher: string,
   assessment: { id: string; class_id: string | null } | null,
   student: { id: string; class_id: string | null } | null,
+  stage: string,
 ) {
   const { data, error } = await svc.rpc("create_scan", {
     p_teacher: teacher,
@@ -96,6 +97,7 @@ export async function startScan(
     p_student_id: student?.id ?? null,
     p_upload_id: null, // Phase 3 wires uploads
     p_billable: true,
+    p_stage: stage, // what kind of work this is, for the cost breakdown
   });
   if (error) {
     if (error.message.includes("SCAN_QUOTA_EXCEEDED"))

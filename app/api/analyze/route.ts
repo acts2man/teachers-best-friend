@@ -90,7 +90,7 @@ export async function POST(request: Request) {
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      scanId = await startScan(svc, user, assessmentRow, studentRow);
+      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode);
     }
 
     // Background path: start the model job, hand the client a scan id to poll,

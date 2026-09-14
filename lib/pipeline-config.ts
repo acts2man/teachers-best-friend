@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 export type PipelineStage = {
   stage: string;
@@ -10,6 +10,7 @@ export type PipelineStage = {
 };
 
 const REASONING_EFFORTS: ReasoningEffort[] = [
+  "none",
   "minimal",
   "low",
   "medium",
