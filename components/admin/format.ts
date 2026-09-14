@@ -81,6 +81,7 @@ export function describeAudit(action: string, detail: Record<string, unknown> | 
     case "reset_teacher": return `Reset the account’s classroom data${d.keep_scans === false ? " and scan history" : ""}`;
     case "review_reteaching": return `Marked a reteaching entry ${d.status ?? ""}${d.quality != null ? ` (quality ${d.quality})` : ""}`;
     case "reply_ticket": return `Replied to a support ticket${d.status ? ` and marked it ${d.status}` : ""}`;
+    case "set_ticket_priority": return `Set a support ticket’s priority to ${d.priority ?? "?"}`;
     default: return cap(action.replace(/_/g, " "));
   }
 }

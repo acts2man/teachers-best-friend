@@ -565,3 +565,26 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .auth-admin-facts svg{color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%)}
 .auth-card-admin .auth-switch{margin-top:18px;color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 81.8%)}
 .auth-card-admin .auth-switch:hover{color:#fff}
+
+/* Support ticketing (teacher-facing view). A couple of small utilities the
+   rest of the app never needed: a muted secondary-text color and a
+   monospace treatment for ticket references. */
+.muted{color:var(--text-secondary)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em;letter-spacing:-0.01em}
+.text-link-inline{display:inline;background:none;border:0;padding:0;margin:0;font:inherit;font-weight:600;color:var(--primary);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.text-link-inline:hover{color:var(--ink)}
+.ticket-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;text-align:left;padding:1rem 1.2rem;background:#fff;cursor:pointer;transition:background .15s,transform .15s}
+.ticket-row:hover{background:hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%);transform:translateX(2px)}
+.ticket-row-main{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.ticket-row-main strong{font-size:.98rem}
+.ticket-thread{display:flex;flex-direction:column;gap:.9rem;padding:1.4rem;max-height:60vh;overflow-y:auto}
+.ticket-bubble{max-width:80%;padding:.7rem 1rem;border-radius:14px;font-size:.92rem;line-height:1.55}
+.ticket-bubble p{margin:0;white-space:pre-wrap}
+.ticket-bubble-meta{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--text-secondary);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
+.ticket-bubble-you{align-self:flex-end;background:var(--primary);color:#fff}
+.ticket-bubble-you .ticket-bubble-meta{color:hsl(0 0% 100% / .75)}
+.ticket-bubble-staff{align-self:flex-start;background:var(--secondary);color:var(--secondary-foreground)}
+.ticket-bubble-ai{align-self:flex-start;background:hsl(calc(80deg + var(--th)) calc(46% * var(--ts)) 94.9%);color:hsl(calc(152deg + var(--th)) calc(24% * var(--ts)) 23.1%)}
+@media (max-width:640px){
+  .ticket-bubble{max-width:92%}
+}

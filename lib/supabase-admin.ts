@@ -91,6 +91,7 @@ export type AdminTicket = {
   status: string; priority: string; deflected: boolean; ai_confidence: number | null;
   created_at: string; updated_at: string; resolved_at: string | null;
   teacher_email: string; teacher_name: string | null; teacher_id: string;
+  plan_id: string | null; plan_name: string | null; plan_price_cents: number | null;
   message_count: number; last_message: string | null;
 };
 

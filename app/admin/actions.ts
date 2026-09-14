@@ -71,6 +71,15 @@ export async function replyTicket(fd: FormData) {
   revalidatePath("/admin/tickets"); revalidatePath("/admin");
 }
 
+export async function setTicketPriority(fd: FormData) {
+  const admin = await requireAdmin();
+  const { error } = await supabaseAdmin().rpc("admin_set_ticket_priority", {
+    p_actor: admin.id, p_ticket: str(fd, "ticket_id"), p_priority: str(fd, "priority"),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/tickets"); revalidatePath("/admin");
+}
+
 export async function reviewReteaching(fd: FormData) {
   const admin = await requireAdmin();
   const q = str(fd, "quality");

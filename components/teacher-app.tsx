@@ -13,6 +13,7 @@ import {
   Plus,
   ChevronDown,
   HelpCircle,
+  Headset,
   Check,
   LoaderCircle,
   ShieldCheck,
@@ -49,6 +50,7 @@ import {
   StudentsView,
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
+import { SupportView } from "./teacher-support";
 const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
@@ -88,6 +90,7 @@ const prefetchRoutes = [
   "/settings",
   "/guide",
   "/resources",
+  "/support",
 ];
 
 export default function TeacherApp({ view }: { view: string }) {
@@ -259,6 +262,7 @@ export default function TeacherApp({ view }: { view: string }) {
       { id: "scan", label: "New assessment" },
       { id: "students", label: "Roster" },
       { id: "settings", label: "Settings" },
+      { id: "support", label: "Support" },
       { id: "resources", label: "Teaching resources" },
       { id: "diagnostics", label: "Class insights" },
     ].find((n) => n.id === shownView)?.label || "Overview";
@@ -365,6 +369,10 @@ export default function TeacherApp({ view }: { view: string }) {
             <Link href="/settings" className="footer-link">
               <Settings size={18} />
               Settings
+            </Link>
+            <Link href="/support" className="footer-link">
+              <Headset size={18} />
+              Support
             </Link>
             {isAdmin && (
               <Link href="/admin" className="footer-link">
@@ -483,6 +491,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <ReteachView />
               ) : view === "resources" ? (
                 <ResourcesView />
+              ) : view === "support" ? (
+                <SupportView />
               ) : (
                 <SettingsView />
               )}
