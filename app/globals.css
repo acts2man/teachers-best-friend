@@ -537,3 +537,31 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .pick [data-slot=select-value]{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .roster-actions .switch-label{margin-bottom:0}
 .footer-legal{display:flex;flex-wrap:wrap;gap:4px 12px;padding:10px 5px 0;font-size:12px}.footer-legal a{color:hsl(calc(143deg + var(--th)) calc(12% * var(--ts)) 65%);text-decoration:none}.footer-legal a:hover{color:hsl(calc(77deg + var(--th)) calc(67% * var(--ts)) 83.1%)}
+
+/* Admin sign-in variant of the login card (reached via ?next=/admin) */
+.auth-switch-admin{display:flex;width:max-content;max-width:100%;align-items:center;justify-content:center;gap:6px;margin:10px auto 0;padding:8px 14px;border:1px solid hsl(calc(129deg + var(--th)) calc(13% * var(--ts)) 89.2%);border-radius:999px;color:hsl(calc(153deg + var(--th)) calc(25% * var(--ts)) 21.4%);background:hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%);transition:background .2s,border-color .2s}
+.auth-switch-admin:hover{text-decoration:none;background:hsl(calc(83deg + var(--th)) calc(43% * var(--ts)) 90.4%);border-color:hsl(calc(89deg + var(--th)) calc(25% * var(--ts)) 55.3% / .5)}
+.auth-switch-admin svg{color:hsl(calc(89deg + var(--th)) calc(25% * var(--ts)) 55.3%)}
+.auth-page.is-admin .auth-panel{background:radial-gradient(circle at 20% 0,hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .28) 0,transparent 42%),linear-gradient(160deg,hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%),hsl(calc(120deg + var(--th)) calc(13% * var(--ts)) 92.5%))}
+.auth-card-admin{position:relative;overflow:hidden;color:hsl(calc(69deg + var(--th)) calc(33% * var(--ts)) 95.9%);background:radial-gradient(circle at 100% 0,hsl(calc(150deg + var(--th)) calc(19% * var(--ts)) 35.3%) 0,transparent 46%),linear-gradient(150deg,hsl(calc(162deg + var(--th)) calc(33% * var(--ts)) 18.0%) 0%,hsl(calc(158deg + var(--th)) calc(29% * var(--ts)) 22.5%) 58%,hsl(calc(162deg + var(--th)) calc(29% * var(--ts)) 15.5%) 100%);border-color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .28);box-shadow:0 34px 80px hsl(calc(145deg + var(--th)) calc(27% * var(--ts)) 12% / .32),inset 0 1px 0 hsl(0 0% 100% / .08)}
+.auth-card-admin:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%),transparent)}
+.auth-card-admin:after{content:"";position:absolute;right:-140px;top:-160px;width:340px;height:340px;border:1px solid hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .2);border-radius:50%;box-shadow:0 0 0 50px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .05),0 0 0 100px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .03);pointer-events:none}
+.auth-card-admin>*{position:relative;z-index:1}
+.auth-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:25px}
+.auth-card-admin .soft-icon{margin:0;background:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .14);color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);border:1px solid hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .3)}
+.auth-admin-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 82%);background:hsl(0 0% 100% / .06);border:1px solid hsl(0 0% 100% / .12)}
+.auth-card-admin>.eyebrow{color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%)}
+.auth-card-admin h2{color:#fff;font-family:Manrope,sans-serif;letter-spacing:-.9px}
+.auth-card-admin .auth-intro{color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 81.8% / .88)}
+.auth-card-admin .auth-form label{color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 86%)}
+.auth-card-admin input:not([type=file]){background:hsl(0 0% 100% / .06);color:#fff;border-color:hsl(0 0% 100% / .16);color-scheme:dark}
+.auth-card-admin input:not([type=file]):focus{border-color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);box-shadow:0 0 0 3px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .18)}
+.auth-card-admin input::placeholder{color:hsl(0 0% 100% / .4)}
+.auth-card-admin .auth-submit{background:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);color:hsl(calc(162deg + var(--th)) calc(33% * var(--ts)) 14%);font-weight:700}
+.auth-card-admin .auth-submit:hover:not(:disabled){background:hsl(calc(77deg + var(--th)) calc(70% * var(--ts)) 84%);box-shadow:0 8px 22px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 60% / .28)}
+.auth-card-admin .auth-message.error{color:#ffd9d2;background:hsl(8 60% 40% / .28);border-color:hsl(8 60% 60% / .4)}
+.auth-admin-facts{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:24px 0 0;padding:18px 0 0;border-top:1px solid hsl(0 0% 100% / .1)}
+.auth-admin-facts li{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:600;color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 86%);background:hsl(0 0% 100% / .05);border:1px solid hsl(0 0% 100% / .1)}
+.auth-admin-facts svg{color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%)}
+.auth-card-admin .auth-switch{margin-top:18px;color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 81.8%)}
+.auth-card-admin .auth-switch:hover{color:#fff}
