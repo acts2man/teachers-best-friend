@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Fraunces, Atkinson_Hyperlegible } from "next/font/google";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react";
 import { requireAdmin } from "@/lib/admin-gate";
 import { getPlatformStats } from "@/lib/supabase-admin";
 import { AdminNav, type NavGroup } from "@/components/admin/admin-nav";
@@ -63,7 +63,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 <span className="ad-me-role" style={{ display: "block" }}>Administrator</span>
               </span>
             </div>
-            <Link href="/app" className="ad-back"><ArrowLeft aria-hidden="true" />Back to app</Link>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <Link href="/app" className="ad-back"><ArrowLeft aria-hidden="true" />Back to app</Link>
+              <form action="/auth/signout" method="post" style={{ margin: 0 }}>
+                <button type="submit" className="ad-back"><LogOut aria-hidden="true" />Sign out</button>
+              </form>
+            </div>
           </div>
         </aside>
         <main className="ad-main">{children}</main>

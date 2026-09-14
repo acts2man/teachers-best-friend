@@ -148,6 +148,7 @@ export default function LoginPage() {
               ? "New here? Create an account"
               : "Already have an account? Sign in"}
           </button>
+          <a className="auth-switch" href="/login?next=/admin" style={{ marginTop: ".6rem" }}>Administrator? Sign in to the admin dashboard</a>
         </div>
       </section>
     </main>

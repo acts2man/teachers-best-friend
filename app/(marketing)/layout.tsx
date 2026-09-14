@@ -59,6 +59,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               <Link href="/#pricing">Pricing</Link>
               <Link href="/#coverage">Standards coverage</Link>
               <Link href="/login">Sign in</Link>
+              <Link href="/login?next=/admin">Admin sign in</Link>
             </div>
             <div>
               <p className="mk-foot-head">Privacy</p>
