@@ -246,6 +246,34 @@ function numeric(value: unknown) {
  * explicit demo flag. Coerce those fields so the JSON the client receives
  * keeps the same shape it always had.
  */
+// The relational facade's standards row only carries code/title/subject/
+// grade/domain/cluster/wording/framework — it never stored the AI-enriched
+// fields (skills, prerequisites, next, vocabulary, misconception, example,
+// dok, source) sync_workspace's custom-standards insert doesn't persist
+// them either. The client's Standard type treats all of those as required
+// (e.g. StandardsView does `s.skills.length`), so a standard coming back
+// from the database without defaults crashes the Standards page the
+// moment it renders one. Fill in safe fallbacks here, once, for both
+// customStandards and sharedStandards.
+function normalizeStandard(item: Record<string, unknown>) {
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    ...item,
+    grade: numeric(item.grade),
+    summary: item.summary ?? item.wording ?? "",
+    skills: arr(item.skills),
+    prerequisites: arr(item.prerequisites),
+    next: arr(item.next),
+    vocabulary: arr(item.vocabulary),
+    misconception:
+      item.misconception ??
+      "Use the student’s written reasoning to identify the step that needs support.",
+    example: item.example ?? "Choose a task that directly demonstrates this standard.",
+    dok: typeof item.dok === "number" ? item.dok : 2,
+    source: item.source ?? "",
+  };
+}
+
 function normalizeWorkspace(data: Workspace): Workspace {
   const record = data as unknown as Record<string, unknown>;
   const list = (key: string) =>
@@ -271,14 +299,8 @@ function normalizeWorkspace(data: Workspace): Workspace {
       ...item,
       notes: typeof item.notes === "string" ? item.notes : "",
     })),
-    customStandards: list("customStandards").map((item) => ({
-      ...item,
-      grade: numeric(item.grade),
-    })),
-    sharedStandards: list("sharedStandards").map((item) => ({
-      ...item,
-      grade: numeric(item.grade),
-    })),
+    customStandards: list("customStandards").map(normalizeStandard),
+    sharedStandards: list("sharedStandards").map(normalizeStandard),
     settings: {
       ...settings,
       teacherName: settings.teacherName ?? "",

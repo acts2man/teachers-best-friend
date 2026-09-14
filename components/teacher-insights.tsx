@@ -95,7 +95,7 @@ export function StandardsView() {
         s.framework === framework &&
         s.grade === Number(grade) &&
         (subject === "All subjects" || s.subject === subject) &&
-        (s.code + " " + s.title + " " + s.summary + " " + s.skills.join(" "))
+        (s.code + " " + s.title + " " + s.summary + " " + (s.skills ?? []).join(" "))
           .toLowerCase()
           .includes(query.toLowerCase()),
     );
@@ -246,7 +246,7 @@ export function StandardsView() {
             <p>{s.summary}</p>
             <div className="standard-card-footer">
               <span>
-                {s.skills.length
+                {s.skills?.length
                   ? s.skills.length + " component skills"
                   : "Official standard"}
               </span>
@@ -329,7 +329,7 @@ export function StandardsView() {
               <div className="prerequisite-map">
                 <div>
                   <span>BEFORE THIS</span>
-                  {detail.prerequisites.length ? (
+                  {detail.prerequisites?.length ? (
                     detail.prerequisites.map((p) => <Pill key={p}>{p}</Pill>)
                   ) : (
                     <p>Not yet mapped</p>
@@ -343,7 +343,7 @@ export function StandardsView() {
                 <ArrowRight size={20} />
                 <div>
                   <span>UP NEXT</span>
-                  {detail.next.length ? (
+                  {detail.next?.length ? (
                     detail.next.map((p) => <Pill key={p}>{p}</Pill>)
                   ) : (
                     <p>Not yet mapped</p>
@@ -352,13 +352,13 @@ export function StandardsView() {
               </div>
               <div className="detail-block">
                 <h3>A misconception to look for</h3>
-                <p>{detail.misconception}</p>
+                <p>{detail.misconception || "Use the student’s written reasoning to identify the step that needs support."}</p>
               </div>
               <div className="detail-block">
                 <h3>Try a question like this</h3>
-                <p>{detail.example}</p>
+                <p>{detail.example || "Choose a task that directly demonstrates this standard."}</p>
               </div>
-              {detail.vocabulary.length > 0 && (
+              {(detail.vocabulary?.length ?? 0) > 0 && (
                 <div className="detail-block">
                   <h3>Words that matter</h3>
                   <div className="tag-list">
