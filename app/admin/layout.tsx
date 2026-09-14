@@ -50,8 +50,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <aside className="ad-side">
           <div className="ad-side-top">
             <Link href="/admin" className="ad-brand">
-              <span className="ad-brand-word">A Teacher’s <em>Best Friend</em></span>
-              <span className="ad-brand-tag">Admin</span>
+              <span className="brand-mark">
+                <img src="/brand/teacher-book.png" alt="" width="44" height="44" />
+              </span>
+              <span className="ad-brand-word">
+                a teacher’s<strong>best friend.</strong>
+              </span>
             </Link>
           </div>
           <AdminNav groups={groups} />
