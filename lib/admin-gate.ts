@@ -41,3 +41,37 @@ export async function requireAdmin(): Promise<AdminIdentity> {
   const { data: u } = await db.auth.admin.getUserById(userId);
   return { id: userId, email: u?.user?.email ?? "" };
 }
+
+/**
+ * Call at the top of any page or action that starts/manages
+ * impersonation. Requires admin AND app-manager — the database function
+ * re-checks is_app_manager() itself on every call, this is the redirect
+ * for a nicer page-load experience.
+ */
+export async function requireAppManager(): Promise<AdminIdentity> {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+  const { data: ok, error } = await db.rpc("is_app_manager", {
+    p_user: admin.id,
+  });
+  if (error || !ok) redirect("/admin");
+  return admin;
+}
+
+/**
+ * Non-redirecting check for conditionally showing app-manager-only UI
+ * (the "View this account" button). The real gate is requireAppManager()
+ * inside the server action itself — this is display-only.
+ */
+export async function currentIsAppManager(): Promise<boolean> {
+  try {
+    const userId = await getSessionUserId();
+    if (!userId) return false;
+    const { data, error } = await supabaseAdmin().rpc("is_app_manager", {
+      p_user: userId,
+    });
+    return !error && Boolean(data);
+  } catch {
+    return false;
+  }
+}

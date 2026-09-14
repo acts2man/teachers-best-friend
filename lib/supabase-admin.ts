@@ -31,6 +31,7 @@ export type AdminAccount = {
   school_name: string | null;
   district: string | null;
   is_admin: boolean;
+  is_app_manager: boolean;
   status: "active" | "suspended" | "deactivated";
   status_reason: string | null;
   plan_id: string;

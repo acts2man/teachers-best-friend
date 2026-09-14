@@ -51,6 +51,7 @@ import {
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
+import { stopImpersonation } from "@/lib/impersonation-actions";
 const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
@@ -67,6 +68,7 @@ type WorkspaceSnapshot = {
   aiReady: boolean;
   authProvider: "chatgpt" | "supabase";
   fetchedAt: number;
+  impersonating: { teacherEmail: string } | null;
 };
 
 // Keep the authoritative workspace alive while Next.js moves between pages.
@@ -107,6 +109,9 @@ export default function TeacherApp({ view }: { view: string }) {
     initialSnapshot?.authProvider ?? "chatgpt",
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [impersonating, setImpersonating] = useState<{
+    teacherEmail: string;
+  } | null>(initialSnapshot?.impersonating ?? null);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
@@ -131,12 +136,14 @@ export default function TeacherApp({ view }: { view: string }) {
         aiReady: Boolean(d.aiReady),
         authProvider: d.authProvider || "chatgpt",
         fetchedAt: Date.now(),
+        impersonating: d.impersonating ?? null,
       };
       workspaceSnapshot = nextSnapshot;
       setW(nextSnapshot.workspace);
       setRevision(nextSnapshot.revision);
       setAiReady(nextSnapshot.aiReady);
       setAuthProvider(nextSnapshot.authProvider);
+      setImpersonating(nextSnapshot.impersonating);
       setLoaded(true);
     } catch (e) {
       setError(
@@ -219,6 +226,7 @@ export default function TeacherApp({ view }: { view: string }) {
         aiReady,
         authProvider,
         fetchedAt: Date.now(),
+        impersonating,
       };
       setW(next);
       setRevision(d.revision);
@@ -295,6 +303,19 @@ export default function TeacherApp({ view }: { view: string }) {
   }
   return (
     <TeacherContext.Provider value={value}>
+      {impersonating && (
+        <div className="impersonation-banner" role="status">
+          <ShieldCheck size={16} />
+          <span>
+            Viewing <strong>{impersonating.teacherEmail}</strong>’s
+            workspace as an app manager. Anything you do here happens on
+            their account.
+          </span>
+          <form action={stopImpersonation}>
+            <button type="submit">Stop viewing</button>
+          </form>
+        </div>
+      )}
       <SidebarProvider
         style={{ "--sidebar-width": "238px" } as React.CSSProperties}
         className={w.settings.reduceMotion ? "reduce-motion" : ""}

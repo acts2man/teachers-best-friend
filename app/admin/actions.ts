@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { requireAdmin } from "@/lib/admin-gate";
+import { requireAdmin, requireAppManager } from "@/lib/admin-gate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /* Every write goes through an audited database function that itself
@@ -69,6 +69,15 @@ export async function replyTicket(fd: FormData) {
   });
   if (error) throw new Error(error.message);
   revalidatePath("/admin/tickets"); revalidatePath("/admin");
+}
+
+export async function setAppManagerRole(fd: FormData) {
+  const admin = await requireAppManager();
+  const { error } = await supabaseAdmin().rpc("admin_set_app_manager", {
+    p_actor: admin.id, p_teacher: str(fd, "teacher_id"), p_value: str(fd, "is_app_manager") === "true",
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/accounts/${str(fd, "teacher_id")}`); revalidatePath("/admin/accounts");
 }
 
 export async function setTicketPriority(fd: FormData) {

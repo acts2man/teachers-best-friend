@@ -535,6 +535,7 @@ export function createDemoWorkspace(): Workspace {
     groups: [],
     resources: [],
     customStandards: [],
+    sharedStandards: [],
     settings: { teacherName: "", school: "", reduceMotion: false },
   };
 }

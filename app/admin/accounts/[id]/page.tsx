@@ -1,14 +1,17 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { Eye } from "lucide-react";
 import { getAccount, getTeacherScans, getTeacherAudit, getPipeline, getCostBreakdown, supabaseAdmin } from "@/lib/supabase-admin";
-import { setPlan, setStatus, setAdminRole, resetTeacher, addInternalNote, clearFailedScans } from "@/app/admin/actions";
+import { setPlan, setStatus, setAdminRole, setAppManagerRole, resetTeacher, addInternalNote, clearFailedScans } from "@/app/admin/actions";
+import { startImpersonation } from "@/lib/impersonation-actions";
+import { currentIsAppManager } from "@/lib/admin-gate";
 import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
 
 const TARGET_COST_PER_SCAN = 0.01;
 
 export default async function AccountDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [a, scans, audit, { models }, breakdown] = await Promise.all([getAccount(id), getTeacherScans(id), getTeacherAudit(id), getPipeline(), getCostBreakdown({ teacherId: id })]);
+  const [a, scans, audit, { models }, breakdown, appManager] = await Promise.all([getAccount(id), getTeacherScans(id), getTeacherAudit(id), getPipeline(), getCostBreakdown({ teacherId: id }), currentIsAppManager()]);
   if (!a) notFound();
   const { data: plans } = await supabaseAdmin().from("plans").select("id,name,price_cents,scan_quota").eq("active", true).order("sort_order");
   const { data: prof } = await supabaseAdmin().from("profiles").select("internal_notes, grade_levels, subjects, onboarded_at").eq("id", id).single();
@@ -33,11 +36,28 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
         {a.email}
         <span className={`pill ${a.status === "active" ? "pill-ok" : "pill-bad"}`}>{a.status}</span>
         {a.is_admin && <span className="pill pill-ok">admin</span>}
+        {a.is_app_manager && <span className="pill pill-ok">app manager</span>}
       </h1>
-      <p className="ad-sub">
-        {[a.full_name, a.school_name, a.district].filter(Boolean).join(" · ") || "No profile details"}
-        {" · "}signed up {fmtRel(a.signed_up_at)} · last seen {fmtRel(a.last_seen_at)}
+      <p className="ad-sub" style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+        <span>
+          {[a.full_name, a.school_name, a.district].filter(Boolean).join(" · ") || "No profile details"}
+          {" · "}signed up {fmtRel(a.signed_up_at)} · last seen {fmtRel(a.last_seen_at)}
+        </span>
+        {appManager && (
+          <form action={startImpersonation}>
+            <input type="hidden" name="teacher_id" value={a.teacher_id} />
+            <button className="btn btn-quiet btn-sm" type="submit" style={{ display: "inline-flex", alignItems: "center", gap: ".35rem" }}>
+              <Eye size={14} />
+              View this account
+            </button>
+          </form>
+        )}
       </p>
+      {appManager && (
+        <p className="ad-meta" style={{ marginTop: "-.6rem", marginBottom: "1.2rem" }}>
+          Opens their workspace exactly as they see it, for up to 30 minutes. Logged to the audit trail.
+        </p>
+      )}
 
       <div className="ad-grid kpi">
         <Kpi v={`${a.scans_this_period} / ${a.scan_quota}`} l="Scans this period" d={`${pct}% of quota · resets ${new Date(a.current_period_end).toLocaleDateString()}`} tone={pct >= 100 ? "bad" : pct >= 80 ? "warn" : undefined} />
@@ -122,6 +142,16 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
             <span style={{ fontWeight: 600 }}>Admin access</span>
             <button className={`btn btn-sm ${a.is_admin ? "btn-danger" : "btn-quiet"}`}>{a.is_admin ? "Revoke admin" : "Grant admin"}</button>
           </form>
+
+          {appManager && (
+            <form action={setAppManagerRole} style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <input type="hidden" name="teacher_id" value={a.teacher_id} />
+              <input type="hidden" name="is_app_manager" value={a.is_app_manager ? "false" : "true"} />
+              <span style={{ fontWeight: 600 }}>App manager access</span>
+              <button className={`btn btn-sm ${a.is_app_manager ? "btn-danger" : "btn-quiet"}`}>{a.is_app_manager ? "Revoke app manager" : "Grant app manager"}</button>
+              <span className="ad-meta">Can view any teacher’s account, in addition to admin access</span>
+            </form>
+          )}
 
           <form action={addInternalNote} style={{ display: "grid", gap: ".5rem" }}>
             <input type="hidden" name="teacher_id" value={a.teacher_id} />

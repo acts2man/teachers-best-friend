@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
-  owner,
+  owningTeacherId,
+  resolveOwningTeacher,
   guardOrigin,
   apiError,
   HttpError,
@@ -13,6 +14,7 @@ import {
   deleteAllDocuments,
 } from "@/lib/teacher-server";
 import { createDemoWorkspace } from "@/lib/teacher-data";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Workspace } from "@/lib/teacher-types";
 
 const dataSchema = z.object({
@@ -70,6 +72,10 @@ const dataSchema = z.object({
   lessons: z.array(z.any()).max(1000),
   resources: z.array(z.any()).max(1000),
   customStandards: z.array(z.any()).max(1000),
+  // Admin-unlocked standards are read-only from the client's point of view
+  // (see lib/teacher-server.ts normalizeWorkspace); sync_workspace never
+  // reads this field back, so it's accepted and ignored, not required.
+  sharedStandards: z.array(z.any()).max(2000).optional(),
   groups: z.array(z.any()).max(300),
   settings: z.object({
     teacherName: z.string().max(100),
@@ -81,16 +87,23 @@ const dataSchema = z.object({
 
 export async function GET() {
   try {
-    const id = await owner();
+    const identity = await resolveOwningTeacher();
+    const id = identity.id;
     let saved = await readWorkspace(id);
     if (!saved) saved = await initializeWorkspace(id, createDemoWorkspace());
     if (!saved) throw new Error("The classroom could not be initialized.");
+    let impersonating: { teacherEmail: string } | null = null;
+    if (identity.impersonating) {
+      const { data } = await supabaseAdmin().auth.admin.getUserById(id);
+      impersonating = { teacherEmail: data?.user?.email ?? "this account" };
+    }
     return Response.json(
       {
         workspace: saved.data,
         revision: saved.revision,
         aiReady: Boolean((await aiConfig()).key),
         authProvider: authProvider(),
+        impersonating,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
@@ -102,7 +115,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     guardOrigin(request);
-    const id = await owner();
+    const id = await owningTeacherId();
     const text = await request.text();
     if (text.length > 3500000)
       throw new HttpError(
@@ -139,7 +152,7 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     guardOrigin(request);
-    const id = await owner();
+    const id = await owningTeacherId();
     await deleteAllDocuments(id);
     const workspace = createDemoWorkspace();
     workspace.classes = [

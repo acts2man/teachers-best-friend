@@ -1,5 +1,5 @@
 import {
-  owner,
+  owningTeacherId,
   apiError,
   HttpError,
   aiConfig,
@@ -31,7 +31,7 @@ export async function GET(
   try {
     if (!hasSupabaseConfig())
       throw new HttpError(404, "This analysis could not be found.");
-    const user = await owner();
+    const user = await owningTeacherId();
     const { scanId } = await context.params;
     const config = await aiConfig();
     const svc = createServiceClient();

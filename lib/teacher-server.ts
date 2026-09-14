@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { Workspace } from "@/lib/teacher-types";
@@ -69,6 +69,57 @@ export async function owner() {
 
 export function authProvider() {
   return hasSupabaseConfig() ? "supabase" : "chatgpt";
+}
+
+// Cookie name shared with app/admin/actions.ts (startImpersonation /
+// stopImpersonation) and app/api/impersonation/route.ts (the "who am I
+// viewing" check the teacher app banner reads).
+export const IMPERSONATION_COOKIE = "tbf_impersonate";
+
+export type OwningIdentity = {
+  id: string;
+  impersonating: boolean;
+  realId: string;
+};
+
+/**
+ * The teacher id a request should act on. Almost always the signed-in
+ * user's own id (owner()); when an app manager has an active "view as"
+ * session running (see startImpersonation in lib/impersonation-actions.ts),
+ * resolves to the teacher being viewed instead.
+ *
+ * Only the teacher-facing routes (workspace/scan/uploads/quota) use this
+ * (via owningTeacherId(), below). Admin pages and server actions call
+ * owner() directly and are never impersonation-aware — /admin access
+ * always reflects who is really signed in, so an app manager viewing a
+ * non-admin teacher's workspace never loses their own admin access, and
+ * impersonating an account never grants that account's admin status
+ * either way.
+ */
+export async function resolveOwningTeacher(): Promise<OwningIdentity> {
+  const realId = await owner();
+  if (hasSupabaseConfig()) {
+    try {
+      const cookieStore = await cookies();
+      const session = cookieStore.get(IMPERSONATION_COOKIE)?.value;
+      if (session) {
+        const { data, error } = await createServiceClient().rpc(
+          "resolve_impersonation",
+          { p_session: session, p_actor: realId },
+        );
+        if (!error && data)
+          return { id: data as string, impersonating: true, realId };
+      }
+    } catch {
+      // Any failure here just falls through to the real identity below —
+      // impersonation is a convenience, never a way to break the app.
+    }
+  }
+  return { id: realId, impersonating: false, realId };
+}
+
+export async function owningTeacherId() {
+  return (await resolveOwningTeacher()).id;
 }
 
 export class HttpError extends Error {
@@ -221,6 +272,10 @@ function normalizeWorkspace(data: Workspace): Workspace {
       notes: typeof item.notes === "string" ? item.notes : "",
     })),
     customStandards: list("customStandards").map((item) => ({
+      ...item,
+      grade: numeric(item.grade),
+    })),
+    sharedStandards: list("sharedStandards").map((item) => ({
       ...item,
       grade: numeric(item.grade),
     })),

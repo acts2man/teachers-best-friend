@@ -141,6 +141,10 @@ export type Workspace = {
   lessons: Lesson[];
   resources: Resource[];
   customStandards: Standard[];
+  // Read-only: standards an admin has unlocked for every teacher (see
+  // app/admin/standards). Never written back by sync_workspace — a
+  // teacher's own saves only ever touch customStandards.
+  sharedStandards: Standard[];
   groups: Group[];
   settings: {
     teacherName: string;

@@ -588,3 +588,17 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 @media (max-width:640px){
   .ticket-bubble{max-width:92%}
 }
+
+/* App-manager "view as" banner — unmissable, always at the very top of the
+   teacher workspace while impersonation is active. */
+.impersonation-banner{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#3B2A0E;color:#FCEFC7;font-size:13px;font-weight:600}
+.impersonation-banner svg{flex-shrink:0;color:#F3C969}
+.impersonation-banner span{flex:1;min-width:0}
+.impersonation-banner strong{color:#fff}
+.impersonation-banner form{flex-shrink:0}
+.impersonation-banner button{padding:6px 13px;border-radius:8px;background:#F3C969;color:#3B2A0E;font-size:12px;font-weight:700;border:0;cursor:pointer;white-space:nowrap}
+.impersonation-banner button:hover{background:#F6D98C}
+@media (max-width:640px){
+  .impersonation-banner{flex-wrap:wrap;padding:10px 14px}
+  .impersonation-banner span{flex-basis:100%}
+}

@@ -82,6 +82,9 @@ export function describeAudit(action: string, detail: Record<string, unknown> | 
     case "review_reteaching": return `Marked a reteaching entry ${d.status ?? ""}${d.quality != null ? ` (quality ${d.quality})` : ""}`;
     case "reply_ticket": return `Replied to a support ticket${d.status ? ` and marked it ${d.status}` : ""}`;
     case "set_ticket_priority": return `Set a support ticket’s priority to ${d.priority ?? "?"}`;
+    case "start_impersonation": return "Started viewing a teacher’s account as an app manager";
+    case "stop_impersonation": return "Stopped viewing a teacher’s account";
+    case "set_app_manager": return d.to === true ? "Granted app manager access" : d.to === false ? "Revoked app manager access" : "Changed app manager access";
     default: return cap(action.replace(/_/g, " "));
   }
 }
