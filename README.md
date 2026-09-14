@@ -67,4 +67,4 @@ Netlify uses `npm run build:netlify` to create the native `.next` output require
 
 Netlify is connected to the dedicated `Teachers Best Friend` Supabase project. Unauthenticated visitors are sent to the branded `/login` experience. Authenticated teachers receive an owner-scoped workspace, revision-safe saving, and private document uploads.
 
-For confirmed email signups, add the production Netlify URL and `/auth/callback` route to the Supabase Auth URL configuration. Keep `OPENAI_API_KEY` server-only in Netlify and use `OPENAI_MODEL=gpt-6-astra` when AI analysis is enabled.
+For confirmed email signups, add the production Netlify URL and `/auth/callback` route to the Supabase Auth URL configuration. Keep `OPENAI_API_KEY` server-only in Netlify and set `OPENAI_MODEL=gpt-5.6-luna` as the fallback model; the Supabase deployment routes each stage through the `pipeline_config` table, editable on the admin AI pipeline page.

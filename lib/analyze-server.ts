@@ -36,12 +36,12 @@ async function aiUnavailable(where: string, result: Response) {
 // per-mode routing. The Supabase deployment reads routing from the table
 // and has no hardcoded fallback.
 const sitesModelSettings: Record<Mode, ModelSettings> = {
-  responses: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 1200 },
-  answer_key: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 1500 },
-  roster: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 800 },
-  assignment: { model: "gpt-5.6-terra", effort: "low", maxOutput: 3000 },
-  lesson: { model: "gpt-5.6-terra", effort: "low", maxOutput: 2500 },
-  catalog: { model: "gpt-5.6-sol", effort: "medium", maxOutput: 8000 },
+  responses: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
+  answer_key: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
+  roster: { model: "gpt-5.4-nano", effort: "minimal", maxOutput: 1500 },
+  assignment: { model: "gpt-5.6-luna", effort: "low", maxOutput: 6000 },
+  lesson: { model: "gpt-5.4-mini", effort: "low", maxOutput: 6000 },
+  catalog: { model: "gpt-5.6-sol", effort: "low", maxOutput: 20000 },
 };
 
 export async function modelSettingsFor(mode: Mode): Promise<ModelSettings> {

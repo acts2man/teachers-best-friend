@@ -2069,7 +2069,7 @@ export function SettingsView() {
                 <summary>Connection setup</summary>
                 <p>
                   The app owner can add an OpenAI API key as the hosted
-                  OPENAI_API_KEY secret. The model is set to gpt-6-astra. Keep
+                  OPENAI_API_KEY secret. Models are chosen per task on the admin AI pipeline page. Keep
                   the key out of student documents and client code.
                 </p>
                 <a

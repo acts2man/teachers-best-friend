@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { getDailyUsage, getModelCosts, getPlatformStats, supabaseAdmin } from "@/lib/supabase-admin";
+import { Coins, ScanLine, Target, Gauge } from "lucide-react";
 import { UsageChart } from "@/components/admin/usage-chart";
+import { Kpi } from "@/components/admin/kpi";
 import { fmtUsd, fmtInt } from "@/components/admin/format";
+
+/* The number the business is managed to. */
+const TARGET_COST_PER_SCAN = 0.01;
 
 export default async function UsagePage() {
   const [daily, models, stats] = await Promise.all([getDailyUsage(), getModelCosts(), getPlatformStats()]);
@@ -14,14 +19,31 @@ export default async function UsagePage() {
     cost: (Number(m.input_tokens) / 1e6) * Number(m.input_per_mtok) + (Number(m.output_tokens) / 1e6) * Number(m.output_per_mtok),
   }));
   const totalModelCost = modelRows.reduce((a, m) => a + m.cost, 0);
+  const totalCalls = modelRows.reduce((a, m) => a + Number(m.calls), 0);
+  const avg = Number(stats.avg_cost_per_scan ?? 0);
+  const ratio = avg / TARGET_COST_PER_SCAN;
+  const avgTone = avg === 0 ? undefined : ratio <= 1 ? "good" : ratio <= 2 ? "warn" : "bad";
+  const avgNote = avg === 0 ? undefined : ratio <= 1 ? `At or under the ${fmtUsd(TARGET_COST_PER_SCAN, 2)} target` : `${ratio.toFixed(1)}× the ${fmtUsd(TARGET_COST_PER_SCAN, 2)} target`;
+  const costPerCall = totalCalls ? totalModelCost / totalCalls : 0;
+  const scanTrend = daily.slice(-14).map((d) => Number(d.scans));
+  const costTrend = daily.slice(-14).map((d) => Number(d.ai_cost));
 
   return (
     <>
       <h1>Usage & cost</h1>
       <p className="ad-sub">{fmtInt(stats.scans_this_month)} scans this month · {fmtUsd(stats.ai_cost_this_month, 2)} AI cost · {fmtUsd(stats.avg_cost_per_scan, 4)} per scan</p>
 
-      <section className="panel" style={{ padding: "1.1rem" }}>
-        <h2 style={{ margin: "0 0 .75rem" }}>Last 90 days</h2>
+      <section className="kpi-grid" aria-label="Cost per scan">
+        <Kpi tier="primary" style={{ ["--i" as string]: 0 }} icon={<Target />} v={fmtUsd(avg, 4)} l="Average cost per scan" d={avgNote} tone={avgTone} empty="Awaiting first completed scan" />
+        <Kpi tier="primary" style={{ ["--i" as string]: 1 }} icon={<Gauge />} v={fmtUsd(costPerCall, 4)} l="Average per model call" d={`${fmtInt(totalCalls)} calls this month`} empty="No model calls yet" />
+        <Kpi style={{ ["--i" as string]: 2 }} icon={<Coins />} v={fmtUsd(stats.ai_cost_this_month, 2)} l="AI cost this month" d={`At target: ${fmtUsd(TARGET_COST_PER_SCAN * stats.scans_this_month, 2)}`} empty="Awaiting first scan" spark={costTrend} sparkId="usage-cost" />
+        <Kpi style={{ ["--i" as string]: 3 }} icon={<ScanLine />} v={stats.scans_this_month} l="Scans this month" d={`${fmtInt(stats.scans_today)} today`} empty="Awaiting first scan" spark={scanTrend} sparkId="usage-scans" />
+      </section>
+
+      <section className="panel ad-panel ad-section-gap">
+        <div className="ad-panel-head">
+          <div className="ad-panel-title"><h2>Last 90 days</h2><span className="ad-count">{daily.length} days</span></div>
+        </div>
         <UsageChart data={daily} />
       </section>
 
@@ -29,7 +51,7 @@ export default async function UsagePage() {
         <section className="panel" style={{ padding: "1.1rem" }}>
           <h2 style={{ margin: "0 0 .75rem" }}>Cost by model this month</h2>
           <table>
-            <thead><tr><th>Model</th><th className="num">Calls</th><th className="num">Input tok</th><th className="num">Output tok</th><th className="num">Cost</th><th className="num">Share</th></tr></thead>
+            <thead><tr><th>Model</th><th className="num">Calls</th><th className="num">Input tok</th><th className="num">Output tok</th><th className="num">Cost</th><th className="num">Avg / call</th><th className="num">Share</th></tr></thead>
             <tbody>
               {modelRows.filter((m) => Number(m.calls) > 0).map((m) => (
                 <tr key={m.model}>
@@ -38,10 +60,11 @@ export default async function UsagePage() {
                   <td className="num">{fmtInt(m.input_tokens)}</td>
                   <td className="num">{fmtInt(m.output_tokens)}</td>
                   <td className="num">{fmtUsd(m.cost, 3)}</td>
+                  <td className="num"><span className={`kpi-delta ${m.cost / Number(m.calls) > TARGET_COST_PER_SCAN * 2 ? "bad" : m.cost / Number(m.calls) > TARGET_COST_PER_SCAN ? "warn" : "good"}`}>{fmtUsd(m.cost / Number(m.calls), 4)}</span></td>
                   <td className="num">{totalModelCost ? Math.round((100 * m.cost) / totalModelCost) : 0}%</td>
                 </tr>
               ))}
-              {modelRows.every((m) => Number(m.calls) === 0) && <tr><td colSpan={6} className="muted">No model calls recorded this month. Once the app writes to the scans table, this fills in.</td></tr>}
+              {modelRows.every((m) => Number(m.calls) === 0) && <tr><td colSpan={7} className="muted">No model calls recorded this month. Once the app writes to the scans table, this fills in.</td></tr>}
             </tbody>
           </table>
           <p className="muted" style={{ fontSize: ".8rem", marginTop: ".75rem" }}>

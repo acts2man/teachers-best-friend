@@ -129,13 +129,13 @@ export async function aiConfig() {
   if (hasSupabaseConfig()) {
     return {
       key: process.env.OPENAI_API_KEY || "",
-      model: process.env.OPENAI_MODEL || "gpt-6-astra",
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
     };
   }
   const env = (await sitesRuntimeEnv()) as unknown as Record<string, string>;
   return {
     key: env.OPENAI_API_KEY || "",
-    model: env.OPENAI_MODEL || "gpt-6-astra",
+    model: env.OPENAI_MODEL || "gpt-5.6-luna",
   };
 }
 

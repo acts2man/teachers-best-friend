@@ -305,6 +305,7 @@
 .admin th:last-child, .admin td:last-child { padding-right: 4px; }
 .admin .num { text-align: right; font-variant-numeric: tabular-nums; }
 .admin td a { font-weight: 500; }
+.admin td.mono { white-space: nowrap; }
 .admin td a:hover { color: var(--ad-green-deep); }
 .ad-row-link td:first-child a::after { content: ""; }
 .ad-row-chev { color: var(--ad-ink-3); width: 16px; height: 16px; vertical-align: middle; opacity: 0; transition: opacity .15s ease, transform .15s var(--ad-ease); }
