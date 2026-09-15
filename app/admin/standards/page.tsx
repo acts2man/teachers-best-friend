@@ -80,7 +80,7 @@ export default async function StandardsPage() {
         <section className="panel" style={{ padding: "1.1rem" }}>
           <h2 style={{ margin: "0 0 .5rem" }}>Codes in use with no matching standard</h2>
           <p className="muted" style={{ fontSize: ".85rem", marginTop: 0 }}>
-            These appear on questions but aren't in the table — either a grade you haven't loaded yet, or a code the model invented. Load the grade, then re-run <code>migrate_workspace</code> to link them.
+            These appear on questions but aren’t in the table — either a grade you haven’t loaded yet, or a code the model invented. Load the grade, then re-run <code>migrate_workspace</code> to link them.
           </p>
           {topUnlinked.length === 0 ? <p className="muted">All question codes are linked.</p> : (
             <table>

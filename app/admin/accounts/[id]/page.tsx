@@ -161,7 +161,7 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
           </form>
 
           <details style={{ borderTop: "1px solid var(--rule-faint)", paddingTop: "1rem" }}>
-            <summary style={{ cursor: "pointer", color: "var(--correct-red)", fontWeight: 600 }}>Reset this account's data</summary>
+            <summary style={{ cursor: "pointer", color: "var(--correct-red)", fontWeight: 600 }}>Reset this account’s data</summary>
             <form action={resetTeacher} style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>
               <input type="hidden" name="teacher_id" value={a.teacher_id} />
               <p className="muted" style={{ margin: 0, fontSize: ".85rem" }}>

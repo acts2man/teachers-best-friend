@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Coins, ScanLine, Target, Gauge } from "lucide-react";
-import { getDailyUsage, getModelCosts, getPlatformStats, getCostBreakdown, supabaseAdmin } from "@/lib/supabase-admin";
+import { getDailyUsage, getModelCosts, getPlatformStats, getCostBreakdown, supabaseAdmin, type UnitEconomicsRow } from "@/lib/supabase-admin";
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Kpi } from "@/components/admin/kpi";
 import { fmtUsd, fmtInt, fmtCents, stageInfo, modelLabel } from "@/components/admin/format";
@@ -159,7 +159,7 @@ export default async function UsagePage() {
             <thead><tr><th>Teacher</th><th>Month</th><th>Plan</th><th className="num">They pay</th><th className="num">Scans</th><th className="num">AI cost</th><th className="num">Per scan</th><th className="num">Lessons reused</th><th className="num">Margin</th></tr></thead>
             <tbody>
               {(econ ?? []).length === 0 && <tr><td colSpan={9} className="muted">No completed scans yet.</td></tr>}
-              {(econ ?? []).map((r: any, i: number) => (
+              {(econ ?? []).map((r: UnitEconomicsRow, i: number) => (
                 <tr key={i}>
                   <td><Link href={`/admin/accounts/${r.teacher_id}`}>{emailOf.get(r.teacher_id) ?? r.teacher_id.slice(0, 8)}</Link></td>
                   <td className="muted">{new Date(r.period + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</td>
