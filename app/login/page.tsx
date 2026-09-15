@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   BarChart3,
   BookOpen,
@@ -100,14 +101,14 @@ export default function LoginPage() {
   return (
     <main className={admin ? "auth-page is-admin" : "auth-page"}>
       <section className="auth-story">
-        <a className="auth-brand" href="/">
+        <Link className="auth-brand" href="/">
           <span className="brand-mark">
             <img src="/brand/teacher-book.png" alt="" width="44" height="44" />
           </span>
           <span>
             a teacher’s<strong>best friend.</strong>
           </span>
-        </a>
+        </Link>
         {admin ? (
           <div>
             <p className="eyebrow">OPERATIONS CONSOLE</p>

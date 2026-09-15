@@ -187,6 +187,30 @@ export async function getAudit(limit = 200): Promise<AuditRow[]> {
   return data as AuditRow[];
 }
 
+/** One message in a support thread, as the admin tickets page selects it. */
+export type SupportMessage = {
+  ticket_id: string;
+  author: "teacher" | "ai" | "staff";
+  body: string;
+  created_at: string;
+};
+
+/** A row of public.teacher_unit_economics, as the usage page renders it. */
+export type UnitEconomicsRow = {
+  teacher_id: string;
+  plan_id: string | null;
+  plan_price_usd: number | string | null;
+  scan_quota: number | null;
+  period: string;
+  scans: number | string | null;
+  ai_cost_usd: number | string | null;
+  avg_cost_per_scan: number | string | null;
+  library_hits: number | string | null;
+  library_misses: number | string | null;
+  cache_hit_rate_pct: number | string | null;
+  gross_margin_usd: number | string | null;
+};
+
 export type SharedLibraryRow = { framework: string; grade: string; subject: string; standards: number; detailed: number; updated_at: string | null };
 
 /** Shared standards (usable by every teacher) grouped by framework, grade, and subject. */

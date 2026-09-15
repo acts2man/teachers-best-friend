@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTickets, supabaseAdmin } from "@/lib/supabase-admin";
+import { getTickets, supabaseAdmin, type SupportMessage } from "@/lib/supabase-admin";
 import { replyTicket, setTicketPriority } from "@/app/admin/actions";
 import { fmtRel, fmtDate } from "@/components/admin/format";
 
@@ -19,8 +19,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
   const ids = tickets.slice(0, 40).map((t) => t.id);
   const { data: msgs } = ids.length
     ? await supabaseAdmin().from("support_messages").select("ticket_id, author, body, created_at").in("ticket_id", ids).order("created_at")
-    : { data: [] as any[] };
-  const byTicket = new Map<string, any[]>();
+    : { data: [] as SupportMessage[] };
+  const byTicket = new Map<string, SupportMessage[]>();
   (msgs ?? []).forEach((m) => byTicket.set(m.ticket_id, [...(byTicket.get(m.ticket_id) ?? []), m]));
 
   const deflected = tickets.filter((t) => t.deflected).length;

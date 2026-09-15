@@ -102,33 +102,45 @@ const prefetchRoutes = [
 ];
 
 export default function TeacherApp({ view }: { view: string }) {
-  const initialSnapshot = useRef(workspaceSnapshot).current;
+  // Seed from the module-level snapshot that survives client-side navigation.
+  // These are lazy initializers on purpose: React calls them once, on the
+  // first render of this component, which is exactly the "read it at mount"
+  // behaviour the old `useRef(workspaceSnapshot).current` was reaching for --
+  // without reading a ref during render, which React 19 does not guarantee is
+  // stable and which the compiler flags.
   const [w, setW] = useState<Workspace | null>(
-    initialSnapshot?.workspace ?? null,
+    () => workspaceSnapshot?.workspace ?? null,
   );
-  const [revision, setRevision] = useState(initialSnapshot?.revision ?? 0);
-  const [loaded, setLoaded] = useState(Boolean(initialSnapshot));
+  const [revision, setRevision] = useState(() => workspaceSnapshot?.revision ?? 0);
+  const [loaded, setLoaded] = useState(() => Boolean(workspaceSnapshot));
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const [aiReady, setAiReady] = useState(initialSnapshot?.aiReady ?? false);
+  const [aiReady, setAiReady] = useState(
+    () => workspaceSnapshot?.aiReady ?? false,
+  );
   const [authProvider, setAuthProvider] = useState<"chatgpt" | "supabase">(
-    initialSnapshot?.authProvider ?? "chatgpt",
+    () => workspaceSnapshot?.authProvider ?? "chatgpt",
   );
   const [isAdmin, setIsAdmin] = useState(false);
   const [impersonating, setImpersonating] = useState<{
     teacherEmail: string;
-  } | null>(initialSnapshot?.impersonating ?? null);
+  } | null>(() => workspaceSnapshot?.impersonating ?? null);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
   const [framework, setFramework] = useState("California");
-  const [pendingView, setPendingView] = useState<string | null>(null);
+  // Optimistic sidebar highlight. Records which view we were on when the link
+  // was clicked, so the highlight expires by derivation the moment the new
+  // page arrives -- no effect, and no window where the highlight outlives the
+  // navigation it belonged to.
+  const [pending, setPending] = useState<{ from: string; to: string } | null>(
+    null,
+  );
   const [quota, setQuota] = useState<Quota | null>(null);
   const router = useRouter();
   async function reload() {
     try {
-      setError("");
       const r = await fetch("/api/workspace", { cache: "no-store" });
       if (r.status === 401) {
         const next = window.location.pathname + window.location.search;
@@ -152,6 +164,9 @@ export default function TeacherApp({ view }: { view: string }) {
       setAuthProvider(nextSnapshot.authProvider);
       setImpersonating(nextSnapshot.impersonating);
       setLoaded(true);
+      // Cleared on success rather than on entry: clearing it up front made a
+      // failing reload blank the message and then restore it a moment later.
+      setError("");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Your classroom couldn’t be loaded.",
@@ -159,6 +174,10 @@ export default function TeacherApp({ view }: { view: string }) {
     }
   }
   useEffect(() => {
+    // reload() awaits the fetch before it touches state, so nothing is set
+    // synchronously here and no cascading render results. The rule cannot see
+    // through an async function to determine that.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isStale()) reload();
     for (const route of prefetchRoutes) router.prefetch(route);
     const onFocus = () => {
@@ -212,11 +231,6 @@ export default function TeacherApp({ view }: { view: string }) {
       window.removeEventListener(SCAN_COMPLETE_EVENT, read);
     };
   }, [authProvider]);
-  // The destination view arrives with the new page; clear the optimistic
-  // highlight once it does.
-  useEffect(() => {
-    setPendingView(null);
-  }, [view]);
   useEffect(() => {
     document.documentElement.classList.toggle(
       "reduce-motion",
@@ -320,7 +334,7 @@ export default function TeacherApp({ view }: { view: string }) {
     reload,
     go: (url: string) => router.push(url),
   };
-  const shownView = pendingView ?? view;
+  const shownView = pending && pending.from === view ? pending.to : view;
   const title =
     [
       ...nav,
@@ -415,7 +429,7 @@ export default function TeacherApp({ view }: { view: string }) {
                   >
                     <Link
                       href={n.id === "home" ? "/app" : "/" + n.id}
-                      onClick={() => setPendingView(n.id)}
+                      onClick={() => setPending({ from: view, to: n.id })}
                     >
                       <n.icon size={19} />
                       <span>{n.label}</span>
@@ -436,7 +450,7 @@ export default function TeacherApp({ view }: { view: string }) {
                     isActive={shownView === n.id}
                     className="nav-link"
                   >
-                    <Link href={"/" + n.id} onClick={() => setPendingView(n.id)}>
+                    <Link href={"/" + n.id} onClick={() => setPending({ from: view, to: n.id })}>
                       <n.icon size={18} />
                       <span>{n.label}</span>
                     </Link>

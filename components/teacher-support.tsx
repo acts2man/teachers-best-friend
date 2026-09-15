@@ -72,6 +72,9 @@ export function SupportView() {
   }
 
   useEffect(() => {
+    // loadList() awaits before it sets state: a plain load-on-mount, not a
+    // synchronous setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -251,7 +254,7 @@ function NewTicketForm({
         </label>
       </div>
       <label>
-        What's going on?
+        What’s going on?
         <textarea
           required
           rows={5}
@@ -295,6 +298,9 @@ function TicketDetail({
   }
 
   useEffect(() => {
+    // load() awaits before it sets state: a plain load-on-mount, not a
+    // synchronous setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const unsubscribe = subscribeToTicketMessages(ticketId, load);
     return unsubscribe;

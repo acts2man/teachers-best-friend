@@ -1,9 +1,16 @@
-export function fmtUsd(n: number | null | undefined, digits = 0) {
+// Postgres numeric columns arrive from PostgREST as strings, not numbers
+// (teacher_unit_economics.ai_cost_usd, scans.cost_usd, admin_platform_stats
+// .mrr_usd and friends). Both of these already coerced with Number(); the
+// signatures just claimed otherwise, so every call site either widened the
+// value to `any` or lied about it. Accept what the API actually sends.
+export type Numeric = number | string | null | undefined;
+
+export function fmtUsd(n: Numeric, digits = 0) {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n));
 }
 
-export function fmtBytes(b: number | null | undefined) {
+export function fmtBytes(b: Numeric) {
   const n = Number(b ?? 0);
   if (n < 1024) return `${n} B`;
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
@@ -31,7 +38,7 @@ export function fmtInt(n: number | null | undefined) {
 }
 
 /** Money for a layperson: whole cents, or "under 1¢". Use `title` with fmtUsd(n, 4) for the exact figure. */
-export function fmtCents(n: number | null | undefined) {
+export function fmtCents(n: Numeric) {
   const v = Number(n ?? 0);
   if (v === 0) return "$0.00";
   if (Math.abs(v) < 0.005) return "under 1¢";
@@ -65,21 +72,28 @@ export function modelLabel(model: string | null | undefined) {
 
 /** Turns an audit-log row into one readable sentence. Falls back to the action name. */
 export function describeAudit(action: string, detail: Record<string, unknown> | null | undefined) {
-  const d = (detail ?? {}) as Record<string, any>;
+  const d = (detail ?? {}) as Record<string, unknown>;
   const reason = d.reason ? ` — “${d.reason}”` : "";
   const cap = (s: unknown) => (typeof s === "string" && s ? s.charAt(0).toUpperCase() + s.slice(1) : String(s ?? ""));
+  // Audit details are free-form jsonb; read nested fields defensively rather
+  // than asserting a shape the database does not enforce.
+  const bag = (v: unknown): Record<string, unknown> =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+  const money = (v: unknown): Numeric =>
+    typeof v === "number" || typeof v === "string" ? v : undefined;
   switch (action) {
     case "set_plan": return `Changed plan from ${cap(d.from)} to ${cap(d.to)}${reason}`;
     case "set_status": return `Set account status to ${cap(d.to ?? d.status)}${reason}`;
     case "grant_admin": return "Granted admin access (the account stays a teacher account too)";
     case "revoke_admin": return "Revoked admin access";
     case "set_admin": return d.to === true || d.is_admin === true || d.to === "true" ? "Granted admin access" : d.to === false || d.is_admin === false || d.to === "false" ? "Revoked admin access" : "Changed admin access";
-    case "set_pipeline": { const to = d.to ?? {}; return `Set the ${d.stage ?? ""} stage to ${to.model ?? "?"} (${to.effort ?? "?"} reasoning, up to ${to.max ?? "?"} tokens)`.replace("the  stage", "this stage"); }
-    case "clear_failed_scans": return `Cleared ${d.removed ?? 0} failed scan${d.removed === 1 ? "" : "s"}${d.cost_usd ? ` (${fmtCents(d.cost_usd)} had been spent on them)` : ""}`;
+    case "set_pipeline": { const to = bag(d.to); return `Set the ${d.stage ?? ""} stage to ${to.model ?? "?"} (${to.effort ?? "?"} reasoning, up to ${to.max ?? "?"} tokens)`.replace("the  stage", "this stage"); }
+    case "clear_failed_scans": return `Cleared ${d.removed ?? 0} failed scan${d.removed === 1 ? "" : "s"}${money(d.cost_usd) ? ` (${fmtCents(money(d.cost_usd))} had been spent on them)` : ""}`;
     case "remove_model": return `Removed ${d.model ?? ""} from the pricing table`.replace("Removed  from", "Removed a model from");
     case "internal_note": return "Updated the internal notes";
     case "reset_teacher": return `Reset the account’s classroom data${d.keep_scans === false ? " and scan history" : ""}`;
-    case "review_reteaching": return `Marked a reteaching entry ${d.status ?? ""}${d.quality != null ? ` (quality ${d.quality})` : ""}`;
+    case "review_reteaching": return `Marked a reteaching entry ${d.status ?? ""}${num(d.quality) != null ? ` (quality ${num(d.quality)})` : ""}`;
     case "reply_ticket": return `Replied to a support ticket${d.status ? ` and marked it ${d.status}` : ""}`;
     case "set_ticket_priority": return `Set a support ticket’s priority to ${d.priority ?? "?"}`;
     case "start_impersonation": return "Started viewing a teacher’s account as an app manager";

@@ -29,6 +29,27 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "off",
     },
   },
+  {
+    // These screens seed state from useSearchParams() inside an effect. The
+    // rule is right that it causes an extra render and a stale first frame,
+    // but converting them is eight individually-reasoned changes across the
+    // whole teacher workflow and wants a browser to verify against. Kept
+    // visible as a warning rather than silenced, and written up with the
+    // exact transformation per site in docs/url-derived-state.md. Move each
+    // file back to the default `error` as it is converted.
+    files: [
+      "app/login/page.tsx",
+      "components/teacher-answer-key.tsx",
+      "components/teacher-assessments.tsx",
+      "components/teacher-insights.tsx",
+      "components/teacher-planning.tsx",
+      "components/teacher-review.tsx",
+      "components/teacher-scan.tsx",
+    ],
+    rules: {
+      "react-hooks/set-state-in-effect": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;
