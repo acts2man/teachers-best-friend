@@ -126,7 +126,7 @@ agency's retention of ownership and control of pupil records.
 
 | Data | Retention |
 |---|---|
-| Uploaded worksheet images | Automatically deleted [RETENTION WINDOW] after upload |
+| Uploaded worksheet images | Automatically deleted 30 days after upload |
 | Roster photographs | Deleted immediately after processing |
 | Extracted answers, scores, misconception records | Held while the account is active |
 | Standards mastery records | Held while the account is active |

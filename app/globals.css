@@ -602,3 +602,11 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
   .impersonation-banner{flex-wrap:wrap;padding:10px 14px}
   .impersonation-banner span{flex-basis:100%}
 }
+
+/* Student-privacy note shown at the upload controls themselves, so the
+   guidance is read at the moment work is chosen rather than in the Terms. */
+.upload-privacy{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;margin-bottom:14px;border:1px solid hsl(calc(77deg + var(--th)) calc(45% * var(--ts)) 72%);border-radius:11px;background:hsl(calc(80deg + var(--th)) calc(46% * var(--ts)) 96.5%)}
+.upload-privacy>svg{color:hsl(calc(112deg + var(--th)) calc(28% * var(--ts)) 34%);flex-shrink:0;margin-top:1px}
+.upload-privacy strong{display:block;font-size:13.5px;color:hsl(calc(152deg + var(--th)) calc(24% * var(--ts)) 21%);margin-bottom:3px}
+.upload-privacy p{margin:0;font-size:13px;line-height:1.55;color:hsl(calc(147deg + var(--th)) calc(13% * var(--ts)) 32%)}
+.upload-privacy a{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:hsl(calc(112deg + var(--th)) calc(28% * var(--ts)) 34%);text-decoration:underline;text-underline-offset:2px}

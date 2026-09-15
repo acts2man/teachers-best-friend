@@ -6,9 +6,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const DOCS: Record<string, { file: string; title: string; audience: string }> = {
+  "terms":                { file: "terms.md",                title: "Terms of Service",                audience: "Teachers" },
   "privacy":              { file: "privacy.md",              title: "Privacy Policy",                  audience: "Everyone" },
   "student-data-privacy": { file: "student-data-privacy.md", title: "Student Data Privacy Commitments", audience: "Schools and districts" },
   "how-we-use-ai":        { file: "how-we-use-ai.md",        title: "How We Use AI",                   audience: "Teachers" },
+  "dpa":                  { file: "dpa.md",                  title: "Data Processing Addendum",        audience: "Schools and districts" },
 };
 
 export function generateStaticParams() {
