@@ -603,6 +603,56 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
   .impersonation-banner span{flex-basis:100%}
 }
 
+/* Scan meter in the app sidebar. Quiet at a glance, louder as it runs out. */
+.quota-meter {
+  margin: -0.35rem 0 0.9rem;
+  padding: 0 0.15rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.quota-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.quota-count { font-weight: 600; color: var(--ink-soft); }
+.quota-of { color: var(--ink-faint, var(--ink-soft)); opacity: 0.75; }
+.quota-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule-faint);
+  overflow: hidden;
+}
+.quota-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--mark);
+  transition: width 0.3s ease;
+}
+.reduce-motion .quota-track > span { transition: none; }
+.quota-meter[data-level="low"] .quota-count { color: #8a6d0b; }
+.quota-meter[data-level="low"] .quota-track > span { background: #c9a227; }
+.quota-meter[data-level="out"] .quota-count { color: var(--correct-red); }
+.quota-meter[data-level="out"] .quota-track > span { background: var(--correct-red); }
+.quota-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.quota-note a { color: var(--mark-deep); }
+
+/* A notice that reports a limit rather than an explanation reads warmer. */
+.review-notice[data-tone="warn"] {
+  background: hsl(calc(44deg + var(--th)) calc(62% * var(--ts)) 94%);
+  border-color: hsl(calc(44deg + var(--th)) calc(48% * var(--ts)) 82%);
+}
+.review-notice[data-tone="warn"] > svg { color: #8a6d0b; }
+.review-notice[data-tone="warn"] p { color: #6b5408; }
+
 /* Student-privacy note shown at the upload controls themselves, so the
    guidance is read at the moment work is chosen rather than in the Terms. */
 .upload-privacy{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;margin-bottom:14px;border:1px solid hsl(calc(77deg + var(--th)) calc(45% * var(--ts)) 72%);border-radius:11px;background:hsl(calc(80deg + var(--th)) calc(46% * var(--ts)) 96.5%)}

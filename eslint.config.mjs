@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party bundles we ship but do not author. public/pdf.worker.min.mjs
+    // alone produced ~1,550 of the 1,611 warnings in this repo, which buried
+    // every real finding in the app code.
+    "public/**",
+    "dist/**",
+    "vendor/**",
   ]),
   {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
