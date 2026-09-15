@@ -242,6 +242,36 @@ export default function TeacherApp({ view }: { view: string }) {
       lock.current = false;
     }
   }
+  // Every view derives from the active classroom, so a workspace with no
+  // classes cannot be rendered at all. Before this guard the line below read
+  // `classroom.id` off undefined and threw, leaving a blank page with no way
+  // out — which is exactly where an admin "reset this teacher" used to land
+  // the account. Offer to rebuild instead of crashing.
+  if (w.classes.length === 0) {
+    return (
+      <EmptyWorkspace
+        busy={busy}
+        onCreate={() =>
+          save(
+            {
+              ...w,
+              classes: [
+                {
+                  id: "my-class",
+                  name: "My classroom",
+                  grade: 4,
+                  framework: "California",
+                  demo: false,
+                },
+              ],
+              activeClassId: "my-class",
+            },
+            "Your classroom is ready.",
+          )
+        }
+      />
+    );
+  }
   const classroom =
       w.classes.find((c) => c.id === w.activeClassId) || w.classes[0],
     students = w.students.filter((s) => s.classId === classroom.id),
@@ -634,6 +664,40 @@ function WorkspaceLoading({
               <span>Opening your classroom…</span>
             </div>
           )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Shown when the workspace loads but carries no classes — the one state the
+ * app cannot render, because every view is scoped to the active classroom.
+ * Reachable after an admin reset, or after a teacher deletes their last class
+ * in an older client. Recoverable in one click rather than a blank page.
+ */
+function EmptyWorkspace({
+  busy,
+  onCreate,
+}: {
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="workspace-loading" data-state="empty">
+      <section className="workspace-loading-main">
+        <div className="workspace-loading-content">
+          <div className="workspace-loading-error" role="status">
+            <h1>Let’s set up your first classroom.</h1>
+            <p>
+              This account has no classes yet. Create one to open your
+              workspace — you can rename it, change the grade, and add more
+              classes at any time under Classes.
+            </p>
+            <button className="action" onClick={onCreate} disabled={busy}>
+              {busy ? "Creating…" : "Create my classroom"}
+            </button>
+          </div>
         </div>
       </section>
     </div>

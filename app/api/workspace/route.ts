@@ -17,6 +17,16 @@ import { createDemoWorkspace } from "@/lib/teacher-data";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Workspace } from "@/lib/teacher-types";
 
+// Optional text the relational facade can legitimately store as NULL. The
+// facade now coalesces these (see the workspace_json_defaults migration), but
+// a workspace saved by an older client, or the ChatGPT Sites blob backend, can
+// still carry null or a missing key — and a required z.string() there rejects
+// the ENTIRE classroom with one generic message. Accept it and store "".
+const optionalText = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? "");
+
 const dataSchema = z.object({
   classes: z
     .array(
@@ -25,7 +35,8 @@ const dataSchema = z.object({
         name: z.string(),
         grade: z.number(),
         framework: z.string(),
-        demo: z.boolean(),
+        // A class that predates the demo-flag fix can omit this entirely.
+        demo: z.boolean().nullish().transform((value) => Boolean(value)),
       }),
     )
     .min(1)
@@ -37,23 +48,18 @@ const dataSchema = z.object({
         id: z.string(),
         classId: z.string(),
         name: z.string(),
-        color: z.string(),
+        color: optionalText,
         evidence: z.array(
           z.object({
             id: z.string(),
-            standard: z.string(),
-            score: z.number().min(0).max(100),
+            standard: optionalText,
+            score: z.coerce.number().min(0).max(100).catch(0),
             date: z.string(),
-            source: z.string(),
+            source: optionalText,
             assessmentId: z.string().optional(),
           }),
         ),
-        // Accept a missing or null note (the store can hold either) and save it
-        // as empty text, so an unset note never rejects the whole classroom.
-        notes: z
-          .string()
-          .nullish()
-          .transform((value) => value ?? ""),
+        notes: optionalText,
       }),
     )
     .max(3000),
@@ -72,10 +78,6 @@ const dataSchema = z.object({
   lessons: z.array(z.any()).max(1000),
   resources: z.array(z.any()).max(1000),
   customStandards: z.array(z.any()).max(1000),
-  // Admin-unlocked standards are read-only from the client's point of view
-  // (see lib/teacher-server.ts normalizeWorkspace); sync_workspace never
-  // reads this field back, so it's accepted and ignored, not required.
-  sharedStandards: z.array(z.any()).max(2000).optional(),
   groups: z.array(z.any()).max(300),
   settings: z.object({
     teacherName: z.string().max(100),
@@ -122,17 +124,38 @@ export async function PUT(request: Request) {
         413,
         "This classroom is too large to save in one update.",
       );
+    const body = JSON.parse(text);
+    // The shared standards library is server-owned: it is sent to the client
+    // so the catalog can resolve codes, but sync_workspace never reads it back
+    // and a teacher can never change it. Drop it before validating rather than
+    // bounding it — an admin unlocking enough grades would otherwise push the
+    // echoed array past any cap and fail every teacher's save at once.
+    if (body && typeof body === "object" && body.workspace)
+      delete body.workspace.sharedStandards;
     const parsed = z
       .object({
         workspace: dataSchema,
         revision: z.number().int().nonnegative(),
       })
-      .safeParse(JSON.parse(text));
-    if (!parsed.success)
+      .safeParse(body);
+    if (!parsed.success) {
+      // Name the offending field. The previous message said only "some
+      // classroom information is incomplete", which gave a teacher whose save
+      // had started failing nothing at all to act on.
+      const issue = parsed.error.issues[0];
+      const where = issue?.path.join(".") || "the classroom";
+      console.error(
+        "Workspace save rejected",
+        parsed.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+      );
       throw new HttpError(
         400,
-        "Some classroom information is incomplete. Please check your entries.",
+        `This classroom couldn’t be saved because “${where}” is missing or invalid. Reload the page to pick up the latest version, then try again.`,
       );
+    }
     const workspace = parsed.data.workspace as Workspace;
     const { revision } = parsed.data;
     if (!workspace.classes.some((item) => item.id === workspace.activeClassId))
