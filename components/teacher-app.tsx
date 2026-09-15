@@ -52,6 +52,12 @@ import {
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
 import { stopImpersonation } from "@/lib/impersonation-actions";
+import {
+  fetchQuota,
+  quotaLevel,
+  SCAN_COMPLETE_EVENT,
+  type Quota,
+} from "@/lib/quota-client";
 const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
@@ -118,6 +124,7 @@ export default function TeacherApp({ view }: { view: string }) {
   const [grade, setGrade] = useState("4");
   const [framework, setFramework] = useState("California");
   const [pendingView, setPendingView] = useState<string | null>(null);
+  const [quota, setQuota] = useState<Quota | null>(null);
   const router = useRouter();
   async function reload() {
     try {
@@ -185,6 +192,24 @@ export default function TeacherApp({ view }: { view: string }) {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [authProvider]);
+  // The scan meter. Plans only exist on the Supabase deployment, so the
+  // ChatGPT Sites host simply never shows one. Re-read after every analysis
+  // (analyzeRequest announces it) so the count a teacher sees is the count
+  // the server would enforce.
+  useEffect(() => {
+    if (authProvider !== "supabase") return;
+    let cancelled = false;
+    const read = async () => {
+      const next = await fetchQuota();
+      if (!cancelled) setQuota(next);
+    };
+    read();
+    window.addEventListener(SCAN_COMPLETE_EVENT, read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SCAN_COMPLETE_EVENT, read);
     };
   }, [authProvider]);
   // The destination view arrives with the new page; clear the optimistic
@@ -288,6 +313,9 @@ export default function TeacherApp({ view }: { view: string }) {
     loaded,
     busy,
     aiReady,
+    quota,
+    refreshQuota: () =>
+      window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
     save,
     reload,
     go: (url: string) => router.push(url),
@@ -375,6 +403,7 @@ export default function TeacherApp({ view }: { view: string }) {
               New assessment
               <Plus size={16} />
             </button>
+            <QuotaMeter quota={quota} />
             <div className="nav-label">YOUR WORKSPACE</div>
             <SidebarMenu>
               {nav.map((n) => (
@@ -700,6 +729,42 @@ function EmptyWorkspace({
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Scans left this period, in the sidebar under "New assessment".
+ *
+ * The meter existed server-side from the start (/api/quota, my_scan_quota)
+ * but nothing rendered it, so the first a teacher heard about their limit was
+ * a refusal part-way through an upload. Renders nothing at all when there is
+ * no meter to show — the ChatGPT Sites host has no plans.
+ */
+function QuotaMeter({ quota }: { quota: Quota | null }) {
+  if (!quota || quota.quota <= 0) return null;
+  const level = quotaLevel(quota);
+  const pct = Math.min(100, Math.round((quota.used / quota.quota) * 100));
+  return (
+    <div className="quota-meter" data-level={level}>
+      <div className="quota-line">
+        <span className="quota-count">
+          {level === "out" ? "No scans left" : `${quota.remaining} scans left`}
+        </span>
+        <span className="quota-of">of {quota.quota}</span>
+      </div>
+      <div className="quota-track" role="img"
+        aria-label={`${quota.used} of ${quota.quota} scans used this period`}>
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      {level !== "ok" && (
+        <p className="quota-note">
+          {level === "out"
+            ? "Your plan’s scans are used up for this period."
+            : "You’re close to this period’s limit."}{" "}
+          <Link href="/contact?topic=team">Get more scans</Link>
+        </p>
+      )}
     </div>
   );
 }

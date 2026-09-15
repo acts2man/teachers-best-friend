@@ -1,4 +1,5 @@
 import { readJson } from "@/lib/utils";
+import { announceScanComplete } from "@/lib/quota-client";
 
 // Background analyses are polled until they finish. A slow reasoning model on a
 // large document can take a few minutes, so allow generous headroom before
@@ -24,9 +25,19 @@ export async function analyzeRequest(body: unknown): Promise<any> {
     body: JSON.stringify(body),
   });
   const d = await readJson(r);
-  if (!r.ok) throw new Error(d.error);
-  if (!d.scanId) return d;
-  return pollScan(d.scanId);
+  if (!r.ok) {
+    // A refused scan still moves the meter's meaning (402 = out of scans), so
+    // let the UI re-read it rather than showing a stale "you have N left".
+    announceScanComplete();
+    throw new Error(d.error);
+  }
+  if (!d.scanId) {
+    announceScanComplete();
+    return d;
+  }
+  const result = await pollScan(d.scanId);
+  announceScanComplete();
+  return result;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
