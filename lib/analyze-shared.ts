@@ -7,6 +7,10 @@ import {
   normalizeRecognizedResponses,
   preparationGaps,
 } from "@/lib/teacher-workflow";
+import {
+  catalogForPrompt,
+  questionsForGrading,
+} from "@/lib/prompt-payload";
 import type { Standard, Workspace } from "@/lib/teacher-types";
 
 export type Mode =
@@ -191,7 +195,7 @@ export function buildPrompt(
       ". Intended standards chosen by the teacher: " +
       JSON.stringify(p.targetStandards) +
       ". Identify the actual skill honestly; do not force an unrelated question onto a target standard. Explain any question outside these intended standards. Full grade and subject catalog: " +
-      JSON.stringify(catalog) +
+      JSON.stringify(catalogForPrompt(catalog)) +
       ". Teacher text: " +
       p.text;
   }
@@ -217,7 +221,7 @@ export function buildPrompt(
       throw new HttpError(400, "Add student work first.");
     task =
       "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. Compare the response with the confirmed teacher key and the question’s standard and component skill. Preserve written answers. Return an answer-match percentage from 0–100: 100 for fully correct, a defensible partial percentage for partially demonstrated knowledge, and 0 for missing or unrelated work. Assess mathematical or textual equivalence, not exact string equality. Diagnose a likely misconception with uncertainty, separating operation selection, reading, place value, fact fluency and regrouping. Do not infer a disability or fixed learner type. Missing/unreadable responses need confidence 0 and an explicit review message; never invent answers. Do not reproduce student names. Questions: " +
-      JSON.stringify(a.questions) +
+      JSON.stringify(questionsForGrading(a)) +
       ". Additional work: " +
       p.text;
     schema = responseSchema;
