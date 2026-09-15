@@ -77,6 +77,20 @@ const obj = (properties: Record<string, unknown>) => ({
   additionalProperties: false,
 });
 const arr = (items: unknown) => ({ type: "array", items });
+// Whole-number percentage, 0-100. Declared as an integer on purpose: when
+// these were plain numbers the model returned fractions (0.98 for 98%), which
+// passed a 0-100 range check silently and rendered as "0.98%" in the app.
+const pct = { type: "integer", minimum: 0, maximum: 100 };
+// Belt to the schema's braces. A model that ignores the integer contract and
+// sends 0.92 for 92% would otherwise pass a plain 0-100 range check and show
+// up in the app as "0.92%". Anything at or below 1 is read as a fraction; a
+// genuine sub-1% alignment has no meaning here (the prompt asks for a flat 0
+// when there is no match), so the repair is unambiguous in practice.
+const pctField = z
+  .number()
+  .min(0)
+  .max(100)
+  .transform((v) => Math.round(v > 0 && v <= 1 ? v * 100 : v));
 const questionSchema = obj({
   number: { type: "integer" },
   text: str,
@@ -87,9 +101,9 @@ const questionSchema = obj({
   skill: str,
   dok: { type: "integer", minimum: 1, maximum: 4 },
   costas: { type: "integer", minimum: 1, maximum: 3 },
-  alignment: { type: "number", minimum: 0, maximum: 100 },
+  alignment: pct,
   improvement: str,
-  confidence: { type: "number", minimum: 0, maximum: 100 },
+  confidence: pct,
   level: {
     type: "string",
     enum: ["On grade", "Below grade", "Above grade", "Unrelated"],
@@ -103,9 +117,9 @@ const responseSchema = obj({
       questionId: str,
       answer: str,
       correct: bool,
-      match: { type: "number", minimum: 0, maximum: 100 },
+      match: pct,
       misconception: str,
-      confidence: { type: "number", minimum: 0, maximum: 100 },
+      confidence: pct,
     }),
   ),
 });
@@ -114,7 +128,7 @@ const answerKeySchema = obj({
     obj({
       questionId: str,
       answer: str,
-      confidence: { type: "number", minimum: 0, maximum: 100 },
+      confidence: pct,
     }),
   ),
 });
@@ -168,7 +182,7 @@ export function buildPrompt(
     if (!p.text.trim() && !hasContent)
       throw new HttpError(400, "Add a document or questions first.");
     task =
-      "Extract and segment every question from this assignment. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question. Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence. Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. Grade " +
+      "Extract and segment every question from this assignment. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. Grade " +
       p.grade +
       ", subject " +
       p.subject +
@@ -316,9 +330,9 @@ export function finalizeAnalysis(
               skill: z.string(),
               dok: z.number().int().min(1).max(4),
               costas: z.number().int().min(1).max(3),
-              alignment: z.number().min(0).max(100),
+              alignment: pctField,
               improvement: z.string(),
-              confidence: z.number().min(0).max(100),
+              confidence: pctField,
               level: z.enum([
                 "On grade",
                 "Below grade",
@@ -357,9 +371,9 @@ export function finalizeAnalysis(
             questionId: z.string(),
             answer: z.string(),
             correct: z.boolean(),
-            match: z.number().min(0).max(100),
+            match: pctField,
             misconception: z.string(),
-            confidence: z.number().min(0).max(100),
+            confidence: pctField,
           }),
         ),
       })
@@ -382,7 +396,7 @@ export function finalizeAnalysis(
             z.object({
               questionId: z.string(),
               answer: z.string(),
-              confidence: z.number().min(0).max(100),
+              confidence: pctField,
             }),
           )
           .max(100),

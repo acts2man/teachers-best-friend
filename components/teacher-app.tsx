@@ -484,6 +484,7 @@ export default function TeacherApp({ view }: { view: string }) {
               <Link href="/legal/privacy">Privacy</Link>
               <Link href="/legal/student-data-privacy">Student data</Link>
               <Link href="/legal/how-we-use-ai">How we use AI</Link>
+              <Link href="/legal/terms">Terms</Link>
             </nav>
           </SidebarFooter>
         </Sidebar>

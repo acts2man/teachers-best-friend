@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   ScanLine,
   Search,
+  ShieldCheck,
   Upload,
   X,
 } from "lucide-react";
@@ -649,6 +650,20 @@ export function ScanView() {
                   />
                 </label>
               )}
+              <div className="upload-privacy" role="note">
+                <ShieldCheck size={17} aria-hidden="true" />
+                <div>
+                  <strong>Upload only what the analysis needs.</strong>
+                  <p>
+                    {mode === "responses"
+                      ? "Student first names, initials, or a label like “Student 4” are enough. Leave off last names, student ID numbers, addresses, birth dates, medical information, and IEP or 504 records."
+                      : "Blank assessments only. If a copy has student names or ID numbers on it, cover or crop them before uploading."}
+                  </p>
+                  <a href="/legal/student-data-privacy" target="_blank" rel="noreferrer">
+                    How we protect student work
+                  </a>
+                </div>
+              </div>
               <Tabs value={source} onValueChange={setSource}>
                 <TabsList className="text-tabs">
                   <TabsTrigger value="upload">Upload or photograph</TabsTrigger>

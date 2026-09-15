@@ -66,6 +66,8 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               <Link href="/legal/student-data-privacy">Student data privacy</Link>
               <Link href="/legal/how-we-use-ai">How we use AI</Link>
               <Link href="/legal/privacy">Privacy policy</Link>
+              <Link href="/legal/terms">Terms of service</Link>
+              <Link href="/legal/dpa">District agreement</Link>
             </div>
             <div>
               <p className="mk-foot-head">Company</p>
