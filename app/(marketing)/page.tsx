@@ -14,12 +14,18 @@ async function getPlans() {
     const { data } = await sb.from("plans").select("id,name,price_cents,scan_quota,seat_based,sort_order").eq("active", true).order("sort_order");
     if (data?.length) return data;
   } catch {}
+  // Last-resort fallback only. Until the plans_read policy was opened to anon
+  // this query returned nothing on every build, so the site quietly served
+  // this list instead -- and it had drifted: it advertised "Pro $19.00" while
+  // the table metered "Tier 1" at $19.99, and omitted Tier 3 entirely. Keep it
+  // in step with public.plans whenever prices change.
   return [
     { id: "free", name: "Free", price_cents: 0, scan_quota: 20, seat_based: false, sort_order: 1 },
     { id: "starter", name: "Starter", price_cents: 900, scan_quota: 150, seat_based: false, sort_order: 2 },
-    { id: "pro", name: "Pro", price_cents: 1900, scan_quota: 500, seat_based: false, sort_order: 3 },
-    { id: "elite", name: "Elite", price_cents: 2999, scan_quota: 1000, seat_based: false, sort_order: 4 },
-    { id: "team", name: "Team", price_cents: 1500, scan_quota: 500, seat_based: true, sort_order: 5 },
+    { id: "pro", name: "Tier 1", price_cents: 1999, scan_quota: 500, seat_based: false, sort_order: 3 },
+    { id: "team", name: "Team", price_cents: 1500, scan_quota: 500, seat_based: true, sort_order: 4 },
+    { id: "elite", name: "Tier 2", price_cents: 2999, scan_quota: 1000, seat_based: false, sort_order: 5 },
+    { id: "tier3", name: "Tier 3", price_cents: 3999, scan_quota: 1500, seat_based: false, sort_order: 6 },
   ];
 }
 
@@ -40,6 +46,7 @@ const GOOD_FOR: Record<string, string> = {
   starter: "One class, weekly checks",
   pro: "Multiple periods, or checking every assignment",
   elite: "Every assignment, every class, all year",
+  tier3: "A whole department, or a heavy secondary load",
   team: "A grade-level team or department, five or more",
 };
 

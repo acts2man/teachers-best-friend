@@ -160,6 +160,27 @@ export function guardOrigin(request: Request) {
     throw new HttpError(403, "This request could not be verified.");
 }
 
+/**
+ * The site's own public origin, for building a redirect. Behind Netlify's
+ * proxy request.url is an internal address (the same reason guardOrigin
+ * cannot trust it), so a redirect resolved against it can point somewhere
+ * the browser cannot reach. Prefer the forwarded host, then the first
+ * configured origin, and only fall back to request.url.
+ */
+export function siteUrl(request: Request, path: string) {
+  const h = request.headers;
+  const forwardedHost = h.get("x-forwarded-host") ?? h.get("host");
+  if (forwardedHost) {
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    return new URL(path, `${proto}://${forwardedHost}`);
+  }
+  const configured = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .find(Boolean);
+  return new URL(path, configured || request.url);
+}
+
 export function apiError(error: unknown) {
   if (error instanceof HttpError)
     return Response.json({ error: error.message }, { status: error.status });
