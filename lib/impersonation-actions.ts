@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireAdmin, requireAppManager } from "@/lib/admin-gate";
+import { requireAppManager } from "@/lib/admin-gate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { IMPERSONATION_COOKIE } from "@/lib/teacher-server";
 
@@ -33,24 +33,4 @@ export async function startImpersonation(fd: FormData) {
     maxAge: 30 * 60, // matches the session's own 30-minute expiry
   });
   redirect("/app");
-}
-
-/**
- * Ends the active "view as" session (if any) and returns to the admin
- * accounts list. Always resolves the REAL signed-in identity (requireAdmin,
- * not the teacher being viewed) so this works from inside the impersonated
- * workspace itself.
- */
-export async function stopImpersonation() {
-  const admin = await requireAdmin();
-  const jar = await cookies();
-  const session = jar.get(IMPERSONATION_COOKIE)?.value;
-  if (session) {
-    await supabaseAdmin().rpc("stop_impersonation", {
-      p_session: session,
-      p_actor: admin.id,
-    });
-  }
-  jar.delete(IMPERSONATION_COOKIE);
-  redirect("/admin/accounts");
 }

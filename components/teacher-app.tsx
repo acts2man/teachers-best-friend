@@ -51,7 +51,6 @@ import {
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
-import { stopImpersonation } from "@/lib/impersonation-actions";
 import {
   fetchQuota,
   quotaLevel,
@@ -138,7 +137,32 @@ export default function TeacherApp({ view }: { view: string }) {
     null,
   );
   const [quota, setQuota] = useState<Quota | null>(null);
+  const [leaving, setLeaving] = useState(false);
   const router = useRouter();
+
+  /**
+   * Leave a "view as" session.
+   *
+   * Deliberately a fetch to a route handler rather than a server action: the
+   * banner renders on /app and /[view], which are force-static, and an action
+   * POST to a prerendered route came back out of the cache with the exit
+   * silently not applied. The navigation is a full page load so nothing of the
+   * viewed teacher's workspace survives in memory.
+   */
+  async function stopViewing() {
+    setLeaving(true);
+    try {
+      await fetch("/api/impersonation", {
+        method: "DELETE",
+        cache: "no-store",
+      });
+    } catch {
+      // The cookie is cleared server-side even on an error path; if the
+      // request never landed at all the reload below just re-renders the
+      // banner, which is recoverable. Either way, leave.
+    }
+    window.location.href = "/admin/accounts";
+  }
   async function reload() {
     try {
       const r = await fetch("/api/workspace", { cache: "no-store" });
@@ -383,9 +407,9 @@ export default function TeacherApp({ view }: { view: string }) {
             workspace as an app manager. Anything you do here happens on
             their account.
           </span>
-          <form action={stopImpersonation}>
-            <button type="submit">Stop viewing</button>
-          </form>
+          <button type="button" onClick={stopViewing} disabled={leaving}>
+            {leaving ? "Leaving…" : "Stop viewing"}
+          </button>
         </div>
       )}
       <SidebarProvider
