@@ -37,6 +37,7 @@ async function aiUnavailable(where: string, result: Response) {
 // and has no hardcoded fallback.
 const sitesModelSettings: Record<Mode, ModelSettings> = {
   responses: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 1200 },
+  class_scan: { model: "gpt-5.6-luna", effort: "low", maxOutput: 12000 },
   answer_key: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 1500 },
   roster: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 800 },
   assignment: { model: "gpt-5.6-terra", effort: "low", maxOutput: 3000 },

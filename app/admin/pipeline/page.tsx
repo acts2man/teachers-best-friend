@@ -6,6 +6,7 @@ import { fmtUsd, fmtRel } from "@/components/admin/format";
    Used only to project cost on this page — the real number comes from the scans table. */
 const PROFILE: Record<string, { input: number; cached: number; output: number; perMonth: number; note: string }> = {
   responses:  { input: 2100, cached: 700,  output: 900,  perMonth: 1200, note: "Once per student per assessment. This is the volume call." },
+  class_scan: { input: 4500, cached: 1200, output: 3500, perMonth: 8,    note: "One call for a whole stack of scanned pages — splits by student and grades all of them together." },
   assignment: { input: 2500, cached: 1000, output: 2500, perMonth: 8,    note: "Once per assessment. Quality matters more than cost here." },
   answer_key: { input: 1500, cached: 300,  output: 600,  perMonth: 8,    note: "Once per assessment with a key." },
   reteaching: { input: 1200, cached: 2500, output: 1800, perMonth: 40,   note: "Only on a library cache miss. Falls toward zero as the library fills." },
