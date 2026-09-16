@@ -45,3 +45,31 @@ Both endpoints are mocked rather than signed into because a signed-in session
 needs credentials this harness should not carry. That is also the limit of what
 it proves: rendering, routing and navigation. Saving, uploading and analysis go
 through those two mocked endpoints and are *not* covered here.
+
+## `make-two-class-fixture.mjs` + `class-switch.mjs`
+
+A teacher with two classes at different grades, which is the case the database
+cannot speak to. `get_workspace_json` returns the same payload whether the
+teacher signs in or an app manager views their account — `readWorkspace` reads
+through the service client either way — so when one person sees standards and
+another does not on the *same* account, the difference is in the browser, not
+the data.
+
+```bash
+node scripts/browser-check/make-two-class-fixture.mjs
+node scripts/browser-check/class-switch.mjs
+```
+
+It opens Standards on a Grade 7 California class, switches to a Grade 4 Common
+Core class, and switches back, printing the codes on screen each time.
+
+This was written to test the theory that `StandardsView` froze on whichever
+class it first mounted with, since it seeds `framework` and `grade` from
+`classroom` via `useState`. **The theory was wrong.** The view wrapper in
+`teacher-app.tsx` is keyed `view + "-" + classroom.id`, so changing class
+remounts the subtree and the seed is re-read. Verified by running this against
+builds either side of that change: both follow the switch, identically.
+
+Worth keeping as a regression test — the correctness of the Standards screen
+currently depends on that `key`, which is not obvious from the component, and
+this is what would catch it if the key ever moved.
