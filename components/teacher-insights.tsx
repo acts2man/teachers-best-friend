@@ -79,8 +79,6 @@ export function StandardsView() {
   const { w, classroom, save, busy, go } = useTeacher();
   const [query, setQuery] = useState(""),
     [subject, setSubject] = useState("All subjects"),
-    [framework, setFramework] = useState(classroom.framework),
-    [grade, setGrade] = useState(String(classroom.grade)),
     [detail, setDetail] = useState<Standard | null>(null),
     [add, setAdd] = useState(false),
     [code, setCode] = useState(""),
@@ -89,6 +87,24 @@ export function StandardsView() {
     [skills, setSkills] = useState(""),
     [customFramework, setCustomFramework] = useState("District standards"),
     [customSubject, setCustomSubject] = useState("Math");
+  // The classroom seeds the framework and grade; the teacher can pick something
+  // else, and that choice lasts until they switch class. Seeding useState from
+  // a prop instead would freeze this screen on whichever classroom happened to
+  // be active when it first mounted -- switch from a Grade 4 class to a Grade 7
+  // one and the Standards page kept showing Grade 4, or showed nothing at all.
+  const [pick, setPick] = useState<{
+    for: string;
+    framework: string;
+    grade: string;
+  } | null>(null);
+  const classKey = `${classroom.framework}|${classroom.grade}`,
+    current = pick && pick.for === classKey ? pick : null,
+    framework = current ? current.framework : classroom.framework,
+    grade = current ? current.grade : String(classroom.grade),
+    setFramework = (value: string) =>
+      setPick({ for: classKey, framework: value, grade }),
+    setGrade = (value: string) =>
+      setPick({ for: classKey, framework, grade: value });
   const all = allStandards(w),
     filtered = all.filter(
       (s) =>
