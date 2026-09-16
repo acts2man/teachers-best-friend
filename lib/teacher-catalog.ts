@@ -1,5 +1,8 @@
-import california from "./california-grade-4.json";
+import californiaGrade4 from "./california-grade-4.json";
+import californiaGrade7Math from "./california-grade-7-math.json";
 import {standards} from "./teacher-data";
+
+const california = [...californiaGrade4, ...californiaGrade7Math];
 import type {Standard, Workspace} from "./teacher-types";
 
 const titles: Record<string, string> = {
@@ -15,6 +18,11 @@ const titles: Record<string, string> = {
   "RL.4.1":"Inference & textual evidence", "RL.4.2":"Theme & summary", "RL.4.3":"Characters, settings & events", "RL.4.4":"Literary words & allusions", "RL.4.5":"Poetry, drama & prose", "RL.4.6":"Narrator & point of view", "RL.4.7":"Connect text & visual presentation", "RL.4.9":"Compare themes & story patterns", "RL.4.10":"Read grade-level literature",
   "SL.4.1":"Collaborative discussion", "SL.4.2":"Paraphrase spoken information", "SL.4.3":"Evaluate a speaker’s evidence", "SL.4.4":"Organized oral presentations", "SL.4.5":"Support ideas with media", "SL.4.6":"Formal & informal speaking",
   "W.4.1":"Opinion writing", "W.4.2":"Informative writing", "W.4.3":"Narrative writing", "W.4.4":"Clear, purposeful writing", "W.4.5":"Plan, revise & edit", "W.4.6":"Use technology to publish", "W.4.7":"Short research projects", "W.4.8":"Gather & organize sources", "W.4.9":"Support writing with text evidence", "W.4.10":"Write for varied purposes",
+  "7.RP.1":"Unit rates with fractions", "7.RP.2.a":"Identify proportional relationships", "7.RP.2.b":"Constant of proportionality", "7.RP.2.c":"Equations for proportions", "7.RP.2.d":"Interpret proportional graphs", "7.RP.3":"Multistep ratio & percent problems",
+  "7.NS.1.a":"Opposite quantities combine to zero", "7.NS.1.b":"Add rational numbers on a number line", "7.NS.1.c":"Subtract as adding the inverse", "7.NS.1.d":"Properties of addition & subtraction", "7.NS.2.a":"Multiply rational numbers", "7.NS.2.b":"Divide rational numbers", "7.NS.2.c":"Properties of multiplication & division", "7.NS.2.d":"Rational numbers as decimals", "7.NS.3":"Four operations with rational numbers",
+  "7.EE.1":"Add, factor & expand linear expressions", "7.EE.2":"Equivalent expressions reveal meaning", "7.EE.3":"Multistep rational-number problems", "7.EE.4.a":"Solve px + q = r problems", "7.EE.4.b":"Solve & graph inequalities",
+  "7.G.1":"Scale drawings", "7.G.2":"Draw & construct figures", "7.G.3":"Cross sections of solids", "7.G.4":"Area & circumference of circles", "7.G.5":"Angle relationships", "7.G.6":"Area, volume & surface area",
+  "7.SP.1":"Representative & random samples", "7.SP.2":"Inferences from random samples", "7.SP.3":"Compare two data distributions", "7.SP.4":"Compare populations with statistics", "7.SP.5":"Probability from 0 to 1", "7.SP.6":"Long-run relative frequency", "7.SP.7.a":"Uniform probability models", "7.SP.7.b":"Probability models from data", "7.SP.8.a":"Probability of compound events", "7.SP.8.b":"Represent compound sample spaces", "7.SP.8.c":"Simulate compound events",
 };
 
 // Retain familiar CCSS codes for existing lessons; also show CDE's official identifier.
