@@ -1,8 +1,9 @@
 import californiaGrade4 from "./california-grade-4.json";
 import californiaGrade7Math from "./california-grade-7-math.json";
+import californiaGrade7Ela from "./california-grade-7-ela.json";
 import {standards} from "./teacher-data";
 
-const california = [...californiaGrade4, ...californiaGrade7Math];
+const california = [...californiaGrade4, ...californiaGrade7Math, ...californiaGrade7Ela];
 import type {Standard, Workspace} from "./teacher-types";
 
 const titles: Record<string, string> = {
@@ -23,6 +24,11 @@ const titles: Record<string, string> = {
   "7.EE.1":"Add, factor & expand linear expressions", "7.EE.2":"Equivalent expressions reveal meaning", "7.EE.3":"Multistep rational-number problems", "7.EE.4.a":"Solve px + q = r problems", "7.EE.4.b":"Solve & graph inequalities",
   "7.G.1":"Scale drawings", "7.G.2":"Draw & construct figures", "7.G.3":"Cross sections of solids", "7.G.4":"Area & circumference of circles", "7.G.5":"Angle relationships", "7.G.6":"Area, volume & surface area",
   "7.SP.1":"Representative & random samples", "7.SP.2":"Inferences from random samples", "7.SP.3":"Compare two data distributions", "7.SP.4":"Compare populations with statistics", "7.SP.5":"Probability from 0 to 1", "7.SP.6":"Long-run relative frequency", "7.SP.7.a":"Uniform probability models", "7.SP.7.b":"Probability models from data", "7.SP.8.a":"Probability of compound events", "7.SP.8.b":"Represent compound sample spaces", "7.SP.8.c":"Simulate compound events",
+  "RL.7.1":"Cite evidence & inferences", "RL.7.2":"Theme & objective summary", "RL.7.3":"How story elements interact", "RL.7.4":"Word meaning & sound devices", "RL.7.5":"Form & structure in drama/poetry", "RL.7.6":"Contrasting points of view", "RL.7.7":"Compare text to media version", "RL.7.8":"Not applicable to literature", "RL.7.9":"Fiction vs. historical account", "RL.7.10":"Read grade-level literature",
+  "RI.7.1":"Cite evidence in nonfiction", "RI.7.2":"Two or more central ideas", "RI.7.3":"Interactions of people & ideas", "RI.7.4":"Word choice, tone & technical terms", "RI.7.5":"Text structure & sections", "RI.7.6":"Author's point of view & purpose", "RI.7.7":"Compare text to audio/video", "RI.7.8":"Trace & evaluate an argument", "RI.7.9":"Compare two authors on one topic", "RI.7.10":"Read grade-level nonfiction",
+  "W.7.1":"Argument writing", "W.7.2":"Informative/explanatory writing", "W.7.3":"Narrative writing", "W.7.4":"Clear, purposeful writing", "W.7.5":"Plan, revise & edit", "W.7.6":"Publish & cite with technology", "W.7.7":"Short research projects", "W.7.8":"Assess sources & avoid plagiarism", "W.7.9":"Draw evidence from texts", "W.7.10":"Write for varied purposes",
+  "SL.7.1":"Collaborative discussion", "SL.7.2":"Analyze ideas across media", "SL.7.3":"Evaluate a speaker's argument", "SL.7.4":"Present claims & findings", "SL.7.5":"Multimedia in presentations", "SL.7.6":"Adapt speech to context",
+  "L.7.1":"Phrases, clauses & sentence types", "L.7.2":"Commas & spelling", "L.7.3":"Precise, concise language", "L.7.4":"Determine word meanings", "L.7.5":"Figurative language & connotation", "L.7.6":"Academic vocabulary",
 };
 
 // Retain familiar CCSS codes for existing lessons; also show CDE's official identifier.
