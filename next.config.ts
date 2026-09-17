@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Netlify sets COMMIT_REF, BRANCH and CONTEXT during the build, not in the
+  // function runtime, so /api/version read them as null. next.config runs at
+  // build time, so inlining them here is what actually gets the value into the
+  // deployed bundle. Without this the endpoint answers "what is deployed?"
+  // with a shrug, which is the question it exists to answer.
+  env: {
+    COMMIT_REF: process.env.COMMIT_REF ?? "",
+    BRANCH: process.env.BRANCH ?? "",
+    CONTEXT: process.env.CONTEXT ?? "",
+    BUILD_TIME: new Date().toISOString(),
+  },
   async redirects() {
     // Student work now lives inside each assessment.
     return [
