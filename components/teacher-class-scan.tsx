@@ -3,14 +3,16 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ScanLine, LoaderCircle, Check, X, Users } from "lucide-react";
 import { analyzeRequest } from "@/lib/analyze-client";
-import { uprightPage } from "@/lib/image-prep";
+import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { preparationGaps } from "@/lib/teacher-workflow";
 import { reconcileEvidence } from "@/lib/teacher-data";
 import {
   applyScannedGroups,
+  groupPagesByName,
   resolveScannedGroups,
+  type PageName,
   type ResolvedGroup,
 } from "@/lib/teacher-class-scan";
 import type { Assessment } from "@/lib/teacher-types";
@@ -53,18 +55,34 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setGroups(null);
     setDiscarded(new Set());
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
+    // Two uploads per page: the name band on its own, and the work with that
+    // band removed. They go to two separate analyses so that no single request
+    // ever holds a student's name next to that student's answers.
     const ids: string[] = [];
+    const stripIds: (string | null)[] = [];
+    async function upload(file: File) {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch("/api/uploads", { method: "POST", body: form });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      return d.id as string;
+    }
     try {
       for (const raw of files) {
-        // Straighten before upload: a sideways page is hard for the model to
-        // read and harder for the teacher to check.
-        const file = await uprightPage(raw);
-        const form = new FormData();
-        form.append("file", file);
-        const r = await fetch("/api/uploads", { method: "POST", body: form });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error);
-        ids.push(d.id);
+        // Straighten before splitting: the band is cut off the top of an
+        // upright page, which is only the top once the rotation is applied.
+        const page = await uprightPage(raw);
+        const split = await splitNameBand(page);
+        if (split) {
+          ids.push(await upload(split.body));
+          stripIds.push(await upload(split.strip));
+        } else {
+          // A PDF, or a browser that could not do the cut. Send the whole page
+          // to grading and read no name from it; the teacher names that group.
+          ids.push(await upload(page));
+          stripIds.push(null);
+        }
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The pages couldn't be uploaded.");
@@ -74,17 +92,48 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       return;
     }
     setPageUploadIds(ids);
-    setStatus("Splitting pages by student and grading each one…");
     try {
+      // Pass one: the name bands alone. No questions, no answer key, no work.
+      setStatus("Reading the name on each page…");
+      const readable = stripIds
+        .map((id, page) => ({ id, page }))
+        .filter((s): s is { id: string; page: number } => !!s.id);
+      let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
+      if (readable.length) {
+        const read = await analyzeRequest({
+          mode: "name_strip",
+          uploadIds: readable.map((s) => s.id),
+          grade: a.grade,
+          subject: a.subject,
+          framework: a.framework,
+          assessmentId: a.id,
+        });
+        // The strips were sent in their own order; map each answer back to the
+        // page it was cut from.
+        const byStrip = new Map<number, { name: string; confidence: number }>(
+          (read.result.pages as PageName[]).map((r) => [r.page, r]),
+        );
+        names = names.map((n) => {
+          const at = readable.findIndex((s) => s.page === n.page);
+          const hit = at >= 0 ? byStrip.get(at) : undefined;
+          return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+        });
+      }
+
+      // Pass two: the work, with the name bands gone, grouped by what pass one
+      // found. This request is shown no name at all.
+      const pageGroups = groupPagesByName(names);
+      setStatus("Grading " + pageGroups.length + " student" + (pageGroups.length === 1 ? "" : "s") + "…");
       const d = await analyzeRequest({
         mode: "class_scan",
         uploadIds: ids,
+        pageGroups,
         grade: a.grade,
         subject: a.subject,
         framework: a.framework,
         assessmentId: a.id,
       });
-      const resolved = resolveScannedGroups(d.result.groups, ids, students);
+      const resolved = resolveScannedGroups(pageGroups, names, d.result.groups, ids, students);
       if (!resolved.length)
         toast.error("No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.");
       setGroups(resolved);

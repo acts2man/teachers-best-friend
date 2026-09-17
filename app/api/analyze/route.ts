@@ -103,7 +103,12 @@ export async function POST(request: Request) {
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, !adminCatalog);
+      // A whole-class scan is one teacher action that makes two model calls:
+      // the name bands, then the work. Only the grading half is billed, so
+      // splitting the request for privacy does not cost a teacher twice or
+      // halve the scans their plan bought them.
+      const billable = !adminCatalog && p.mode !== "name_strip";
+      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, billable);
     }
 
     // Background path: start the model job, hand the client a scan id to poll,

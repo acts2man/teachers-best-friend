@@ -17,6 +17,7 @@ export type Mode =
   | "assignment"
   | "responses"
   | "class_scan"
+  | "name_strip"
   | "answer_key"
   | "lesson"
   | "catalog"
@@ -52,6 +53,7 @@ export const analyzeInput = z.object({
     "assignment",
     "responses",
     "class_scan",
+    "name_strip",
     "answer_key",
     "lesson",
     "catalog",
@@ -72,6 +74,14 @@ export const analyzeInput = z.object({
   duration: z.number().optional(),
   // No rosterNames. The class roster is never sent to the model: see the
   // class_scan prompt below and docs/student-data-flow.md.
+  //
+  // Which pages belong to which student, worked out by the app from the name
+  // strips, so the grading call never has to read a name to group pages.
+  // Indexes are into uploadIds.
+  pageGroups: z
+    .array(z.array(z.number().int().min(0).max(23)).max(24))
+    .max(40)
+    .default([]),
 });
 
 export type AnalyzeParams = z.infer<typeof analyzeInput>;
@@ -139,13 +149,24 @@ const classScanResponseItem = obj({
   misconception: str,
   confidence: { type: "number", minimum: 0, maximum: 100 },
 });
+// Grading a stack. Keyed by the group number the app supplied -- no name and
+// no page segmentation, because both are settled before this call is made.
 const classScanSchema = obj({
   groups: arr(
     obj({
-      pageIndexes: arr({ type: "integer", minimum: 0 }),
-      detectedName: str,
-      confidence: { type: "number", minimum: 0, maximum: 100 },
+      group: { type: "integer", minimum: 0 },
       responses: arr(classScanResponseItem),
+    }),
+  ),
+});
+// Reading the name bands. One entry per strip image, and nothing else: this
+// call is shown no questions, no answer key and no student work.
+const nameStripSchema = obj({
+  pages: arr(
+    obj({
+      page: { type: "integer", minimum: 0 },
+      name: str,
+      confidence: { type: "number", minimum: 0, maximum: 100 },
     }),
   ),
 });
@@ -257,11 +278,20 @@ export function buildPrompt(
         "Confirm the question standards and the answer key before grading student work.",
       );
     if (!hasContent) throw new HttpError(400, "Add scanned pages first.");
+    if (!p.pageGroups.length)
+      throw new HttpError(400, "Add scanned pages first.");
     task =
-      "You are given a stack of scanned pages from multiple students who completed the same assessment, in the order they were scanned. Each student's work may span one or more consecutive pages; a new student's stack typically starts with a page showing a handwritten or printed name (e.g. a 'Name:' line). A page with no visible name usually continues the previous student's stack — do not start a new group for it unless the content clearly belongs to a different, unrelated student. Segment the pages (indexed from 0) into one group per student. For each group: transcribe the name exactly as written on its first page (empty string if genuinely illegible — never invent one) and give an honest 0-100 confidence in that transcription. You are not given a class list and must not guess at one; transcribe only what is written. Then, for that group's pages, grade every non-excluded question the same way you would a single student's work: return one response per question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing/unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. Never guess a page's student from handwriting style alone — only the name written on the page" +
+      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. The name has already been removed from every page, so do not look for one, do not infer who any page belongs to, and do not report any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing or unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. If a page carries no readable answer for a question, return an empty answer with confidence 0 rather than inventing one. Report each group by its number below, not by page. Groups, as page positions: " +
+      JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
       ". Questions: " +
       JSON.stringify(a.questions.filter((q) => !q.excluded));
     schema = classScanSchema;
+  }
+  if (p.mode === "name_strip") {
+    if (!hasContent) throw new HttpError(400, "Add scanned pages first.");
+    task =
+      "Each image is a narrow strip cut from the top of one scanned worksheet page, in order: the image at position N is page N. Read the student name written or printed on each strip. Return one entry per strip, giving its page position, the name exactly as written, and an honest 0-100 confidence. Return an empty name with confidence 0 when a strip carries no name, when the name is genuinely illegible, or when it shows only a printed heading such as 'Name:' with nothing filled in -- a blank strip normally means the page continues the previous student's work. Never invent a name and never guess one from handwriting. Transcribe only what is written on the strip in front of you; you have no class list and must not produce a name that is not on the page.";
+    schema = nameStripSchema;
   }
   if (p.mode === "answer_key") {
     const a = w.assessments.find((a) => a.id === p.assessmentId);
@@ -435,17 +465,15 @@ export function finalizeAnalysis(
         groups: z
           .array(
             z.object({
-              pageIndexes: z.array(z.number().int()).max(24),
-              detectedName: z.string().max(80),
-              confidence: z.number().min(0).max(100),
+              group: z.number().int(),
               responses: z.array(
                 z.object({
                   questionId: z.string(),
                   answer: z.string(),
                   correct: z.boolean(),
-                  match: z.number().min(0).max(100),
+                  match: pctField,
                   misconception: z.string(),
-                  confidence: z.number().min(0).max(100),
+                  confidence: pctField,
                 }),
               ),
             }),
@@ -458,16 +486,53 @@ export function finalizeAnalysis(
     const validQuestionIds = new Set(
       a.questions.filter((q) => !q.excluded).map((q) => q.id),
     );
+    // Answer to the app's own grouping rather than the model's arithmetic: a
+    // group number it invented, or returned twice, is dropped instead of
+    // attaching one student's answers to another student's pages.
+    const seen = new Set<number>();
     output.groups = parsed.data.groups
-      .filter((g) => g.pageIndexes.length > 0)
+      .filter((g) => {
+        if (g.group < 0 || g.group >= p.pageGroups.length) return false;
+        if (seen.has(g.group)) return false;
+        seen.add(g.group);
+        return true;
+      })
       .map((g) => ({
-        pageIndexes: [...new Set(g.pageIndexes)].filter(
-          (i) => i >= 0 && i < p.uploadIds.length,
-        ),
-        detectedName: g.detectedName.trim(),
-        confidence: g.confidence,
+        group: g.group,
+        pageIndexes: p.pageGroups[g.group],
         responses: g.responses.filter((r) => validQuestionIds.has(r.questionId)),
       }));
+  }
+  if (p.mode === "name_strip") {
+    const parsed = z
+      .object({
+        pages: z
+          .array(
+            z.object({
+              page: z.number().int(),
+              name: z.string().max(80),
+              confidence: pctField,
+            }),
+          )
+          .max(24),
+      })
+      .safeParse(output);
+    if (!parsed.success)
+      throw new HttpError(422, "The names on these pages need manual review.");
+    // One entry per uploaded strip, in page order, so the caller can index
+    // straight into it. A page the model skipped or duplicated reads as no
+    // name, which the teacher then fills in -- never as a wrong name.
+    const byPage = new Map<number, { name: string; confidence: number }>();
+    for (const row of parsed.data.pages) {
+      if (row.page < 0 || row.page >= p.uploadIds.length) continue;
+      if (byPage.has(row.page)) continue;
+      byPage.set(row.page, { name: row.name.trim(), confidence: row.confidence });
+    }
+    output.pages = p.uploadIds.map((_, page) => ({
+      page,
+      name: byPage.get(page)?.name ?? "",
+      confidence: byPage.get(page)?.confidence ?? 0,
+    }));
   }
   if (p.mode === "answer_key") {
     const a = w.assessments.find((a) => a.id === p.assessmentId);
