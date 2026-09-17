@@ -1,0 +1,107 @@
+# Does the live site actually run what is on main?
+#
+# This exists because nothing could answer that question. A correct fix sat on
+# main for two days while a pilot teacher kept reporting it broken, and the only
+# way anyone found out was reading the model's stored output back out of the
+# database. Merging is not shipping, and until this workflow ran there was no
+# signal that told the difference.
+#
+# The check runs on GitHub's network, so it works from environments whose egress
+# policy cannot reach the site.
+#
+# Run it by hand from the Actions tab at any time, or let it run itself after a
+# push to main.
+
+name: Deployed version
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Site to check. Leave blank to try the known candidates."
+        required: false
+        default: ""
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask each candidate what it is running
+        env:
+          EXPECTED: ${{ github.sha }}
+          INPUT_URL: ${{ github.event.inputs.url }}
+        run: |
+          set -uo pipefail
+
+          if [ -n "${INPUT_URL}" ]; then
+            CANDIDATES="${INPUT_URL}"
+          else
+            CANDIDATES="https://teachersbestfriend.netlify.app
+          https://ateachersbestfriend.com
+          https://www.ateachersbestfriend.com"
+          fi
+
+          echo "main is at: ${EXPECTED}"
+          echo
+
+          # A push arrives before the deploy finishes, so give it room. A manual
+          # run checks once and reports, because the point is the answer now.
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            ATTEMPTS=10; GAP=30
+          else
+            ATTEMPTS=1; GAP=0
+          fi
+
+          matched=""
+          reachable=""
+
+          for attempt in $(seq 1 "${ATTEMPTS}"); do
+            for url in ${CANDIDATES}; do
+              body="$(curl -sS --max-time 20 "${url}/api/version" 2>/dev/null || true)"
+              code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "${url}/api/version" 2>/dev/null || echo 000)"
+
+              live="$(printf '%s' "${body}" | sed -n 's/.*"commit":"\([0-9a-f]\{7,40\}\)".*/\1/p')"
+
+              if [ "${code}" = "000" ]; then
+                verdict="unreachable"
+              elif [ "${code}" = "404" ]; then
+                verdict="404 — no version endpoint on this build (it predates the endpoint, or this is not the app)"
+                reachable="yes"
+              elif [ -z "${live}" ]; then
+                verdict="reachable, but no commit in the response: ${body}"
+                reachable="yes"
+              elif [ "${live}" = "${EXPECTED}" ]; then
+                verdict="MATCHES main"
+                reachable="yes"; matched="${url}"
+              else
+                verdict="serving ${live} — main is ${EXPECTED} — STALE"
+                reachable="yes"
+              fi
+
+              printf '%-45s %s  %s\n' "${url}" "${code}" "${verdict}"
+            done
+
+            [ -n "${matched}" ] && break
+            if [ "${attempt}" -lt "${ATTEMPTS}" ]; then
+              echo "  …not live yet, waiting ${GAP}s (attempt ${attempt}/${ATTEMPTS})"
+              sleep "${GAP}"
+            fi
+          done
+
+          echo
+          if [ -n "${matched}" ]; then
+            echo "LIVE: ${matched} is serving ${EXPECTED}. Safe to tell a teacher it shipped."
+            exit 0
+          fi
+          if [ -z "${reachable}" ]; then
+            echo "No candidate responded. Pass the real URL via the 'url' input."
+            exit 1
+          fi
+          echo "NOT LIVE: reachable, but nothing is serving ${EXPECTED}."
+          echo "Do not tell a teacher this shipped. Check the deploy before saying anything."
+          exit 1
