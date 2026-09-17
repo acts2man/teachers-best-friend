@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-17.
+Last verified against the running system: 2026-09-18.
 
 ---
 
@@ -77,7 +77,7 @@ This is the hop districts ask about, so it is the most specific.
 |---|---|
 | What is transmitted | The uploaded work, grade level, subject, the relevant standards, and question IDs |
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
-| Name read from the image | Single-student mode: no. Whole-class stack scan: yes — the model transcribes the name handwritten on each page so pages sort to the right student |
+| Name read from the image | Single-student mode: no. Whole-class stack scan: a separate request reads the cropped name band alone; the request that grades the work is sent the page with that band removed, so no request holds a name and that student's answers together |
 | Encrypted | Yes, TLS |
 | Stored there | Per the OpenAI API data policy for API traffic |
 | Retained | Per that policy; not used to build a profile for us |
@@ -109,15 +109,29 @@ request parameters, so a stale client cannot reintroduce it, and it no longer re
 already looking at, and matching to a student record happens locally in
 `matchRosterStudent()` (`lib/teacher-class-scan.ts`).
 
-**What is still true and must stay disclosed.** In this one mode, a handwritten name is
-read from the image in the same request that grades the work. Name and answers are
-therefore in one payload. The single-student path does not have this property.
+**Split identification from grading (18 Sep 2026).** The page is cut in the browser
+before anything is uploaded. The top band — `NAME_BAND`, 18% of page height, in
+`lib/image-prep.ts` — goes to a `name_strip` request carrying no questions, no answer key
+and no roster. Everything below it goes to the `class_scan` request, which is shown no
+name and is told which pages belong together, worked out by the app from the strips
+(`groupPagesByName`). The bands do not overlap by construction, so a name written on the
+boundary cannot ride into the grading request; `bandGeometry` is tested for that.
 
-**The fix in progress.** Split identification from grading: crop the name strip, read it
-in its own request that carries no answers and no roster, match locally, then send the
-work — name area removed — under an opaque group id. After that no single request holds
-both a name and that student's answers. Update this section and the four published pages
-when it ships.
+Matching a transcribed name to a student happens only in the app, in
+`matchRosterStudent()`. Neither request is ever sent the roster.
+
+`tests/prompt-separation.test.mjs` asserts this against the prompts the app actually
+builds, so an edit that quietly puts a name back into the grading call fails the suite.
+
+**The honest limit that remains.** A name written outside the top band — in a margin, or
+partway down the page — stays in the image sent for grading. The band is a fixed
+fraction, not a detector. The exposure is one name on one page rather than a roster, and
+it is not linked to a student record by anything in that request, but it is not zero and
+should not be described as zero.
+
+**Fallback.** A PDF, or a browser that cannot do the cut, sends the whole page to grading
+and reads no name from it; the teacher names that group by hand. That path trades the
+split for a page with a name on it, so it behaves exactly as the pre-split scan did.
 
 ## 5. Results back to the teacher
 

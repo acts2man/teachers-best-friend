@@ -108,14 +108,19 @@ list to our AI provider; when a single student's responses are analyzed, only in
 identifiers are transmitted, never a name; images are deleted automatically (Section 5);
 and our AI instructions direct the model not to reproduce names it encounters on a page.
 
-**One exception, stated plainly.** When a teacher scans a whole stack of pages in one
-pass, the app asks the model to transcribe the name written on each page, because that
-transcription is how pages are sorted back to the correct student. The model is given no
-class list to compare against, and the match to a student record happens only within our
-system. We are separating the step that reads a name from the step that grades the work,
-so that no single request to the provider contains both a name and that student's
-answers. Until that separation ships, a district that requires it can direct teachers to
-use the single-student upload path, which transmits no name at all.
+**How whole-class scanning handles this.** When a teacher scans a whole stack of pages in
+one pass, the name written at the top of each page is what sorts the pages back to the
+correct student. The app cuts the top band off each page in the browser, before upload.
+One request reads that band and is shown no questions, no answer key and no student work.
+A separate request grades the rest of the page and is shown no name. The match to a
+student record happens only within our system, and neither request is given the class
+list. **No single request to our AI provider contains both a student's name and that
+student's answers.**
+
+**The limit, stated plainly.** We remove a fixed band from the top of the page, not every
+name anywhere on a page. A name written in a margin, or partway down, remains in the
+image that is graded. A district that requires zero name transmission can direct teachers
+to the single-student upload path, which sends no name at all.
 
 ---
 
@@ -188,9 +193,9 @@ customers and we have not opted out of it.
 **What is sent.** The image of the work, the question text, and the relevant academic
 standards. Class rosters and student lists are never sent. When analyzing a single
 student's responses, no name is sent — only internal identifiers meaningless outside our
-system. In whole-class stack scanning, the name handwritten on a page is transcribed
-from the image so the page can be sorted to the right student; see "On student names"
-above for the full description and the limit we are working to remove.
+system. In whole-class scanning, reading the name and grading the work are two separate
+requests and neither contains both; see "On student names" above for the full description
+and its limit.
 
 **Human review.** AI output is a suggestion. Every standard alignment and every score
 is presented to the teacher for confirmation before it is recorded. No determination

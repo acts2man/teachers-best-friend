@@ -13,13 +13,41 @@ export type ScannedResponse = {
   confidence: number;
 };
 
-/** One group of pages the model believes belong to the same student. */
+/** A name read off one page's cropped top band. */
+export type PageName = { page: number; name: string; confidence: number };
+
+/** Grading for one group, keyed by the group number the app supplied. */
+export type GradedGroup = { group: number; responses: ScannedResponse[] };
+
+/** One group of pages belonging to the same student. */
 export type ScannedGroup = {
   pageIndexes: number[];
   detectedName: string;
   confidence: number;
   responses: ScannedResponse[];
 };
+
+/**
+ * Splits a scanned stack into one group per student, using only the names read
+ * off the cropped top bands.
+ *
+ * A page with a name starts a student. Pages after it with no name are that
+ * student's continuation sheets -- which is what a blank name line means on a
+ * multi-page worksheet. Pages before any name at all (a stray back side on top
+ * of the pile) become their own group rather than being dropped, so nothing a
+ * teacher scanned disappears silently.
+ *
+ * This is what lets grading happen without a name: the grouping is settled
+ * here, from the strips, and the graded request is told the groups.
+ */
+export function groupPagesByName(pages: PageName[]): number[][] {
+  const groups: number[][] = [];
+  for (const page of pages) {
+    if (page.name.trim() || !groups.length) groups.push([page.page]);
+    else groups[groups.length - 1].push(page.page);
+  }
+  return groups;
+}
 
 /** A scanned group after resolving it against the current roster, ready for
  * the teacher to confirm or correct before anything is saved. */
@@ -66,35 +94,50 @@ export function matchRosterStudent(
  * Turns the model's raw page groups into editable review rows: each group is
  * matched against the current roster here, on our side, so the teacher only
  * has to confirm or fix names, never re-enter them from scratch.
- * `pageUploadIds[i]` is the uploaded file id for `pages[i]`, in the same order
- * sent to the model.
+ * `pageUploadIds[i]` is the uploaded file id for page `i`, in the order the
+ * pages were scanned.
  *
- * The roster is deliberately not sent to the model (see the class_scan prompt
- * in analyze-shared.ts). The model transcribes whatever name is written on the
- * page; deciding which student that is happens only in the app.
+ * Joins the two halves of a split scan: `pageGroups` and `names` come from
+ * reading the cropped top bands, `graded` comes from grading the pages with
+ * those bands removed. Neither request saw both, and the roster is sent to
+ * neither -- matching a transcribed name to a student happens only here. See
+ * docs/student-data-flow.md section 4.
+ *
+ * A group with no grading still comes back, empty, so a student whose pages
+ * the model skipped appears in the review list for the teacher to notice
+ * rather than vanishing from the stack.
  */
 export function resolveScannedGroups(
-  groups: ScannedGroup[],
+  pageGroups: number[][],
+  names: PageName[],
+  graded: GradedGroup[],
   pageUploadIds: string[],
   students: Student[],
 ): ResolvedGroup[] {
-  return groups.map((group, i) => {
+  const nameOf = new Map(names.map((n) => [n.page, n]));
+  const gradedByGroup = new Map(graded.map((g) => [g.group, g.responses]));
+  return pageGroups.map((pages, i) => {
     const validPages = [
       ...new Set(
-        group.pageIndexes.filter(
+        pages.filter(
           (p) => Number.isInteger(p) && p >= 0 && p < pageUploadIds.length,
         ),
       ),
     ].sort((a, b) => a - b);
-    const guessed = matchRosterStudent(group.detectedName, students);
+    // The name is whichever of this group's pages carried one -- in practice
+    // the first, since that is what opened the group.
+    const read = validPages.map((p) => nameOf.get(p)).find((n) => n?.name.trim());
+    const detectedName = read?.name.trim() ?? "";
+    const guessed = matchRosterStudent(detectedName, students);
     return {
-      ...group,
       pageIndexes: validPages,
+      detectedName,
+      confidence: read?.confidence ?? 0,
+      responses: gradedByGroup.get(i) ?? [],
       pageUploadIds: validPages.map((p) => pageUploadIds[p]),
       key: "group-" + i,
       studentId: guessed?.id ?? null,
-      name:
-        guessed?.name || group.detectedName.trim() || "Student " + (i + 1),
+      name: guessed?.name || detectedName || "Student " + (i + 1),
     };
   });
 }

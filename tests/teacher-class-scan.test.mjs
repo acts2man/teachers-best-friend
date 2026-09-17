@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
 function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const shim={exports:{}};new Function("module","exports",result.outputFiles[0].text)(shim,shim.exports);return shim.exports}
-const {matchRosterStudent,resolveScannedGroups,applyScannedGroups}=bundle("lib/teacher-class-scan.ts");
+const {matchRosterStudent,groupPagesByName,resolveScannedGroups,applyScannedGroups}=bundle("lib/teacher-class-scan.ts");
 
 function assessment(){
   return {
@@ -35,32 +35,69 @@ test("no match returns undefined rather than guessing",()=>{
   assert.equal(matchRosterStudent("Jamal Thompson",students),undefined);
 });
 
+const name=(page,n,c=90)=>({page,name:n,confidence:n?c:0});
+
+test("a named page starts a student and unnamed pages after it continue them",()=>{
+  const groups=groupPagesByName([name(0,"Maria"),name(1,""),name(2,"Jamal"),name(3,""),name(4,"")]);
+  assert.deepEqual(groups,[[0,1],[2,3,4]]);
+});
+test("every page gets a student when every page is named",()=>{
+  assert.deepEqual(groupPagesByName([name(0,"A"),name(1,"B"),name(2,"C")]),[[0],[1],[2]]);
+});
+test("pages before any name become their own group rather than vanishing",()=>{
+  // A stray back side on top of the pile. Nothing the teacher scanned is dropped.
+  const groups=groupPagesByName([name(0,""),name(1,""),name(2,"Maria")]);
+  assert.deepEqual(groups,[[0,1],[2]]);
+});
+test("a whitespace-only name does not start a new student",()=>{
+  assert.deepEqual(groupPagesByName([name(0,"Maria"),name(1,"   ")]),[[0,1]]);
+});
+test("no pages means no groups",()=>{
+  assert.deepEqual(groupPagesByName([]),[]);
+});
+
 test("resolveScannedGroups clamps page indexes to the real upload list and dedupes",()=>{
-  const groups=[{pageIndexes:[0,0,5,-1],detectedName:"Jamal T",confidence:80,responses:[]}];
-  const resolved=resolveScannedGroups(groups,["u1","u2"],[]);
+  const resolved=resolveScannedGroups([[0,0,5,-1]],[name(0,"Jamal T")],[],["u1","u2"],[]);
   assert.deepEqual(resolved[0].pageIndexes,[0]);
   assert.deepEqual(resolved[0].pageUploadIds,["u1"]);
 });
 test("resolveScannedGroups matches the roster locally, then falls back to a placeholder name",()=>{
   const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
-  const groups=[
-    {pageIndexes:[0],detectedName:"Maria Gonzalez",confidence:90,responses:[]},
-    {pageIndexes:[1],detectedName:"Jamal T.",confidence:70,responses:[]},
-    {pageIndexes:[2],detectedName:"",confidence:0,responses:[]},
-  ];
-  const resolved=resolveScannedGroups(groups,["u1","u2","u3"],students);
+  const resolved=resolveScannedGroups(
+    [[0],[1],[2]],
+    [name(0,"Maria Gonzalez"),name(1,"Jamal T."),name(2,"")],
+    [],["u1","u2","u3"],students);
   assert.equal(resolved[0].studentId,"s1");
   assert.equal(resolved[1].studentId,"s2");
   assert.equal(resolved[2].studentId,null);
   assert.equal(resolved[2].name,"Student 3");
 });
-
 test("an unreadable name is left for the teacher rather than guessed from the roster",()=>{
   const students=[student("s1","Maria Gonzalez")];
-  const groups=[{pageIndexes:[0],detectedName:"illegible",confidence:10,responses:[]}];
-  const resolved=resolveScannedGroups(groups,["u1"],students);
+  const resolved=resolveScannedGroups([[0]],[name(0,"illegible",10)],[],["u1"],students);
   assert.equal(resolved[0].studentId,null);
   assert.equal(resolved[0].name,"illegible");
+});
+test("grading is attached to the group it was returned for, not the order it arrived in",()=>{
+  const r=[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}];
+  const resolved=resolveScannedGroups(
+    [[0],[1]],
+    [name(0,"Maria"),name(1,"Jamal")],
+    [{group:1,responses:r}],           // second group graded, reported first
+    ["u1","u2"],[]);
+  assert.equal(resolved[0].responses.length,0);
+  assert.equal(resolved[1].responses.length,1);
+  assert.equal(resolved[1].detectedName,"Jamal");
+});
+test("a student the grading pass skipped still appears for the teacher to see",()=>{
+  const resolved=resolveScannedGroups([[0],[1]],[name(0,"Maria"),name(1,"Jamal")],[],["u1","u2"],[]);
+  assert.equal(resolved.length,2);
+  assert.deepEqual(resolved.map(g=>g.name),["Maria","Jamal"]);
+});
+test("a multi-page student takes the name from whichever page carried one",()=>{
+  const resolved=resolveScannedGroups([[0,1,2]],[name(0,"Maria Gonzalez"),name(1,""),name(2,"")],[],["u1","u2","u3"],[]);
+  assert.equal(resolved[0].detectedName,"Maria Gonzalez");
+  assert.deepEqual(resolved[0].pageUploadIds,["u1","u2","u3"]);
 });
 
 test("applyScannedGroups grades a matched student and creates a record for an unmatched one",()=>{
