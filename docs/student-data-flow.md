@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-15.
+Last verified against the running system: 2026-09-17.
 
 ---
 
@@ -76,7 +76,8 @@ This is the hop districts ask about, so it is the most specific.
 | Question | Answer |
 |---|---|
 | What is transmitted | The uploaded work, grade level, subject, the relevant standards, and question IDs |
-| What is **not** transmitted | Student name, teacher name, school name, district name |
+| What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
+| Name read from the image | Single-student mode: no. Whole-class stack scan: yes — the model transcribes the name handwritten on each page so pages sort to the right student |
 | Encrypted | Yes, TLS |
 | Stored there | Per the OpenAI API data policy for API traffic |
 | Retained | Per that policy; not used to build a profile for us |
@@ -91,6 +92,32 @@ application sends a question ID rather than a student identity. The honest limit
 stated in the published pages too: the image itself is a photograph of a child's work
 and may carry a name the student wrote on the page. We minimise identifiers, we do not
 claim uploads are anonymous.
+
+### Whole-class stack scan (`class_scan`)
+
+This mode grades a stack of pages from many students in one pass, so something in the
+request has to say which page belongs to whom.
+
+**What it used to do (16–17 Sep 2026).** It sent the entire class roster as a list of
+names and asked the model to match each page against it. That contradicted the "not
+transmitted" row above and three published pages. It shipped without this file being
+re-checked, which is the failure this section exists to prevent repeating.
+
+**What it does now.** No roster is sent. `rosterNames` was removed from the accepted
+request parameters, so a stale client cannot reintroduce it, and it no longer reaches
+`scans.params` either. The model transcribes only the name written on the page it is
+already looking at, and matching to a student record happens locally in
+`matchRosterStudent()` (`lib/teacher-class-scan.ts`).
+
+**What is still true and must stay disclosed.** In this one mode, a handwritten name is
+read from the image in the same request that grades the work. Name and answers are
+therefore in one payload. The single-student path does not have this property.
+
+**The fix in progress.** Split identification from grading: crop the name strip, read it
+in its own request that carries no answers and no roster, match locally, then send the
+work — name area removed — under an opaque group id. After that no single request holds
+both a name and that student's answers. Update this section and the four published pages
+when it ships.
 
 ## 5. Results back to the teacher
 
@@ -132,3 +159,9 @@ data is involved in this path.
   They currently all say 30 days.
 - Changing the AI provider or model means re-checking the training and retention terms
   before the change ships, not after.
+- **Adding or changing an AI mode means re-reading section 4 before it ships.** A new
+  mode decides for itself what goes in the prompt. `class_scan` added a roster to the
+  payload and silently falsified four pages for a day. If a prompt gains a new field,
+  ask what identity it carries.
+- Any change to what reaches the provider means updating the same four published pages
+  listed above, and the "last verified" date at the top of this file.

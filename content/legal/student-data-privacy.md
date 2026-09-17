@@ -103,10 +103,19 @@ single most effective step available to reduce risk, and the product is designed
 make it costless.
 
 Where a student has written their name on a worksheet, that name may appear in the
-photograph. We mitigate this in three ways: images are deleted automatically
-(Section 5); our AI instructions direct the model not to reproduce names it encounters
-on a page; and when student responses are analyzed, only internal identifiers are
-transmitted, never names.
+photograph. We mitigate this in four ways: we never transmit a class roster or student
+list to our AI provider; when a single student's responses are analyzed, only internal
+identifiers are transmitted, never a name; images are deleted automatically (Section 5);
+and our AI instructions direct the model not to reproduce names it encounters on a page.
+
+**One exception, stated plainly.** When a teacher scans a whole stack of pages in one
+pass, the app asks the model to transcribe the name written on each page, because that
+transcription is how pages are sorted back to the correct student. The model is given no
+class list to compare against, and the match to a student record happens only within our
+system. We are separating the step that reads a name from the step that grades the work,
+so that no single request to the provider contains both a name and that student's
+answers. Until that separation ships, a district that requires it can direct teachers to
+use the single-student upload path, which transmits no name at all.
 
 ---
 
@@ -177,8 +186,11 @@ through our account to train or improve their models. This is the default for AP
 customers and we have not opted out of it.
 
 **What is sent.** The image of the work, the question text, and the relevant academic
-standards. When analyzing student responses, student names are not sent — only internal
-identifiers meaningless outside our system.
+standards. Class rosters and student lists are never sent. When analyzing a single
+student's responses, no name is sent — only internal identifiers meaningless outside our
+system. In whole-class stack scanning, the name handwritten on a page is transcribed
+from the image so the page can be sorted to the right student; see "On student names"
+above for the full description and the limit we are working to remove.
 
 **Human review.** AI output is a suggestion. Every standard alignment and every score
 is presented to the teacher for confirmation before it is recorded. No determination

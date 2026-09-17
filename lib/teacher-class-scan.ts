@@ -17,7 +17,6 @@ export type ScannedResponse = {
 export type ScannedGroup = {
   pageIndexes: number[];
   detectedName: string;
-  matchedRosterName: string;
   confidence: number;
   responses: ScannedResponse[];
 };
@@ -65,10 +64,14 @@ export function matchRosterStudent(
 
 /**
  * Turns the model's raw page groups into editable review rows: each group is
- * matched against the current roster (first by the model's own guess, then
- * by loose name matching) so the teacher only has to confirm or fix names,
- * never re-enter them from scratch. `pageUploadIds[i]` is the uploaded file
- * id for `pages[i]`, in the same order sent to the model.
+ * matched against the current roster here, on our side, so the teacher only
+ * has to confirm or fix names, never re-enter them from scratch.
+ * `pageUploadIds[i]` is the uploaded file id for `pages[i]`, in the same order
+ * sent to the model.
+ *
+ * The roster is deliberately not sent to the model (see the class_scan prompt
+ * in analyze-shared.ts). The model transcribes whatever name is written on the
+ * page; deciding which student that is happens only in the app.
  */
 export function resolveScannedGroups(
   groups: ScannedGroup[],
@@ -83,12 +86,7 @@ export function resolveScannedGroups(
         ),
       ),
     ].sort((a, b) => a - b);
-    const byRosterGuess = group.matchedRosterName
-      ? students.find(
-          (s) => normalizeName(s.name) === normalizeName(group.matchedRosterName),
-        )
-      : undefined;
-    const guessed = byRosterGuess || matchRosterStudent(group.detectedName, students);
+    const guessed = matchRosterStudent(group.detectedName, students);
     return {
       ...group,
       pageIndexes: validPages,
@@ -96,10 +94,7 @@ export function resolveScannedGroups(
       key: "group-" + i,
       studentId: guessed?.id ?? null,
       name:
-        guessed?.name ||
-        group.matchedRosterName.trim() ||
-        group.detectedName.trim() ||
-        "Student " + (i + 1),
+        guessed?.name || group.detectedName.trim() || "Student " + (i + 1),
     };
   });
 }
