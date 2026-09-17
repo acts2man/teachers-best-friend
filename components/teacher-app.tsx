@@ -373,6 +373,9 @@ export default function TeacherApp({ view }: { view: string }) {
     loaded,
     busy,
     aiReady,
+    // Viewing another teacher's account. Screens use it to hide controls that
+    // would only fail: the server refuses every write for the whole session.
+    readOnly: Boolean(impersonating),
     quota,
     refreshQuota: () =>
       window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),

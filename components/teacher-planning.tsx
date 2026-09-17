@@ -1948,7 +1948,7 @@ export function ResourcesView() {
 }
 
 export function SettingsView() {
-  const { w, save, busy, aiReady, reload, go } = useTeacher();
+  const { w, save, busy, aiReady, readOnly, reload, go } = useTeacher();
   const [teacher, setTeacher] = useState(w.settings.teacherName),
     [school, setSchool] = useState(w.settings.school),
     [erase, setErase] = useState(false),
@@ -2178,10 +2178,15 @@ export function SettingsView() {
               <Download size={16} />
               Export workspace
             </Action>
-            <Action variant="danger" onClick={() => setErase(true)}>
-              <Trash2 size={16} />
-              Delete workspace data
-            </Action>
+            {/* Not rendered at all while viewing another teacher's account.
+                A disabled destructive control is still a hazard, and the
+                server refuses the delete regardless. */}
+            {!readOnly && (
+              <Action variant="danger" onClick={() => setErase(true)}>
+                <Trash2 size={16} />
+                Delete workspace data
+              </Action>
+            )}
           </div>
         </section>
       </div>
