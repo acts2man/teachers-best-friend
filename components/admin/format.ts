@@ -45,6 +45,21 @@ export function fmtCents(n: Numeric) {
   return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(2)}`;
 }
 
+/**
+ * A per-scan or per-call figure. These land between a tenth of a cent and a
+ * few cents, where fmtCents rounds everything interesting away: 3.7¢ and 0.2¢
+ * both become "$0.04" / "under 1¢", so a teacher cannot tell an expensive
+ * pipeline from a cheap one. Show the cents themselves.
+ * Anything at a dollar or more falls back to dollars, where cents stop helping.
+ */
+export function fmtPerScan(n: Numeric) {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v) || v === 0) return "$0.00";  // Kpi reads this as its empty state
+  if (Math.abs(v) >= 1) return fmtUsd(v, 2);
+  const cents = v * 100;
+  return `${cents.toFixed(Math.abs(cents) >= 1 ? 1 : 2)}¢`;
+}
+
 /** What each kind of AI call is, in words a non-engineer can read. */
 export const STAGES: Record<string, { label: string; what: string; unit: string }> = {
   responses:  { label: "Student worksheet scan", what: "Reads one student's answers and checks them against the key", unit: "per student" },
@@ -52,13 +67,27 @@ export const STAGES: Record<string, { label: string; what: string; unit: string 
   answer_key: { label: "Answer key read",        what: "Reads the teacher's answer key",                             unit: "per assignment" },
   lesson:     { label: "Lesson plan",            what: "Writes a reteaching lesson for a standard",                  unit: "per lesson" },
   reteaching: { label: "Reteaching material",    what: "Writes material aimed at one misconception",                 unit: "per group" },
-  catalog:    { label: "Standards lookup",       what: "Looks up a state's official standards list",                 unit: "per state and grade" },
+  class_scan: { label: "Whole-class scan",       what: "Reads a stack of pages, sorts them by student, and grades each one", unit: "per stack of pages" },
+  catalog:    { label: "Standards lookup",       what: "The app's own setup work, not a teacher scan — looks up a state's official standards list", unit: "per state and grade" },
   roster:     { label: "Roster read",            what: "Reads student names off a roster photo",                     unit: "per roster" },
   support:    { label: "Support reply",          what: "Drafts a first reply to a help ticket",                      unit: "per ticket" },
+  embedding:  { label: "Standards matching",     what: "Turns wording into the numbers used to match it to a standard", unit: "per lookup" },
   unknown:    { label: "Not recorded",           what: "Scans made before the type of work was tracked",             unit: "" },
 };
+/**
+ * Never leak a raw pipeline_config stage name into the admin UI — these pages
+ * are read by non-engineers. A stage added to pipeline_config but not yet given
+ * an entry above at least reads as English ("class_scan" -> "Class scan").
+ */
 export function stageInfo(stage: string | null | undefined) {
-  return STAGES[stage ?? "unknown"] ?? { label: stage ?? "Not recorded", what: "", unit: "" };
+  const key = stage ?? "unknown";
+  const known = STAGES[key];
+  if (known) return known;
+  return {
+    label: key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
+    what: "A kind of AI work that has not been given a plain-English name yet",
+    unit: "",
+  };
 }
 
 /** "gpt-5.6-luna" → "GPT-5.6 Luna" */

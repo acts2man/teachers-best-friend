@@ -93,10 +93,18 @@ a full legal name if a teacher chooses to enter one; the service functions compl
 without it.
 
 **On handwriting.** A photograph of student work may show a name the student wrote on
-the page. We cannot prevent this. We address it in three ways: images are deleted
-automatically on the schedule in Section 5, our AI instructions direct the model not to
-reproduce names it encounters, and student names are not transmitted when student
-responses are analyzed.
+the page. We cannot prevent this, and we do not claim uploads are anonymous. We address
+it in four ways: we never send your class roster or any student list to the AI provider;
+we never send a student's name as text alongside their work; images are deleted
+automatically on the schedule in Section 5; and our AI instructions direct the model not
+to reproduce names it encounters.
+
+One exception we state plainly. When a teacher scans a whole stack of pages at once, the
+app asks the model to transcribe the name written on each page, because that is how the
+pages are sorted back to the right student. In that mode a handwritten name is read from
+the image. The model is given no class list to compare it against, and matching that name
+to a student happens only inside our system. We are separating the step that reads the
+name from the step that grades the work, so that no single request contains both.
 
 ### 3.3 Collected automatically
 
@@ -205,8 +213,10 @@ Submitted work is sent to OpenAI's API for analysis. Specifically:
 - Requests are configured so the provider does not retain the content of the request.
 - Our agreement with the provider prohibits using data submitted through our account to
   train their models.
-- When student responses are analyzed, student names are not sent — only internal
-  identifiers.
+- We never send your class roster, or any list of student names, to the AI provider.
+- When a single student's responses are analyzed, no name is sent — only internal
+  identifiers. In whole-class stack scanning, the name handwritten on the page is
+  transcribed from the image so pages can be sorted; see "On handwriting" above.
 - The AI's output is a suggestion, not a determination. Teachers review and can correct
   every standard alignment and every score before it is recorded.
 

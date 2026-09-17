@@ -36,23 +36,31 @@ test("no match returns undefined rather than guessing",()=>{
 });
 
 test("resolveScannedGroups clamps page indexes to the real upload list and dedupes",()=>{
-  const groups=[{pageIndexes:[0,0,5,-1],detectedName:"Jamal T",matchedRosterName:"",confidence:80,responses:[]}];
+  const groups=[{pageIndexes:[0,0,5,-1],detectedName:"Jamal T",confidence:80,responses:[]}];
   const resolved=resolveScannedGroups(groups,["u1","u2"],[]);
   assert.deepEqual(resolved[0].pageIndexes,[0]);
   assert.deepEqual(resolved[0].pageUploadIds,["u1"]);
 });
-test("resolveScannedGroups prefers the model's roster match, then falls back to loose matching, then a placeholder name",()=>{
+test("resolveScannedGroups matches the roster locally, then falls back to a placeholder name",()=>{
   const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
   const groups=[
-    {pageIndexes:[0],detectedName:"illegible",matchedRosterName:"Maria Gonzalez",confidence:90,responses:[]},
-    {pageIndexes:[1],detectedName:"Jamal T.",matchedRosterName:"",confidence:70,responses:[]},
-    {pageIndexes:[2],detectedName:"",matchedRosterName:"",confidence:0,responses:[]},
+    {pageIndexes:[0],detectedName:"Maria Gonzalez",confidence:90,responses:[]},
+    {pageIndexes:[1],detectedName:"Jamal T.",confidence:70,responses:[]},
+    {pageIndexes:[2],detectedName:"",confidence:0,responses:[]},
   ];
   const resolved=resolveScannedGroups(groups,["u1","u2","u3"],students);
   assert.equal(resolved[0].studentId,"s1");
   assert.equal(resolved[1].studentId,"s2");
   assert.equal(resolved[2].studentId,null);
   assert.equal(resolved[2].name,"Student 3");
+});
+
+test("an unreadable name is left for the teacher rather than guessed from the roster",()=>{
+  const students=[student("s1","Maria Gonzalez")];
+  const groups=[{pageIndexes:[0],detectedName:"illegible",confidence:10,responses:[]}];
+  const resolved=resolveScannedGroups(groups,["u1"],students);
+  assert.equal(resolved[0].studentId,null);
+  assert.equal(resolved[0].name,"illegible");
 });
 
 test("applyScannedGroups grades a matched student and creates a record for an unmatched one",()=>{

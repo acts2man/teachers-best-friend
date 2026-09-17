@@ -79,7 +79,6 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         subject: a.subject,
         framework: a.framework,
         assessmentId: a.id,
-        rosterNames: students.map((s) => s.name),
       });
       const resolved = resolveScannedGroups(d.result.groups, ids, students);
       if (!resolved.length)
@@ -203,7 +202,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                       studentId: v === "new" ? null : v.replace("existing:", ""),
                       name:
                         v === "new"
-                          ? g.detectedName || g.matchedRosterName || g.name
+                          ? g.detectedName || g.name
                           : students.find((s) => s.id === v.replace("existing:", ""))?.name ||
                             g.name,
                     })

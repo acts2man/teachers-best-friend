@@ -70,7 +70,8 @@ export const analyzeInput = z.object({
   standard: z.string().optional(),
   modality: z.string().optional(),
   duration: z.number().optional(),
-  rosterNames: z.array(z.string().max(80)).max(200).default([]),
+  // No rosterNames. The class roster is never sent to the model: see the
+  // class_scan prompt below and docs/student-data-flow.md.
 });
 
 export type AnalyzeParams = z.infer<typeof analyzeInput>;
@@ -143,7 +144,6 @@ const classScanSchema = obj({
     obj({
       pageIndexes: arr({ type: "integer", minimum: 0 }),
       detectedName: str,
-      matchedRosterName: str,
       confidence: { type: "number", minimum: 0, maximum: 100 },
       responses: arr(classScanResponseItem),
     }),
@@ -258,8 +258,7 @@ export function buildPrompt(
       );
     if (!hasContent) throw new HttpError(400, "Add scanned pages first.");
     task =
-      "You are given a stack of scanned pages from multiple students who completed the same assessment, in the order they were scanned. Each student's work may span one or more consecutive pages; a new student's stack typically starts with a page showing a handwritten or printed name (e.g. a 'Name:' line). A page with no visible name usually continues the previous student's stack — do not start a new group for it unless the content clearly belongs to a different, unrelated student. Segment the pages (indexed from 0) into one group per student. For each group: transcribe the name exactly as written on its first page (empty string if genuinely illegible — never invent one); if it confidently matches one of the class roster names given below, set matchedRosterName to that EXACT roster string, otherwise leave it empty; give an honest 0-100 confidence in the name match. Then, for that group's pages, grade every non-excluded question the same way you would a single student's work: return one response per question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing/unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. Never guess a page's student from handwriting style alone — only the name written on the page. Class roster (may be incomplete — a name not on this list is still a valid new student): " +
-      JSON.stringify(p.rosterNames) +
+      "You are given a stack of scanned pages from multiple students who completed the same assessment, in the order they were scanned. Each student's work may span one or more consecutive pages; a new student's stack typically starts with a page showing a handwritten or printed name (e.g. a 'Name:' line). A page with no visible name usually continues the previous student's stack — do not start a new group for it unless the content clearly belongs to a different, unrelated student. Segment the pages (indexed from 0) into one group per student. For each group: transcribe the name exactly as written on its first page (empty string if genuinely illegible — never invent one) and give an honest 0-100 confidence in that transcription. You are not given a class list and must not guess at one; transcribe only what is written. Then, for that group's pages, grade every non-excluded question the same way you would a single student's work: return one response per question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing/unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. Never guess a page's student from handwriting style alone — only the name written on the page" +
       ". Questions: " +
       JSON.stringify(a.questions.filter((q) => !q.excluded));
     schema = classScanSchema;
@@ -438,7 +437,6 @@ export function finalizeAnalysis(
             z.object({
               pageIndexes: z.array(z.number().int()).max(24),
               detectedName: z.string().max(80),
-              matchedRosterName: z.string().max(80),
               confidence: z.number().min(0).max(100),
               responses: z.array(
                 z.object({
@@ -460,7 +458,6 @@ export function finalizeAnalysis(
     const validQuestionIds = new Set(
       a.questions.filter((q) => !q.excluded).map((q) => q.id),
     );
-    const rosterSet = new Set(p.rosterNames);
     output.groups = parsed.data.groups
       .filter((g) => g.pageIndexes.length > 0)
       .map((g) => ({
@@ -468,9 +465,6 @@ export function finalizeAnalysis(
           (i) => i >= 0 && i < p.uploadIds.length,
         ),
         detectedName: g.detectedName.trim(),
-        matchedRosterName: rosterSet.has(g.matchedRosterName)
-          ? g.matchedRosterName
-          : "",
         confidence: g.confidence,
         responses: g.responses.filter((r) => validQuestionIds.has(r.questionId)),
       }));

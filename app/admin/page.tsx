@@ -4,7 +4,7 @@ import { getPlatformStats, getDailyUsage, getAccounts, getTickets } from "@/lib/
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Kpi } from "@/components/admin/kpi";
 import { AttentionList, type AttentionItem } from "@/components/admin/attention";
-import { fmtUsd, fmtBytes, fmtRel } from "@/components/admin/format";
+import { fmtUsd, fmtBytes, fmtRel, fmtPerScan } from "@/components/admin/format";
 
 export default async function AdminOverview() {
   const [stats, daily, accounts, tickets] = await Promise.all([
@@ -43,7 +43,7 @@ export default async function AdminOverview() {
         <Kpi tier="primary" style={{ ["--i" as string]: 3 }} icon={<Zap />} v={stats.cache_hit_rate_pct === null ? "—" : `${stats.cache_hit_rate_pct}%`} l="Reteaching cache hit rate" d="The number that decides margins" tone={stats.cache_hit_rate_pct === null ? undefined : stats.cache_hit_rate_pct < 50 ? "warn" : "good"} empty="Awaiting first reteach" />
 
         <Kpi style={{ ["--i" as string]: 4 }} icon={<Users />} v={stats.teachers_total} l="Teachers" d={`${stats.teachers_active_7d} active this week · ${stats.signups_7d} new`} empty="No teachers yet" />
-        <Kpi style={{ ["--i" as string]: 5 }} icon={<ScanLine />} v={stats.scans_this_month} l="Scans this month" d={`${stats.scans_today} today · ${fmtUsd(stats.avg_cost_per_scan, 4)} avg`} empty="Awaiting first scan" spark={scanTrend} sparkId="scans" />
+        <Kpi style={{ ["--i" as string]: 5 }} icon={<ScanLine />} v={stats.scans_this_month} l="Scans this month" d={`${stats.scans_today} today · ${fmtPerScan(stats.avg_cost_per_scan_30d)} per scan, last 30 days`} empty="Awaiting first scan" spark={scanTrend} sparkId="scans" />
         <Kpi style={{ ["--i" as string]: 6 }} icon={<HardDrive />} v={fmtBytes(stats.storage_bytes_total)} l="Stored uploads" d={`${stats.uploads_expiring_7d} expiring this week`} empty="No uploads yet" />
         <Kpi style={{ ["--i" as string]: 7 }} icon={<Database />} v={stats.standards_seeded} l="Standards seeded" d={stats.standards_seeded === 0 ? "Alignment on model recall" : "With embeddings"} tone={stats.standards_seeded === 0 ? "bad" : "good"} />
       </section>
