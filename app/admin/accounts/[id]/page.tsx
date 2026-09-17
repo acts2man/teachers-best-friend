@@ -5,7 +5,7 @@ import { getAccount, getTeacherScans, getTeacherAudit, getPipeline, getCostBreak
 import { setPlan, setStatus, setAdminRole, setAppManagerRole, resetTeacher, addInternalNote, clearFailedScans } from "@/app/admin/actions";
 import { startImpersonation } from "@/lib/impersonation-actions";
 import { currentIsAppManager } from "@/lib/admin-gate";
-import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
+import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtPerScan, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
 
 const TARGET_COST_PER_SCAN = 0.01;
 
@@ -21,8 +21,14 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
   const hits = completed.reduce((n, s) => n + Number(s.library_hits), 0);
   const misses = completed.reduce((n, s) => n + Number(s.library_misses), 0);
   const hitRate = hits + misses ? Math.round((100 * hits) / (hits + misses)) : null;
-  const avgPerScan = a.scans_this_period ? a.ai_cost_this_period / a.scans_this_period : 0;
+  // Straight from admin_accounts, which averages billable scans that finished.
+  // This used to be ai_cost_this_period (every row, internal runs included)
+  // divided by scans_this_period (billable rows only) — a ratio of two
+  // different populations, which read far higher than any scan actually cost.
+  const avgPerScan = Number(a.avg_cost_per_scan ?? 0);
+  const avgPerScan30 = Number(a.avg_cost_per_scan_30d ?? 0);
   const avgRatio = avgPerScan / TARGET_COST_PER_SCAN;
+  const ratio30 = avgPerScan30 / TARGET_COST_PER_SCAN;
   const okScans = scans.filter((s) => s.status === "complete");
   const badScans = scans.filter((s) => s.status === "failed" || s.status === "canceled");
   const badCost = badScans.reduce((n, s) => n + Number(s.cost_usd), 0);
@@ -62,7 +68,8 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
       <div className="ad-grid kpi">
         <Kpi v={`${a.scans_this_period} / ${a.scan_quota}`} l="Scans this period" d={`${pct}% of quota · resets ${new Date(a.current_period_end).toLocaleDateString()}`} tone={pct >= 100 ? "bad" : pct >= 80 ? "warn" : undefined} />
         <Kpi v={fmtCents(a.ai_cost_this_period)} l="AI cost this period" d={`${fmtCents(a.ai_cost_lifetime)} lifetime`} />
-        <Kpi v={fmtCents(avgPerScan)} l="Average cost per scan" d={avgPerScan === 0 ? "No scans yet this period" : avgRatio <= 1 ? `At or under the ${fmtCents(TARGET_COST_PER_SCAN)} target` : `${avgRatio.toFixed(1)}× the ${fmtCents(TARGET_COST_PER_SCAN)} target`} tone={avgPerScan === 0 ? undefined : avgRatio <= 1 ? "good" : avgRatio <= 2 ? "warn" : "bad"} />
+        <Kpi v={fmtPerScan(avgPerScan)} l="Average cost per scan (all time)" d={avgPerScan === 0 ? "No completed scans yet" : avgRatio <= 1 ? `At or under the ${fmtPerScan(TARGET_COST_PER_SCAN)} target` : `${avgRatio.toFixed(1)}× the ${fmtPerScan(TARGET_COST_PER_SCAN)} target`} tone={avgPerScan === 0 ? undefined : avgRatio <= 1 ? "good" : avgRatio <= 2 ? "warn" : "bad"} />
+        <Kpi v={fmtPerScan(avgPerScan30)} l="Average cost per scan (last 30 days)" d={avgPerScan30 === 0 ? "No completed scans in the last 30 days" : ratio30 <= 1 ? `At or under the ${fmtPerScan(TARGET_COST_PER_SCAN)} target` : `${ratio30.toFixed(1)}× the ${fmtPerScan(TARGET_COST_PER_SCAN)} target`} tone={avgPerScan30 === 0 ? undefined : ratio30 <= 1 ? "good" : ratio30 <= 2 ? "warn" : "bad"} />
         <Kpi v={a.price_cents ? fmtUsd(a.price_cents / 100) : "$0"} l={`${a.plan_name} plan`} d={a.price_cents ? `margin ${fmtUsd(a.price_cents / 100 - a.ai_cost_this_period, 2)}` : "free tier"} tone={a.price_cents && a.ai_cost_this_period > a.price_cents / 100 ? "bad" : undefined} />
         <Kpi v={hitRate === null ? "—" : `${hitRate}%`} l="Cache hit rate" d={`${hits} hits · ${misses} misses`} />
         <Kpi v={a.students} l="Students" d={`${a.classes} classes · ${a.assessments} assessments`} />
@@ -73,7 +80,7 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
       <section className="panel ad-panel ad-section-gap">
         <div className="ad-panel-head">
           <div className="ad-panel-title"><h2>Where this teacher’s AI cost went this month</h2><span className="ad-count">{workRows.length} kinds of work</span></div>
-          <span className="ad-meta">Averages rounded to the cent · hover for exact</span>
+          <span className="ad-meta">Averages shown in cents · hover for the exact figure</span>
         </div>
         {workRows.length === 0 ? (
           <div className="ad-empty"><span><strong>No AI calls yet this month.</strong> Rows appear as this teacher scans.</span></div>
@@ -92,7 +99,7 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
                       <td>{modelLabel(r.model)}<div className="mono muted" style={{ fontSize: ".72rem" }}>{r.model}</div></td>
                       <td className="num">{fmtInt(r.calls)}</td>
                       <td className="num">{r.failed ? <span className="pill pill-bad">{r.failed}</span> : <span className="muted">0</span>}</td>
-                      <td className="num"><span className={`kpi-delta ${tone}`} title={`exact: ${fmtUsd(perCall, 4)}`}>{fmtCents(perCall)}</span></td>
+                      <td className="num"><span className={`kpi-delta ${tone}`} title={`exact: ${fmtUsd(perCall, 4)}`}>{fmtPerScan(perCall)}</span></td>
                       <td className="num" title={`exact: ${fmtUsd(r.cost_usd, 4)}`}>{fmtCents(r.cost_usd)}</td>
                       <td className="num muted">{workTotal ? Math.round((100 * Number(r.cost_usd)) / workTotal) : 0}%</td>
                     </tr>

@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { Coins, ScanLine, Target, Gauge } from "lucide-react";
+import { Coins, ScanLine, Target, Gauge, CalendarRange } from "lucide-react";
 import { getDailyUsage, getModelCosts, getPlatformStats, getCostBreakdown, supabaseAdmin, type UnitEconomicsRow } from "@/lib/supabase-admin";
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Kpi } from "@/components/admin/kpi";
-import { fmtUsd, fmtInt, fmtCents, stageInfo, modelLabel } from "@/components/admin/format";
+import { fmtUsd, fmtInt, fmtCents, fmtPerScan, stageInfo, modelLabel } from "@/components/admin/format";
 
 /* The number the business is managed to. */
 const TARGET_COST_PER_SCAN = 0.01;
 
 function CentsPill({ value }: { value: number }) {
   const tone = value > TARGET_COST_PER_SCAN * 2 ? "bad" : value > TARGET_COST_PER_SCAN ? "warn" : "good";
-  return <span className={`kpi-delta ${tone}`} title={`exact: ${fmtUsd(value, 4)}`}>{fmtCents(value)}</span>;
+  return <span className={`kpi-delta ${tone}`} title={`exact: ${fmtUsd(value, 4)}`}>{fmtPerScan(value)}</span>;
 }
 
 export default async function UsagePage() {
@@ -25,10 +25,19 @@ export default async function UsagePage() {
   }));
   const totalModelCost = modelRows.reduce((a, m) => a + m.cost, 0);
   const totalCalls = modelRows.reduce((a, m) => a + Number(m.calls), 0);
+  // Both averages count real teacher scans only: billable rows that finished.
+  // Internal runs (billable = false — today, the catalog stopgap) and failed
+  // scans are filtered out in admin_platform_stats, not here.
   const avg = Number(stats.avg_cost_per_scan ?? 0);
-  const ratio = avg / TARGET_COST_PER_SCAN;
-  const avgTone = avg === 0 ? undefined : ratio <= 1 ? "good" : ratio <= 2 ? "warn" : "bad";
-  const avgNote = avg === 0 ? undefined : ratio <= 1 ? `At or under the ${fmtCents(TARGET_COST_PER_SCAN)} target` : `${ratio.toFixed(1)}× the ${fmtCents(TARGET_COST_PER_SCAN)} target`;
+  const avg30 = Number(stats.avg_cost_per_scan_30d ?? 0);
+  const noteFor = (v: number) => {
+    if (v === 0) return undefined;
+    const r = v / TARGET_COST_PER_SCAN;
+    return r <= 1 ? `At or under the ${fmtPerScan(TARGET_COST_PER_SCAN)} target` : `${r.toFixed(1)}× the ${fmtPerScan(TARGET_COST_PER_SCAN)} target`;
+  };
+  const toneFor = (v: number) => (v === 0 ? undefined : v <= TARGET_COST_PER_SCAN ? "good" : v <= TARGET_COST_PER_SCAN * 2 ? "warn" : "bad");
+  const avgNote = noteFor(avg);
+  const avgTone = toneFor(avg);
   const costPerCall = totalCalls ? totalModelCost / totalCalls : 0;
   const scanTrend = daily.slice(-14).map((d) => Number(d.scans));
   const costTrend = daily.slice(-14).map((d) => Number(d.ai_cost));
@@ -47,20 +56,29 @@ export default async function UsagePage() {
   return (
     <>
       <h1>Usage & cost</h1>
-      <p className="ad-sub">{fmtInt(stats.scans_this_month)} scans this month · {fmtCents(stats.ai_cost_this_month)} AI cost · {fmtCents(stats.avg_cost_per_scan)} per scan</p>
+      <p className="ad-sub">{fmtInt(stats.scans_this_month)} scans this month · {fmtCents(stats.ai_cost_this_month)} AI cost · {fmtPerScan(avg30)} per scan over the last 30 days</p>
 
       <section className="kpi-grid" aria-label="Cost per scan">
-        <Kpi tier="primary" style={{ ["--i" as string]: 0 }} icon={<Target />} v={fmtCents(avg)} l="Average cost per scan" d={avgNote} tone={avgTone} empty="Awaiting first completed scan" />
-        <Kpi tier="primary" style={{ ["--i" as string]: 1 }} icon={<Gauge />} v={fmtCents(costPerCall)} l="Average per AI call" d={`${fmtInt(totalCalls)} calls this month`} empty="No AI calls yet" />
-        <Kpi style={{ ["--i" as string]: 2 }} icon={<Coins />} v={fmtCents(stats.ai_cost_this_month)} l="AI cost this month" d={`At target: ${fmtCents(TARGET_COST_PER_SCAN * stats.scans_this_month)}`} empty="Awaiting first scan" spark={costTrend} sparkId="usage-cost" />
-        <Kpi style={{ ["--i" as string]: 3 }} icon={<ScanLine />} v={stats.scans_this_month} l="Scans this month" d={`${fmtInt(stats.scans_today)} today`} empty="Awaiting first scan" spark={scanTrend} sparkId="usage-scans" />
+        <Kpi tier="primary" style={{ ["--i" as string]: 0 }} icon={<Target />} v={fmtPerScan(avg)} l="Average cost per scan (all time)" d={avgNote} tone={avgTone} empty="Awaiting first completed scan" />
+        <Kpi tier="primary" style={{ ["--i" as string]: 1 }} icon={<CalendarRange />} v={fmtPerScan(avg30)} l="Average cost per scan (last 30 days)" d={noteFor(avg30)} tone={toneFor(avg30)} empty="No completed scans in the last 30 days" />
+        <Kpi style={{ ["--i" as string]: 2 }} icon={<Gauge />} v={fmtPerScan(costPerCall)} l="Average per AI call" d={`${fmtInt(totalCalls)} calls this month`} empty="No AI calls yet" />
+        <Kpi style={{ ["--i" as string]: 3 }} icon={<Coins />} v={fmtCents(stats.ai_cost_this_month)} l="AI cost this month" d={`At target: ${fmtCents(TARGET_COST_PER_SCAN * stats.scans_this_month)}`} empty="Awaiting first scan" spark={costTrend} sparkId="usage-cost" />
+        <Kpi style={{ ["--i" as string]: 4 }} icon={<ScanLine />} v={stats.scans_this_month} l="Scans this month" d={`${fmtInt(stats.scans_today)} today`} empty="Awaiting first scan" spark={scanTrend} sparkId="usage-scans" />
       </section>
+
+      <p className="muted" style={{ fontSize: ".85rem", margin: "-.25rem 0 0", maxWidth: "80ch" }}>
+        Both averages count only real teacher scans that finished: internal runs the app does for itself,
+        and scans that failed (which cost nothing), are left out. The <strong>all time</strong> figure still
+        carries every scan since launch, including the older, slower model. The <strong>last 30 days</strong>
+        figure is the one that says what the app costs to run today. Nothing is deleted — the totals below
+        still add up every cent that was spent.
+      </p>
 
       {/* ---------- What generated the cost ---------- */}
       <section className="panel ad-panel ad-section-gap">
         <div className="ad-panel-head">
           <div className="ad-panel-title"><h2>What generated the cost this month</h2><span className="ad-count">{workRows.length} kinds of work</span></div>
-          <span className="ad-meta">Averages rounded to the cent · hover for exact</span>
+          <span className="ad-meta">Averages shown in cents · hover for the exact figure</span>
         </div>
         <p className="muted" style={{ fontSize: ".875rem", margin: "0 0 12px", maxWidth: "72ch" }}>
           Every time the app asks the AI to do something, that is one <strong>call</strong>. A student worksheet scan is one call per student; reading an assignment is one call per assignment; a lesson plan is one call per lesson. Each row shows the kind of work, which model did it, and what it cost on average.

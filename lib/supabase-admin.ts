@@ -54,6 +54,9 @@ export type AdminAccount = {
   current_period_start: string;
   current_period_end: string;
   stripe_customer_id: string | null;
+  /** Billable, completed scans only — the figure a teacher would call "what a scan costs me". */
+  avg_cost_per_scan: number | string;
+  avg_cost_per_scan_30d: number | string;
 };
 
 export type PlatformStats = {
@@ -66,7 +69,10 @@ export type PlatformStats = {
   scans_today: number;
   scans_this_month: number;
   ai_cost_this_month: number;
-  avg_cost_per_scan: number;
+  /** Billable, completed scans only, all time. Excludes internal runs and failures. */
+  avg_cost_per_scan: number | string;
+  /** Same filter, 30-day rolling window. */
+  avg_cost_per_scan_30d: number | string;
   cache_hit_rate_pct: number | null;
   failed_scans_24h: number;
   open_tickets: number;
