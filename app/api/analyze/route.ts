@@ -1,5 +1,5 @@
 import {
-  owningTeacherId,
+  writingTeacherId,
   readDocument,
   guardOrigin,
   apiError,
@@ -40,7 +40,7 @@ export const maxDuration = 26;
 export async function POST(request: Request) {
   try {
     guardOrigin(request);
-    const user = await owningTeacherId(),
+    const user = await writingTeacherId(),
       config = await aiConfig();
     if (!config.key)
       throw new HttpError(

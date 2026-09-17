@@ -536,6 +536,14 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .scope-controls .pick,.filter-bar .pick,.classroom-add .pick{width:100%!important;max-width:100%!important;min-width:0!important}
 .pick [data-slot=select-value]{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .roster-actions .switch-label{margin-bottom:0}
+.class-scan-panel{margin-bottom:21px}
+.class-scan-groups{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.class-scan-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89.0%);border-radius:12px;background:#fff}
+.class-scan-row.discarded{opacity:.5}
+.class-scan-row-main{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1;min-width:0}
+.class-scan-row-main>.cell-meta{min-width:150px}
+.class-scan-row-main .pick{min-width:220px;width:auto}
+.class-scan-name-input{width:auto;min-width:160px;flex:1}
 .footer-legal{display:flex;flex-wrap:wrap;gap:4px 12px;padding:10px 5px 0;font-size:12px}.footer-legal a{color:hsl(calc(143deg + var(--th)) calc(12% * var(--ts)) 65%);text-decoration:none}.footer-legal a:hover{color:hsl(calc(77deg + var(--th)) calc(67% * var(--ts)) 83.1%)}
 
 /* Admin sign-in variant of the login card (reached via ?next=/admin) */
@@ -660,3 +668,9 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .upload-privacy strong{display:block;font-size:13.5px;color:hsl(calc(152deg + var(--th)) calc(24% * var(--ts)) 21%);margin-bottom:3px}
 .upload-privacy p{margin:0;font-size:13px;line-height:1.55;color:hsl(calc(147deg + var(--th)) calc(13% * var(--ts)) 32%)}
 .upload-privacy a{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:hsl(calc(112deg + var(--th)) calc(28% * var(--ts)) 34%);text-decoration:underline;text-underline-offset:2px}
+.view-as-search{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.view-as-search input{flex:1}
+.view-as-list{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto}
+.view-as-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89.0%);border-radius:11px;background:#fff}
+.view-as-row>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.view-as-row strong{font-size:14px}

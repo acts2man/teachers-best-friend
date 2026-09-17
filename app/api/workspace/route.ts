@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  owningTeacherId,
+  writingTeacherId,
   resolveOwningTeacher,
   guardOrigin,
   apiError,
@@ -117,7 +117,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     guardOrigin(request);
-    const id = await owningTeacherId();
+    const id = await writingTeacherId();
     const text = await request.text();
     if (text.length > 3500000)
       throw new HttpError(
@@ -175,7 +175,7 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     guardOrigin(request);
-    const id = await owningTeacherId();
+    const id = await writingTeacherId();
     await deleteAllDocuments(id);
     const workspace = createDemoWorkspace();
     workspace.classes = [

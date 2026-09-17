@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Activity, Users, LifeBuoy, Library, Workflow, ListChecks, ScrollText,
+  LayoutDashboard, Activity, Users, LifeBuoy, Library, Workflow, ListChecks, ScrollText, Eye,
 } from "lucide-react";
 
 /* Icons are picked by name here so the server layout can pass plain data. */
@@ -16,6 +16,7 @@ const ICONS = {
   pipeline: Workflow,
   standards: ListChecks,
   audit: ScrollText,
+  viewas: Eye,
 } as const;
 
 export type NavIcon = keyof typeof ICONS;

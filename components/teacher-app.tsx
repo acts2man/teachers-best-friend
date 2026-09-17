@@ -37,6 +37,7 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { assessmentInClass } from "@/lib/teacher-classes";
 import { frameworkOptions } from "@/lib/states";
 import type { Workspace } from "@/lib/teacher-types";
+import { ViewAsPicker } from "./teacher-view-as";
 import { TeacherContext } from "./teacher-context";
 import { Pick, Action, Modal, Pill } from "./teacher-shared";
 import HomeView from "./teacher-home";
@@ -121,6 +122,7 @@ export default function TeacherApp({ view }: { view: string }) {
     () => workspaceSnapshot?.authProvider ?? "chatgpt",
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canViewAs, setCanViewAs] = useState(false);
   const [impersonating, setImpersonating] = useState<{
     teacherEmail: string;
   } | null>(() => workspaceSnapshot?.impersonating ?? null);
@@ -225,10 +227,18 @@ export default function TeacherApp({ view }: { view: string }) {
         if (!auth.user) return;
         const { data } = await supabase
           .from("profiles")
-          .select("is_admin")
+          .select("is_admin, is_app_manager")
           .eq("id", auth.user.id)
           .maybeSingle();
-        if (!cancelled) setIsAdmin(Boolean(data?.is_admin));
+        if (!cancelled) {
+          setIsAdmin(Boolean(data?.is_admin));
+          // Mirrors can_impersonate() in the database, which is the real gate
+          // on every impersonation call. This only decides whether the
+          // sidebar control is rendered.
+          setCanViewAs(
+            Boolean(data?.is_admin) || Boolean(data?.is_app_manager),
+          );
+        }
       } catch {
         // Not signed in or Supabase is not configured: no admin link.
       }
@@ -270,6 +280,18 @@ export default function TeacherApp({ view }: { view: string }) {
   async function save(next: Workspace, message?: string) {
     if (!loaded) {
       toast.error("Wait for your classroom to load before saving.");
+      return false;
+    }
+    // Viewing another teacher's account is read-only. The server refuses these
+    // writes anyway (writingTeacherId in lib/teacher-server.ts); stopping here
+    // turns a 403 into a plain explanation, and keeps the refusal identical
+    // across all of the save() call sites without touching any of them.
+    if (impersonating) {
+      toast.error(
+        "You’re viewing " +
+          impersonating.teacherEmail +
+          "’s account, so changes are turned off. Stop viewing to make changes of your own.",
+      );
       return false;
     }
     if (lock.current) return false;
@@ -351,6 +373,9 @@ export default function TeacherApp({ view }: { view: string }) {
     loaded,
     busy,
     aiReady,
+    // Viewing another teacher's account. Screens use it to hide controls that
+    // would only fail: the server refuses every write for the whole session.
+    readOnly: Boolean(impersonating),
     quota,
     refreshQuota: () =>
       window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
@@ -404,8 +429,8 @@ export default function TeacherApp({ view }: { view: string }) {
           <ShieldCheck size={16} />
           <span>
             Viewing <strong>{impersonating.teacherEmail}</strong>’s
-            workspace as an app manager. Anything you do here happens on
-            their account.
+            workspace as an app manager. This is read-only — saving,
+            uploading and scanning are turned off until you stop viewing.
           </span>
           <button type="button" onClick={stopViewing} disabled={leaving}>
             {leaving ? "Leaving…" : "Stop viewing"}
@@ -498,6 +523,7 @@ export default function TeacherApp({ view }: { view: string }) {
                 Admin
               </Link>
             )}
+            {canViewAs && !impersonating && <ViewAsPicker />}
             {authProvider === "supabase" && (
               <form action="/auth/signout" method="post">
                 <button className="footer-link" type="submit">
@@ -667,8 +693,9 @@ export default function TeacherApp({ view }: { view: string }) {
             />
           </label>
           <p className="field-help">
-            Choose your state. California Grade 4 is built in; other states and
-            grades are retrieved with AI the first time you need them.
+            Choose your state. California Kindergarten through Grade 8 is
+            built in; other states and grades are retrieved with AI the first
+            time you need them.
           </p>
           <Action type="submit" disabled={busy || !name.trim()}>
             Create class

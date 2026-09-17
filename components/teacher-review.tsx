@@ -39,6 +39,7 @@ import {
 import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
+import { ClassScanPanel } from "./teacher-class-scan";
 
 export function StudentResponseReview({
   assessment: a,
@@ -241,18 +242,22 @@ export function StudentResponseReview({
 
   if (!students.length)
     return (
-      <EmptyState
-        title="Add your students"
-        description="A name or classroom alias is enough to connect each student’s work."
-      >
-        <Action onClick={() => go("/students")}>
-          Add students
-          <ArrowRight size={16} />
-        </Action>
-      </EmptyState>
+      <div className="student-review-space">
+        <ClassScanPanel assessment={a} />
+        <EmptyState
+          title="Or add students one at a time"
+          description="A name or classroom alias is enough to connect each student’s work — or just scan a stack above and let AI build the roster as it goes."
+        >
+          <Action onClick={() => go("/students")}>
+            Add students
+            <ArrowRight size={16} />
+          </Action>
+        </EmptyState>
+      </div>
     );
   return (
     <div className="student-review-space">
+      <ClassScanPanel assessment={a} />
       <div className="review-student-toolbar">
         <label>
           Student

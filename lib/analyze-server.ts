@@ -39,6 +39,9 @@ async function aiUnavailable(where: string, result: Response) {
 // and has no hardcoded fallback.
 const sitesModelSettings: Record<Mode, ModelSettings> = {
   responses: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
+  // One call grades a whole scanned stack, so it needs far more room than the
+  // single-student path; same cheap model, a little reasoning to split pages.
+  class_scan: { model: "gpt-5.6-luna", effort: "low", maxOutput: 12000 },
   answer_key: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
   roster: { model: "gpt-5.4-nano", effort: "minimal", maxOutput: 1500 },
   assignment: { model: "gpt-5.6-luna", effort: "low", maxOutput: 6000 },

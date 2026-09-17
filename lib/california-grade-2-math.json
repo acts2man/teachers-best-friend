@@ -1,0 +1,254 @@
+[
+  {
+    "officialCode": "2.OA.1",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Represent and solve problems involving addition and subtraction.",
+    "wording": "Use addition and subtraction within 100 to solve one- and two-step word problems involving situations of adding to, taking from, putting together, taking apart, and comparing, with unknowns in all positions, e.g., by using drawings and equations with a symbol for the unknown number to represent the problem.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.OA.2",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Add and subtract within 20.",
+    "wording": "Fluently add and subtract within 20 using mental strategies. By end of Grade 2, know from memory all sums of two one-digit numbers. (See standard 1.OA.6 for a list of mental strategies.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.OA.3",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Work with equal groups of objects to gain foundations for multiplication.",
+    "wording": "Determine whether a group of objects (up to 20) has an odd or even number of members, e.g., by pairing objects or counting them by 2s; write an equation to express an even number as a sum of two equal addends.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.OA.4",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Operations and Algebraic Thinking",
+    "cluster": "Work with equal groups of objects to gain foundations for multiplication.",
+    "wording": "Use addition to find the total number of objects arranged in rectangular arrays with up to 5 rows and up to 5 columns; write an equation to express the total as a sum of equal addends.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.1.a",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Understand place value.",
+    "wording": "Understand that the three digits of a three-digit number represent amounts of hundreds, tens, and ones; e.g., 706 equals 7 hundreds, 0 tens, and 6 ones. Understand the following as special cases: 100 can be thought of as a bundle of ten tens — called a “hundred.”",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.1.b",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Understand place value.",
+    "wording": "Understand that the three digits of a three-digit number represent amounts of hundreds, tens, and ones; e.g., 706 equals 7 hundreds, 0 tens, and 6 ones. Understand the following as special cases: The numbers 100, 200, 300, 400, 500, 600, 700, 800, 900 refer to one, two, three, four, five, six, seven, eight, or nine hundreds (and 0 tens and 0 ones).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.2",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Understand place value.",
+    "wording": "Count within 1000; skip-count by 2s, 5s, 10s, and 100s. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.3",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Understand place value.",
+    "wording": "Read and write numbers to 1000 using base-ten numerals, number names, and expanded form.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.4",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Understand place value.",
+    "wording": "Compare two three-digit numbers based on meanings of the hundreds, tens, and ones digits, using >, =, and < symbols to record the results of comparisons.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.5",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Fluently add and subtract within 100 using strategies based on place value, properties of operations, and/or the relationship between addition and subtraction.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.6",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Add up to four two-digit numbers using strategies based on place value and properties of operations.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.7",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Add and subtract within 1000, using concrete models or drawings and strategies based on place value, properties of operations, and/or the relationship between addition and subtraction; relate the strategy to a written method. Understand that in adding or subtracting three-digit numbers, one adds or subtracts hundreds and hundreds, tens and tens, ones and ones; and sometimes it is necessary to compose or decompose tens or hundreds.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.7.1",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Use estimation strategies to make reasonable estimates in problem solving. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.8",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Mentally add 10 or 100 to a given number 100–900, and mentally subtract 10 or 100 from a given number 100–900.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.NBT.9",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Number and Operations in Base Ten",
+    "cluster": "Use place value understanding and properties of operations to add and subtract.",
+    "wording": "Explain why addition and subtraction strategies work, using place value and the properties of operations. (Explanations may be supported by drawings or objects.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.1",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Measure and estimate lengths in standard units.",
+    "wording": "Measure the length of an object by selecting and using appropriate tools such as rulers, yardsticks, meter sticks, and measuring tapes.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.2",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Measure and estimate lengths in standard units.",
+    "wording": "Measure the length of an object twice, using length units of different lengths for the two measurements; describe how the two measurements relate to the size of the unit chosen.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.3",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Measure and estimate lengths in standard units.",
+    "wording": "Estimate lengths using units of inches, feet, centimeters, and meters.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.4",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Measure and estimate lengths in standard units.",
+    "wording": "Measure to determine how much longer one object is than another, expressing the length difference in terms of a standard length unit.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.5",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Relate addition and subtraction to length.",
+    "wording": "Use addition and subtraction within 100 to solve word problems involving lengths that are given in the same units, e.g., by using drawings (such as drawings of rulers) and equations with a symbol for the unknown number to represent the problem.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.6",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Relate addition and subtraction to length.",
+    "wording": "Represent whole numbers as lengths from 0 on a number line diagram with equally spaced points corresponding to the numbers 0, 1, 2, …, and represent whole-number sums and differences within 100 on a number line diagram.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.7",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Work with time and money.",
+    "wording": "Tell and write time from analog and digital clocks to the nearest five minutes, using a.m. and p.m. Know relationships of time (e.g., minutes in an hour, days in a month, weeks in a year). CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.8",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Work with time and money.",
+    "wording": "Solve word problems involving dollar bills, quarters, dimes, nickels, and pennies, using $ and ¢ symbols appropriately. Example: If you have 2 dimes and 3 pennies, how many cents do you have?",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.9",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Represent and interpret data.",
+    "wording": "Generate measurement data by measuring lengths of several objects to the nearest whole unit, or by making repeated measurements of the same object. Show the measurements by making a line plot, where the horizontal scale is marked off in whole-number units.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.MD.10",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Measurement and Data",
+    "cluster": "Represent and interpret data.",
+    "wording": "Draw a picture graph and a bar graph (with single-unit scale) to represent a data set with up to four categories. Solve simple put-together, take-apart, and compare problems using information presented in a bar graph.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.G.1",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Geometry",
+    "cluster": "Reason with shapes and their attributes.",
+    "wording": "Recognize and draw shapes having specified attributes, such as a given number of angles or a given number of equal faces. Identify triangles, quadrilaterals, pentagons, hexagons, and cubes. (Sizes are compared directly or visually, not compared by measuring.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.G.2",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Geometry",
+    "cluster": "Reason with shapes and their attributes.",
+    "wording": "Partition a rectangle into rows and columns of same-size squares and count to find the total number of them.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  },
+  {
+    "officialCode": "2.G.3",
+    "subject": "Math",
+    "grade": 2,
+    "domain": "Geometry",
+    "cluster": "Reason with shapes and their attributes.",
+    "wording": "Partition circles and rectangles into two, three, or four equal shares, describe the shares using the words halves, thirds, half of, a third of, etc., and describe the whole as two halves, three thirds, four fourths. Recognize that equal shares of identical wholes need not have the same shape.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/ccssmathstandardaug2013.pdf"
+  }
+]

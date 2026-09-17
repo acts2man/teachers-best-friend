@@ -1,5 +1,5 @@
 import {
-  owningTeacherId,
+  writingTeacherId,
   saveDocument,
   guardOrigin,
   apiError,
@@ -9,7 +9,7 @@ import {
 export async function POST(request: Request) {
   try {
     guardOrigin(request);
-    const ownerId = await owningTeacherId();
+    const ownerId = await writingTeacherId();
     if (Number(request.headers.get("content-length")) > 9 * 1024 * 1024)
       throw new HttpError(413, "Please choose a file smaller than 8 MB.");
     const form = await request.formData();

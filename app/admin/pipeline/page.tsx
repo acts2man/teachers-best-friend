@@ -9,6 +9,7 @@ const STAGE_GUIDE: { id: string; label: string; runs: string; often: string }[] 
   { id: "assignment", label: "Assignment read",        runs: "When a teacher uploads a worksheet. Reads the questions and matches each one to a standard.", often: "Once per assignment" },
   { id: "answer_key", label: "Answer key read",        runs: "When a teacher uploads or pastes the answer key for that worksheet.", often: "Once per assignment" },
   { id: "responses",  label: "Student worksheet scan", runs: "When a teacher scans a student's completed worksheet. Reads the answers and checks them against the key.", often: "Once per student, per assignment. This is where nearly all the volume is." },
+  { id: "class_scan", label: "Whole-class stack scan", runs: "When a teacher uploads a whole stack of scanned pages at once. Splits the stack by the name on each page and grades every student together.", often: "Once per stack, instead of once per student" },
   { id: "lesson",     label: "Lesson plan",            runs: "When a teacher asks for a reteaching lesson on a standard.", often: "Only when a teacher asks" },
   { id: "reteaching", label: "Reteaching material",    runs: "When students share a misconception and the reteaching library has nothing for it yet.", often: "Only on a library miss; falls toward zero as the library fills" },
   { id: "catalog",    label: "Standards lookup",       runs: "When a grade's official standards are loaded for the first time. The result is shared with every teacher.", often: "Once per state, grade, and subject, ever" },

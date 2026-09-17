@@ -162,8 +162,9 @@ export function ClassesView() {
         </label>
       </div>
       <p className="field-help">
-        Choose your state. California Grade 4 is built in; other states and
-        grades are retrieved with AI the first time you need them.
+        Choose your state. California Kindergarten through Grade 8 is built in;
+        other states and grades are retrieved with AI the first time you need
+        them.
       </p>
     </>
   );

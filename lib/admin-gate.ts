@@ -44,18 +44,35 @@ export async function requireAdmin(): Promise<AdminIdentity> {
 
 /**
  * Call at the top of any page or action that starts/manages
- * impersonation. Requires admin AND app-manager — the database function
- * re-checks is_app_manager() itself on every call, this is the redirect
+ * impersonation. Requires admin or app-manager on an active account — the database
+ * function re-checks can_impersonate() itself on every call, this is the redirect
  * for a nicer page-load experience.
  */
 export async function requireAppManager(): Promise<AdminIdentity> {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
-  const { data: ok, error } = await db.rpc("is_app_manager", {
+  const { data: ok, error } = await db.rpc("can_impersonate", {
     p_user: admin.id,
   });
   if (error || !ok) redirect("/admin");
   return admin;
+}
+
+/**
+ * The same gate as requireAppManager(), for API routes. Redirecting is the
+ * right answer for a page load and the wrong one for a fetch — the browser
+ * would follow it and hand the caller an HTML page where it expected JSON.
+ * Throws an HttpError that apiError() renders as a normal JSON failure.
+ */
+export async function requireAppManagerId(): Promise<string> {
+  const userId = await getSessionUserId();
+  if (!userId) throw new HttpError(401, "Sign in first.");
+  const { data: ok, error } = await supabaseAdmin().rpc("can_impersonate", {
+    p_user: userId,
+  });
+  if (error || !ok)
+    throw new HttpError(403, "Your account can’t view other accounts.");
+  return userId;
 }
 
 /**
@@ -67,7 +84,7 @@ export async function currentIsAppManager(): Promise<boolean> {
   try {
     const userId = await getSessionUserId();
     if (!userId) return false;
-    const { data, error } = await supabaseAdmin().rpc("is_app_manager", {
+    const { data, error } = await supabaseAdmin().rpc("can_impersonate", {
       p_user: userId,
     });
     return !error && Boolean(data);
