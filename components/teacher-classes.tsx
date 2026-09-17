@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { uprightPage } from "@/lib/image-prep";
 import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowRight,
@@ -356,7 +357,7 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
           continue;
         }
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", await uprightPage(file));
         const r = await fetch("/api/uploads", { method: "POST", body: form }),
           d = await r.json();
         if (!r.ok) throw new Error(d.error);

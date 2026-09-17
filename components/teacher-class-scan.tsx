@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ScanLine, LoaderCircle, Check, X, Users } from "lucide-react";
 import { analyzeRequest } from "@/lib/analyze-client";
+import { uprightPage } from "@/lib/image-prep";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { preparationGaps } from "@/lib/teacher-workflow";
@@ -54,7 +55,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
     const ids: string[] = [];
     try {
-      for (const file of files) {
+      for (const raw of files) {
+        // Straighten before upload: a sideways page is hard for the model to
+        // read and harder for the teacher to check.
+        const file = await uprightPage(raw);
         const form = new FormData();
         form.append("file", file);
         const r = await fetch("/api/uploads", { method: "POST", body: form });
