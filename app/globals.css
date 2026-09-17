@@ -674,3 +674,23 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .view-as-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89.0%);border-radius:11px;background:#fff}
 .view-as-row>div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .view-as-row strong{font-size:14px}
+
+/* Sidebar scrolls as one unit: no inner scroll region on the nav with pinned items below it. */
+.app-sidebar [data-slot=sidebar-inner]{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:hsl(calc(139deg + var(--th)) calc(15% * var(--ts)) 40%) transparent}
+.app-sidebar [data-slot=sidebar-inner]::-webkit-scrollbar{width:8px}
+.app-sidebar [data-slot=sidebar-inner]::-webkit-scrollbar-thumb{background:hsl(calc(139deg + var(--th)) calc(15% * var(--ts)) 38%);border-radius:8px}
+.app-sidebar [data-slot=sidebar-inner]::-webkit-scrollbar-track{background:transparent}
+.app-sidebar .brand-area,.app-sidebar .side-content,.app-sidebar .side-footer{flex:0 0 auto}
+.app-sidebar .side-content{overflow:visible}
+.app-sidebar .side-footer{margin-top:auto}
+/* Tightened so the full rail fits without scrolling on common screen heights. */
+.app-sidebar .brand-area{padding:22px 20px 14px}
+.app-sidebar .side-content{padding:0 14px;gap:4px}
+.app-sidebar .new-scan{margin:0 4px 14px;padding:11px 10px}
+.app-sidebar .nav-label{margin:0 12px 7px}
+.app-sidebar .library-label{margin-top:16px}
+.app-sidebar .nav-link{height:38px!important;padding:8px 12px!important}
+.app-sidebar .side-footer{padding:10px 18px 16px;gap:0}
+.app-sidebar .footer-link{padding:7px 5px}
+.app-sidebar .teacher-account{margin-top:10px;padding-top:12px}
+.app-sidebar .footer-legal{padding:8px 5px 0}
