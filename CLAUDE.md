@@ -1,5 +1,20 @@
 # Working agreements
 
+## Push means ship. Never leave finished work sitting on a branch
+
+When work is pushed to the working branch it is ready to go. Open the PR and
+merge it — do not ask, do not park it pending a decision, do not report it as
+"waiting on you" and stop. Netlify auto-publishes from `main`, so a merge is
+the deploy.
+
+Work that is tested and pushed but unmerged is the worst state to be in: it
+looks done in every internal signal and is invisible to the person actually
+using the app. That is how a correct fix sat unshipped for two days while a
+pilot teacher kept reporting it as broken.
+
+The only reason to hold a merge is a failing check or a merge conflict. Fix
+those, then merge.
+
 ## Never announce work that is not verifiably live
 
 Nothing is described as done, fixed, shipped, or ready — in Slack, to a pilot
