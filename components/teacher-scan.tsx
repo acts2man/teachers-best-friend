@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
+import { uprightPage } from "@/lib/image-prep";
 import {
   ArrowLeft,
   ArrowRight,
@@ -43,6 +44,9 @@ export function ScanView() {
   // leave the manual path open. A host with no plans reports no quota at all,
   // and must never be blocked by this.
   const outOfScans = Boolean(quota && !quota.canScan);
+  // Whether uploading a blank assessment reads it straight away. False only
+  // where reading is unavailable, and there the manual save stays.
+  const autoReads = mode === "assignment" && aiReady && !outOfScans;
   const [phase, setPhase] = useState(1),
     [source, setSource] = useState("upload");
   const [title, setTitle] = useState(""),
@@ -131,14 +135,21 @@ export function ScanView() {
     }
     setError("");
     setUploading(true);
+    const uploadedIds: string[] = [];
+    let failed = false;
     try {
-      for (const f of incoming) {
+      for (const raw of incoming) {
+        // A phone records its rotation in EXIF instead of rotating the pixels,
+        // so a page shot in portrait arrives sideways. Straighten it once here,
+        // before upload, so the stored file and everything downstream agree.
+        const f = await uprightPage(raw);
         const form = new FormData();
         form.append("file", f);
         const r = await fetch("/api/uploads", { method: "POST", body: form }),
           d = await r.json();
         if (!r.ok) throw new Error(d.error);
         setFiles((previous) => [...previous, d]);
+        uploadedIds.push(d.id);
         if (!title && mode === "assignment")
           setTitle(f.name.replace(/\.[^.]+$/, ""));
         // Without an AI connection, a typed PDF can still fill the questions
@@ -158,6 +169,7 @@ export function ScanView() {
         }
       }
     } catch (e) {
+      failed = true;
       setError(
         e instanceof Error ? e.message : "Upload failed. Please try again.",
       );
@@ -165,6 +177,14 @@ export function ScanView() {
       setUploading(false);
       if (input.current) input.current.value = "";
       if (camera.current) camera.current.value = "";
+    }
+    // Reading the assessment was a button, with a "save without reading"
+    // escape hatch beside it. A teacher who uploads a test always wants it
+    // read -- that is the entire point -- so it now happens on upload, with no
+    // click and no way to skip past it. The manual path stays only where
+    // reading is genuinely unavailable: no AI connection, or scans used up.
+    if (!failed && uploadedIds.length && autoReads) {
+      await analyze([...files.map((f) => f.id), ...uploadedIds]);
     }
   }
   function makeAssessment(
@@ -279,16 +299,22 @@ export function ScanView() {
       "/assessments?id=" + assessmentId + "&tab=responses&student=" + studentId,
     );
   }
-  async function analyze() {
+  /**
+   * `ids` lets the caller name the uploads to read. The auto-read fires from
+   * inside upload(), where the files it just stored are not in React state
+   * yet, so reading `files` there would analyse the previous batch.
+   */
+  async function analyze(ids?: string[]) {
     if (mode === "assignment" && !selected.length) return;
     if (mode === "responses" && (!chosen || !studentId || !prepared)) return;
+    const uploadIds = ids ?? files.map((f) => f.id);
     setAnalyzing(true);
     setError("");
     try {
       const d = await analyzeRequest({
         mode,
         text,
-        uploadIds: files.map((f) => f.id),
+        uploadIds,
         grade: mode === "responses" ? chosen!.grade : Number(grade),
         subject: mode === "responses" ? chosen!.subject : subject,
         framework: mode === "responses" ? chosen!.framework : framework,
@@ -320,10 +346,10 @@ export function ScanView() {
             ...chosen!.responses.filter((r) => r.studentId !== studentId),
             ...d.result.responses,
           ],
-          uploadIds: [...chosen!.uploadIds, ...files.map((f) => f.id)],
+          uploadIds: [...chosen!.uploadIds, ...uploadIds],
           studentUploadIds: {
             ...chosen!.studentUploadIds,
-            [studentId]: files.map((f) => f.id),
+            [studentId]: uploadIds,
           },
         };
         if (
@@ -842,19 +868,16 @@ export function ScanView() {
                 Review every suggestion before it becomes student evidence.
               </span>
               <div>
-                {mode === "assignment" && (
+                {mode === "assignment" && !autoReads && (
                   <Action
-                    variant={aiReady && !outOfScans ? "secondary" : ""}
                     disabled={busy || uploading || analyzing || !contentReady}
                     onClick={saveManual}
                   >
-                    {aiReady && !outOfScans
-                      ? "Save without reading"
-                      : "Save assessment"}
+                    Save assessment
                     <ArrowRight size={17} />
                   </Action>
                 )}
-                {aiReady && (
+                {aiReady && !(autoReads && !contentReady) && (
                   <Action
                     disabled={
                       busy ||
@@ -864,7 +887,7 @@ export function ScanView() {
                       !contentReady ||
                       (mode === "responses" && (!prepared || !studentId))
                     }
-                    onClick={analyze}
+                    onClick={() => analyze()}
                   >
                     {analyzing ? (
                       <LoaderCircle size={17} className="spin" />
@@ -875,7 +898,9 @@ export function ScanView() {
                       ? "Reading the work…"
                       : mode === "responses"
                         ? "Check student work"
-                        : "Read the assessment"}
+                        : autoReads
+                          ? "Read it again"
+                          : "Read the assessment"}
                   </Action>
                 )}
                 {!aiReady && mode === "responses" && (

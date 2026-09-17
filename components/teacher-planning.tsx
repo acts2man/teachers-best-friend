@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { uprightPage } from "@/lib/image-prep";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
@@ -1662,7 +1663,7 @@ export function ResourcesView() {
     setUploading(true);
     try {
       const form = new FormData();
-      form.append("file", f);
+      form.append("file", await uprightPage(f));
       const r = await fetch("/api/uploads", { method: "POST", body: form }),
         d = await r.json();
       if (!r.ok) throw new Error(d.error);
