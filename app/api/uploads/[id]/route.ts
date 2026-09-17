@@ -1,5 +1,6 @@
 import {
   owningTeacherId,
+  writingTeacherId,
   readDocument,
   deleteDocument,
   guardOrigin,
@@ -36,7 +37,7 @@ export async function DELETE(
 ) {
   try {
     guardOrigin(request);
-    const ownerId = await owningTeacherId();
+    const ownerId = await writingTeacherId();
     const { id } = await params;
     if (!(await deleteDocument(ownerId, id)))
       throw new HttpError(404, "Document not found.");

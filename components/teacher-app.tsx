@@ -272,6 +272,18 @@ export default function TeacherApp({ view }: { view: string }) {
       toast.error("Wait for your classroom to load before saving.");
       return false;
     }
+    // Viewing another teacher's account is read-only. The server refuses these
+    // writes anyway (writingTeacherId in lib/teacher-server.ts); stopping here
+    // turns a 403 into a plain explanation, and keeps the refusal identical
+    // across all of the save() call sites without touching any of them.
+    if (impersonating) {
+      toast.error(
+        "You’re viewing " +
+          impersonating.teacherEmail +
+          "’s account, so changes are turned off. Stop viewing to make changes of your own.",
+      );
+      return false;
+    }
     if (lock.current) return false;
     lock.current = true;
     setBusy(true);
@@ -404,8 +416,8 @@ export default function TeacherApp({ view }: { view: string }) {
           <ShieldCheck size={16} />
           <span>
             Viewing <strong>{impersonating.teacherEmail}</strong>’s
-            workspace as an app manager. Anything you do here happens on
-            their account.
+            workspace as an app manager. This is read-only — saving,
+            uploading and scanning are turned off until you stop viewing.
           </span>
           <button type="button" onClick={stopViewing} disabled={leaving}>
             {leaving ? "Leaving…" : "Stop viewing"}

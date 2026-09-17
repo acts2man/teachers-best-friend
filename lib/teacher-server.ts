@@ -122,6 +122,33 @@ export async function owningTeacherId() {
   return (await resolveOwningTeacher()).id;
 }
 
+/**
+ * The teacher id a WRITE may act on. Viewing another teacher's account is
+ * strictly read-only, so this refuses outright while a "view as" session is
+ * in play; reads keep using owningTeacherId().
+ *
+ * It tests for the cookie's PRESENCE, not for whether the session still
+ * resolves, and that distinction is the whole point. A session expires after
+ * 30 minutes. If it lapses while an app manager is mid-view, the browser is
+ * still holding the teacher's classroom in memory, but resolveOwningTeacher()
+ * has quietly fallen back to the manager's own id — so the next save would
+ * write the teacher's students, evidence and assessments into the manager's
+ * own account, and sync_workspace would then delete whatever the manager
+ * actually owned. Refusing on the cookie means only an explicit "stop
+ * viewing" (which clears it) can re-enable writing.
+ */
+export async function writingTeacherId() {
+  if (hasSupabaseConfig()) {
+    const cookieStore = await cookies();
+    if (cookieStore.get(IMPERSONATION_COOKIE)?.value)
+      throw new HttpError(
+        403,
+        "You’re viewing another teacher’s account, so changes are turned off. Stop viewing to make changes of your own.",
+      );
+  }
+  return (await resolveOwningTeacher()).id;
+}
+
 export class HttpError extends Error {
   constructor(
     public status: number,
