@@ -37,6 +37,7 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { assessmentInClass } from "@/lib/teacher-classes";
 import { frameworkOptions } from "@/lib/states";
 import type { Workspace } from "@/lib/teacher-types";
+import { ViewAsPicker } from "./teacher-view-as";
 import { TeacherContext } from "./teacher-context";
 import { Pick, Action, Modal, Pill } from "./teacher-shared";
 import HomeView from "./teacher-home";
@@ -121,6 +122,7 @@ export default function TeacherApp({ view }: { view: string }) {
     () => workspaceSnapshot?.authProvider ?? "chatgpt",
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canViewAs, setCanViewAs] = useState(false);
   const [impersonating, setImpersonating] = useState<{
     teacherEmail: string;
   } | null>(() => workspaceSnapshot?.impersonating ?? null);
@@ -225,10 +227,18 @@ export default function TeacherApp({ view }: { view: string }) {
         if (!auth.user) return;
         const { data } = await supabase
           .from("profiles")
-          .select("is_admin")
+          .select("is_admin, is_app_manager")
           .eq("id", auth.user.id)
           .maybeSingle();
-        if (!cancelled) setIsAdmin(Boolean(data?.is_admin));
+        if (!cancelled) {
+          setIsAdmin(Boolean(data?.is_admin));
+          // Mirrors can_impersonate() in the database, which is the real gate
+          // on every impersonation call. This only decides whether the
+          // sidebar control is rendered.
+          setCanViewAs(
+            Boolean(data?.is_admin) || Boolean(data?.is_app_manager),
+          );
+        }
       } catch {
         // Not signed in or Supabase is not configured: no admin link.
       }
@@ -510,6 +520,7 @@ export default function TeacherApp({ view }: { view: string }) {
                 Admin
               </Link>
             )}
+            {canViewAs && !impersonating && <ViewAsPicker />}
             {authProvider === "supabase" && (
               <form action="/auth/signout" method="post">
                 <button className="footer-link" type="submit">

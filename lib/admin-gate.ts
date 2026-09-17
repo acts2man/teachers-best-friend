@@ -59,6 +59,23 @@ export async function requireAppManager(): Promise<AdminIdentity> {
 }
 
 /**
+ * The same gate as requireAppManager(), for API routes. Redirecting is the
+ * right answer for a page load and the wrong one for a fetch — the browser
+ * would follow it and hand the caller an HTML page where it expected JSON.
+ * Throws an HttpError that apiError() renders as a normal JSON failure.
+ */
+export async function requireAppManagerId(): Promise<string> {
+  const userId = await getSessionUserId();
+  if (!userId) throw new HttpError(401, "Sign in first.");
+  const { data: ok, error } = await supabaseAdmin().rpc("can_impersonate", {
+    p_user: userId,
+  });
+  if (error || !ok)
+    throw new HttpError(403, "Your account can’t view other accounts.");
+  return userId;
+}
+
+/**
  * Non-redirecting check for conditionally showing app-manager-only UI
  * (the "View this account" button). The real gate is requireAppManager()
  * inside the server action itself — this is display-only.
