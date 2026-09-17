@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
-function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const module={exports:{}};new Function("module","exports",result.outputFiles[0].text)(module,module.exports);return module.exports}
+function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const shim={exports:{}};new Function("module","exports",result.outputFiles[0].text)(shim,shim.exports);return shim.exports}
 const {matchRosterStudent,resolveScannedGroups,applyScannedGroups}=bundle("lib/teacher-class-scan.ts");
 
 function assessment(){
