@@ -1,0 +1,416 @@
+[
+  {
+    "officialCode": "RL.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Ask and answer questions about key details in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Retell stories, including key details, and demonstrate understanding of their central message or lesson.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Describe characters, settings, and major events in a story, using key details.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Identify words and phrases in stories or poems that suggest feelings or appeal to the senses. (See grade 1 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.5",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Explain major differences between books that tell stories and books that give information, drawing on a wide reading of a range of text types.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.6",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Identify who is telling the story at various points in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.7",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Use illustrations and details in a story to describe its characters, setting, or events.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.8",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "(Not applicable to literature)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.9",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Compare and contrast the adventures and experiences of characters in stories.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.1.10",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Literature",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "With prompting and support, read prose and poetry of appropriate complexity for grade 1. a. Activate prior knowledge related to the information and events in a text. CA b. Confirm predictions about what will happen next in a text. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Ask and answer questions about key details in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Identify the main topic and retell key details of a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Describe the connection between two individuals, events, ideas, or pieces of information in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Ask and answer questions to help determine or clarify the meaning of words and phrases in a text. (See grade 1 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.5",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Know and use various text structures (e.g., sequence) and text features (e.g., headings, tables of contents, glossaries, electronic menus, icons) to locate key facts or information in a text. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.6",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Distinguish between information provided by pictures or other illustrations and information provided by the words in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.7",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Use the illustrations and details in a text to describe its key ideas.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.8",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Identify the reasons an author gives to support points in a text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.9",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Identify basic similarities in and differences between two texts on the same topic (e.g., in illustrations, descriptions, or procedures).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.1.10",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Informational Text",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "With prompting and support, read informational texts appropriately complex for grade 1. a. Activate prior knowledge related to the information and events in a text. CA b. Confirm predictions about what will happen next in a text. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RF.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Print Concepts",
+    "wording": "Demonstrate understanding of the organization and basic features of print. a. Recognize the distinguishing features of a sentence (e.g., first word, capitalization, ending punctuation).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RF.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Phonological Awareness",
+    "wording": "Demonstrate understanding of spoken words, syllables, and sounds (phonemes). a. Distinguish long from short vowel sounds in spoken single-syllable words. b. Orally produce single-syllable words by blending sounds (phonemes), including consonant blends. c. Isolate and pronounce initial, medial vowel, and final sounds (phonemes) in spoken single-syllable words. d. Segment spoken single-syllable words into their complete sequence of individual sounds (phonemes).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RF.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Phonics and Word Recognition",
+    "wording": "Know and apply grade-level phonics and word analysis skills in decoding words both in isolation and in text. CA a. Know the spelling-sound correspondences for common consonant digraphs. b. Decode regularly spelled one-syllable words. c. Know final -e and common vowel team conventions for representing long vowel sounds. d. Use knowledge that every syllable must have a vowel sound to determine the number of syllables in a printed word. e. Decode two-syllable words following basic patterns by breaking the words into syllables. f. Read words with inflectional endings. g. Recognize and read grade-appropriate irregularly spelled words.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RF.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Reading: Foundational Skills",
+    "cluster": "Fluency",
+    "wording": "Read with sufficient accuracy and fluency to support comprehension. a. Read on-level text with purpose and understanding. b. Read on-level text orally with accuracy, appropriate rate, and expression on successive readings. c. Use context to confirm or self-correct word recognition and understanding, rereading as necessary.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write opinion pieces in which they introduce the topic or name the book they are writing about, state an opinion, supply a reason for the opinion, and provide some sense of closure.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write informative/explanatory texts in which they name a topic, supply some facts about the topic, and provide some sense of closure.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write narratives in which they recount two or more appropriately sequenced events, include some details regarding what happened, use temporal words to signal event order, and provide some sense of closure.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "(Begins in grade 2) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.5",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "With guidance and support from adults, focus on a topic, respond to questions and suggestions from peers, and add details to strengthen writing as needed.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.6",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "With guidance and support from adults, use a variety of digital tools to produce and publish writing, including in collaboration with peers.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.7",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Participate in shared research and writing projects (e.g., explore a number of \"how-to\" books on a given topic and use them to write a sequence of instructions).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.8",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "With guidance and support from adults, recall information from experiences or gather information from provided sources to answer a question.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.9",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "(Begins in grade 4)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.1.10",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Writing",
+    "cluster": "Range of Writing",
+    "wording": "(Begins in grade 2) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Participate in collaborative conversations with diverse partners about grade 1 topics and texts with peers and adults in small and larger groups. a. Follow agreed-upon rules for discussions (e.g., listening to others with care, speaking one at a time about the topics and texts under discussion). b. Build on others' talk in conversations by responding to the comments of others through multiple exchanges. c. Ask questions to clear up any confusion about the topics and texts under discussion.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Ask and answer questions about key details in a text read aloud or information presented orally or through other media. a. Give, restate, and follow simple two-step directions. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Ask and answer questions about what a speaker says in order to gather additional information or clarify something that is not understood.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Describe people, places, things, and events with relevant details, expressing ideas and feelings clearly. a. Memorize and recite poems, rhymes, and songs with expression. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.5",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Add drawings or other visual displays to descriptions when appropriate to clarify ideas, thoughts, and feelings.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.1.6",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Produce complete sentences when appropriate to task and situation.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.1",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English grammar and usage when writing or speaking. a. Print all upper- and lowercase letters. b. Use common, proper, and possessive nouns. c. Use singular and plural nouns with matching verbs in basic sentences (e.g., He hops; We hop). d. Use personal (subject, object), possessive, and indefinite pronouns (e.g., I, me, my; they, them, their; anyone, everything). CA e. Use verbs to convey a sense of past, present, and future (e.g., Yesterday I walked home; Today I walk home; Tomorrow I will walk home). f. Use frequently occurring adjectives. g. Use frequently occurring conjunctions (e.g., and, but, or, so, because). h. Use determiners (e.g., articles, demonstratives). i. Use frequently occurring prepositions (e.g., during, beyond, toward). j. Produce and expand complete simple and compound declarative, interrogative, imperative, and exclamatory sentences in response to prompts.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.2",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English capitalization, punctuation, and spelling when writing. a. Capitalize dates and names of people. b. Use end punctuation for sentences. c. Use commas in dates and to separate single words in a series. d. Use conventional spelling for words with common spelling patterns and for frequently occurring irregular words. e. Spell untaught words phonetically, drawing on phonemic awareness and spelling conventions.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.3",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Knowledge of Language",
+    "wording": "(Begins in grade 2)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.4",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Determine or clarify the meaning of unknown and multiple-meaning words and phrases based on grade 1 reading and content, choosing flexibly from an array of strategies. a. Use sentence-level context as a clue to the meaning of a word or phrase. b. Use frequently occurring affixes as a clue to the meaning of a word. c. Identify frequently occurring root words (e.g., look) and their inflectional forms (e.g., looks, looked, looking).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.5",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "With guidance and support from adults, demonstrate understanding of word relationships and nuances in word meanings. a. Sort words into categories (e.g., colors, clothing) to gain a sense of the concepts the categories represent. b. Define words by category and by one or more key attributes (e.g., a duck is a bird that swims; a tiger is a large cat with stripes). c. Identify real-life connections between words and their use (e.g., note places at home that are cozy). d. Distinguish shades of meaning among verbs differing in manner (e.g., look, peek, glance, stare, glare, scowl) and adjectives differing in intensity (e.g., large, gigantic) by defining or choosing them or by acting out the meanings.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.1.6",
+    "subject": "ELA",
+    "grade": 1,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Use words and phrases acquired through conversations, reading and being read to, and responding to texts, including using frequently occurring conjunctions to signal simple relationships (e.g., because).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  }
+]
