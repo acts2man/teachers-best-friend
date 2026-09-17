@@ -8,6 +8,14 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const all = await getAccounts();
 
+  // One timestamp for the whole request, so every row in the "Inactive 30d"
+  // filter is measured against the same instant rather than against whenever
+  // React happened to evaluate that row. This is a per-request server
+  // component (the admin layout sets dynamic = "force-dynamic"), so reading
+  // the clock here is correct; the purity rule is aimed at client renders,
+  // which must be replayable.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   let rows = all;
   const q = (sp.q ?? "").toLowerCase();
   if (q) rows = rows.filter((a) => [a.email, a.full_name, a.school_name, a.district].some((v) => v?.toLowerCase().includes(q)));
@@ -17,7 +25,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
     case "at_quota":   rows = rows.filter((a) => a.scan_quota > 0 && a.scans_this_period >= a.scan_quota); break;
     case "suspended":  rows = rows.filter((a) => a.status !== "active"); break;
     case "admins":     rows = rows.filter((a) => a.is_admin); break;
-    case "inactive":   rows = rows.filter((a) => !a.last_seen_at || Date.now() - new Date(a.last_seen_at).getTime() > 30 * 86400e3); break;
+    case "inactive":   rows = rows.filter((a) => !a.last_seen_at || now - new Date(a.last_seen_at).getTime() > 30 * 86400e3); break;
   }
   const sortKey = (sp.sort ?? "last_seen") as keyof AdminAccount | "last_seen";
   rows = [...rows].sort((a, b) => {

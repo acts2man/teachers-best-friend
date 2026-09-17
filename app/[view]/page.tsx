@@ -16,6 +16,7 @@ const views = [
   "resources",
   "settings",
   "guide",
+  "support",
 ];
 
 export const dynamic = "force-static";

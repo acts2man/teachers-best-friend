@@ -1,0 +1,380 @@
+[
+  {
+    "officialCode": "RL.8.1",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Cite the textual evidence that most strongly supports an analysis of what the text says explicitly as well as inferences drawn from the text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.2",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Determine a theme or central idea of a text and analyze its development over the course of the text, including its relationship to the characters, setting, and plot; provide an objective summary of the text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.3",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Key Ideas and Details",
+    "wording": "Analyze how particular lines of dialogue or incidents in a story or drama propel the action, reveal aspects of a character, or provoke a decision.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.4",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Determine the meaning of words and phrases as they are used in a text, including figurative and connotative meanings; analyze the impact of specific word choices on meaning and tone, including analogies or allusions to other texts. (See grade 8 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.5",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Compare and contrast the structure of two or more texts and analyze how the differing structure of each text contributes to its meaning and style.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.6",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Craft and Structure",
+    "wording": "Analyze how differences in the points of view of the characters and the audience or reader (e.g., created through the use of dramatic irony) create such effects as suspense or humor.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.7",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Analyze the extent to which a filmed or live production of a story or drama stays faithful to or departs from the text or script, evaluating the choices made by the director or actors.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.8",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "(Not applicable to literature)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.9",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Analyze how a modern work of fiction draws on themes, patterns of events, or character types from myths, traditional stories, or religious works such as the Bible, including describing how the material is rendered new.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RL.8.10",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Literature",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "By the end of the year, read and comprehend literature, including stories, dramas, and poems, at the high end of grades 6–8 text complexity band independently and proficiently.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.1",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Cite the textual evidence that most strongly supports an analysis of what the text says explicitly as well as inferences drawn from the text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.2",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Determine a central idea of a text and analyze its development over the course of the text, including its relationship to supporting ideas; provide an objective summary of the text.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.3",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Key Ideas and Details",
+    "wording": "Analyze how a text makes connections among and distinctions between individuals, ideas, or events (e.g., through comparisons, analogies, or categories).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.4",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Determine the meaning of words and phrases as they are used in a text, including figurative, connotative, and technical meanings; analyze the impact of specific word choices on meaning and tone, including analogies or allusions to other texts. (See grade 8 Language standards 4–6 for additional expectations.) CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.5",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Analyze in detail the structure of a specific paragraph in a text, including the role of particular sentences in developing and refining a key concept. a. Analyze the use of text features (e.g., graphics, headers, captions) in consumer materials. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.6",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Craft and Structure",
+    "wording": "Determine an author's point of view or purpose in a text and analyze how the author acknowledges and responds to conflicting evidence or viewpoints.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.7",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Evaluate the advantages and disadvantages of using different mediums (e.g., print or digital text, video, multimedia) to present a particular topic or idea.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.8",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Delineate and evaluate the argument and specific claims in a text, assessing whether the reasoning is sound and the evidence is relevant and sufficient; recognize when irrelevant evidence is introduced.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.9",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Integration of Knowledge and Ideas",
+    "wording": "Analyze a case in which two or more texts provide conflicting information on the same topic and identify where the texts disagree on matters of fact or interpretation.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "RI.8.10",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Reading: Informational Text",
+    "cluster": "Range of Reading and Level of Text Complexity",
+    "wording": "By the end of the year, read and comprehend literary nonfiction at the high end of the grades 6–8 text complexity band independently and proficiently.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.1",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write arguments to support claims with clear reasons and relevant evidence. a. Introduce claim(s), acknowledge and distinguish the claim(s) from alternate or opposing claims, and organize the reasons and evidence logically. b. Support claim(s) with logical reasoning and relevant evidence, using accurate, credible sources and demonstrating an understanding of the topic or text. c. Use words, phrases, and clauses to create cohesion and clarify the relationships among claim(s), counterclaims, reasons, and evidence. d. Establish and maintain a formal style. e. Provide a concluding statement or section that follows from and supports the argument presented.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.2",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write informative/explanatory texts, including career development documents (e.g., simple business letters and job applications), to examine a topic and convey ideas, concepts, and information through the selection, organization, and analysis of relevant content. CA a. Introduce a topic or thesis statement clearly, previewing what is to follow; organize ideas, concepts, and information into broader categories; include formatting (e.g., headings), graphics (e.g., charts, tables), and multimedia when useful to aiding comprehension. CA b. Develop the topic with relevant, well-chosen facts, definitions, concrete details, quotations, or other information and examples. c. Use appropriate and varied transitions to create cohesion and clarify the relationships among ideas and concepts. d. Use precise language and domain-specific vocabulary to inform about or explain the topic. e. Establish and maintain a formal style. f. Provide a concluding statement or section that follows from and supports the information or explanation presented.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.3",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Text Types and Purposes",
+    "wording": "Write narratives to develop real or imagined experiences or events using effective technique, relevant descriptive details, and well-structured event sequences. a. Engage and orient the reader by establishing a context and point of view and introducing a narrator and/or characters; organize an event sequence that unfolds naturally and logically. b. Use narrative techniques, such as dialogue, pacing, description, and reflection, to develop experiences, events, and/or characters. c. Use a variety of transition words, phrases, and clauses to convey sequence, signal shifts from one time frame or setting to another, and show the relationships among experiences and events. d. Use precise words and phrases, relevant descriptive details, and sensory language to capture the action and convey experiences and events. e. Provide a conclusion that follows from and reflects on the narrated experiences or events.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.4",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "Produce clear and coherent writing in which the development, organization, and style are appropriate to task, purpose, and audience. (Grade-specific expectations for writing types are defined in standards 1–3 above.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.5",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "With some guidance and support from peers and adults, develop and strengthen writing as needed by planning, revising, editing, rewriting, or trying a new approach, focusing on how well purpose and audience have been addressed. (Editing for conventions should demonstrate command of Language standards 1–3 up to and including grade 8.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.6",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Production and Distribution of Writing",
+    "wording": "Use technology, including the Internet, to produce and publish writing and present the relationships between information and ideas efficiently as well as to interact and collaborate with others.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.7",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Conduct short research projects to answer a question (including a self-generated question), drawing on several sources and generating additional related, focused questions that allow for multiple avenues of exploration.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.8",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Gather relevant information from multiple print and digital sources, using search terms effectively; assess the credibility and accuracy of each source; and quote or paraphrase the data and conclusions of others while avoiding plagiarism and following a standard format for citation.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.9",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Research to Build and Present Knowledge",
+    "wording": "Draw evidence from literary or informational texts to support analysis, reflection, and research. a. Apply grade 8 Reading standards to literature (e.g., \"Analyze how a modern work of fiction draws on themes, patterns of events, or character types from myths, traditional stories, or religious works such as the Bible, including describing how the material is rendered new\"). b. Apply grade 8 Reading standards to literary nonfiction (e.g., \"Delineate and evaluate the argument and specific claims in a text, assessing whether the reasoning is sound and the evidence is relevant and sufficient; recognize when irrelevant evidence is introduced\").",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "W.8.10",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Writing",
+    "cluster": "Range of Writing",
+    "wording": "Write routinely over extended time frames (time for research, reflection, and revision) and shorter time frames (a single sitting or a day or two) for a range of discipline-specific tasks, purposes, and audiences.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.1",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Engage effectively in a range of collaborative discussions (one-on-one, in groups, and teacher-led) with diverse partners on grade 8 topics, texts, and issues, building on others' ideas and expressing their own clearly. a. Come to discussions prepared, having read or researched material under study; explicitly draw on that preparation by referring to evidence on the topic, text, or issue to probe and reflect on ideas under discussion. b. Follow rules for collegial discussions and decision-making, track progress toward specific goals and deadlines, and define individual roles as needed. c. Pose questions that connect the ideas of several speakers and respond to others' questions and comments with relevant evidence, observations, and ideas. d. Acknowledge new information expressed by others, and, when warranted, qualify or justify their own views in light of the evidence presented.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.2",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Analyze the purpose of information presented in diverse media and formats (e.g., visually, quantitatively, orally) and evaluate the motives (e.g., social, commercial, political) behind its presentation.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.3",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Comprehension and Collaboration",
+    "wording": "Delineate a speaker's argument and specific claims, evaluating the soundness of the reasoning and relevance and sufficiency of the evidence and identifying when irrelevant evidence is introduced.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.4",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Present claims and findings (e.g., argument, narrative, response to literature presentations), emphasizing salient points in a focused, coherent manner with relevant evidence, sound valid reasoning, and well-chosen details; use appropriate eye contact, adequate volume, and clear pronunciation. CA a. Plan and present a narrative that: establishes a context and point of view, presents a logical sequence, uses narrative techniques (e.g., dialogue, pacing, description, sensory language), uses a variety of transitions, and provides a conclusion that reflects the experience. CA",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.5",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Integrate multimedia and visual displays into presentations to clarify information, strengthen claims and evidence, and add interest.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "SL.8.6",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Speaking and Listening",
+    "cluster": "Presentation of Knowledge and Ideas",
+    "wording": "Adapt speech to a variety of contexts and tasks, demonstrating command of formal English when indicated or appropriate. (See grade 8 Language standards 1 and 3 for specific expectations.)",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.1",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English grammar and usage when writing or speaking. a. Explain the function of verbals (gerunds, participles, infinitives) in general and their function in particular sentences. b. Form and use verbs in the active and passive voice. c. Form and use verbs in the indicative, imperative, interrogative, conditional, and subjunctive mood. d. Recognize and correct inappropriate shifts in verb voice and mood.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.2",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Conventions of Standard English",
+    "wording": "Demonstrate command of the conventions of standard English capitalization, punctuation, and spelling when writing. a. Use punctuation (comma, ellipsis, dash) to indicate a pause or break. b. Use an ellipsis to indicate an omission. c. Spell correctly.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.3",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Knowledge of Language",
+    "wording": "Use knowledge of language and its conventions when writing, speaking, reading, or listening. a. Use verbs in the active and passive voice and in the conditional and subjunctive mood to achieve particular effects (e.g., emphasizing the actor or the action; expressing uncertainty or describing a state contrary to fact).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.4",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Determine or clarify the meaning of unknown and multiple-meaning words or phrases based on grade 8 reading and content, choosing flexibly from a range of strategies. a. Use context (e.g., the overall meaning of a sentence or paragraph; a word's position or function in a sentence) as a clue to the meaning of a word or phrase. b. Use common, grade-appropriate Greek or Latin affixes and roots as clues to the meaning of a word (e.g., precede, recede, secede). c. Consult general and specialized reference materials (e.g., dictionaries, glossaries, thesauruses), both print and digital, to find the pronunciation of a word or determine or clarify its precise meaning or its part of speech or trace the etymology of words. CA d. Verify the preliminary determination of the meaning of a word or phrase (e.g., by checking the inferred meaning in context or in a dictionary).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.5",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Demonstrate understanding of figurative language, word relationships, and nuances in word meanings. a. Interpret figures of speech (e.g. verbal irony, puns) in context. b. Use the relationship between particular words to better understand each of the words. c. Distinguish among the connotations (associations) of words with similar denotations (definitions) (e.g., bullheaded, willful, firm, persistent, resolute).",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  },
+  {
+    "officialCode": "L.8.6",
+    "subject": "ELA",
+    "grade": 8,
+    "domain": "Language",
+    "cluster": "Vocabulary Acquisition and Use",
+    "wording": "Acquire and use accurately grade-appropriate general academic and domain-specific words and phrases; gather vocabulary knowledge when considering a word or phrase important to comprehension or expression.",
+    "source": "https://www.cde.ca.gov/be/st/ss/documents/finalelaccssstandards.pdf"
+  }
+]

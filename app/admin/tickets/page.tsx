@@ -1,7 +1,15 @@
 import Link from "next/link";
-import { getTickets, supabaseAdmin } from "@/lib/supabase-admin";
-import { replyTicket } from "@/app/admin/actions";
+import { getTickets, supabaseAdmin, type SupportMessage } from "@/lib/supabase-admin";
+import { replyTicket, setTicketPriority } from "@/app/admin/actions";
 import { fmtRel, fmtDate } from "@/components/admin/format";
+
+function planPill(planId: string | null, planName: string | null, priceCents: number | null) {
+  if (planId === "beta") return <span className="pill pill-ok">Beta</span>;
+  if (priceCents && priceCents > 0) return <span className="pill pill-ok">{planName ?? planId}</span>;
+  // Shouldn't happen — ticket creation is gated to paying/beta plans — but
+  // flag it plainly if a downgrade happened after the ticket was opened.
+  return <span className="pill pill-warn">{planName ?? "Free"} (downgraded?)</span>;
+}
 
 export default async function TicketsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
@@ -11,8 +19,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
   const ids = tickets.slice(0, 40).map((t) => t.id);
   const { data: msgs } = ids.length
     ? await supabaseAdmin().from("support_messages").select("ticket_id, author, body, created_at").in("ticket_id", ids).order("created_at")
-    : { data: [] as any[] };
-  const byTicket = new Map<string, any[]>();
+    : { data: [] as SupportMessage[] };
+  const byTicket = new Map<string, SupportMessage[]>();
   (msgs ?? []).forEach((m) => byTicket.set(m.ticket_id, [...(byTicket.get(m.ticket_id) ?? []), m]));
 
   const deflected = tickets.filter((t) => t.deflected).length;
@@ -38,11 +46,25 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                 <span className="mono muted">{t.ticket_ref}</span>{" "}
                 <strong>{t.subject}</strong>
                 <div className="muted" style={{ fontSize: ".8rem" }}>
-                  <Link href={`/admin/accounts/${t.teacher_id}`}>{t.teacher_email}</Link> · {fmtRel(t.created_at)}{t.category ? ` · ${t.category}` : ""}
+                  <Link href={`/admin/accounts/${t.teacher_id}`}>{t.teacher_email}</Link> · {planPill(t.plan_id, t.plan_name, t.plan_price_cents)} · {fmtRel(t.created_at)}{t.category ? ` · ${t.category}` : ""}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: ".4rem" }}>
-                <span className={`pill ${t.priority === "urgent" ? "pill-bad" : t.priority === "high" ? "pill-warn" : "pill-mute"}`}>{t.priority}</span>
+              <div style={{ display: "flex", gap: ".4rem", alignItems: "center", flexWrap: "wrap" }}>
+                <form action={setTicketPriority} style={{ display: "inline-flex" }}>
+                  <input type="hidden" name="ticket_id" value={t.id} />
+                  <select
+                    name="priority"
+                    defaultValue={t.priority}
+                    aria-label={`Priority for ${t.ticket_ref}`}
+                    className={`pill-select ${t.priority === "urgent" ? "pill-bad" : t.priority === "high" ? "pill-warn" : "pill-mute"}`}
+                    onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                  >
+                    <option value="low">low</option>
+                    <option value="normal">normal</option>
+                    <option value="high">high</option>
+                    <option value="urgent">urgent</option>
+                  </select>
+                </form>
                 <span className={`pill ${t.status === "escalated" ? "pill-bad" : t.status === "open" ? "pill-warn" : "pill-ok"}`}>{t.status}</span>
                 {t.deflected && <span className="pill pill-ok">AI {t.ai_confidence != null ? `${Math.round(Number(t.ai_confidence) * 100)}%` : ""}</span>}
               </div>

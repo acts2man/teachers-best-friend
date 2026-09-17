@@ -75,7 +75,7 @@ sees on a page, and the image is deleted automatically on a schedule rather than
 ## Where your work is stored
 
 Uploaded images go to private storage that only your account can reach. They are
-**deleted automatically [RETENTION WINDOW] after upload.**
+**deleted automatically 30 days after upload.**
 
 The results — the extracted answers, the scores, the mastery records — stay as long as
 your account is active, because that's the part you actually need. The photograph is

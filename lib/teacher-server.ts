@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { Workspace } from "@/lib/teacher-types";
@@ -71,6 +71,57 @@ export function authProvider() {
   return hasSupabaseConfig() ? "supabase" : "chatgpt";
 }
 
+// Cookie name shared with app/admin/actions.ts (startImpersonation /
+// stopImpersonation) and app/api/impersonation/route.ts (the "who am I
+// viewing" check the teacher app banner reads).
+export const IMPERSONATION_COOKIE = "tbf_impersonate";
+
+export type OwningIdentity = {
+  id: string;
+  impersonating: boolean;
+  realId: string;
+};
+
+/**
+ * The teacher id a request should act on. Almost always the signed-in
+ * user's own id (owner()); when an app manager has an active "view as"
+ * session running (see startImpersonation in lib/impersonation-actions.ts),
+ * resolves to the teacher being viewed instead.
+ *
+ * Only the teacher-facing routes (workspace/scan/uploads/quota) use this
+ * (via owningTeacherId(), below). Admin pages and server actions call
+ * owner() directly and are never impersonation-aware — /admin access
+ * always reflects who is really signed in, so an app manager viewing a
+ * non-admin teacher's workspace never loses their own admin access, and
+ * impersonating an account never grants that account's admin status
+ * either way.
+ */
+export async function resolveOwningTeacher(): Promise<OwningIdentity> {
+  const realId = await owner();
+  if (hasSupabaseConfig()) {
+    try {
+      const cookieStore = await cookies();
+      const session = cookieStore.get(IMPERSONATION_COOKIE)?.value;
+      if (session) {
+        const { data, error } = await createServiceClient().rpc(
+          "resolve_impersonation",
+          { p_session: session, p_actor: realId },
+        );
+        if (!error && data)
+          return { id: data as string, impersonating: true, realId };
+      }
+    } catch {
+      // Any failure here just falls through to the real identity below —
+      // impersonation is a convenience, never a way to break the app.
+    }
+  }
+  return { id: realId, impersonating: false, realId };
+}
+
+export async function owningTeacherId() {
+  return (await resolveOwningTeacher()).id;
+}
+
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -109,6 +160,27 @@ export function guardOrigin(request: Request) {
     throw new HttpError(403, "This request could not be verified.");
 }
 
+/**
+ * The site's own public origin, for building a redirect. Behind Netlify's
+ * proxy request.url is an internal address (the same reason guardOrigin
+ * cannot trust it), so a redirect resolved against it can point somewhere
+ * the browser cannot reach. Prefer the forwarded host, then the first
+ * configured origin, and only fall back to request.url.
+ */
+export function siteUrl(request: Request, path: string) {
+  const h = request.headers;
+  const forwardedHost = h.get("x-forwarded-host") ?? h.get("host");
+  if (forwardedHost) {
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    return new URL(path, `${proto}://${forwardedHost}`);
+  }
+  const configured = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .find(Boolean);
+  return new URL(path, configured || request.url);
+}
+
 export function apiError(error: unknown) {
   if (error instanceof HttpError)
     return Response.json({ error: error.message }, { status: error.status });
@@ -129,13 +201,13 @@ export async function aiConfig() {
   if (hasSupabaseConfig()) {
     return {
       key: process.env.OPENAI_API_KEY || "",
-      model: process.env.OPENAI_MODEL || "gpt-6-astra",
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
     };
   }
   const env = (await sitesRuntimeEnv()) as unknown as Record<string, string>;
   return {
     key: env.OPENAI_API_KEY || "",
-    model: env.OPENAI_MODEL || "gpt-6-astra",
+    model: env.OPENAI_MODEL || "gpt-5.6-luna",
   };
 }
 
@@ -195,6 +267,34 @@ function numeric(value: unknown) {
  * explicit demo flag. Coerce those fields so the JSON the client receives
  * keeps the same shape it always had.
  */
+// The relational facade's standards row only carries code/title/subject/
+// grade/domain/cluster/wording/framework — it never stored the AI-enriched
+// fields (skills, prerequisites, next, vocabulary, misconception, example,
+// dok, source) sync_workspace's custom-standards insert doesn't persist
+// them either. The client's Standard type treats all of those as required
+// (e.g. StandardsView does `s.skills.length`), so a standard coming back
+// from the database without defaults crashes the Standards page the
+// moment it renders one. Fill in safe fallbacks here, once, for both
+// customStandards and sharedStandards.
+function normalizeStandard(item: Record<string, unknown>) {
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    ...item,
+    grade: numeric(item.grade),
+    summary: item.summary ?? item.wording ?? "",
+    skills: arr(item.skills),
+    prerequisites: arr(item.prerequisites),
+    next: arr(item.next),
+    vocabulary: arr(item.vocabulary),
+    misconception:
+      item.misconception ??
+      "Use the student’s written reasoning to identify the step that needs support.",
+    example: item.example ?? "Choose a task that directly demonstrates this standard.",
+    dok: typeof item.dok === "number" ? item.dok : 2,
+    source: item.source ?? "",
+  };
+}
+
 function normalizeWorkspace(data: Workspace): Workspace {
   const record = data as unknown as Record<string, unknown>;
   const list = (key: string) =>
@@ -220,10 +320,8 @@ function normalizeWorkspace(data: Workspace): Workspace {
       ...item,
       notes: typeof item.notes === "string" ? item.notes : "",
     })),
-    customStandards: list("customStandards").map((item) => ({
-      ...item,
-      grade: numeric(item.grade),
-    })),
+    customStandards: list("customStandards").map(normalizeStandard),
+    sharedStandards: list("sharedStandards").map(normalizeStandard),
     settings: {
       ...settings,
       teacherName: settings.teacherName ?? "",

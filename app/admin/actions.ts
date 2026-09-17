@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { requireAdmin } from "@/lib/admin-gate";
+import { requireAdmin, requireAppManager } from "@/lib/admin-gate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /* Every write goes through an audited database function that itself
@@ -71,6 +71,24 @@ export async function replyTicket(fd: FormData) {
   revalidatePath("/admin/tickets"); revalidatePath("/admin");
 }
 
+export async function setAppManagerRole(fd: FormData) {
+  const admin = await requireAppManager();
+  const { error } = await supabaseAdmin().rpc("admin_set_app_manager", {
+    p_actor: admin.id, p_teacher: str(fd, "teacher_id"), p_value: str(fd, "is_app_manager") === "true",
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/accounts/${str(fd, "teacher_id")}`); revalidatePath("/admin/accounts");
+}
+
+export async function setTicketPriority(fd: FormData) {
+  const admin = await requireAdmin();
+  const { error } = await supabaseAdmin().rpc("admin_set_ticket_priority", {
+    p_actor: admin.id, p_ticket: str(fd, "ticket_id"), p_priority: str(fd, "priority"),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/tickets"); revalidatePath("/admin");
+}
+
 export async function reviewReteaching(fd: FormData) {
   const admin = await requireAdmin();
   const q = str(fd, "quality");
@@ -89,4 +107,12 @@ export async function addInternalNote(fd: FormData) {
   if (error) throw new Error(error.message);
   await db.rpc("admin_log", { p_actor: admin.id, p_action: "internal_note", p_target_type: "teacher", p_target_id: teacher, p_detail: null, p_ip: await ip() });
   revalidatePath(`/admin/accounts/${teacher}`);
+}
+
+export async function clearFailedScans(fd: FormData) {
+  const admin = await requireAdmin();
+  const teacher = str(fd, "teacher_id");
+  const { error } = await supabaseAdmin().rpc("admin_clear_failed_scans", { p_actor: admin.id, p_teacher: teacher });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/admin/accounts/${teacher}`); revalidatePath("/admin/accounts"); revalidatePath("/admin/usage"); revalidatePath("/admin");
 }

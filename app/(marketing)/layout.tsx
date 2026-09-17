@@ -59,12 +59,15 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               <Link href="/#pricing">Pricing</Link>
               <Link href="/#coverage">Standards coverage</Link>
               <Link href="/login">Sign in</Link>
+              <Link href="/login?next=/admin">Admin sign in</Link>
             </div>
             <div>
               <p className="mk-foot-head">Privacy</p>
               <Link href="/legal/student-data-privacy">Student data privacy</Link>
               <Link href="/legal/how-we-use-ai">How we use AI</Link>
               <Link href="/legal/privacy">Privacy policy</Link>
+              <Link href="/legal/terms">Terms of service</Link>
+              <Link href="/legal/dpa">District agreement</Link>
             </div>
             <div>
               <p className="mk-foot-head">Company</p>

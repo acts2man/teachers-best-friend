@@ -47,11 +47,22 @@ export const californiaStandards: Standard[] = california.map(record => {
     example: enriched?.example || "Choose a task that directly demonstrates this standard.", dok: enriched?.dok || 2};
 });
 
-export function allStandards(w: Pick<Workspace, "customStandards">) {
-  return [...standards, ...californiaStandards, ...w.customStandards];
+export function allStandards(
+  w: Pick<Workspace, "customStandards" | "sharedStandards">,
+) {
+  // A teacher's own copy of a standard (added by hand, or fetched before it
+  // was shared) always wins over the shared-library version of the same
+  // code, so nothing shows twice.
+  const own = new Set(
+    w.customStandards.map((s) => `${s.framework}|${s.grade}|${s.code}`),
+  );
+  const shared = (w.sharedStandards ?? []).filter(
+    (s) => !own.has(`${s.framework}|${s.grade}|${s.code}`),
+  );
+  return [...standards, ...californiaStandards, ...w.customStandards, ...shared];
 }
 
-export function catalogFor(w: Pick<Workspace, "customStandards">, grade: number, framework: string, subject?: string) {
+export function catalogFor(w: Pick<Workspace, "customStandards" | "sharedStandards">, grade: number, framework: string, subject?: string) {
   const seen = new Set<string>();
   return allStandards(w).filter(s => {
     if (s.grade !== grade || s.framework !== framework || (subject && subject !== "Mixed" && s.subject !== subject) || seen.has(s.code)) return false;

@@ -1,5 +1,5 @@
 import {
-  owner,
+  owningTeacherId,
   readDocument,
   deleteDocument,
   guardOrigin,
@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ownerId = await owner();
+    const ownerId = await owningTeacherId();
     const { id } = await params;
     const document = await readDocument(ownerId, id);
     if (!document) throw new HttpError(404, "Document not found.");
@@ -36,7 +36,7 @@ export async function DELETE(
 ) {
   try {
     guardOrigin(request);
-    const ownerId = await owner();
+    const ownerId = await owningTeacherId();
     const { id } = await params;
     if (!(await deleteDocument(ownerId, id)))
       throw new HttpError(404, "Document not found.");

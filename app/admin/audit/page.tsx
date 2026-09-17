@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAudit } from "@/lib/supabase-admin";
-import { fmtDate } from "@/components/admin/format";
+import { fmtDate, describeAudit } from "@/components/admin/format";
 
 export default async function AuditPage() {
   const rows = await getAudit(300);
@@ -12,21 +12,20 @@ export default async function AuditPage() {
 
       <div className="panel">
         <table>
-          <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+          <thead><tr><th>When</th><th>Who</th><th>What happened</th><th>Target</th></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={5} className="muted">No admin actions recorded yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={4} className="muted">No admin actions recorded yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
                 <td className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(r.created_at)}</td>
                 <td>{r.actor_email ?? <span className="muted">system</span>}</td>
-                <td><strong>{r.action}</strong></td>
+                <td title={r.detail ? JSON.stringify(r.detail) : undefined}>{describeAudit(r.action, r.detail as Record<string, unknown> | null)}</td>
                 <td>
                   {r.target_type === "teacher" && r.target_id ? <Link href={`/admin/accounts/${r.target_id}`} className="mono">{r.target_id.slice(0, 8)}…</Link>
                     : r.target_type === "ticket" ? <Link href={`/admin/tickets#${r.target_id}`} className="mono">ticket</Link>
                     : r.target_type === "reteaching" ? <Link href={`/admin/library?id=${r.target_id}`} className="mono">library</Link>
                     : <span className="mono">{r.target_type} {r.target_id}</span>}
                 </td>
-                <td className="mono muted" style={{ fontSize: ".72rem", maxWidth: "36rem", wordBreak: "break-word" }}>{r.detail ? JSON.stringify(r.detail) : ""}</td>
               </tr>
             ))}
           </tbody>

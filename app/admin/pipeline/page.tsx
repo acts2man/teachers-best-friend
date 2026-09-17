@@ -1,89 +1,128 @@
-import { getPipeline } from "@/lib/supabase-admin";
+import { getPipeline, getCostBreakdown } from "@/lib/supabase-admin";
 import { setPipelineStage } from "@/app/admin/actions";
-import { fmtUsd, fmtRel } from "@/components/admin/format";
+import { fmtUsd, fmtRel, fmtCents, fmtInt, modelLabel } from "@/components/admin/format";
 
-/* Rough per-call token profile for each stage, from the code audit.
-   Used only to project cost on this page — the real number comes from the scans table. */
-const PROFILE: Record<string, { input: number; cached: number; output: number; perMonth: number; note: string }> = {
-  responses:  { input: 2100, cached: 700,  output: 900,  perMonth: 1200, note: "Once per student per assessment. This is the volume call." },
-  class_scan: { input: 4500, cached: 1200, output: 3500, perMonth: 8,    note: "One call for a whole stack of scanned pages — splits by student and grades all of them together." },
-  assignment: { input: 2500, cached: 1000, output: 2500, perMonth: 8,    note: "Once per assessment. Quality matters more than cost here." },
-  answer_key: { input: 1500, cached: 300,  output: 600,  perMonth: 8,    note: "Once per assessment with a key." },
-  reteaching: { input: 1200, cached: 2500, output: 1800, perMonth: 40,   note: "Only on a library cache miss. Falls toward zero as the library fills." },
-  lesson:     { input: 1500, cached: 500,  output: 1800, perMonth: 10,   note: "Teacher-initiated." },
-  catalog:    { input: 800,  cached: 0,    output: 8000, perMonth: 1,    note: "Stopgap for unseeded states. Load real standards instead." },
-  roster:     { input: 1500, cached: 100,  output: 400,  perMonth: 1,    note: "Reads names off a roster photo; photo deleted immediately after." },
-  support:    { input: 2000, cached: 1500, output: 400,  perMonth: 2,    note: "First-line ticket answering." },
-  embedding:  { input: 0,    cached: 0,    output: 0,    perMonth: 0,    note: "Placeholder. Embeddings use text-embedding-3-small, billed separately." },
-};
+/* Each kind of work the AI does, in the order a teacher meets it. The
+   internal stage id is what pipeline_config stores; everything else here is
+   the plain-language explanation shown to admins. */
+const STAGE_GUIDE: { id: string; label: string; runs: string; often: string }[] = [
+  { id: "assignment", label: "Assignment read",        runs: "When a teacher uploads a worksheet. Reads the questions and matches each one to a standard.", often: "Once per assignment" },
+  { id: "answer_key", label: "Answer key read",        runs: "When a teacher uploads or pastes the answer key for that worksheet.", often: "Once per assignment" },
+  { id: "responses",  label: "Student worksheet scan", runs: "When a teacher scans a student's completed worksheet. Reads the answers and checks them against the key.", often: "Once per student, per assignment. This is where nearly all the volume is." },
+  { id: "class_scan", label: "Whole-class stack scan", runs: "When a teacher uploads a whole stack of scanned pages at once. Splits the stack by the name on each page and grades every student together.", often: "Once per stack, instead of once per student" },
+  { id: "lesson",     label: "Lesson plan",            runs: "When a teacher asks for a reteaching lesson on a standard.", often: "Only when a teacher asks" },
+  { id: "reteaching", label: "Reteaching material",    runs: "When students share a misconception and the reteaching library has nothing for it yet.", often: "Only on a library miss; falls toward zero as the library fills" },
+  { id: "catalog",    label: "Standards lookup",       runs: "When a grade's official standards are loaded for the first time. The result is shared with every teacher.", often: "Once per state, grade, and subject, ever" },
+  { id: "roster",     label: "Roster read",            runs: "When a teacher photographs a class roster to add students.", often: "Once per class" },
+  { id: "support",    label: "Support reply",          runs: "When a teacher opens a help ticket; drafts the first answer.", often: "Once per ticket" },
+];
+const UNUSED = new Set(["embedding"]);
+const EFFORTS: { v: string; label: string }[] = [
+  { v: "none", label: "None" },
+  { v: "minimal", label: "Minimal (Luna rejects this)" },
+  { v: "low", label: "Low (recommended)" },
+  { v: "medium", label: "Medium" },
+  { v: "high", label: "High" },
+];
 
 export default async function PipelinePage() {
-  const { stages, models } = await getPipeline();
+  const [{ stages, models }, breakdown] = await Promise.all([getPipeline(), getCostBreakdown()]);
+  const byStage = new Map<string, { calls: number; completed: number; failed: number; cost: number }>();
+  for (const r of breakdown) {
+    const b = byStage.get(r.stage) ?? { calls: 0, completed: 0, failed: 0, cost: 0 };
+    b.calls += Number(r.calls); b.completed += Number(r.completed); b.failed += Number(r.failed); b.cost += Number(r.cost_usd);
+    byStage.set(r.stage, b);
+  }
+  const configOf = new Map(stages.map((s) => [s.stage, s]));
   const priceOf = new Map(models.map((m) => [m.model, m]));
-
-  const cost = (model: string, stage: string) => {
-    const p = priceOf.get(model), t = PROFILE[stage];
-    if (!p || !t) return 0;
-    return (t.input / 1e6) * Number(p.input_per_mtok) + (t.cached / 1e6) * Number(p.cached_input_per_mtok) + (t.output / 1e6) * Number(p.output_per_mtok);
-  };
-  const monthly = stages.reduce((a, s) => a + cost(s.model, s.stage) * (PROFILE[s.stage]?.perMonth ?? 0), 0);
+  const rows = STAGE_GUIDE.filter((g) => configOf.has(g.id));
+  const extra = stages.filter((s) => !STAGE_GUIDE.some((g) => g.id === s.stage) && !UNUSED.has(s.stage));
+  const unused = stages.filter((s) => UNUSED.has(s.stage));
 
   return (
     <>
       <h1>AI pipeline</h1>
-      <p className="ad-sub">
-        Which model runs each stage. Changes take effect on the next request, no deploy.
-        Projected cost for a secondary teacher (150 students, 2 assignments/week): <strong>{fmtUsd(monthly, 2)}/month</strong>.
-      </p>
+      <p className="ad-sub">Which AI model handles each kind of work, and how much thinking it is allowed. Changes take effect on the next request, no deploy, and every change is recorded in the audit log.</p>
 
-      <div className="panel" style={{ padding: ".5rem 0" }}>
-        <table>
-          <thead><tr><th>Stage</th><th>Model</th><th>Reasoning</th><th className="num">Max output</th><th className="num">Per call</th><th className="num">Calls/mo</th><th className="num">Monthly</th><th></th></tr></thead>
-          <tbody>
-            {stages.map((s) => {
-              const per = cost(s.model, s.stage), t = PROFILE[s.stage];
-              const mo = per * (t?.perMonth ?? 0);
-              return (
-                <tr key={s.stage}>
-                  <td>
-                    <strong>{s.stage}</strong>
-                    <div className="muted" style={{ fontSize: ".78rem", maxWidth: "22rem" }}>{t?.note ?? s.notes}</div>
-                    <div className="muted" style={{ fontSize: ".72rem" }}>changed {fmtRel(s.updated_at)}</div>
-                  </td>
-                  <td colSpan={3}>
-                    <form action={setPipelineStage} style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap" }}>
-                      <input type="hidden" name="stage" value={s.stage} />
-                      <select name="model" defaultValue={s.model}>
-                        {models.map((m) => <option key={m.model} value={m.model}>{m.model} — {fmtUsd(m.input_per_mtok, 2)} / {fmtUsd(m.output_per_mtok, 2)}</option>)}
-                      </select>
-                      <select name="reasoning_effort" defaultValue={s.reasoning_effort}>
-                        {["minimal", "low", "medium", "high"].map((e) => <option key={e} value={e}>{e}</option>)}
-                      </select>
-                      <input name="max_output_tokens" type="number" min={100} max={32000} step={100} defaultValue={s.max_output_tokens} style={{ width: "6.5rem" }} />
-                      <button className="btn btn-quiet btn-sm">Save</button>
-                    </form>
-                  </td>
-                  <td className="num">{fmtUsd(per, 4)}</td>
-                  <td className="num">{t?.perMonth ?? "—"}</td>
-                  <td className={`num ${mo > 5 ? "kpi-warn" : ""}`}>{fmtUsd(mo, 2)}</td>
-                  <td></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="ad-grid two" style={{ marginBottom: "16px" }}>
+        <section className="panel ad-panel">
+          <div className="ad-panel-head"><div className="ad-panel-title"><h2>What the three settings mean</h2></div></div>
+          <dl className="ad-glossary">
+            <div><dt>Model</dt><dd>Which AI does the work. The price after each name is what it charges per million words in and per million words out. Luna is the cheap workhorse; Sol is the strongest and the most expensive.</dd></div>
+            <div><dt>Reasoning</dt><dd>How much the AI is allowed to think before it answers. More thinking gives better judgement on hard material but is slower and costs more, because thinking is billed like output. “Low” is right for reading and checking work.</dd></div>
+            <div><dt>Max answer length</dt><dd>A ceiling on how long the AI’s reply may be, in tokens (about three quarters of a word each, so 3,000 ≈ 2,000 words). It is a safety cap, not a target: the AI only uses what it needs. Set it too low and a long worksheet gets cut off and the scan fails.</dd></div>
+          </dl>
+        </section>
+        <section className="panel ad-panel">
+          <div className="ad-panel-head"><div className="ad-panel-title"><h2>Where the money goes</h2></div></div>
+          <p style={{ margin: 0, maxWidth: "60ch" }}>
+            <strong>Student worksheet scan</strong> runs once for every student on every assignment, so it is almost all of the volume: keep it on the cheapest model that reads handwriting well. <strong>Assignment read</strong> and <strong>answer key read</strong> run once per assignment, so a better model there costs almost nothing. <strong>Standards lookup</strong> runs once per grade, ever, and is then shared with everyone. The rest only run when a teacher asks. The “This month” column shows what actually happened; the Usage page has the full breakdown.
+          </p>
+        </section>
       </div>
 
-      <section className="panel" style={{ padding: "1.1rem", marginTop: "1rem" }}>
-        <h2 style={{ margin: "0 0 .5rem" }}>How to read this</h2>
-        <p style={{ margin: 0, maxWidth: "70ch" }}>
-          The <strong>responses</strong> stage fires once per student and dwarfs everything else. Keep it on the cheapest
-          model that reads handwriting acceptably, with minimal reasoning. The <strong>assignment</strong> stage fires
-          about eight times a month per teacher, so a better model there costs almost nothing. Every change here is
-          logged to the audit trail with the previous values. Projections are estimates; the Usage page shows what
-          actually happened.
-        </p>
-      </section>
+      <div className="panel ad-panel">
+        <div className="ad-panel-head">
+          <div className="ad-panel-title"><h2>Kinds of work</h2><span className="ad-count">{rows.length}</span></div>
+          <span className="ad-meta">this month’s figures from the scans table</span>
+        </div>
+        <div className="ad-table-wrap">
+          <table>
+            <thead><tr><th className="pipe-work">Kind of work</th><th className="pipe-model">Model</th><th className="pipe-effort">Reasoning</th><th className="pipe-max">Max answer length</th><th className="num">This month</th><th aria-hidden="true"></th></tr></thead>
+            <tbody>
+              {[...rows.map((g) => ({ g, s: configOf.get(g.id)! })), ...extra.map((s) => ({ g: { id: s.stage, label: s.stage, runs: s.notes ?? "", often: "" }, s }))].map(({ g, s }) => {
+                const formId = `stage-${g.id}`;
+                const actual = byStage.get(g.id);
+                const avg = actual && actual.completed ? actual.cost / actual.completed : 0;
+                return (
+                  <tr key={g.id}>
+                    <td className="pipe-work">
+                      <form id={formId} action={setPipelineStage}><input type="hidden" name="stage" value={g.id} /></form>
+                      <strong>{g.label}</strong>
+                      <div className="muted" style={{ fontSize: ".8rem", marginTop: "2px" }}>{g.runs}</div>
+                      {g.often && <div style={{ fontSize: ".76rem", marginTop: "4px", color: "var(--ad-green-deep)", fontWeight: 600 }}>{g.often}</div>}
+                      <div className="muted" style={{ fontSize: ".72rem", marginTop: "4px" }}>changed {fmtRel(s.updated_at)}</div>
+                    </td>
+                    <td>
+                      <select name="model" form={formId} defaultValue={s.model} aria-label={`Model for ${g.label}`} style={{ width: "100%" }}>
+                        {models.map((m) => <option key={m.model} value={m.model}>{modelLabel(m.model)}</option>)}
+                      </select>
+                      {priceOf.get(s.model) && (
+                        <div className="muted" style={{ fontSize: ".72rem", marginTop: "3px" }}>
+                          {fmtUsd(priceOf.get(s.model)!.input_per_mtok, 2)} in · {fmtUsd(priceOf.get(s.model)!.output_per_mtok, 2)} out, per million tokens
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <select name="reasoning_effort" form={formId} defaultValue={s.reasoning_effort} aria-label={`Reasoning for ${g.label}`} style={{ width: "100%" }}>
+                        {EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.label}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input name="max_output_tokens" form={formId} type="number" min={100} max={32000} step={100} defaultValue={s.max_output_tokens} style={{ width: "7rem" }} aria-label={`Max answer length for ${g.label}`} />
+                      <div className="muted" style={{ fontSize: ".72rem", marginTop: "3px" }}>≈ {fmtInt(Math.round(s.max_output_tokens * 0.75))} words</div>
+                    </td>
+                    <td className="num" style={{ whiteSpace: "nowrap" }}>
+                      {actual && actual.calls > 0 ? (
+                        <>
+                          <div>{fmtInt(actual.calls)} call{actual.calls === 1 ? "" : "s"}</div>
+                          <div className="muted" style={{ fontSize: ".78rem" }} title={`exact: ${fmtUsd(avg, 4)}`}>{avg ? `${fmtCents(avg)} each` : ""}{actual.failed ? ` · ${actual.failed} failed` : ""}</div>
+                        </>
+                      ) : <span className="muted">no calls yet</span>}
+                    </td>
+                    <td className="num"><button className="btn btn-quiet btn-sm" form={formId}>Save</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {unused.length > 0 && (
+          <p className="muted" style={{ fontSize: ".8rem", marginTop: "12px", marginBottom: 0 }}>
+            Not shown: {unused.map((s) => `“${s.stage}”`).join(", ")} — a placeholder row the app does not call. Standards matching by meaning, when it is switched on, uses a separate embedding model billed on its own.
+          </p>
+        )}
+      </div>
     </>
   );
 }

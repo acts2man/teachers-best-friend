@@ -13,6 +13,7 @@ import {
   Plus,
   ChevronDown,
   HelpCircle,
+  Headset,
   Check,
   LoaderCircle,
   ShieldCheck,
@@ -49,6 +50,13 @@ import {
   StudentsView,
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
+import { SupportView } from "./teacher-support";
+import {
+  fetchQuota,
+  quotaLevel,
+  SCAN_COMPLETE_EVENT,
+  type Quota,
+} from "@/lib/quota-client";
 const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
@@ -65,6 +73,7 @@ type WorkspaceSnapshot = {
   aiReady: boolean;
   authProvider: "chatgpt" | "supabase";
   fetchedAt: number;
+  impersonating: { teacherEmail: string } | null;
 };
 
 // Keep the authoritative workspace alive while Next.js moves between pages.
@@ -88,32 +97,74 @@ const prefetchRoutes = [
   "/settings",
   "/guide",
   "/resources",
+  "/support",
 ];
 
 export default function TeacherApp({ view }: { view: string }) {
-  const initialSnapshot = useRef(workspaceSnapshot).current;
+  // Seed from the module-level snapshot that survives client-side navigation.
+  // These are lazy initializers on purpose: React calls them once, on the
+  // first render of this component, which is exactly the "read it at mount"
+  // behaviour the old `useRef(workspaceSnapshot).current` was reaching for --
+  // without reading a ref during render, which React 19 does not guarantee is
+  // stable and which the compiler flags.
   const [w, setW] = useState<Workspace | null>(
-    initialSnapshot?.workspace ?? null,
+    () => workspaceSnapshot?.workspace ?? null,
   );
-  const [revision, setRevision] = useState(initialSnapshot?.revision ?? 0);
-  const [loaded, setLoaded] = useState(Boolean(initialSnapshot));
+  const [revision, setRevision] = useState(() => workspaceSnapshot?.revision ?? 0);
+  const [loaded, setLoaded] = useState(() => Boolean(workspaceSnapshot));
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const [aiReady, setAiReady] = useState(initialSnapshot?.aiReady ?? false);
+  const [aiReady, setAiReady] = useState(
+    () => workspaceSnapshot?.aiReady ?? false,
+  );
   const [authProvider, setAuthProvider] = useState<"chatgpt" | "supabase">(
-    initialSnapshot?.authProvider ?? "chatgpt",
+    () => workspaceSnapshot?.authProvider ?? "chatgpt",
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [impersonating, setImpersonating] = useState<{
+    teacherEmail: string;
+  } | null>(() => workspaceSnapshot?.impersonating ?? null);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
   const [framework, setFramework] = useState("California");
-  const [pendingView, setPendingView] = useState<string | null>(null);
+  // Optimistic sidebar highlight. Records which view we were on when the link
+  // was clicked, so the highlight expires by derivation the moment the new
+  // page arrives -- no effect, and no window where the highlight outlives the
+  // navigation it belonged to.
+  const [pending, setPending] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const [quota, setQuota] = useState<Quota | null>(null);
+  const [leaving, setLeaving] = useState(false);
   const router = useRouter();
+
+  /**
+   * Leave a "view as" session.
+   *
+   * Deliberately a fetch to a route handler rather than a server action: the
+   * banner renders on /app and /[view], which are force-static, and an action
+   * POST to a prerendered route came back out of the cache with the exit
+   * silently not applied. The navigation is a full page load so nothing of the
+   * viewed teacher's workspace survives in memory.
+   */
+  async function stopViewing() {
+    setLeaving(true);
+    try {
+      await fetch("/api/impersonation", {
+        method: "DELETE",
+        cache: "no-store",
+      });
+    } catch {
+      // The cookie is cleared server-side even on an error path; if the
+      // request never landed at all the reload below just re-renders the
+      // banner, which is recoverable. Either way, leave.
+    }
+    window.location.href = "/admin/accounts";
+  }
   async function reload() {
     try {
-      setError("");
       const r = await fetch("/api/workspace", { cache: "no-store" });
       if (r.status === 401) {
         const next = window.location.pathname + window.location.search;
@@ -128,13 +179,18 @@ export default function TeacherApp({ view }: { view: string }) {
         aiReady: Boolean(d.aiReady),
         authProvider: d.authProvider || "chatgpt",
         fetchedAt: Date.now(),
+        impersonating: d.impersonating ?? null,
       };
       workspaceSnapshot = nextSnapshot;
       setW(nextSnapshot.workspace);
       setRevision(nextSnapshot.revision);
       setAiReady(nextSnapshot.aiReady);
       setAuthProvider(nextSnapshot.authProvider);
+      setImpersonating(nextSnapshot.impersonating);
       setLoaded(true);
+      // Cleared on success rather than on entry: clearing it up front made a
+      // failing reload blank the message and then restore it a moment later.
+      setError("");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Your classroom couldn’t be loaded.",
@@ -142,6 +198,10 @@ export default function TeacherApp({ view }: { view: string }) {
     }
   }
   useEffect(() => {
+    // reload() awaits the fetch before it touches state, so nothing is set
+    // synchronously here and no cascading render results. The rule cannot see
+    // through an async function to determine that.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isStale()) reload();
     for (const route of prefetchRoutes) router.prefetch(route);
     const onFocus = () => {
@@ -177,11 +237,24 @@ export default function TeacherApp({ view }: { view: string }) {
       cancelled = true;
     };
   }, [authProvider]);
-  // The destination view arrives with the new page; clear the optimistic
-  // highlight once it does.
+  // The scan meter. Plans only exist on the Supabase deployment, so the
+  // ChatGPT Sites host simply never shows one. Re-read after every analysis
+  // (analyzeRequest announces it) so the count a teacher sees is the count
+  // the server would enforce.
   useEffect(() => {
-    setPendingView(null);
-  }, [view]);
+    if (authProvider !== "supabase") return;
+    let cancelled = false;
+    const read = async () => {
+      const next = await fetchQuota();
+      if (!cancelled) setQuota(next);
+    };
+    read();
+    window.addEventListener(SCAN_COMPLETE_EVENT, read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SCAN_COMPLETE_EVENT, read);
+    };
+  }, [authProvider]);
   useEffect(() => {
     document.documentElement.classList.toggle(
       "reduce-motion",
@@ -216,6 +289,7 @@ export default function TeacherApp({ view }: { view: string }) {
         aiReady,
         authProvider,
         fetchedAt: Date.now(),
+        impersonating,
       };
       setW(next);
       setRevision(d.revision);
@@ -230,6 +304,36 @@ export default function TeacherApp({ view }: { view: string }) {
       setBusy(false);
       lock.current = false;
     }
+  }
+  // Every view derives from the active classroom, so a workspace with no
+  // classes cannot be rendered at all. Before this guard the line below read
+  // `classroom.id` off undefined and threw, leaving a blank page with no way
+  // out — which is exactly where an admin "reset this teacher" used to land
+  // the account. Offer to rebuild instead of crashing.
+  if (w.classes.length === 0) {
+    return (
+      <EmptyWorkspace
+        busy={busy}
+        onCreate={() =>
+          save(
+            {
+              ...w,
+              classes: [
+                {
+                  id: "my-class",
+                  name: "My classroom",
+                  grade: 4,
+                  framework: "California",
+                  demo: false,
+                },
+              ],
+              activeClassId: "my-class",
+            },
+            "Your classroom is ready.",
+          )
+        }
+      />
+    );
   }
   const classroom =
       w.classes.find((c) => c.id === w.activeClassId) || w.classes[0],
@@ -247,11 +351,14 @@ export default function TeacherApp({ view }: { view: string }) {
     loaded,
     busy,
     aiReady,
+    quota,
+    refreshQuota: () =>
+      window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
     save,
     reload,
     go: (url: string) => router.push(url),
   };
-  const shownView = pendingView ?? view;
+  const shownView = pending && pending.from === view ? pending.to : view;
   const title =
     [
       ...nav,
@@ -259,6 +366,7 @@ export default function TeacherApp({ view }: { view: string }) {
       { id: "scan", label: "New assessment" },
       { id: "students", label: "Roster" },
       { id: "settings", label: "Settings" },
+      { id: "support", label: "Support" },
       { id: "resources", label: "Teaching resources" },
       { id: "diagnostics", label: "Class insights" },
     ].find((n) => n.id === shownView)?.label || "Overview";
@@ -291,6 +399,19 @@ export default function TeacherApp({ view }: { view: string }) {
   }
   return (
     <TeacherContext.Provider value={value}>
+      {impersonating && (
+        <div className="impersonation-banner" role="status">
+          <ShieldCheck size={16} />
+          <span>
+            Viewing <strong>{impersonating.teacherEmail}</strong>’s
+            workspace as an app manager. Anything you do here happens on
+            their account.
+          </span>
+          <button type="button" onClick={stopViewing} disabled={leaving}>
+            {leaving ? "Leaving…" : "Stop viewing"}
+          </button>
+        </div>
+      )}
       <SidebarProvider
         style={{ "--sidebar-width": "238px" } as React.CSSProperties}
         className={w.settings.reduceMotion ? "reduce-motion" : ""}
@@ -320,6 +441,7 @@ export default function TeacherApp({ view }: { view: string }) {
               New assessment
               <Plus size={16} />
             </button>
+            <QuotaMeter quota={quota} />
             <div className="nav-label">YOUR WORKSPACE</div>
             <SidebarMenu>
               {nav.map((n) => (
@@ -331,7 +453,7 @@ export default function TeacherApp({ view }: { view: string }) {
                   >
                     <Link
                       href={n.id === "home" ? "/app" : "/" + n.id}
-                      onClick={() => setPendingView(n.id)}
+                      onClick={() => setPending({ from: view, to: n.id })}
                     >
                       <n.icon size={19} />
                       <span>{n.label}</span>
@@ -352,7 +474,7 @@ export default function TeacherApp({ view }: { view: string }) {
                     isActive={shownView === n.id}
                     className="nav-link"
                   >
-                    <Link href={"/" + n.id} onClick={() => setPendingView(n.id)}>
+                    <Link href={"/" + n.id} onClick={() => setPending({ from: view, to: n.id })}>
                       <n.icon size={18} />
                       <span>{n.label}</span>
                     </Link>
@@ -365,6 +487,10 @@ export default function TeacherApp({ view }: { view: string }) {
             <Link href="/settings" className="footer-link">
               <Settings size={18} />
               Settings
+            </Link>
+            <Link href="/support" className="footer-link">
+              <Headset size={18} />
+              Support
             </Link>
             {isAdmin && (
               <Link href="/admin" className="footer-link">
@@ -396,6 +522,7 @@ export default function TeacherApp({ view }: { view: string }) {
               <Link href="/legal/privacy">Privacy</Link>
               <Link href="/legal/student-data-privacy">Student data</Link>
               <Link href="/legal/how-we-use-ai">How we use AI</Link>
+              <Link href="/legal/terms">Terms</Link>
             </nav>
           </SidebarFooter>
         </Sidebar>
@@ -483,6 +610,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <ReteachView />
               ) : view === "resources" ? (
                 <ResourcesView />
+              ) : view === "support" ? (
+                <SupportView />
               ) : (
                 <SettingsView />
               )}
@@ -605,6 +734,76 @@ function WorkspaceLoading({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Shown when the workspace loads but carries no classes — the one state the
+ * app cannot render, because every view is scoped to the active classroom.
+ * Reachable after an admin reset, or after a teacher deletes their last class
+ * in an older client. Recoverable in one click rather than a blank page.
+ */
+function EmptyWorkspace({
+  busy,
+  onCreate,
+}: {
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="workspace-loading" data-state="empty">
+      <section className="workspace-loading-main">
+        <div className="workspace-loading-content">
+          <div className="workspace-loading-error" role="status">
+            <h1>Let’s set up your first classroom.</h1>
+            <p>
+              This account has no classes yet. Create one to open your
+              workspace — you can rename it, change the grade, and add more
+              classes at any time under Classes.
+            </p>
+            <button className="action" onClick={onCreate} disabled={busy}>
+              {busy ? "Creating…" : "Create my classroom"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Scans left this period, in the sidebar under "New assessment".
+ *
+ * The meter existed server-side from the start (/api/quota, my_scan_quota)
+ * but nothing rendered it, so the first a teacher heard about their limit was
+ * a refusal part-way through an upload. Renders nothing at all when there is
+ * no meter to show — the ChatGPT Sites host has no plans.
+ */
+function QuotaMeter({ quota }: { quota: Quota | null }) {
+  if (!quota || quota.quota <= 0) return null;
+  const level = quotaLevel(quota);
+  const pct = Math.min(100, Math.round((quota.used / quota.quota) * 100));
+  return (
+    <div className="quota-meter" data-level={level}>
+      <div className="quota-line">
+        <span className="quota-count">
+          {level === "out" ? "No scans left" : `${quota.remaining} scans left`}
+        </span>
+        <span className="quota-of">of {quota.quota}</span>
+      </div>
+      <div className="quota-track" role="img"
+        aria-label={`${quota.used} of ${quota.quota} scans used this period`}>
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      {level !== "ok" && (
+        <p className="quota-note">
+          {level === "out"
+            ? "Your plan’s scans are used up for this period."
+            : "You’re close to this period’s limit."}{" "}
+          <Link href="/contact?topic=team">Get more scans</Link>
+        </p>
+      )}
     </div>
   );
 }

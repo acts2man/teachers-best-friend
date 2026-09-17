@@ -31,6 +31,7 @@ export type AdminAccount = {
   school_name: string | null;
   district: string | null;
   is_admin: boolean;
+  is_app_manager: boolean;
   status: "active" | "suspended" | "deactivated";
   status_reason: string | null;
   plan_id: string;
@@ -91,6 +92,7 @@ export type AdminTicket = {
   status: string; priority: string; deflected: boolean; ai_confidence: number | null;
   created_at: string; updated_at: string; resolved_at: string | null;
   teacher_email: string; teacher_name: string | null; teacher_id: string;
+  plan_id: string | null; plan_name: string | null; plan_price_cents: number | null;
   message_count: number; last_message: string | null;
 };
 
@@ -185,16 +187,75 @@ export async function getAudit(limit = 200): Promise<AuditRow[]> {
   return data as AuditRow[];
 }
 
+/** One message in a support thread, as the admin tickets page selects it. */
+export type SupportMessage = {
+  ticket_id: string;
+  author: "teacher" | "ai" | "staff";
+  body: string;
+  created_at: string;
+};
+
+/** A row of public.teacher_unit_economics, as the usage page renders it. */
+export type UnitEconomicsRow = {
+  teacher_id: string;
+  plan_id: string | null;
+  plan_price_usd: number | string | null;
+  scan_quota: number | null;
+  period: string;
+  scans: number | string | null;
+  ai_cost_usd: number | string | null;
+  avg_cost_per_scan: number | string | null;
+  library_hits: number | string | null;
+  library_misses: number | string | null;
+  cache_hit_rate_pct: number | string | null;
+  gross_margin_usd: number | string | null;
+};
+
+export type SharedLibraryRow = { framework: string; grade: string; subject: string; standards: number; detailed: number; updated_at: string | null };
+
+/** Shared standards (usable by every teacher) grouped by framework, grade, and subject. */
+export async function getSharedLibrary(): Promise<SharedLibraryRow[]> {
+  const { data, error } = await supabaseAdmin().from("standards").select("framework, grade, subject, meta, updated_at").is("teacher_id", null).eq("active", true);
+  if (error) throw error;
+  const groups = new Map<string, SharedLibraryRow>();
+  for (const r of data ?? []) {
+    const key = `${r.framework}|${r.grade}|${r.subject}`;
+    const g = groups.get(key) ?? { framework: r.framework, grade: r.grade, subject: r.subject, standards: 0, detailed: 0, updated_at: null };
+    g.standards += 1;
+    if (r.meta && typeof r.meta === "object" && Array.isArray((r.meta as { skills?: unknown }).skills)) g.detailed += 1;
+    if (!g.updated_at || (r.updated_at && r.updated_at > g.updated_at)) g.updated_at = r.updated_at;
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => a.framework.localeCompare(b.framework) || Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject));
+}
+
 export async function getStandardsCoverage(): Promise<StandardsCoverage[]> {
   const { data, error } = await supabaseAdmin().from("admin_standards_coverage").select("*");
   if (error) throw error;
   return data as StandardsCoverage[];
 }
 
+export type CostBreakdown = {
+  teacher_id: string; period: string; stage: string; model: string;
+  calls: number; completed: number; failed: number; cost_usd: number; avg_cost_complete: number | null;
+};
+
+/** Cost grouped by the kind of work and the model that did it. Current month unless `allTime`. */
+export async function getCostBreakdown(opts: { teacherId?: string; allTime?: boolean } = {}): Promise<CostBreakdown[]> {
+  const now = new Date();
+  const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  let q = supabaseAdmin().from("admin_cost_breakdown").select("*");
+  if (opts.teacherId) q = q.eq("teacher_id", opts.teacherId);
+  if (!opts.allTime) q = q.eq("period", monthStart);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CostBreakdown[];
+}
+
 export async function getTeacherScans(teacherId: string, limit = 50) {
   const { data, error } = await supabaseAdmin()
     .from("scans")
-    .select("id, status, created_at, completed_at, cost_usd, extract_model, reteach_model, library_hits, library_misses, error")
+    .select("id, status, stage, created_at, completed_at, cost_usd, extract_model, reteach_model, library_hits, library_misses, error")
     .eq("teacher_id", teacherId)
     .order("created_at", { ascending: false })
     .limit(limit);

@@ -142,7 +142,7 @@ We use the information described above only to:
 
 | Data | Retention |
 |---|---|
-| Uploaded worksheet images | Automatically deleted [RETENTION WINDOW, e.g. 30 days] after upload |
+| Uploaded worksheet images | Automatically deleted 30 days after upload |
 | Roster photographs | Deleted immediately after names are read |
 | Extracted answer text, scores, misconception records | Kept while the account is active |
 | Standards mastery records | Kept while the account is active |

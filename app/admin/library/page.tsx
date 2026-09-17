@@ -71,7 +71,9 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function RenderContent({ content }: { content: any }) {
+// Reteaching content is teacher-authored or model-generated JSON with no
+// fixed shape, so it is walked structurally rather than typed.
+function RenderContent({ content }: { content: unknown }) {
   if (!content) return <p className="muted">No content.</p>;
   if (typeof content === "string") return <div style={{ whiteSpace: "pre-wrap" }}>{content}</div>;
   return (

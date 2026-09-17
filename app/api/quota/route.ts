@@ -1,5 +1,5 @@
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
-import { owner, guardOrigin, apiError, HttpError } from "@/lib/teacher-server";
+import { owningTeacherId, guardOrigin, apiError, HttpError } from "@/lib/teacher-server";
 
 type QuotaRow = {
   plan_id: string | null;
@@ -12,7 +12,7 @@ type QuotaRow = {
 export async function GET(request: Request) {
   try {
     guardOrigin(request);
-    await owner();
+    await owningTeacherId();
     if (!hasSupabaseConfig())
       throw new HttpError(503, "Plans are not available on this host yet.");
     // my_scan_quota is granted to authenticated and scopes itself to

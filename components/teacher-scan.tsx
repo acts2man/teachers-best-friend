@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   ScanLine,
   Search,
+  ShieldCheck,
   Upload,
   X,
 } from "lucide-react";
@@ -33,10 +34,15 @@ import type { Assessment, Question, Subject } from "@/lib/teacher-types";
 
 type Uploaded = { id: string; name: string; size: number; mime: string };
 export function ScanView() {
-  const { w, classroom, assessments, students, save, busy, aiReady, go } =
+  const { w, classroom, assessments, students, save, busy, aiReady, quota, go } =
     useTeacher();
   const params = useSearchParams();
   const mode = params.get("mode") === "responses" ? "responses" : "assignment";
+  // The server refuses a scan past the plan's limit with a 402, which used to
+  // arrive only after the teacher had uploaded and waited. Say so up front and
+  // leave the manual path open. A host with no plans reports no quota at all,
+  // and must never be blocked by this.
+  const outOfScans = Boolean(quota && !quota.canScan);
   const [phase, setPhase] = useState(1),
     [source, setSource] = useState("upload");
   const [title, setTitle] = useState(""),
@@ -644,6 +650,20 @@ export function ScanView() {
                   />
                 </label>
               )}
+              <div className="upload-privacy" role="note">
+                <ShieldCheck size={17} aria-hidden="true" />
+                <div>
+                  <strong>Upload only what the analysis needs.</strong>
+                  <p>
+                    {mode === "responses"
+                      ? "Student first names, initials, or a label like “Student 4” are enough. Leave off last names, student ID numbers, addresses, birth dates, medical information, and IEP or 504 records."
+                      : "Blank assessments only. If a copy has student names or ID numbers on it, cover or crop them before uploading."}
+                  </p>
+                  <a href="/legal/student-data-privacy" target="_blank" rel="noreferrer">
+                    How we protect student work
+                  </a>
+                </div>
+              </div>
               <Tabs value={source} onValueChange={setSource}>
                 <TabsList className="text-tabs">
                   <TabsTrigger value="upload">Upload or photograph</TabsTrigger>
@@ -806,6 +826,17 @@ export function ScanView() {
                 </p>
               </div>
             )}
+            {outOfScans && (
+              <div className="review-notice" data-tone="warn">
+                <FileText size={19} />
+                <p>
+                  This period’s scans are used up ({quota!.used} of{" "}
+                  {quota!.quota}). You can still save the assessment and enter
+                  questions and answers by hand — reading it automatically
+                  needs more scans.
+                </p>
+              </div>
+            )}
             <div className="setup-footer scan-submit">
               <span>
                 Review every suggestion before it becomes student evidence.
@@ -813,11 +844,13 @@ export function ScanView() {
               <div>
                 {mode === "assignment" && (
                   <Action
-                    variant={aiReady ? "secondary" : ""}
+                    variant={aiReady && !outOfScans ? "secondary" : ""}
                     disabled={busy || uploading || analyzing || !contentReady}
                     onClick={saveManual}
                   >
-                    {aiReady ? "Save without reading" : "Save assessment"}
+                    {aiReady && !outOfScans
+                      ? "Save without reading"
+                      : "Save assessment"}
                     <ArrowRight size={17} />
                   </Action>
                 )}
@@ -827,6 +860,7 @@ export function ScanView() {
                       busy ||
                       uploading ||
                       analyzing ||
+                      outOfScans ||
                       !contentReady ||
                       (mode === "responses" && (!prepared || !studentId))
                     }

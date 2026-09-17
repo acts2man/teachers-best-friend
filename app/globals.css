@@ -545,3 +545,126 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .class-scan-row-main .pick{min-width:220px;width:auto}
 .class-scan-name-input{width:auto;min-width:160px;flex:1}
 .footer-legal{display:flex;flex-wrap:wrap;gap:4px 12px;padding:10px 5px 0;font-size:12px}.footer-legal a{color:hsl(calc(143deg + var(--th)) calc(12% * var(--ts)) 65%);text-decoration:none}.footer-legal a:hover{color:hsl(calc(77deg + var(--th)) calc(67% * var(--ts)) 83.1%)}
+
+/* Admin sign-in variant of the login card (reached via ?next=/admin) */
+.auth-switch-admin{display:flex;width:max-content;max-width:100%;align-items:center;justify-content:center;gap:6px;margin:10px auto 0;padding:8px 14px;border:1px solid hsl(calc(129deg + var(--th)) calc(13% * var(--ts)) 89.2%);border-radius:999px;color:hsl(calc(153deg + var(--th)) calc(25% * var(--ts)) 21.4%);background:hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%);transition:background .2s,border-color .2s}
+.auth-switch-admin:hover{text-decoration:none;background:hsl(calc(83deg + var(--th)) calc(43% * var(--ts)) 90.4%);border-color:hsl(calc(89deg + var(--th)) calc(25% * var(--ts)) 55.3% / .5)}
+.auth-switch-admin svg{color:hsl(calc(89deg + var(--th)) calc(25% * var(--ts)) 55.3%)}
+.auth-page.is-admin .auth-panel{background:radial-gradient(circle at 20% 0,hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .28) 0,transparent 42%),linear-gradient(160deg,hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%),hsl(calc(120deg + var(--th)) calc(13% * var(--ts)) 92.5%))}
+.auth-card-admin{position:relative;overflow:hidden;color:hsl(calc(69deg + var(--th)) calc(33% * var(--ts)) 95.9%);background:radial-gradient(circle at 100% 0,hsl(calc(150deg + var(--th)) calc(19% * var(--ts)) 35.3%) 0,transparent 46%),linear-gradient(150deg,hsl(calc(162deg + var(--th)) calc(33% * var(--ts)) 18.0%) 0%,hsl(calc(158deg + var(--th)) calc(29% * var(--ts)) 22.5%) 58%,hsl(calc(162deg + var(--th)) calc(29% * var(--ts)) 15.5%) 100%);border-color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .28);box-shadow:0 34px 80px hsl(calc(145deg + var(--th)) calc(27% * var(--ts)) 12% / .32),inset 0 1px 0 hsl(0 0% 100% / .08)}
+.auth-card-admin:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%),transparent)}
+.auth-card-admin:after{content:"";position:absolute;right:-140px;top:-160px;width:340px;height:340px;border:1px solid hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .2);border-radius:50%;box-shadow:0 0 0 50px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .05),0 0 0 100px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .03);pointer-events:none}
+.auth-card-admin>*{position:relative;z-index:1}
+.auth-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:25px}
+.auth-card-admin .soft-icon{margin:0;background:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .14);color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);border:1px solid hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .3)}
+.auth-admin-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 82%);background:hsl(0 0% 100% / .06);border:1px solid hsl(0 0% 100% / .12)}
+.auth-card-admin>.eyebrow{color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%)}
+.auth-card-admin h2{color:#fff;font-family:Manrope,sans-serif;letter-spacing:-.9px}
+.auth-card-admin .auth-intro{color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 81.8% / .88)}
+.auth-card-admin .auth-form label{color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 86%)}
+.auth-card-admin input:not([type=file]){background:hsl(0 0% 100% / .06);color:#fff;border-color:hsl(0 0% 100% / .16);color-scheme:dark}
+.auth-card-admin input:not([type=file]):focus{border-color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);box-shadow:0 0 0 3px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8% / .18)}
+.auth-card-admin input::placeholder{color:hsl(0 0% 100% / .4)}
+.auth-card-admin .auth-submit{background:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%);color:hsl(calc(162deg + var(--th)) calc(33% * var(--ts)) 14%);font-weight:700}
+.auth-card-admin .auth-submit:hover:not(:disabled){background:hsl(calc(77deg + var(--th)) calc(70% * var(--ts)) 84%);box-shadow:0 8px 22px hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 60% / .28)}
+.auth-card-admin .auth-message.error{color:#ffd9d2;background:hsl(8 60% 40% / .28);border-color:hsl(8 60% 60% / .4)}
+.auth-admin-facts{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:24px 0 0;padding:18px 0 0;border-top:1px solid hsl(0 0% 100% / .1)}
+.auth-admin-facts li{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:600;color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 86%);background:hsl(0 0% 100% / .05);border:1px solid hsl(0 0% 100% / .1)}
+.auth-admin-facts svg{color:hsl(calc(77deg + var(--th)) calc(65% * var(--ts)) 78.8%)}
+.auth-card-admin .auth-switch{margin-top:18px;color:hsl(calc(148deg + var(--th)) calc(16% * var(--ts)) 81.8%)}
+.auth-card-admin .auth-switch:hover{color:#fff}
+
+/* Support ticketing (teacher-facing view). A couple of small utilities the
+   rest of the app never needed: a muted secondary-text color and a
+   monospace treatment for ticket references. */
+.muted{color:var(--text-secondary)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em;letter-spacing:-0.01em}
+.text-link-inline{display:inline;background:none;border:0;padding:0;margin:0;font:inherit;font-weight:600;color:var(--primary);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.text-link-inline:hover{color:var(--ink)}
+.ticket-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;text-align:left;padding:1rem 1.2rem;background:#fff;cursor:pointer;transition:background .15s,transform .15s}
+.ticket-row:hover{background:hsl(calc(100deg + var(--th)) calc(23% * var(--ts)) 97.5%);transform:translateX(2px)}
+.ticket-row-main{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.ticket-row-main strong{font-size:.98rem}
+.ticket-thread{display:flex;flex-direction:column;gap:.9rem;padding:1.4rem;max-height:60vh;overflow-y:auto}
+.ticket-bubble{max-width:80%;padding:.7rem 1rem;border-radius:14px;font-size:.92rem;line-height:1.55}
+.ticket-bubble p{margin:0;white-space:pre-wrap}
+.ticket-bubble-meta{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--text-secondary);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
+.ticket-bubble-you{align-self:flex-end;background:var(--primary);color:#fff}
+.ticket-bubble-you .ticket-bubble-meta{color:hsl(0 0% 100% / .75)}
+.ticket-bubble-staff{align-self:flex-start;background:var(--secondary);color:var(--secondary-foreground)}
+.ticket-bubble-ai{align-self:flex-start;background:hsl(calc(80deg + var(--th)) calc(46% * var(--ts)) 94.9%);color:hsl(calc(152deg + var(--th)) calc(24% * var(--ts)) 23.1%)}
+@media (max-width:640px){
+  .ticket-bubble{max-width:92%}
+}
+
+/* App-manager "view as" banner — unmissable, always at the very top of the
+   teacher workspace while impersonation is active. */
+.impersonation-banner{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#3B2A0E;color:#FCEFC7;font-size:13px;font-weight:600}
+.impersonation-banner svg{flex-shrink:0;color:#F3C969}
+.impersonation-banner span{flex:1;min-width:0}
+.impersonation-banner strong{color:#fff}
+.impersonation-banner form{flex-shrink:0}
+.impersonation-banner button{padding:6px 13px;border-radius:8px;background:#F3C969;color:#3B2A0E;font-size:12px;font-weight:700;border:0;cursor:pointer;white-space:nowrap}
+.impersonation-banner button:hover{background:#F6D98C}
+@media (max-width:640px){
+  .impersonation-banner{flex-wrap:wrap;padding:10px 14px}
+  .impersonation-banner span{flex-basis:100%}
+}
+
+/* Scan meter in the app sidebar. Quiet at a glance, louder as it runs out. */
+.quota-meter {
+  margin: -0.35rem 0 0.9rem;
+  padding: 0 0.15rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.quota-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.quota-count { font-weight: 600; color: var(--ink-soft); }
+.quota-of { color: var(--ink-faint, var(--ink-soft)); opacity: 0.75; }
+.quota-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule-faint);
+  overflow: hidden;
+}
+.quota-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--mark);
+  transition: width 0.3s ease;
+}
+.reduce-motion .quota-track > span { transition: none; }
+.quota-meter[data-level="low"] .quota-count { color: #8a6d0b; }
+.quota-meter[data-level="low"] .quota-track > span { background: #c9a227; }
+.quota-meter[data-level="out"] .quota-count { color: var(--correct-red); }
+.quota-meter[data-level="out"] .quota-track > span { background: var(--correct-red); }
+.quota-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.quota-note a { color: var(--mark-deep); }
+
+/* A notice that reports a limit rather than an explanation reads warmer. */
+.review-notice[data-tone="warn"] {
+  background: hsl(calc(44deg + var(--th)) calc(62% * var(--ts)) 94%);
+  border-color: hsl(calc(44deg + var(--th)) calc(48% * var(--ts)) 82%);
+}
+.review-notice[data-tone="warn"] > svg { color: #8a6d0b; }
+.review-notice[data-tone="warn"] p { color: #6b5408; }
+
+/* Student-privacy note shown at the upload controls themselves, so the
+   guidance is read at the moment work is chosen rather than in the Terms. */
+.upload-privacy{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;margin-bottom:14px;border:1px solid hsl(calc(77deg + var(--th)) calc(45% * var(--ts)) 72%);border-radius:11px;background:hsl(calc(80deg + var(--th)) calc(46% * var(--ts)) 96.5%)}
+.upload-privacy>svg{color:hsl(calc(112deg + var(--th)) calc(28% * var(--ts)) 34%);flex-shrink:0;margin-top:1px}
+.upload-privacy strong{display:block;font-size:13.5px;color:hsl(calc(152deg + var(--th)) calc(24% * var(--ts)) 21%);margin-bottom:3px}
+.upload-privacy p{margin:0;font-size:13px;line-height:1.55;color:hsl(calc(147deg + var(--th)) calc(13% * var(--ts)) 32%)}
+.upload-privacy a{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:hsl(calc(112deg + var(--th)) calc(28% * var(--ts)) 34%);text-decoration:underline;text-underline-offset:2px}

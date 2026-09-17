@@ -79,8 +79,6 @@ export function StandardsView() {
   const { w, classroom, save, busy, go } = useTeacher();
   const [query, setQuery] = useState(""),
     [subject, setSubject] = useState("All subjects"),
-    [framework, setFramework] = useState(classroom.framework),
-    [grade, setGrade] = useState(String(classroom.grade)),
     [detail, setDetail] = useState<Standard | null>(null),
     [add, setAdd] = useState(false),
     [code, setCode] = useState(""),
@@ -89,13 +87,31 @@ export function StandardsView() {
     [skills, setSkills] = useState(""),
     [customFramework, setCustomFramework] = useState("District standards"),
     [customSubject, setCustomSubject] = useState("Math");
+  // The classroom seeds the framework and grade; the teacher can pick something
+  // else, and that choice lasts until they switch class. Seeding useState from
+  // a prop instead would freeze this screen on whichever classroom happened to
+  // be active when it first mounted -- switch from a Grade 4 class to a Grade 7
+  // one and the Standards page kept showing Grade 4, or showed nothing at all.
+  const [pick, setPick] = useState<{
+    for: string;
+    framework: string;
+    grade: string;
+  } | null>(null);
+  const classKey = `${classroom.framework}|${classroom.grade}`,
+    current = pick && pick.for === classKey ? pick : null,
+    framework = current ? current.framework : classroom.framework,
+    grade = current ? current.grade : String(classroom.grade),
+    setFramework = (value: string) =>
+      setPick({ for: classKey, framework: value, grade }),
+    setGrade = (value: string) =>
+      setPick({ for: classKey, framework, grade: value });
   const all = allStandards(w),
     filtered = all.filter(
       (s) =>
         s.framework === framework &&
         s.grade === Number(grade) &&
         (subject === "All subjects" || s.subject === subject) &&
-        (s.code + " " + s.title + " " + s.summary + " " + s.skills.join(" "))
+        (s.code + " " + s.title + " " + s.summary + " " + (s.skills ?? []).join(" "))
           .toLowerCase()
           .includes(query.toLowerCase()),
     );
@@ -246,7 +262,7 @@ export function StandardsView() {
             <p>{s.summary}</p>
             <div className="standard-card-footer">
               <span>
-                {s.skills.length
+                {s.skills?.length
                   ? s.skills.length + " component skills"
                   : "Official standard"}
               </span>
@@ -329,7 +345,7 @@ export function StandardsView() {
               <div className="prerequisite-map">
                 <div>
                   <span>BEFORE THIS</span>
-                  {detail.prerequisites.length ? (
+                  {detail.prerequisites?.length ? (
                     detail.prerequisites.map((p) => <Pill key={p}>{p}</Pill>)
                   ) : (
                     <p>Not yet mapped</p>
@@ -343,7 +359,7 @@ export function StandardsView() {
                 <ArrowRight size={20} />
                 <div>
                   <span>UP NEXT</span>
-                  {detail.next.length ? (
+                  {detail.next?.length ? (
                     detail.next.map((p) => <Pill key={p}>{p}</Pill>)
                   ) : (
                     <p>Not yet mapped</p>
@@ -352,13 +368,13 @@ export function StandardsView() {
               </div>
               <div className="detail-block">
                 <h3>A misconception to look for</h3>
-                <p>{detail.misconception}</p>
+                <p>{detail.misconception || "Use the student’s written reasoning to identify the step that needs support."}</p>
               </div>
               <div className="detail-block">
                 <h3>Try a question like this</h3>
-                <p>{detail.example}</p>
+                <p>{detail.example || "Choose a task that directly demonstrates this standard."}</p>
               </div>
-              {detail.vocabulary.length > 0 && (
+              {(detail.vocabulary?.length ?? 0) > 0 && (
                 <div className="detail-block">
                   <h3>Words that matter</h3>
                   <div className="tag-list">

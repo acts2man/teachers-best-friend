@@ -1,5 +1,5 @@
 import {
-  owner,
+  owningTeacherId,
   readDocument,
   guardOrigin,
   apiError,
@@ -8,7 +8,7 @@ import {
   readWorkspace,
 } from "@/lib/teacher-server";
 import { catalogFor } from "@/lib/teacher-catalog";
-import type { Workspace } from "@/lib/teacher-types";
+import type { Standard, Workspace } from "@/lib/teacher-types";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
@@ -25,6 +25,9 @@ import {
   runModelSync,
   startModelBackground,
   startScan,
+  sharedCatalog,
+  shareCatalog,
+  isAdminUser,
 } from "@/lib/analyze-server";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
@@ -37,7 +40,7 @@ export const maxDuration = 26;
 export async function POST(request: Request) {
   try {
     guardOrigin(request);
-    const user = await owner(),
+    const user = await owningTeacherId(),
       config = await aiConfig();
     if (!config.key)
       throw new HttpError(
@@ -84,13 +87,23 @@ export async function POST(request: Request) {
     // model call so quota and account checks gate the spend, and usage is
     // recorded afterwards whether the call succeeds or fails.
     const svc = hasSupabaseConfig() ? createServiceClient() : null;
+    // A standards lookup another teacher already unlocked is served from the
+    // shared library: no scan, no model call, no cost.
+    // Admins unlock standards for everyone from the dashboard: those loads
+    // are not billed to their own quota and may refresh what is already shared.
+    const adminCatalog = Boolean(svc && p.mode === "catalog" && (await isAdminUser(svc!, user)));
+    if (svc && p.mode === "catalog" && !(adminCatalog && p.refresh)) {
+      const shared = await sharedCatalog(svc, p);
+      if (shared.length)
+        return Response.json({ result: { standards: shared }, model: "shared-library" });
+    }
     let scanId: string | null = null;
     if (svc) {
       const [assessmentRow, studentRow] = await Promise.all([
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      scanId = await startScan(svc, user, assessmentRow, studentRow);
+      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, !adminCatalog);
     }
 
     // Background path: start the model job, hand the client a scan id to poll,
@@ -165,6 +178,8 @@ export async function POST(request: Request) {
           "The document couldn’t be analyzed reliably. Please review it manually.",
         );
       output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
+      if (svc && p.mode === "catalog")
+        await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
       ok = true;
     } catch (e) {
       errorMessage =
