@@ -38,12 +38,13 @@ jobs:
         run: |
           set -uo pipefail
 
+          # Production, confirmed by Troy on 17 Sep. The apex and www domains
+          # were in here as guesses and only earned a pile of 429s, so they are
+          # gone; pass one explicitly via the url input if that ever changes.
           if [ -n "${INPUT_URL}" ]; then
             CANDIDATES="${INPUT_URL}"
           else
-            CANDIDATES="https://teachersbestfriend.netlify.app
-          https://ateachersbestfriend.com
-          https://www.ateachersbestfriend.com"
+            CANDIDATES="https://teachersbestfriend.netlify.app"
           fi
 
           echo "main is at: ${EXPECTED}"
