@@ -1,9 +1,41 @@
 import californiaGrade4 from "./california-grade-4.json";
 import californiaGrade7Math from "./california-grade-7-math.json";
 import californiaGrade7Ela from "./california-grade-7-ela.json";
+import californiaGradeKMath from "./california-grade-k-math.json";
+import californiaGradeKEla from "./california-grade-k-ela.json";
+import californiaGrade1Math from "./california-grade-1-math.json";
+import californiaGrade1Ela from "./california-grade-1-ela.json";
+import californiaGrade2Math from "./california-grade-2-math.json";
+import californiaGrade2Ela from "./california-grade-2-ela.json";
+import californiaGrade3Math from "./california-grade-3-math.json";
+import californiaGrade3Ela from "./california-grade-3-ela.json";
+import californiaGrade5Math from "./california-grade-5-math.json";
+import californiaGrade5Ela from "./california-grade-5-ela.json";
+import californiaGrade6Math from "./california-grade-6-math.json";
+import californiaGrade6Ela from "./california-grade-6-ela.json";
+import californiaGrade8Math from "./california-grade-8-math.json";
+import californiaGrade8Ela from "./california-grade-8-ela.json";
 import {standards} from "./teacher-data";
 
-const california = [...californiaGrade4, ...californiaGrade7Math, ...californiaGrade7Ela];
+const california = [
+  ...californiaGrade4,
+  ...californiaGrade7Math,
+  ...californiaGrade7Ela,
+  ...californiaGradeKMath,
+  ...californiaGradeKEla,
+  ...californiaGrade1Math,
+  ...californiaGrade1Ela,
+  ...californiaGrade2Math,
+  ...californiaGrade2Ela,
+  ...californiaGrade3Math,
+  ...californiaGrade3Ela,
+  ...californiaGrade5Math,
+  ...californiaGrade5Ela,
+  ...californiaGrade6Math,
+  ...californiaGrade6Ela,
+  ...californiaGrade8Math,
+  ...californiaGrade8Ela,
+];
 import type {Standard, Workspace} from "./teacher-types";
 
 const titles: Record<string, string> = {
