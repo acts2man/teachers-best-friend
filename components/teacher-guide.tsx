@@ -35,7 +35,7 @@ const steps = [
     where: "Assessments → New assessment",
     lead: "Start with what you intend to measure, then let the app read the assessment for you.",
     points: [
-      "Choose the grade, subject, and your state, then check the standards this assessment should assess. California Grade 4 is built in; any other state or grade is retrieved with AI the first time and saved to your library.",
+      "Choose the grade, subject, and your state, then check the standards this assessment should assess. California Kindergarten through Grade 8 is built in; any other state or grade is retrieved with AI the first time and saved to your library.",
       "Teach the same course to several periods? Tick the other classes under Use this assessment in. The questions and key are shared; each class keeps its own student work.",
       "Upload the blank assessment as a PDF or photo, or paste the questions. The questions are read into the assessment automatically. You never retype them.",
       "On 1. Assessment review, check each question’s standard, skill, DOK, and Costa’s level. Confirm clear matches together, or open a question to adjust it.",
@@ -122,7 +122,7 @@ const legend = [
   {
     icon: Library,
     name: "Standards",
-    text: "California Grade 4 built in, every other state retrieved on request, plus your district standards.",
+    text: "California K-8 built in, every other state retrieved on request, plus your district standards.",
   },
   {
     icon: Settings,

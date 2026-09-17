@@ -112,6 +112,21 @@ export const californiaStandards: Standard[] = california.map(record => {
     example: enriched?.example || "Choose a task that directly demonstrates this standard.", dok: enriched?.dok || 2};
 });
 
+/**
+ * Whether this grade and subject ship with the app, carrying official wording,
+ * rather than being fetched with AI on first use. Screens use it to decide
+ * whether to show the "check this against the official document" caution --
+ * which is true of an AI lookup and misleading about a built-in catalog.
+ */
+export function isBuiltInCatalog(framework: string, grade: number, subject?: string) {
+  return californiaStandards.some(
+    (s) =>
+      s.framework === framework &&
+      s.grade === grade &&
+      (!subject || s.subject === subject),
+  );
+}
+
 export function allStandards(
   w: Pick<Workspace, "customStandards" | "sharedStandards">,
 ) {

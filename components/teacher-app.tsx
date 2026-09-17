@@ -693,8 +693,9 @@ export default function TeacherApp({ view }: { view: string }) {
             />
           </label>
           <p className="field-help">
-            Choose your state. California Grade 4 is built in; other states and
-            grades are retrieved with AI the first time you need them.
+            Choose your state. California Kindergarten through Grade 8 is
+            built in; other states and grades are retrieved with AI the first
+            time you need them.
           </p>
           <Action type="submit" disabled={busy || !name.trim()}>
             Create class

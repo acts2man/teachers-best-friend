@@ -57,7 +57,7 @@ import {
   TextLink,
   downloadText,
 } from "./teacher-shared";
-import { allStandards } from "@/lib/teacher-catalog";
+import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import {
@@ -223,15 +223,16 @@ export function StandardsView() {
         <div>
           <strong>{frameworkLabel(framework)}</strong>
           <p>
-            California Grade 4 Math and ELA are built in with official wording.
-            Every other state and grade is retrieved with AI and saved here.
+            California Kindergarten through Grade 8, Math and ELA, are built in
+            with official wording. Every other state and grade is retrieved with
+            AI the first time and saved here.
           </p>
         </div>
         <Pill>{filtered.length} standards</Pill>
       </div>
       {filtered.length > 0 &&
         stateFor(framework) &&
-        !(framework === "California" && Number(grade) === 4) && (
+        !isBuiltInCatalog(framework, Number(grade)) && (
           <div className="standards-note">
             <Lightbulb size={15} />
             <span>
