@@ -271,3 +271,48 @@ export async function getTeacherAudit(teacherId: string) {
   if (error) throw error;
   return data as AuditRow[];
 }
+
+export type ImpersonationSession = {
+  id: string;
+  actor_email: string | null;
+  teacher_email: string | null;
+  teacher_id: string;
+  created_at: string;
+  ended_at: string | null;
+  expires_at: string;
+};
+
+/**
+ * Every "view as" session, newest first. Closes out any session that ran past
+ * its expiry without an explicit stop first, so the list shows a real duration
+ * instead of an endless "Active".
+ */
+export async function getImpersonationSessions(limit = 200): Promise<ImpersonationSession[]> {
+  const db = supabaseAdmin();
+  await db.rpc("reap_impersonation_sessions");
+  const { data, error } = await db
+    .from("impersonation_sessions")
+    .select("id, teacher_id, app_manager_id, created_at, ended_at, expires_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+
+  // The session rows carry ids only. Resolve both sides in one pass rather
+  // than a query per row.
+  const ids = [...new Set(data.flatMap((s) => [s.teacher_id, s.app_manager_id]))];
+  const { data: people } = await db
+    .from("profiles")
+    .select("id, email")
+    .in("id", ids);
+  const emailOf = new Map((people ?? []).map((p) => [p.id, p.email as string | null]));
+
+  return data.map((s) => ({
+    id: s.id,
+    teacher_id: s.teacher_id,
+    actor_email: emailOf.get(s.app_manager_id) ?? null,
+    teacher_email: emailOf.get(s.teacher_id) ?? null,
+    created_at: s.created_at,
+    ended_at: s.ended_at,
+    expires_at: s.expires_at,
+  }));
+}

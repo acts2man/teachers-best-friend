@@ -21,6 +21,7 @@ const NAV = [
   { href: "/admin/pipeline",  label: "AI pipeline",        icon: "pipeline",  group: "System" },
   { href: "/admin/standards", label: "Standards",          icon: "standards", group: "System" },
   { href: "/admin/audit",     label: "Audit log",          icon: "audit",     group: "System" },
+  { href: "/admin/impersonation", label: "View-as sessions", icon: "viewas",  group: "System" },
 ] as const;
 
 function initials(email: string) {
