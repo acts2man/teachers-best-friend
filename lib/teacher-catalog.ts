@@ -63,6 +63,39 @@ const titles: Record<string, string> = {
   "L.7.1":"Phrases, clauses & sentence types", "L.7.2":"Commas & spelling", "L.7.3":"Precise, concise language", "L.7.4":"Determine word meanings", "L.7.5":"Figurative language & connotation", "L.7.6":"Academic vocabulary",
 };
 
+/**
+ * The short name a teacher sees in a standards picker.
+ *
+ * Grades 4 and 7 have hand-written titles above. Everywhere else the old
+ * fallback was the cluster heading, which a whole domain shares -- so a
+ * grade 5 teacher saw nine standards all called "Apply and extend previous
+ * understandings of multiplication", and had nothing to pick between them.
+ * Deriving the name from the standard's own opening clause keeps it accurate
+ * (it is the official wording, just trimmed) and makes every row distinct.
+ */
+function displayTitle(record: { officialCode: string; wording: string; cluster: string }) {
+  const hand = titles[record.officialCode];
+  if (hand) return hand;
+  const wording = (record.wording || "").trim();
+  if (!wording) return record.cluster;
+  // First sentence or clause. Sub-standards often repeat their parent's stem
+  // followed by the part that is actually theirs, so prefer the later clause
+  // when the first one is shared boilerplate ending in a colon.
+  const parts = wording.split(/(?<=[.;:])\s+/).filter(Boolean);
+  let pick = parts[0] || wording;
+  // A lettered sub-standard's wording opens with its parent's stem, which all
+  // of its siblings repeat -- so 3.MD.7.a-d would all be called "Relate area
+  // to the operations of multiplication and addition". Skip the stem and name
+  // the part that actually belongs to this one.
+  const isSubStandard = /\.[a-z]$/.test(record.officialCode);
+  if (parts.length > 1 && (isSubStandard || /[:;]$/.test(pick))) pick = parts[1];
+  pick = pick.replace(/[.;:]$/, "").trim();
+  if (pick.length <= 68) return pick;
+  const cut = pick.slice(0, 68);
+  const space = cut.lastIndexOf(" ");
+  return (space > 30 ? cut.slice(0, space) : cut) + "\u2026";
+}
+
 // Retain familiar CCSS codes for existing lessons; also show CDE's official identifier.
 function commonCode(code: string) {
   return standards.find(s => s.subject === "Math" && s.code.replace(/\.[A-Z](?=\.\d+$)/, "") === code)?.code || code;
@@ -71,7 +104,7 @@ function commonCode(code: string) {
 export const californiaStandards: Standard[] = california.map(record => {
   const code = commonCode(record.officialCode);
   const enriched = standards.find(s => s.code === code);
-  return {...enriched, code, officialCode: record.officialCode, title: titles[record.officialCode] || record.cluster,
+  return {...enriched, code, officialCode: record.officialCode, title: displayTitle(record),
     subject: record.subject as Standard["subject"], grade: record.grade, domain: record.domain, cluster: record.cluster,
     framework: "California", summary: record.wording, wording: record.wording, source: record.source,
     skills: enriched?.skills || [], prerequisites: enriched?.prerequisites || [], next: enriched?.next || [],
