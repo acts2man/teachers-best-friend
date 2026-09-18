@@ -151,7 +151,9 @@ export async function GET(
     // result attached.
     const { error: writeError } = await svc
       .from("scans")
-      .update({ result: output })
+      // Stamped with the build that actually ran finalizeAnalysis, which is
+      // the code every "it should already be fixed" question turns on.
+      .update({ result: output, build_ref_finish: process.env.COMMIT_REF ?? null })
       .eq("id", scanId);
     if (writeError)
       console.error("Storing scan result failed", writeError.message);
