@@ -37,6 +37,24 @@ Verify claims against the running system, not against memory of an earlier
 conversation. A statement that was true last week may have been broken by the
 feature that shipped since.
 
+## Talk the design through before building it
+
+When a teacher asks for something and the obvious implementation has a cost, a
+limit or a tradeoff they would not have thought of, that goes back to them in
+Slack before any of it is built. Say what they asked for, what the naive way
+would cost, what we would do instead, and what we still need from them.
+
+They are teachers, not engineers. They cannot weigh a decision they were never
+shown, and a cost they find out about from a bill is a cost we hid. Two
+examples this project has already hit: a pilot teacher proposed students write
+numeric codes instead of names (a misread digit misfiles a test invisibly,
+where a misread name is obvious — worth saying, not worth silently overruling),
+and attaching a reading passage to every student's grading call would have
+tripled the cost of a class set for no benefit over reading it once.
+
+Do not silently overrule the request either. Bring the tradeoff, propose the
+pivot, keep the outcome they asked for.
+
 ## Where continuity lives
 
 - `docs/student-data-flow.md` — every hop student data takes, what each vendor
