@@ -193,6 +193,28 @@ export function normalizeRecognizedResponses(
   });
 }
 
+/**
+ * Layers a fresh pass of recognized responses over what this student already
+ * had, keeping the earlier answer wherever the new pass found nothing.
+ *
+ * A teacher who photographs page 2 after page 1 sends a request that can only
+ * see page 2, so it truthfully reports every question that lives on page 1 as
+ * not visible. Replacing outright threw page 1's answers away and showed the
+ * teacher half a blank test. Keeping the earlier answer where the new pass is
+ * empty joins the pages instead. Re-scanning the same page still overwrites
+ * it, because that pass does find those questions.
+ */
+export function mergeStudentResponses(
+  existing: StudentResponse[],
+  incoming: StudentResponse[],
+): StudentResponse[] {
+  const before = new Map(existing.map((r) => [r.questionId, r]));
+  return incoming.map((r) => {
+    const prior = before.get(r.questionId);
+    return !r.answer.trim() && prior?.answer.trim() ? prior : r;
+  });
+}
+
 export function studentReport(a: Assessment, student: Student) {
   const summary = studentReview(a, student.id);
   const codes = [

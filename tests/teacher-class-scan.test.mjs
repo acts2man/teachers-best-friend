@@ -139,3 +139,45 @@ test("a group with no pages or no responses is skipped entirely",()=>{
   assert.equal(result.newStudents.length,0);
   assert.equal(result.assessment.responses.length,0);
 });
+
+// Ricky's bug, kept from coming back: a ten-question test across two pages,
+// photographed a page at a time, came back "5 of 10 blank" for every student
+// because each page was graded against the whole key on its own.
+const {groupPagesByCapture}=bundle("lib/teacher-class-scan.ts");
+const {mergeStudentResponses}=bundle("lib/teacher-workflow.ts");
+
+test("pages the teacher put under one student stay in one group",()=>{
+  assert.deepEqual(groupPagesByCapture([2,2,2]),[[0,1],[2,3],[4,5]]);
+});
+test("students with uneven page counts each keep all their pages",()=>{
+  assert.deepEqual(groupPagesByCapture([1,3,2]),[[0],[1,2,3],[4,5]]);
+});
+test("an empty pile from a stray 'next student' tap is skipped, not graded",()=>{
+  assert.deepEqual(groupPagesByCapture([2,0,1]),[[0,1],[2]]);
+  assert.deepEqual(groupPagesByCapture([0]),[]);
+});
+test("every scanned page lands in exactly one group",()=>{
+  const sizes=[3,1,2,4];
+  const flat=groupPagesByCapture(sizes).flat();
+  assert.deepEqual(flat,[...Array(sizes.reduce((a,b)=>a+b,0)).keys()]);
+});
+
+const resp=(questionId,answer)=>({id:"r-"+questionId,studentId:"s1",questionId,answer,correct:!!answer,match:answer?100:0,misconception:"",confidence:answer?99:0,verified:false});
+
+test("a second page does not blank out the answers the first page supplied",()=>{
+  // Page 1 answered q1-q2; the page-2 pass can only see q3 and truthfully
+  // reports q1-q2 as not visible.
+  const page1=[resp("q1","20"),resp("q2","15%"),resp("q3","")];
+  const page2=[resp("q1",""),resp("q2",""),resp("q3","65%")];
+  const merged=mergeStudentResponses(page1,page2);
+  assert.deepEqual(merged.map(r=>r.answer),["20","15%","65%"]);
+});
+test("re-scanning the same page still overwrites it",()=>{
+  const first=[resp("q1","20")];
+  const corrected=[resp("q1","28")];
+  assert.deepEqual(mergeStudentResponses(first,corrected).map(r=>r.answer),["28"]);
+});
+test("merging onto nothing keeps the incoming pass as-is",()=>{
+  const incoming=[resp("q1","20"),resp("q2","")];
+  assert.deepEqual(mergeStudentResponses([],incoming),incoming);
+});
