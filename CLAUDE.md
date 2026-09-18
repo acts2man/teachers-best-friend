@@ -37,6 +37,19 @@ Verify claims against the running system, not against memory of an earlier
 conversation. A statement that was true last week may have been broken by the
 feature that shipped since.
 
+## Slack: address the person, in front of everyone
+
+Unless it is a direct message to Troy, a reply goes to the channel with
+`@channel` **and** speaks to the person who asked, in the second person. Not a
+write-up about them — a reply to them that the others can read.
+
+Both pilot teachers are building this with us and each learns from what the
+other asks. A question answered in a DM, or a reply phrased as a report to the
+room, teaches only one of them.
+
+So: `@channel`, then "@Michael — you asked for X, here is where it lands."
+Never "Michael raised X" when Michael is in the room.
+
 ## Talk the design through before building it
 
 When a teacher asks for something and the obvious implementation has a cost, a
