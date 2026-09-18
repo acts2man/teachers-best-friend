@@ -28,6 +28,7 @@ import { frameworkOptions } from "@/lib/states";
 import { StandardsLoader } from "./teacher-classes";
 import {
   activeQuestions,
+  mergeStudentResponses,
   parseAnswerKey,
   preparationGaps,
 } from "@/lib/teacher-workflow";
@@ -340,16 +341,28 @@ export function ScanView() {
         )
           go("/assessments?id=" + a.id);
       } else {
+        // A second scan for the same student is another page of the same
+        // test, not a replacement for the first. Layer it over what is already
+        // there so questions this pass could not see keep the answers an
+        // earlier page supplied, instead of coming back blank.
         const a = {
           ...chosen!,
           responses: [
             ...chosen!.responses.filter((r) => r.studentId !== studentId),
-            ...d.result.responses,
+            ...mergeStudentResponses(
+              chosen!.responses.filter((r) => r.studentId === studentId),
+              d.result.responses,
+            ),
           ],
           uploadIds: [...chosen!.uploadIds, ...uploadIds],
           studentUploadIds: {
             ...chosen!.studentUploadIds,
-            [studentId]: uploadIds,
+            [studentId]: [
+              ...new Set([
+                ...(chosen!.studentUploadIds?.[studentId] || []),
+                ...uploadIds,
+              ]),
+            ],
           },
         };
         if (

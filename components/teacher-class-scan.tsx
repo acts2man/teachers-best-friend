@@ -1,7 +1,16 @@
 "use client";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { ScanLine, LoaderCircle, Check, X, Users } from "lucide-react";
+import {
+  ScanLine,
+  LoaderCircle,
+  Check,
+  X,
+  Users,
+  Camera,
+  UserPlus,
+  Undo2,
+} from "lucide-react";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { useTeacher } from "./teacher-context";
@@ -10,6 +19,7 @@ import { preparationGaps } from "@/lib/teacher-workflow";
 import { reconcileEvidence } from "@/lib/teacher-data";
 import {
   applyScannedGroups,
+  groupPagesByCapture,
   groupPagesByName,
   resolveScannedGroups,
   type PageName,
@@ -19,34 +29,233 @@ import type { Assessment } from "@/lib/teacher-types";
 
 const MAX_PAGES = 24;
 
+/** One uploaded page, already straightened and split into work and name band. */
+type Page = { key: string; label: string; bodyId: string; stripId: string | null };
+
 /**
- * Upload a whole stack of scanned student pages for one assessment at once —
- * no roster entry has to exist first. AI splits the pages by the name
- * written on each one, matches it to the roster when it can, and grades
- * every student's pages. The teacher only confirms names before saving.
+ * Scanning a whole class's work for one assessment.
+ *
+ * Pages are collected into one pile per student, and the teacher decides where
+ * a pile ends by tapping "next student". That boundary matters more than it
+ * looks: a student's pages have to be graded together, in one request, or each
+ * page is marked against the whole answer key on its own and every question
+ * that lives on another page comes back blank. That is exactly what happened to
+ * a pilot teacher -- a ten-question test across two pages, photographed a page
+ * at a time, came back "5 of 10 blank" for every student, with both pages read
+ * perfectly.
+ *
+ * Grouping by the name the AI reads off each page is kept for a stack that
+ * arrives all at once (a desktop scanner's output), but a boundary the teacher
+ * drew is a fact and a boundary read off a name line is a guess, so the
+ * student-by-student flow is the one offered first.
  */
 export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const { w, classroom, students, save, busy, aiReady } = useTeacher();
   const [scanning, setScanning] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [status, setStatus] = useState("");
+  // piles[i] is student i's pages, in the order they were scanned. There is
+  // always an open pile at the end for the student being scanned right now.
+  const [piles, setPiles] = useState<Page[][]>([[]]);
   const [pageUploadIds, setPageUploadIds] = useState<string[]>([]);
   const [groups, setGroups] = useState<ResolvedGroup[] | null>(null);
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const stack = useRef<HTMLInputElement>(null);
   const prep = preparationGaps(a);
 
-  async function startScan(list: FileList | null) {
-    if (!list?.length || scanning) return;
+  const captured = piles.flat();
+  const busyScanning = scanning || adding;
+
+  async function upload(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    const r = await fetch("/api/uploads", { method: "POST", body: form });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    return d.id as string;
+  }
+
+  /**
+   * Straighten, cut the name band off the top, and upload both halves. Two
+   * uploads per page so that no single request ever holds a student's name
+   * beside that student's answers -- see docs/student-data-flow.md section 4.
+   */
+  async function preparePage(raw: File): Promise<Omit<Page, "key" | "label">> {
+    // A phone records its rotation in EXIF instead of rotating the pixels, so a
+    // page shot in portrait arrives sideways. Straighten first: the band is cut
+    // off the top of an upright page, which is only the top once rotated.
+    const page = await uprightPage(raw);
+    const split = await splitNameBand(page);
+    if (!split) {
+      // A PDF, or a browser that could not do the cut. Grade the whole page and
+      // read no name from it; the teacher names that pile.
+      return { bodyId: await upload(page), stripId: null };
+    }
+    return { bodyId: await upload(split.body), stripId: await upload(split.strip) };
+  }
+
+  function canAccept(count: number) {
+    if (captured.length + count <= MAX_PAGES) return true;
+    toast.error("Scan up to " + MAX_PAGES + " pages at a time, then grade and start another batch.");
+    return false;
+  }
+
+  function ready() {
     if (!prep.ready) {
       toast.error("Confirm the standards and answer key before scanning student work.");
-      return;
+      return false;
     }
     if (!aiReady) {
       toast.error("Scanning a whole class needs the AI connection.");
+      return false;
+    }
+    return true;
+  }
+
+  /** Add pages to the student currently being scanned. */
+  async function addPages(list: FileList | null) {
+    if (!list?.length || busyScanning) return;
+    const files = Array.from(list);
+    if (!ready() || !canAccept(files.length)) return;
+    setGroups(null);
+    setAdding(true);
+    try {
+      for (const raw of files) {
+        setStatus("Adding page " + (captured.length + 1) + "…");
+        const prepared = await preparePage(raw);
+        setPiles((p) => {
+          const next = p.map((pile) => [...pile]);
+          next[next.length - 1].push({
+            key: crypto.randomUUID(),
+            label: raw.name || "Page",
+            ...prepared,
+          });
+          return next;
+        });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "That page couldn't be uploaded.");
+    } finally {
+      setAdding(false);
+      setStatus("");
+      if (input.current) input.current.value = "";
+      if (camera.current) camera.current.value = "";
+    }
+  }
+
+  function nextStudent() {
+    if (!piles[piles.length - 1].length) {
+      toast.error("Add at least one page for this student first.");
       return;
     }
+    setPiles((p) => [...p, []]);
+  }
+
+  /** Undo the last page, or close an empty pile that was opened by mistake. */
+  function undoLast() {
+    setPiles((p) => {
+      const next = p.map((pile) => [...pile]);
+      if (!next[next.length - 1].length && next.length > 1) next.pop();
+      else next[next.length - 1].pop();
+      return next;
+    });
+    setGroups(null);
+  }
+
+  function reset() {
+    setPiles([[]]);
+    setPageUploadIds([]);
+    setGroups(null);
+    setDiscarded(new Set());
+  }
+
+  /**
+   * Read the names, then grade. `explicit` carries the teacher's own pile
+   * boundaries; without it the stack is split by whichever pages carried a
+   * legible name.
+   */
+  async function gradePages(pages: Page[], explicit: number[] | null) {
+    const ids = pages.map((p) => p.bodyId);
+    setPageUploadIds(ids);
+    // Pass one: the name bands alone. No questions, no answer key, no work.
+    setStatus("Reading the name on each page…");
+    const readable = pages
+      .map((p, page) => ({ id: p.stripId, page }))
+      .filter((s): s is { id: string; page: number } => !!s.id);
+    let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
+    if (readable.length) {
+      const read = await analyzeRequest({
+        mode: "name_strip",
+        uploadIds: readable.map((s) => s.id),
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+        assessmentId: a.id,
+      });
+      // The strips were sent in their own order; map each answer back to the
+      // page it was cut from.
+      const byStrip = new Map<number, { name: string; confidence: number }>(
+        (read.result.pages as PageName[]).map((r) => [r.page, r]),
+      );
+      names = names.map((n) => {
+        const at = readable.findIndex((s) => s.page === n.page);
+        const hit = at >= 0 ? byStrip.get(at) : undefined;
+        return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+      });
+    }
+
+    // Pass two: the work, with the name bands gone, grouped either by what the
+    // teacher declared or by what pass one found. Shown no name at all.
+    const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
+    setStatus(
+      "Grading " + pageGroups.length + " student" + (pageGroups.length === 1 ? "" : "s") + "…",
+    );
+    const d = await analyzeRequest({
+      mode: "class_scan",
+      uploadIds: ids,
+      pageGroups,
+      grade: a.grade,
+      subject: a.subject,
+      framework: a.framework,
+      assessmentId: a.id,
+    });
+    const resolved = resolveScannedGroups(pageGroups, names, d.result.groups, ids, students);
+    if (!resolved.length)
+      toast.error(
+        "No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.",
+      );
+    setGroups(resolved);
+  }
+
+  /** Grade everything scanned so far, one request per student's whole pile. */
+  async function gradeCaptured() {
+    if (busyScanning || !captured.length) return;
+    if (!ready()) return;
+    setScanning(true);
+    try {
+      await gradePages(
+        captured,
+        piles.map((pile) => pile.length),
+      );
+    } catch (e) {
+      toast.error(
+        (e instanceof Error ? e.message : "The pages couldn't be read.") +
+          " The pages are uploaded — you can try grading again.",
+      );
+    } finally {
+      setScanning(false);
+      setStatus("");
+    }
+  }
+
+  /** The desktop path: a whole stack at once, split by the name on each page. */
+  async function startStackScan(list: FileList | null) {
+    if (!list?.length || busyScanning) return;
     const files = Array.from(list);
+    if (!ready()) return;
     if (files.length > MAX_PAGES) {
       toast.error("Scan up to " + MAX_PAGES + " pages at a time.");
       return;
@@ -55,88 +264,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setGroups(null);
     setDiscarded(new Set());
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
-    // Two uploads per page: the name band on its own, and the work with that
-    // band removed. They go to two separate analyses so that no single request
-    // ever holds a student's name next to that student's answers.
-    const ids: string[] = [];
-    const stripIds: (string | null)[] = [];
-    async function upload(file: File) {
-      const form = new FormData();
-      form.append("file", file);
-      const r = await fetch("/api/uploads", { method: "POST", body: form });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      return d.id as string;
-    }
     try {
+      const pages: Page[] = [];
       for (const raw of files) {
-        // Straighten before splitting: the band is cut off the top of an
-        // upright page, which is only the top once the rotation is applied.
-        const page = await uprightPage(raw);
-        const split = await splitNameBand(page);
-        if (split) {
-          ids.push(await upload(split.body));
-          stripIds.push(await upload(split.strip));
-        } else {
-          // A PDF, or a browser that could not do the cut. Send the whole page
-          // to grading and read no name from it; the teacher names that group.
-          ids.push(await upload(page));
-          stripIds.push(null);
-        }
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The pages couldn't be uploaded.");
-      setScanning(false);
-      setStatus("");
-      if (input.current) input.current.value = "";
-      return;
-    }
-    setPageUploadIds(ids);
-    try {
-      // Pass one: the name bands alone. No questions, no answer key, no work.
-      setStatus("Reading the name on each page…");
-      const readable = stripIds
-        .map((id, page) => ({ id, page }))
-        .filter((s): s is { id: string; page: number } => !!s.id);
-      let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
-      if (readable.length) {
-        const read = await analyzeRequest({
-          mode: "name_strip",
-          uploadIds: readable.map((s) => s.id),
-          grade: a.grade,
-          subject: a.subject,
-          framework: a.framework,
-          assessmentId: a.id,
-        });
-        // The strips were sent in their own order; map each answer back to the
-        // page it was cut from.
-        const byStrip = new Map<number, { name: string; confidence: number }>(
-          (read.result.pages as PageName[]).map((r) => [r.page, r]),
-        );
-        names = names.map((n) => {
-          const at = readable.findIndex((s) => s.page === n.page);
-          const hit = at >= 0 ? byStrip.get(at) : undefined;
-          return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+        pages.push({
+          key: crypto.randomUUID(),
+          label: raw.name || "Page",
+          ...(await preparePage(raw)),
         });
       }
-
-      // Pass two: the work, with the name bands gone, grouped by what pass one
-      // found. This request is shown no name at all.
-      const pageGroups = groupPagesByName(names);
-      setStatus("Grading " + pageGroups.length + " student" + (pageGroups.length === 1 ? "" : "s") + "…");
-      const d = await analyzeRequest({
-        mode: "class_scan",
-        uploadIds: ids,
-        pageGroups,
-        grade: a.grade,
-        subject: a.subject,
-        framework: a.framework,
-        assessmentId: a.id,
-      });
-      const resolved = resolveScannedGroups(pageGroups, names, d.result.groups, ids, students);
-      if (!resolved.length)
-        toast.error("No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.");
-      setGroups(resolved);
+      setPiles([pages]);
+      await gradePages(pages, null);
     } catch (e) {
       toast.error(
         (e instanceof Error ? e.message : "The pages couldn't be read.") +
@@ -145,7 +283,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     } finally {
       setScanning(false);
       setStatus("");
-      if (input.current) input.current.value = "";
+      if (stack.current) stack.current.value = "";
     }
   }
 
@@ -194,36 +332,35 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         (result.newStudents.length ? " (" + result.newStudents.length + " new)" : ""),
     );
     setSaving(false);
-    if (ok) {
-      setGroups(null);
-      setPageUploadIds([]);
-      setDiscarded(new Set());
-    }
+    if (ok) reset();
   }
+
+  const openPile = piles[piles.length - 1];
+  const finishedPiles = piles.filter((pile) => pile.length).length;
 
   return (
     <div className="panel class-scan-panel">
       <SectionTitle
-        title="Scan a stack for the whole class"
-        description="Upload every student's pages at once — no roster required first. AI splits them by the name on each page and grades them; you just confirm."
+        title="Scan the class"
+        description="Scan one student's pages, tap “Next student”, and repeat. Every page you put under one student is graded together, so a test that runs onto a second page still comes back whole."
       >
         <div className="review-heading-actions">
           <input
-            ref={input}
+            ref={stack}
             type="file"
             className="sr-only"
             multiple
             accept="application/pdf,image/jpeg,image/png,image/webp"
-            aria-label="Upload a stack of scanned student pages"
-            onChange={(e) => startScan(e.target.files)}
+            aria-label="Upload a whole stack of scanned student pages at once"
+            onChange={(e) => startStackScan(e.target.files)}
           />
           <Action
             variant="secondary small"
-            disabled={scanning || busy || !prep.ready}
-            onClick={() => input.current?.click()}
+            disabled={busyScanning || busy || !prep.ready || captured.length > 0}
+            onClick={() => stack.current?.click()}
           >
-            {scanning ? <LoaderCircle className="spin" size={15} /> : <ScanLine size={15} />}
-            Upload &amp; scan pages
+            <ScanLine size={15} />
+            Upload a whole stack instead
           </Action>
         </div>
       </SectionTitle>
@@ -231,6 +368,90 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         <p className="cell-meta">
           Confirm the intended standards and the answer key first, then scanning is enabled.
         </p>
+      )}
+      {prep.ready && (
+        <div className="class-scan-capture">
+          <input
+            ref={camera}
+            type="file"
+            className="sr-only"
+            accept="image/*"
+            capture="environment"
+            aria-label="Photograph a page of this student's work"
+            onChange={(e) => addPages(e.target.files)}
+          />
+          <input
+            ref={input}
+            type="file"
+            className="sr-only"
+            multiple
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            aria-label="Choose pages of this student's work"
+            onChange={(e) => addPages(e.target.files)}
+          />
+          <p className="cell-meta">
+            {captured.length === 0
+              ? "Student 1 — add the first page."
+              : "Student " +
+                piles.length +
+                " — " +
+                openPile.length +
+                " page" +
+                (openPile.length === 1 ? "" : "s") +
+                " so far · " +
+                captured.length +
+                " of " +
+                MAX_PAGES +
+                " scanned"}
+          </p>
+          <div className="review-heading-actions">
+            <Action
+              variant="secondary small"
+              disabled={busyScanning || busy}
+              onClick={() => camera.current?.click()}
+            >
+              {adding ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
+              Scan a page
+            </Action>
+            <Action
+              variant="secondary small"
+              disabled={busyScanning || busy}
+              onClick={() => input.current?.click()}
+            >
+              <ScanLine size={15} />
+              Choose files
+            </Action>
+            <Action
+              variant="secondary small"
+              disabled={busyScanning || busy || !openPile.length}
+              onClick={nextStudent}
+            >
+              <UserPlus size={15} />
+              Next student
+            </Action>
+            {captured.length > 0 && (
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy}
+                onClick={undoLast}
+              >
+                <Undo2 size={15} />
+                Undo last
+              </Action>
+            )}
+          </div>
+          {captured.length > 0 && (
+            <div className="review-heading-actions">
+              <Action disabled={busyScanning || busy} onClick={gradeCaptured}>
+                {scanning ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
+                Done — grade {finishedPiles} student{finishedPiles === 1 ? "" : "s"}
+              </Action>
+              <Pill>
+                {captured.length} page{captured.length === 1 ? "" : "s"} scanned
+              </Pill>
+            </div>
+          )}
+        </div>
       )}
       {status && (
         <div className="read-document-status" role="status">

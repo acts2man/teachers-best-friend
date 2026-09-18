@@ -1,5 +1,8 @@
 import type { Assessment, Student, StudentResponse } from "./teacher-types";
-import { normalizeRecognizedResponses } from "./teacher-workflow";
+import {
+  mergeStudentResponses,
+  normalizeRecognizedResponses,
+} from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
 
 /** One question's graded response as read off a scanned page, before it is
@@ -45,6 +48,28 @@ export function groupPagesByName(pages: PageName[]): number[][] {
   for (const page of pages) {
     if (page.name.trim() || !groups.length) groups.push([page.page]);
     else groups[groups.length - 1].push(page.page);
+  }
+  return groups;
+}
+
+/**
+ * Splits a stack into one group per student using boundaries the teacher
+ * declared while scanning -- "next student" -- rather than names the AI read.
+ * `sizes[i]` is how many pages the teacher put in student i's pile, in scan
+ * order, so the pages are numbered straight through the flattened stack.
+ *
+ * Preferred over groupPagesByName wherever the teacher scanned student by
+ * student. A boundary the teacher drew is a fact; a boundary inferred from
+ * whether a name was legible on a page is a guess, and when that guess is
+ * wrong a page is graded against the wrong student's key. Empty piles are
+ * skipped so a stray "next student" tap costs nothing.
+ */
+export function groupPagesByCapture(sizes: number[]): number[][] {
+  const groups: number[][] = [];
+  let page = 0;
+  for (const size of sizes) {
+    if (!Number.isInteger(size) || size <= 0) continue;
+    groups.push(Array.from({ length: size }, () => page++));
   }
   return groups;
 }
@@ -183,9 +208,15 @@ export function applyScannedGroups(
       newStudents.push(created);
       studentId = created.id;
     }
+    // Same rule as the single-student path: a later batch is another page of
+    // the same test unless it actually answers the question, so keep what an
+    // earlier pass found where this one saw nothing.
     responsesByStudent.set(
       studentId,
-      normalizeRecognizedResponses(a, studentId, group.responses),
+      mergeStudentResponses(
+        a.responses.filter((r) => r.studentId === studentId),
+        normalizeRecognizedResponses(a, studentId, group.responses),
+      ),
     );
     studentUploadIds[studentId] = [
       ...new Set([
