@@ -205,7 +205,7 @@ export async function POST(request: Request) {
         );
       throw e;
     } finally {
-      if (svc && scanId)
+      if (svc && scanId) {
         await recordScanUsage(svc, scanId, {
           ok,
           model: settings.model,
@@ -213,6 +213,18 @@ export async function POST(request: Request) {
           usage: resultData?.usage,
           errorMessage,
         });
+        // Stamp the build here too. recordScanUsage goes through an RPC that
+        // does not touch these columns, so every scan taking this path came
+        // back unstamped -- which read as evidence of a stale bundle when it
+        // only ever meant the instrument was not wired to this path. Both
+        // halves run in this one function when the analysis is synchronous,
+        // so both columns get the same value.
+        const ref = process.env.COMMIT_REF || null;
+        await svc
+          .from("scans")
+          .update({ build_ref_start: ref, build_ref_finish: ref })
+          .eq("id", scanId);
+      }
     }
     return Response.json({ result: output, model: settings.model });
   } catch (e) {
