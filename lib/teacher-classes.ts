@@ -61,3 +61,38 @@ export function namesFromText(text: string) {
   }
   return names.slice(0, 60);
 }
+
+/**
+ * Takes one student off a roster: the record itself, their graded responses on
+ * every assessment, the scanned pages linked to them, and their place in any
+ * group.
+ *
+ * There was no way to do this at all until a pilot teacher asked. It matters
+ * more since scanning a stack started creating students from names it could not
+ * match to the roster -- a misread name makes a student who never existed, and
+ * without this they were permanent. Pure; the caller persists the result.
+ */
+export function removeStudent(w: Workspace, studentId: string): Workspace {
+  return {
+    ...w,
+    students: w.students.filter((s) => s.id !== studentId),
+    assessments: w.assessments.map((a) => {
+      if (!a.studentUploadIds?.[studentId] && !a.responses.some((r) => r.studentId === studentId))
+        return a;
+      return {
+        ...a,
+        responses: a.responses.filter((r) => r.studentId !== studentId),
+        studentUploadIds: Object.fromEntries(
+          Object.entries(a.studentUploadIds || {}).filter(
+            ([id]) => id !== studentId,
+          ),
+        ),
+      };
+    }),
+    groups: (w.groups || []).map((g) =>
+      g.studentIds?.includes(studentId)
+        ? { ...g, studentIds: g.studentIds.filter((id) => id !== studentId) }
+        : g,
+    ),
+  };
+}
