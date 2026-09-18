@@ -131,6 +131,11 @@ export async function POST(request: Request) {
             provider_model: settings.model,
             params: p,
             status: "analyzing",
+            // Which build started this scan. The finishing half runs in a
+            // different serverless function and is stamped separately, so a
+            // disagreement between the two -- or with origin/main -- shows a
+            // stale bundle that reading the source cannot reveal.
+            build_ref_start: process.env.COMMIT_REF ?? null,
           })
           .eq("id", scanId);
         if (error) {
