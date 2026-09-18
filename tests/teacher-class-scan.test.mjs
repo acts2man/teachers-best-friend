@@ -181,3 +181,51 @@ test("merging onto nothing keeps the incoming pass as-is",()=>{
   const incoming=[resp("q1","20"),resp("q2","")];
   assert.deepEqual(mergeStudentResponses([],incoming),incoming);
 });
+
+// Taking a student off a roster. There was no way to do this until a pilot
+// teacher asked -- and scanning a stack can create a student from a misread
+// name, so without it those were permanent.
+const {removeStudent}=bundle("lib/teacher-classes.ts");
+
+function workspace(){
+  const a=assessment();
+  return {
+    classes:[{id:"c1",name:"P2",grade:4,framework:"Common Core"}],
+    students:[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")],
+    assessments:[{...a,
+      responses:[
+        {id:"r1",studentId:"s1",questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99,verified:false},
+        {id:"r2",studentId:"s2",questionId:"q1",answer:"3",correct:false,match:0,misconception:"",confidence:99,verified:false},
+      ],
+      studentUploadIds:{s1:["u1","u2"],s2:["u3"]},
+    }],
+    groups:[{id:"g1",classId:"c1",name:"Reteach",studentIds:["s1","s2"]}],
+  };
+}
+
+test("removing a student takes their record, answers and pages with them",()=>{
+  const next=removeStudent(workspace(),"s1");
+  assert.deepEqual(next.students.map(s=>s.id),["s2"]);
+  assert.deepEqual(next.assessments[0].responses.map(r=>r.studentId),["s2"]);
+  assert.deepEqual(Object.keys(next.assessments[0].studentUploadIds),["s2"]);
+  assert.deepEqual(next.groups[0].studentIds,["s2"]);
+});
+test("removing a student leaves everyone else's work untouched",()=>{
+  const before=workspace();
+  const next=removeStudent(before,"s1");
+  assert.deepEqual(next.assessments[0].responses[0],before.assessments[0].responses[1]);
+  assert.deepEqual(next.assessments[0].studentUploadIds.s2,["u3"]);
+});
+test("removing a student who does not exist changes nothing",()=>{
+  const before=workspace();
+  const next=removeStudent(before,"nobody");
+  assert.deepEqual(next.students,before.students);
+  assert.deepEqual(next.assessments[0].responses,before.assessments[0].responses);
+});
+test("removing a student works on a workspace with no groups",()=>{
+  const noGroups=workspace();
+  delete noGroups.groups;
+  const next=removeStudent(noGroups,"s1");
+  assert.deepEqual(next.students.map(s=>s.id),["s2"]);
+  assert.deepEqual(next.groups,[]);
+});

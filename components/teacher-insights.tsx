@@ -59,6 +59,17 @@ import {
 } from "./teacher-shared";
 import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { removeStudent } from "@/lib/teacher-classes";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import {
   performanceBands,
@@ -1109,7 +1120,8 @@ export function StudentsView() {
     [score, setScore] = useState(""),
     [source, setSource] = useState("Exit ticket"),
     [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
-    [note, setNote] = useState("");
+    [note, setNote] = useState(""),
+    [removing, setRemoving] = useState(false);
   useEffect(() => {
     setSelected(params.get("id"));
     if (params.get("standard")) setFocus(params.get("standard")!);
@@ -1363,6 +1375,52 @@ export function StudentsView() {
               <Check size={16} />
             </Action>
           </div>
+          <div className="panel">
+            <SectionTitle
+              title="Remove from roster"
+              description="Takes this student off the class list along with their graded work and scanned pages. Everything else in the class is untouched."
+            />
+            <Action
+              variant="secondary small"
+              disabled={busy}
+              onClick={() => setRemoving(true)}
+            >
+              <Trash2 size={15} />
+              Remove {student.name}
+            </Action>
+          </div>
+          <AlertDialog open={removing} onOpenChange={(v) => !v && setRemoving(false)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove {student.name} from the roster?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Their graded answers, evidence records, and scanned pages go with
+                  them, on every assessment in this class. This can’t be undone —
+                  export a copy from Settings first if you need one.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>Keep student</AlertDialogCancel>
+                <AlertDialogAction
+                  className="action danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (
+                      await save(
+                        removeStudent(w, student.id),
+                        student.name + " was removed from the roster",
+                      )
+                    ) {
+                      setRemoving(false);
+                      go("/students");
+                    }
+                  }}
+                >
+                  Remove student
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       ) : (
         <>
