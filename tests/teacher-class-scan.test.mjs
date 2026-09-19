@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
+import { readFileSync } from "node:fs";
 function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const shim={exports:{}};new Function("module","exports",result.outputFiles[0].text)(shim,shim.exports);return shim.exports}
 const {matchRosterStudent,groupPagesByName,resolveScannedGroups,applyScannedGroups}=bundle("lib/teacher-class-scan.ts");
 
@@ -403,4 +404,77 @@ test("a score outside 0-100 is clamped rather than saved",()=>{
   const g=groupAnswers(a,"q1")[0];
   assert.equal(applyGroupScore(a,g.responseIds,150).responses[0].match,100);
   assert.equal(applyGroupScore(a,g.responseIds,-20).responses[0].match,0);
+});
+
+// Splitting a class scan into requests that actually fit. Measured from real
+// scans: one student averages ~1,173 output tokens and peaks near 4,933 on a
+// ten-question test, against a 12,000 ceiling -- so a full class set asked for
+// more than the model would return and came back incomplete.
+const {planScanBatches,studentsPerBatch,TOKENS_PER_ANSWER,BATCH_OUTPUT_BUDGET}=bundle("lib/teacher-class-scan.ts");
+
+test("a ten-question test fits several students per request, not twelve",()=>{
+  const n=studentsPerBatch(10);
+  assert.ok(n>=4&&n<=8,"expected a handful per batch, got "+n);
+  assert.ok(n*10*TOKENS_PER_ANSWER<=BATCH_OUTPUT_BUDGET);
+});
+test("a longer test puts fewer students in each request",()=>{
+  assert.ok(studentsPerBatch(40)<studentsPerBatch(10));
+  assert.ok(studentsPerBatch(10)<studentsPerBatch(2));
+});
+test("even an enormous test still grades one student per request",()=>{
+  assert.equal(studentsPerBatch(10000),1);
+  assert.equal(studentsPerBatch(0),studentsPerBatch(1));
+});
+test("every student's pages stay together in one request",()=>{
+  const groups=[[0,1],[2,3],[4,5],[6,7]];
+  const ids=["a","b","c","d","e","f","g","h"];
+  for(const batch of planScanBatches(groups,ids,10,2500)){
+    for(const g of batch.groups) assert.ok(g.length===2,"a student was split across requests");
+  }
+});
+test("batches re-number their groups against their own uploads",()=>{
+  const groups=[[0,1],[2,3],[4,5]];
+  const ids=["a","b","c","d","e","f"];
+  const batches=planScanBatches(groups,ids,10,2500); // one student per batch
+  assert.equal(batches.length,3);
+  assert.deepEqual(batches[0].uploadIds,["a","b"]);
+  assert.deepEqual(batches[0].groups,[[0,1]]);
+  assert.deepEqual(batches[1].uploadIds,["c","d"]);
+  assert.deepEqual(batches[1].groups,[[0,1]]);
+  assert.deepEqual(batches[2].groupIndexes,[2]);
+});
+test("every student in the scan lands in exactly one batch",()=>{
+  const groups=Array.from({length:36},(_,i)=>[i]);
+  const ids=groups.map((_,i)=>"u"+i);
+  const batches=planScanBatches(groups,ids,10);
+  const seen=batches.flatMap(b=>b.groupIndexes).sort((a,b)=>a-b);
+  assert.deepEqual(seen,[...Array(36).keys()]);
+});
+test("no batch asks for more than the budget allows",()=>{
+  const groups=Array.from({length:36},(_,i)=>[i*2,i*2+1]);
+  const ids=Array.from({length:72},(_,i)=>"u"+i);
+  for(const b of planScanBatches(groups,ids,10))
+    assert.ok(b.groups.length*10*TOKENS_PER_ANSWER<=BATCH_OUTPUT_BUDGET);
+});
+test("pages outside the uploaded list are dropped, not sent as bad indexes",()=>{
+  const batches=planScanBatches([[0,99]],["a"],10);
+  assert.deepEqual(batches[0].uploadIds,["a"]);
+  assert.deepEqual(batches[0].groups,[[0]]);
+});
+
+// The planning budget and the stage's real ceiling have to stay in step. If a
+// batch is planned against more room than the model will return, the plan is
+// fiction and the scan comes back incomplete -- which is the failure this
+// batching was built to stop.
+test("the batch budget stays under the class_scan output ceiling",()=>{
+  const server=readFileSync("lib/analyze-server.ts","utf8");
+  const m=server.match(/class_scan:\s*\{[^}]*maxOutput:\s*(\d+)/);
+  assert.ok(m,"could not find the class_scan ceiling");
+  const ceiling=Number(m[1]);
+  assert.ok(
+    BATCH_OUTPUT_BUDGET < ceiling,
+    "planning budget "+BATCH_OUTPUT_BUDGET+" is not under the ceiling "+ceiling,
+  );
+  // And enough headroom that a verbose batch has somewhere to go.
+  assert.ok(ceiling - BATCH_OUTPUT_BUDGET >= 4000, "not enough headroom over the budget");
 });

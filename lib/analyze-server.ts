@@ -41,7 +41,7 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   responses: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
   // One call grades a whole scanned stack, so it needs far more room than the
   // single-student path; same cheap model, a little reasoning to split pages.
-  class_scan: { model: "gpt-5.6-luna", effort: "low", maxOutput: 12000 },
+  class_scan: { model: "gpt-5.6-luna", effort: "low", maxOutput: 24000 },
   // Reading a name off a cropped strip is the cheapest thing the app does:
   // a small image, a few words out, no reasoning required.
   name_strip: { model: "gpt-5.4-nano", effort: "minimal", maxOutput: 1500 },

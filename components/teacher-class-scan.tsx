@@ -15,13 +15,15 @@ import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
-import { preparationGaps } from "@/lib/teacher-workflow";
+import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
 import { reconcileEvidence } from "@/lib/teacher-data";
 import {
   applyScannedGroups,
   groupPagesByCapture,
   groupPagesByName,
+  planScanBatches,
   resolveScannedGroups,
+  type GradedGroup,
   type PageName,
   type ResolvedGroup,
 } from "@/lib/teacher-class-scan";
@@ -43,7 +45,15 @@ const draftKey = (assessmentId: string) => "tbf.scan-draft." + assessmentId;
 
 /** A scan in progress: the pages grouped so far, and the grading job started
  * from them, if it got that far. */
-type Draft = { piles: Page[][]; scanId?: string | null };
+type Progress = {
+  /** Batches already graded, in whole-scan numbering. */
+  graded: GradedGroup[];
+  /** The next batch to send. */
+  nextBatch: number;
+  /** A batch already sent and still running, to pick up rather than repeat. */
+  scanId: string | null;
+};
+type Draft = { piles: Page[][]; progress?: Progress | null };
 
 /** localStorage is an external store, so it is read as one: a server snapshot
  * of null, a client snapshot of the raw string, and a subscription so a scan
@@ -61,7 +71,7 @@ function parseDraft(raw: string | null): Draft | null {
     const stored = JSON.parse(raw);
     // Drafts written before grading jobs were remembered are a bare array.
     const parsed = Array.isArray(stored) ? stored : stored?.piles;
-    const scanId = Array.isArray(stored) ? null : stored?.scanId ?? null;
+    const progress = Array.isArray(stored) ? null : (stored?.progress ?? null);
     if (!Array.isArray(parsed)) return null;
     // Trust nothing that comes back: a half-written or hand-edited draft should
     // be dropped, not crash the panel a teacher is standing in front of.
@@ -76,7 +86,18 @@ function parseDraft(raw: string | null): Draft | null {
         ),
       );
     if (!piles.some((pile) => pile.length)) return null;
-    return { piles, scanId: typeof scanId === "string" ? scanId : null };
+    const usable =
+      progress &&
+      Array.isArray(progress.graded) &&
+      Number.isInteger(progress.nextBatch) &&
+      progress.nextBatch >= 0
+        ? {
+            graded: progress.graded as GradedGroup[],
+            nextBatch: progress.nextBatch as number,
+            scanId: typeof progress.scanId === "string" ? progress.scanId : null,
+          }
+        : null;
+    return { piles, progress: usable };
   } catch {
     return null;
   }
@@ -121,13 +142,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   );
   const saved = useMemo(() => parseDraft(savedRaw), [savedRaw]);
   const [edited, setEdited] = useState<Page[][] | null>(null);
-  const [scanOverride, setScanOverride] = useState<{ id: string | null } | null>(null);
+  const [progressOverride, setProgressOverride] = useState<{ value: Progress | null } | null>(null);
   const piles = edited ?? saved?.piles ?? EMPTY;
   const restored = !!saved && edited === null;
-  // The grading job started from these pages, if one is in flight. Kept in the
-  // draft so it can be picked up rather than paid for twice.
-  const pendingScanId = scanOverride ? scanOverride.id : (saved?.scanId ?? null);
-  const setPendingScanId = (id: string | null) => setScanOverride({ id });
+  // How far grading got, and any batch still running. Kept in the draft so an
+  // interrupted class set resumes where it stopped instead of being paid for
+  // twice.
+  const progress = progressOverride ? progressOverride.value : (saved?.progress ?? null);
+  const setProgress = (value: Progress | null) => setProgressOverride({ value });
   function setPiles(update: Page[][] | ((prev: Page[][]) => Page[][])) {
     setEdited((prev) => {
       const current = prev ?? saved?.piles ?? EMPTY;
@@ -143,62 +165,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const stack = useRef<HTMLInputElement>(null);
   const prep = preparationGaps(a);
 
-  // A grading job that was already running when the teacher left. Finish it
-  // rather than starting another: the model call happened and was billed, so
-  // re-grading would charge a second time for work already done.
+  // Grading that was already under way when the teacher left. Picked up from
+  // where it stopped: batches already graded are not sent again, and a batch
+  // still running on the provider's side is waited on rather than repeated,
+  // because that one has already been billed.
+  const resumeRef = useRef(false);
   useEffect(() => {
-    if (!pendingScanId || scanning || groups) return;
-    let cancelled = false;
-    (async () => {
-      setScanning(true);
-      setStatus("Finishing the grading you started earlier…");
-      try {
-        const pages = piles.flat();
-        const d = await resumeScan(pendingScanId);
-        if (cancelled) return;
-        const ids = pages.map((p) => p.bodyId);
-        const names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
-        const pageGroups = groupPagesByCapture(piles.map((pile) => pile.length));
-        setPageUploadIds(ids);
-        setGroups(
-          resolveScannedGroups(pageGroups, names, d.result.groups, ids, students),
-        );
-        setPendingScanId(null);
-      } catch {
-        // Gone, expired, or never finished. Fall back to the pages, which are
-        // still here, and let the teacher grade them again.
-        if (!cancelled) {
-          setPendingScanId(null);
-          toast.error(
-            "That grading didn't finish. Your pages are still here — press Done to grade them again.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setScanning(false);
-          setStatus("");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingScanId]);
+    if (!progress || scanning || groups || resumeRef.current) return;
+    resumeRef.current = true;
+    void gradeCaptured();
+  }, [progress, scanning, groups]);
+
 
   // Keep the draft in step with the piles, including emptying it once the
   // scan has been graded and saved.
   useEffect(() => {
     try {
       if (piles.some((pile) => pile.length))
-        localStorage.setItem(
-          draftKey(a.id),
-          JSON.stringify({ piles, scanId: pendingScanId }),
-        );
+        localStorage.setItem(draftKey(a.id), JSON.stringify({ piles, progress }));
       else localStorage.removeItem(draftKey(a.id));
     } catch {
       // A browser refusing storage is not a reason to stop a teacher scanning.
     }
-  }, [a.id, piles, pendingScanId]);
+  }, [a.id, piles, progress]);
 
   const captured = piles.flat();
   const busyScanning = scanning || adding;
@@ -300,7 +289,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
-    setPendingScanId(null);
+    setProgress(null);
     setEdited(EMPTY);
     setPageUploadIds([]);
     setGroups(null);
@@ -312,7 +301,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * boundaries; without it the stack is split by whichever pages carried a
    * legible name.
    */
-  async function gradePages(pages: Page[], explicit: number[] | null) {
+  async function gradePages(
+    pages: Page[],
+    explicit: number[] | null,
+    resume?: Progress | null,
+  ) {
     const ids = pages.map((p) => p.bodyId);
     setPageUploadIds(ids);
     // Pass one: the name bands alone. No questions, no answer key, no work.
@@ -345,25 +338,71 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // Pass two: the work, with the name bands gone, grouped either by what the
     // teacher declared or by what pass one found. Shown no name at all.
     const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
-    setStatus(
-      "Grading " + pageGroups.length + " student" + (pageGroups.length === 1 ? "" : "s") + "…",
-    );
-    const d = await analyzeRequest(
-      {
-        mode: "class_scan",
-        uploadIds: ids,
-        pageGroups,
-        grade: a.grade,
-        subject: a.subject,
-        framework: a.framework,
-        assessmentId: a.id,
-      },
-      // Remember the job before waiting on it, so a phone that sleeps mid-grade
-      // can pick this exact one up instead of starting and paying for another.
-      { onScanId: setPendingScanId },
-    );
-    setPendingScanId(null);
-    const resolved = resolveScannedGroups(pageGroups, names, d.result.groups, ids, students);
+
+    // One request per handful of students rather than one for the whole class.
+    // A class set asked for more output than the model would return in a single
+    // answer and came back incomplete, which cost the teacher the scan and told
+    // them only to try fewer pages. The photographs are the expensive part and
+    // there are exactly as many of them either way.
+    const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
+    // Resume where an interrupted run stopped rather than grading, and paying,
+    // from the top again.
+    const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
+    const graded: GradedGroup[] = resuming ? [...resuming.graded] : [];
+    let inFlight = resuming?.scanId ?? null;
+    for (const [index, batch] of batches.entries()) {
+      if (resuming && index < resuming.nextBatch) continue;
+      setStatus(
+        batches.length > 1
+          ? "Grading students " +
+              (batch.groupIndexes[0] + 1) +
+              "–" +
+              (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
+              " of " +
+              pageGroups.length +
+              "…"
+          : "Grading " +
+              pageGroups.length +
+              " student" +
+              (pageGroups.length === 1 ? "" : "s") +
+              "…",
+      );
+      // A batch already sent and still running is waited on, not repeated.
+      let d;
+      if (inFlight) {
+        try {
+          d = await resumeScan(inFlight);
+        } catch {
+          d = null;
+        }
+        inFlight = null;
+      }
+      if (!d)
+        d = await analyzeRequest(
+          {
+            mode: "class_scan",
+            uploadIds: batch.uploadIds,
+            pageGroups: batch.groups,
+            grade: a.grade,
+            subject: a.subject,
+            framework: a.framework,
+            assessmentId: a.id,
+          },
+          // Record the job before waiting on it, so a phone that sleeps
+          // mid-grade picks this exact one up instead of paying for another.
+          { onScanId: (id) => setProgress({ graded, nextBatch: index, scanId: id }) },
+        );
+      // The model numbers its answers within the batch it was shown; put them
+      // back into the numbering of the whole scan.
+      for (const g of (d.result.groups ?? []) as GradedGroup[]) {
+        const at = batch.groupIndexes[g.group];
+        if (at !== undefined) graded.push({ ...g, group: at });
+      }
+      // Banked, so an interruption after this batch never re-grades it.
+      setProgress({ graded, nextBatch: index + 1, scanId: null });
+    }
+    setProgress(null);
+    const resolved = resolveScannedGroups(pageGroups, names, graded, ids, students);
     if (!resolved.length)
       toast.error(
         "No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.",
@@ -380,6 +419,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       await gradePages(
         captured,
         piles.map((pile) => pile.length),
+        progress,
       );
     } catch (e) {
       toast.error(
