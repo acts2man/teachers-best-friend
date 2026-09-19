@@ -244,3 +244,82 @@ export function applyScannedGroups(
     studentCount: touchedIds.size,
   };
 }
+
+/**
+ * How much room one student's grading needs, and how many students therefore
+ * fit in a single request.
+ *
+ * Measured, not guessed: across the real scans this app has run, grading one
+ * student averaged 1,173 output tokens and peaked at 4,933, for ten-question
+ * tests -- roughly 120 tokens per answer typically and near 500 when the model
+ * writes a long misconception for every question. A whole-class request was
+ * capped at 12,000 output tokens, so a stack of twelve students -- one class
+ * set, front and back, inside the 24-page limit the UI already allowed --
+ * asked for more than the ceiling and came back `incomplete`. The teacher lost
+ * the scan and was told only to "try fewer pages".
+ *
+ * So the app decides how many students fit instead of finding out afterwards.
+ * The estimate is deliberately pessimistic, because the cost of overestimating
+ * is one extra request and the cost of underestimating is a failed class set.
+ */
+export const TOKENS_PER_ANSWER = 250;
+
+/** Planning budget, kept well under the stage's real ceiling so a verbose
+ * batch has somewhere to go. */
+export const BATCH_OUTPUT_BUDGET = 16000;
+
+export function studentsPerBatch(
+  questionCount: number,
+  budget = BATCH_OUTPUT_BUDGET,
+) {
+  const perStudent = Math.max(1, questionCount) * TOKENS_PER_ANSWER;
+  // At least one student per request even for an enormous test: a single
+  // student who does not fit is a different problem, and splitting a student
+  // across requests would put half their answers in each.
+  return Math.max(1, Math.floor(budget / perStudent) || 1);
+}
+
+/** One request's worth of a class scan. `groups` are re-numbered from zero
+ * against `uploadIds`, because the model is told about this batch alone and
+ * answers in its own numbering. `groupIndexes` maps each back to the group it
+ * is in the whole scan. */
+export type ScanBatch = {
+  uploadIds: string[];
+  groups: number[][];
+  groupIndexes: number[];
+};
+
+/**
+ * Splits a class scan into requests that will fit, keeping every student's
+ * pages together in one request. A student is never split across two: their
+ * answers have to be graded against the whole of their work at once, which is
+ * the entire point of grouping pages by student in the first place.
+ */
+export function planScanBatches(
+  pageGroups: number[][],
+  pageUploadIds: string[],
+  questionCount: number,
+  budget = BATCH_OUTPUT_BUDGET,
+): ScanBatch[] {
+  const perBatch = studentsPerBatch(questionCount, budget);
+  const batches: ScanBatch[] = [];
+  for (let start = 0; start < pageGroups.length; start += perBatch) {
+    const slice = pageGroups.slice(start, start + perBatch);
+    const uploadIds: string[] = [];
+    const groups = slice.map((pages) =>
+      pages
+        .filter((p) => p >= 0 && p < pageUploadIds.length)
+        .map((page) => {
+          uploadIds.push(pageUploadIds[page]);
+          return uploadIds.length - 1;
+        }),
+    );
+    if (!uploadIds.length) continue;
+    batches.push({
+      uploadIds,
+      groups,
+      groupIndexes: slice.map((_, i) => start + i),
+    });
+  }
+  return batches;
+}
