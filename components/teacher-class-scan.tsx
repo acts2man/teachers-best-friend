@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   ScanLine,
@@ -11,7 +11,7 @@ import {
   UserPlus,
   Undo2,
 } from "lucide-react";
-import { analyzeRequest } from "@/lib/analyze-client";
+import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
@@ -41,11 +41,27 @@ const MAX_PAGES = 24;
  */
 const draftKey = (assessmentId: string) => "tbf.scan-draft." + assessmentId;
 
-function loadDraft(assessmentId: string): Page[][] | null {
+/** A scan in progress: the pages grouped so far, and the grading job started
+ * from them, if it got that far. */
+type Draft = { piles: Page[][]; scanId?: string | null };
+
+/** localStorage is an external store, so it is read as one: a server snapshot
+ * of null, a client snapshot of the raw string, and a subscription so a scan
+ * continued in another tab is noticed rather than silently overwritten. Reading
+ * it this way keeps the draft derived instead of copied into state through an
+ * effect, which is what docs/url-derived-state.md asks for. */
+function subscribeToDraft(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function parseDraft(raw: string | null): Draft | null {
   try {
-    const raw = localStorage.getItem(draftKey(assessmentId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    const stored = JSON.parse(raw);
+    // Drafts written before grading jobs were remembered are a bare array.
+    const parsed = Array.isArray(stored) ? stored : stored?.piles;
+    const scanId = Array.isArray(stored) ? null : stored?.scanId ?? null;
     if (!Array.isArray(parsed)) return null;
     // Trust nothing that comes back: a half-written or hand-edited draft should
     // be dropped, not crash the panel a teacher is standing in front of.
@@ -59,11 +75,14 @@ function loadDraft(assessmentId: string): Page[][] | null {
             typeof (page as Page).key === "string",
         ),
       );
-    return piles.some((pile) => pile.length) ? piles : null;
+    if (!piles.some((pile) => pile.length)) return null;
+    return { piles, scanId: typeof scanId === "string" ? scanId : null };
   } catch {
     return null;
   }
 }
+
+const EMPTY: Page[][] = [[]];
 
 /** One uploaded page, already straightened and split into work and name band. */
 type Page = { key: string; label: string; bodyId: string; stripId: string | null };
@@ -92,8 +111,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const [status, setStatus] = useState("");
   // piles[i] is student i's pages, in the order they were scanned. There is
   // always an open pile at the end for the student being scanned right now.
-  const [piles, setPiles] = useState<Page[][]>([[]]);
-  const [restored, setRestored] = useState(false);
+  // The saved draft, derived from storage rather than copied into state, plus
+  // whatever this sitting has changed on top of it. `edited === null` means
+  // nothing has been touched yet, so what is on screen is purely the draft.
+  const savedRaw = useSyncExternalStore(
+    subscribeToDraft,
+    () => localStorage.getItem(draftKey(a.id)),
+    () => null,
+  );
+  const saved = useMemo(() => parseDraft(savedRaw), [savedRaw]);
+  const [edited, setEdited] = useState<Page[][] | null>(null);
+  const [scanOverride, setScanOverride] = useState<{ id: string | null } | null>(null);
+  const piles = edited ?? saved?.piles ?? EMPTY;
+  const restored = !!saved && edited === null;
+  // The grading job started from these pages, if one is in flight. Kept in the
+  // draft so it can be picked up rather than paid for twice.
+  const pendingScanId = scanOverride ? scanOverride.id : (saved?.scanId ?? null);
+  const setPendingScanId = (id: string | null) => setScanOverride({ id });
+  function setPiles(update: Page[][] | ((prev: Page[][]) => Page[][])) {
+    setEdited((prev) => {
+      const current = prev ?? saved?.piles ?? EMPTY;
+      return typeof update === "function" ? update(current) : update;
+    });
+  }
   const [pageUploadIds, setPageUploadIds] = useState<string[]>([]);
   const [groups, setGroups] = useState<ResolvedGroup[] | null>(null);
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
@@ -103,26 +143,62 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const stack = useRef<HTMLInputElement>(null);
   const prep = preparationGaps(a);
 
-  // Pick an interrupted scan back up. Runs once, and only when nothing has been
-  // scanned in this sitting, so it can never overwrite work in progress.
+  // A grading job that was already running when the teacher left. Finish it
+  // rather than starting another: the model call happened and was billed, so
+  // re-grading would charge a second time for work already done.
   useEffect(() => {
-    const draft = loadDraft(a.id);
-    if (!draft) return;
-    setPiles(draft);
-    setRestored(true);
-  }, [a.id]);
+    if (!pendingScanId || scanning || groups) return;
+    let cancelled = false;
+    (async () => {
+      setScanning(true);
+      setStatus("Finishing the grading you started earlier…");
+      try {
+        const pages = piles.flat();
+        const d = await resumeScan(pendingScanId);
+        if (cancelled) return;
+        const ids = pages.map((p) => p.bodyId);
+        const names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
+        const pageGroups = groupPagesByCapture(piles.map((pile) => pile.length));
+        setPageUploadIds(ids);
+        setGroups(
+          resolveScannedGroups(pageGroups, names, d.result.groups, ids, students),
+        );
+        setPendingScanId(null);
+      } catch {
+        // Gone, expired, or never finished. Fall back to the pages, which are
+        // still here, and let the teacher grade them again.
+        if (!cancelled) {
+          setPendingScanId(null);
+          toast.error(
+            "That grading didn't finish. Your pages are still here — press Done to grade them again.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setScanning(false);
+          setStatus("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingScanId]);
 
   // Keep the draft in step with the piles, including emptying it once the
   // scan has been graded and saved.
   useEffect(() => {
     try {
       if (piles.some((pile) => pile.length))
-        localStorage.setItem(draftKey(a.id), JSON.stringify(piles));
+        localStorage.setItem(
+          draftKey(a.id),
+          JSON.stringify({ piles, scanId: pendingScanId }),
+        );
       else localStorage.removeItem(draftKey(a.id));
     } catch {
       // A browser refusing storage is not a reason to stop a teacher scanning.
     }
-  }, [a.id, piles]);
+  }, [a.id, piles, pendingScanId]);
 
   const captured = piles.flat();
   const busyScanning = scanning || adding;
@@ -224,8 +300,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
-    setRestored(false);
-    setPiles([[]]);
+    setPendingScanId(null);
+    setEdited(EMPTY);
     setPageUploadIds([]);
     setGroups(null);
     setDiscarded(new Set());
@@ -272,15 +348,21 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setStatus(
       "Grading " + pageGroups.length + " student" + (pageGroups.length === 1 ? "" : "s") + "…",
     );
-    const d = await analyzeRequest({
-      mode: "class_scan",
-      uploadIds: ids,
-      pageGroups,
-      grade: a.grade,
-      subject: a.subject,
-      framework: a.framework,
-      assessmentId: a.id,
-    });
+    const d = await analyzeRequest(
+      {
+        mode: "class_scan",
+        uploadIds: ids,
+        pageGroups,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+        assessmentId: a.id,
+      },
+      // Remember the job before waiting on it, so a phone that sleeps mid-grade
+      // can pick this exact one up instead of starting and paying for another.
+      { onScanId: setPendingScanId },
+    );
+    setPendingScanId(null);
     const resolved = resolveScannedGroups(pageGroups, names, d.result.groups, ids, students);
     if (!resolved.length)
       toast.error(
