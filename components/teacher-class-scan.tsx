@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ScanLine,
@@ -29,6 +29,42 @@ import type { Assessment } from "@/lib/teacher-types";
 
 const MAX_PAGES = 24;
 
+/**
+ * Where an in-progress scan is kept so a phone can survive itself.
+ *
+ * Scanning a class set takes a while, and a phone will happily sleep, reload
+ * the tab or be swapped away from halfway through. The photographs themselves
+ * are safe the moment they upload -- it is the grouping that only ever lived in
+ * this component, and losing that is worse than losing the photos: the pages
+ * are still on the server with nobody able to say whose they are. Keyed per
+ * assessment so two assessments scanned in the same sitting do not collide.
+ */
+const draftKey = (assessmentId: string) => "tbf.scan-draft." + assessmentId;
+
+function loadDraft(assessmentId: string): Page[][] | null {
+  try {
+    const raw = localStorage.getItem(draftKey(assessmentId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    // Trust nothing that comes back: a half-written or hand-edited draft should
+    // be dropped, not crash the panel a teacher is standing in front of.
+    const piles = parsed
+      .filter(Array.isArray)
+      .map((pile) =>
+        pile.filter(
+          (page: unknown): page is Page =>
+            !!page &&
+            typeof (page as Page).bodyId === "string" &&
+            typeof (page as Page).key === "string",
+        ),
+      );
+    return piles.some((pile) => pile.length) ? piles : null;
+  } catch {
+    return null;
+  }
+}
+
 /** One uploaded page, already straightened and split into work and name band. */
 type Page = { key: string; label: string; bodyId: string; stripId: string | null };
 
@@ -57,6 +93,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // piles[i] is student i's pages, in the order they were scanned. There is
   // always an open pile at the end for the student being scanned right now.
   const [piles, setPiles] = useState<Page[][]>([[]]);
+  const [restored, setRestored] = useState(false);
   const [pageUploadIds, setPageUploadIds] = useState<string[]>([]);
   const [groups, setGroups] = useState<ResolvedGroup[] | null>(null);
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
@@ -65,6 +102,27 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const camera = useRef<HTMLInputElement>(null);
   const stack = useRef<HTMLInputElement>(null);
   const prep = preparationGaps(a);
+
+  // Pick an interrupted scan back up. Runs once, and only when nothing has been
+  // scanned in this sitting, so it can never overwrite work in progress.
+  useEffect(() => {
+    const draft = loadDraft(a.id);
+    if (!draft) return;
+    setPiles(draft);
+    setRestored(true);
+  }, [a.id]);
+
+  // Keep the draft in step with the piles, including emptying it once the
+  // scan has been graded and saved.
+  useEffect(() => {
+    try {
+      if (piles.some((pile) => pile.length))
+        localStorage.setItem(draftKey(a.id), JSON.stringify(piles));
+      else localStorage.removeItem(draftKey(a.id));
+    } catch {
+      // A browser refusing storage is not a reason to stop a teacher scanning.
+    }
+  }, [a.id, piles]);
 
   const captured = piles.flat();
   const busyScanning = scanning || adding;
@@ -166,6 +224,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
+    setRestored(false);
     setPiles([[]]);
     setPageUploadIds([]);
     setGroups(null);
@@ -389,6 +448,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             aria-label="Choose pages of this student's work"
             onChange={(e) => addPages(e.target.files)}
           />
+          {restored && captured.length > 0 && (
+            <p className="cell-meta">
+              Picked up where you left off — {captured.length} page
+              {captured.length === 1 ? "" : "s"} across {piles.filter((p) => p.length).length}{" "}
+              student{piles.filter((p) => p.length).length === 1 ? "" : "s"} were still
+              waiting. Carry on, or start over.
+            </p>
+          )}
           <p className="cell-meta">
             {captured.length === 0
               ? "Student 1 — add the first page."
@@ -437,6 +504,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               >
                 <Undo2 size={15} />
                 Undo last
+              </Action>
+            )}
+            {restored && captured.length > 0 && (
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy}
+                onClick={reset}
+              >
+                <X size={15} />
+                Start over
               </Action>
             )}
           </div>
