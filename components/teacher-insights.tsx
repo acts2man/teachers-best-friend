@@ -69,7 +69,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { removeStudent } from "@/lib/teacher-classes";
+import { clearClassStudents, removeStudent } from "@/lib/teacher-classes";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import {
   performanceBands,
@@ -1121,7 +1121,8 @@ export function StudentsView() {
     [source, setSource] = useState("Exit ticket"),
     [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
     [note, setNote] = useState(""),
-    [removing, setRemoving] = useState(false);
+    [removing, setRemoving] = useState(false),
+    [clearing, setClearing] = useState(false);
   useEffect(() => {
     setSelected(params.get("id"));
     if (params.get("standard")) setFocus(params.get("standard")!);
@@ -1443,7 +1444,54 @@ export function StudentsView() {
               <Plus size={17} />
               Add students
             </Action>
+            {students.length > 0 && (
+              <Action variant="secondary" onClick={() => setClearing(true)}>
+                <Trash2 size={17} />
+                Clear roster &amp; work
+              </Action>
+            )}
           </PageTitle>
+          <AlertDialog open={clearing} onOpenChange={(v) => !v && setClearing(false)}>
+            <AlertDialogContent>
+              <AlertDialogTitle>
+                Clear all {students.length} students from {classroom.name}?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Removes every student on this roster along with their graded answers,
+                evidence records and scanned pages. The scans are deleted from the
+                server, not just hidden. Your assessments, questions and answer keys
+                stay, so you can start a fresh roster against the same tests. This
+                can’t be undone.
+              </AlertDialogDescription>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>Keep roster</AlertDialogCancel>
+                <AlertDialogAction
+                  className="action danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    const cleared = clearClassStudents(w, classroom.id);
+                    if (
+                      await save(
+                        cleared.workspace,
+                        cleared.studentCount +
+                          (cleared.studentCount === 1 ? " student" : " students") +
+                          " and " +
+                          cleared.uploadIds.length +
+                          (cleared.uploadIds.length === 1 ? " page" : " pages") +
+                          " removed",
+                      )
+                    ) {
+                      setClearing(false);
+                      for (const id of cleared.uploadIds)
+                        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+                    }
+                  }}
+                >
+                  Clear roster &amp; work
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <div
             className="student-view-switch"
             role="group"
