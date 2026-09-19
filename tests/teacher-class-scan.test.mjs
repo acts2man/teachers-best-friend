@@ -333,3 +333,74 @@ test("clearing a class with no students is a no-op",()=>{
   assert.equal(out.studentCount,0);
   assert.deepEqual(out.uploadIds,[]);
 });
+
+// Grading a class set by question: every student who wrote the same answer is
+// one decision, not thirty-six. Ricky's request, and it costs no extra AI --
+// the answers were all read during grading already.
+const {groupAnswers,applyGroupScore,answerKey}=bundle("lib/teacher-workflow.ts");
+
+function classSet(answers){
+  const q={id:"q1",number:1,text:"5.2?",passage:"",answer:"5.2",standard:"7.RP.3",secondary:"",
+    skill:"",dok:2,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false};
+  return {
+    id:"a1",classId:"c1",title:"Quiz",subject:"Math",grade:7,framework:"California",createdAt:"",
+    status:"Ready",source:"manual",targetStandards:["7.RP.3"],answerKeyVerified:true,
+    uploadIds:[],studentUploadIds:{},questions:[q],
+    responses:answers.map(([sid,answer,correct,match],i)=>({
+      id:"r"+i,studentId:sid,questionId:"q1",answer,correct:!!correct,
+      match:match??(correct?100:0),misconception:"",confidence:99,verified:false,
+    })),
+  };
+}
+
+test("students who wrote the same answer land in one group",()=>{
+  const a=classSet([["s1","5.2",true],["s2","5.2",true],["s3","9.2",false,50]]);
+  const g=groupAnswers(a,"q1");
+  assert.equal(g.length,2);
+  assert.equal(g[0].studentIds.length,2);
+  assert.deepEqual(g[0].studentIds,["s1","s2"]);
+});
+test("the biggest group comes first, so the decision clearing most papers is on top",()=>{
+  const a=classSet([["s1","9.2",false,50],["s2","5.2",true],["s3","5.2",true],["s4","5.2",true]]);
+  assert.equal(groupAnswers(a,"q1")[0].answer,"5.2");
+  assert.equal(groupAnswers(a,"q1")[0].studentIds.length,3);
+});
+test("spacing, case and trailing punctuation do not split a group",()=>{
+  assert.equal(answerKey(" 65 % "),answerKey("65%"));
+  assert.equal(answerKey("Yes."),answerKey("yes"));
+  assert.equal(answerKey("1,200"),answerKey("1200"));
+});
+test("different answers are never merged",()=>{
+  assert.notEqual(answerKey("5.2"),answerKey("52"));
+  assert.notEqual(answerKey("9.2"),answerKey("5.2"));
+});
+test("blanks and clean matches need no decision; partials do",()=>{
+  const a=classSet([["s1","",false],["s2","5.2",true],["s3","9.2",false,50]]);
+  const byAnswer=Object.fromEntries(groupAnswers(a,"q1").map(g=>[g.answer||"(blank)",g.needsDecision]));
+  assert.equal(byAnswer["(blank)"],false);
+  assert.equal(byAnswer["5.2"],false);
+  assert.equal(byAnswer["9.2"],true);
+});
+test("one decision grades everyone in the group and confirms them",()=>{
+  const a=classSet([["s1","9.2",false,50],["s2","9.2",false,50],["s3","5.2",true]]);
+  const group=groupAnswers(a,"q1").find(g=>g.answer==="9.2");
+  const next=applyGroupScore(a,group.responseIds,50);
+  const graded=next.responses.filter(r=>group.responseIds.includes(r.id));
+  assert.equal(graded.length,2);
+  assert.ok(graded.every(r=>r.match===50&&r.verified&&!r.correct));
+  // everyone else is untouched
+  assert.equal(next.responses.find(r=>r.studentId==="s3").verified,false);
+});
+test("full credit through a group marks the answers correct",()=>{
+  const a=classSet([["s1","5.20",false,90]]);
+  const group=groupAnswers(a,"q1")[0];
+  const r=applyGroupScore(a,group.responseIds,100).responses[0];
+  assert.equal(r.match,100);
+  assert.equal(r.correct,true);
+});
+test("a score outside 0-100 is clamped rather than saved",()=>{
+  const a=classSet([["s1","9.2",false,50]]);
+  const g=groupAnswers(a,"q1")[0];
+  assert.equal(applyGroupScore(a,g.responseIds,150).responses[0].match,100);
+  assert.equal(applyGroupScore(a,g.responseIds,-20).responses[0].match,0);
+});
