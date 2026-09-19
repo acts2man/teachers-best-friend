@@ -436,3 +436,51 @@ export function applyGroupScore(
     ),
   };
 }
+
+/** Escapes one CSV field. Excel and Sheets both treat a doubled quote inside
+ * quotes as a literal quote, which is the only escaping either needs. */
+function csvField(value: unknown) {
+  return '"' + String(value ?? "").replace(/"/g, '""') + '"';
+}
+
+/**
+ * The gradebook export: one row per student, one column per question, plus the
+ * score out of a hundred.
+ *
+ * Every teacher using this ends up retyping these numbers into whatever their
+ * district runs -- PowerSchool, Infinite Campus, a spreadsheet -- because that
+ * is where grades legally live. The app already knows every number; not being
+ * able to get them out is the difference between saving an evening and adding
+ * one. It costs nothing: this is arithmetic over answers already graded.
+ *
+ * Only confirmed answers count toward the score, matching what the class
+ * analysis does and what the teacher was told: a grade they have not looked at
+ * is not a grade yet. `Reviewed` says how far along each student is, so a
+ * half-checked class is obvious in the file rather than quietly understated.
+ */
+export function gradebookCsv(a: Assessment, students: Student[]) {
+  const questions = activeQuestions(a);
+  const header = [
+    "Student",
+    ...questions.map((q) => "Q" + q.number),
+    "Score %",
+    "Points",
+    "Reviewed",
+  ];
+  const rows = students.map((student) => {
+    const review = studentReview(a, student.id);
+    const byQuestion = new Map(review.responses.map((r) => [r.questionId, r]));
+    return [
+      student.name,
+      ...questions.map((q) => {
+        const r = byQuestion.get(q.id);
+        if (!r || !r.verified) return "";
+        return String(responseMatch(r));
+      }),
+      review.score === null ? "" : String(review.score),
+      review.reviewed.length + "/" + questions.length,
+      review.complete ? "Yes" : review.reviewed.length ? "Partly" : "No",
+    ];
+  });
+  return [header, ...rows].map((row) => row.map(csvField).join(",")).join("\n");
+}

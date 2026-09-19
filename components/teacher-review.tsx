@@ -9,6 +9,7 @@ import {
   Camera,
   Check,
   CheckCheck,
+  Download,
   FileText,
   Flag,
   LoaderCircle,
@@ -28,6 +29,7 @@ import {
   Pill,
   Score,
   SectionTitle,
+  downloadText,
   printContent,
 } from "./teacher-shared";
 import {
@@ -40,6 +42,7 @@ import {
   preparationGaps,
   releasedStudentUploads,
   responseFlag,
+  gradebookCsv,
   studentReport,
   studentReview,
   type AnswerGroup,
@@ -419,6 +422,27 @@ export function StudentResponseReview({
     <div className="student-review-space">
       <ClassScanPanel assessment={a} />
       <GradeByQuestion assessment={a} students={students} onSave={onSave} busy={busy} />
+      <div className="panel">
+        <SectionTitle
+          title="Grades for your gradebook"
+          description="One row per student, one column per question, ready to paste into whatever your district uses. Only answers you've confirmed are counted."
+        >
+          <Action
+            variant="secondary small"
+            disabled={!students.length}
+            onClick={() =>
+              downloadText(
+                a.title.replace(/[^\w\d]+/g, "-").replace(/^-|-$/g, "") + "-grades.csv",
+                gradebookCsv(a, students),
+                "text/csv",
+              )
+            }
+          >
+            <Download size={15} />
+            Download grades
+          </Action>
+        </SectionTitle>
+      </div>
       <div className="review-student-toolbar">
         <label>
           Student
