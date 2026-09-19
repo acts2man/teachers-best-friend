@@ -29,7 +29,22 @@ import {
 } from "@/lib/teacher-class-scan";
 import type { Assessment } from "@/lib/teacher-types";
 
-const MAX_PAGES = 24;
+// A class set, front and back, with room to spare. The old limit of 24 existed
+// because one request carried every page; grading is batched now, so the cap no
+// longer protects anything it used to -- it just stopped a teacher scanning the
+// class they came to scan.
+const MAX_PAGES = 80;
+
+/** Strips per name-reading request. The name pass returns a few tokens per
+ * page, but it still has a ceiling, and it had the same shape of bug the
+ * grading pass just had: every page in one request, however many there were. */
+const NAME_BATCH = 24;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 /**
  * Where an in-progress scan is kept so a phone can survive itself.
@@ -314,26 +329,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       .map((p, page) => ({ id: p.stripId, page }))
       .filter((s): s is { id: string; page: number } => !!s.id);
     let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
-    if (readable.length) {
+    // Batched for the same reason grading is: one request holding every strip
+    // in a class set is a request whose size nobody chose.
+    const found = new Map<number, { name: string; confidence: number }>();
+    for (const slice of chunk(readable, NAME_BATCH)) {
       const read = await analyzeRequest({
         mode: "name_strip",
-        uploadIds: readable.map((s) => s.id),
+        uploadIds: slice.map((s) => s.id),
         grade: a.grade,
         subject: a.subject,
         framework: a.framework,
         assessmentId: a.id,
       });
-      // The strips were sent in their own order; map each answer back to the
-      // page it was cut from.
-      const byStrip = new Map<number, { name: string; confidence: number }>(
-        (read.result.pages as PageName[]).map((r) => [r.page, r]),
-      );
-      names = names.map((n) => {
-        const at = readable.findIndex((s) => s.page === n.page);
-        const hit = at >= 0 ? byStrip.get(at) : undefined;
-        return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
-      });
+      // Each request numbers its answers within the strips it was shown; map
+      // them back to the page each strip was cut from.
+      for (const r of (read.result.pages ?? []) as PageName[]) {
+        const source = slice[r.page];
+        if (source) found.set(source.page, { name: r.name, confidence: r.confidence });
+      }
     }
+    names = names.map((n) => {
+      const hit = found.get(n.page);
+      return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+    });
 
     // Pass two: the work, with the name bands gone, grouped either by what the
     // teacher declared or by what pass one found. Shown no name at all.
