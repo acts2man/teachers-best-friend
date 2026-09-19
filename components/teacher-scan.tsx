@@ -88,6 +88,12 @@ export function ScanView() {
   const selected = targets.filter((code) =>
     catalog.some((s) => s.code === code),
   );
+  // What gets sent for reading. `selected` drops any code the catalog cannot
+  // currently vouch for, which is right for the picker but wrong here: if the
+  // catalog for this grade and subject is momentarily short a code the teacher
+  // already chose, their choice is not thereby undone, and dropping it silently
+  // left the read with nothing to match against.
+  const standardsForReading = selected.length ? selected : targets;
   const prepared = chosen && preparationGaps(chosen).ready;
   useEffect(() => {
     const id = params.get("assessment"),
@@ -120,7 +126,17 @@ export function ScanView() {
     if (field === "framework") setFramework(value);
   }
   async function upload(list: FileList | null) {
-    if (!list || uploading || analyzing) return;
+    if (!list) return;
+    // Dropping the files on the floor because a read is already running looks
+    // identical to the upload silently failing. Say so.
+    if (uploading || analyzing) {
+      setError(
+        analyzing
+          ? "Still reading the last page — try again once it finishes."
+          : "Still uploading — try again in a moment.",
+      );
+      return;
+    }
     const incoming = Array.from(list);
     if (files.length + incoming.length > 6) {
       setError("Choose up to six pages or files for one analysis.");
@@ -211,7 +227,7 @@ export function ScanView() {
         ? files.map((f) => f.id)
         : editing?.assignmentUploadIds || [],
       source: origin,
-      targetStandards: selected,
+      targetStandards: standardsForReading,
       answerKeyVerified: false,
       ...(editing
         ? { classIds: editing.classIds }
@@ -306,9 +322,34 @@ export function ScanView() {
    * yet, so reading `files` there would analyse the previous batch.
    */
   async function analyze(ids?: string[]) {
-    if (mode === "assignment" && !selected.length) return;
-    if (mode === "responses" && (!chosen || !studentId || !prepared)) return;
+    // These used to be bare returns. When one of them fired -- on upload, or on
+    // the teacher pressing "Read it again" -- the reading simply did not happen
+    // and nothing on screen changed: no spinner, no error, no explanation. A
+    // pilot teacher reported it for days as "it still does not autoread", and
+    // it was invisible from this side because nothing was ever recorded. Say
+    // what is missing instead, so the next report comes with a reason attached.
+    if (mode === "assignment" && !standardsForReading.length) {
+      setPhase(1);
+      setError("Choose at least one intended standard, then the test will be read.");
+      return;
+    }
+    if (mode === "responses" && !chosen) {
+      setError("Choose which assessment this work belongs to.");
+      return;
+    }
+    if (mode === "responses" && !studentId) {
+      setError("Choose which student this work belongs to.");
+      return;
+    }
+    if (mode === "responses" && !prepared) {
+      setError("Confirm this assessment's standards and answer key before grading work against it.");
+      return;
+    }
     const uploadIds = ids ?? files.map((f) => f.id);
+    if (!uploadIds.length && !text.trim()) {
+      setError("Add a page or some text first.");
+      return;
+    }
     setAnalyzing(true);
     setError("");
     try {
@@ -319,7 +360,7 @@ export function ScanView() {
         grade: mode === "responses" ? chosen!.grade : Number(grade),
         subject: mode === "responses" ? chosen!.subject : subject,
         framework: mode === "responses" ? chosen!.framework : framework,
-        targetStandards: selected,
+        targetStandards: standardsForReading,
         assessmentId,
         studentId,
       });
