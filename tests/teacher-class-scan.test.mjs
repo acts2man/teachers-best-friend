@@ -229,3 +229,57 @@ test("removing a student works on a workspace with no groups",()=>{
   assert.deepEqual(next.students.map(s=>s.id),["s2"]);
   assert.deepEqual(next.groups,[]);
 });
+
+// Student work photos are deleted once the grading that came off them is
+// confirmed -- what both pilot teachers asked for. These guard the two ways
+// that could go wrong: deleting a teacher's own documents, and deleting a page
+// whose grading is still in progress.
+const {releasedStudentUploads,forgetUploads}=bundle("lib/teacher-workflow.ts");
+
+function graded(verifiedFor){
+  const questions=[
+    {id:"q1",number:1,text:"a",passage:"",answer:"1",standard:"4.OA.1",secondary:"",skill:"",dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false},
+    {id:"q2",number:2,text:"b",passage:"",answer:"2",standard:"4.OA.1",secondary:"",skill:"",dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false},
+  ];
+  const resp=(studentId,questionId)=>({
+    id:studentId+"-"+questionId,studentId,questionId,answer:"1",correct:true,match:100,
+    misconception:"",confidence:99,verified:verifiedFor.includes(studentId),
+  });
+  return {
+    id:"a1",classId:"c1",title:"Quiz",subject:"Math",grade:4,framework:"Common Core",createdAt:"",
+    status:"Ready",source:"manual",targetStandards:["4.OA.1"],answerKeyVerified:true,questions,
+    responses:["s1","s2"].flatMap(sid=>questions.map(q=>resp(sid,q.id))),
+    // p1/p2 are s1's scanned pages, p3 is s2's. blank1 and key1 are the
+    // teacher's own documents and must never be released.
+    uploadIds:["blank1","key1","p1","p2","p3"],
+    studentUploadIds:{s1:["p1","p2"],s2:["p3"]},
+  };
+}
+
+test("a student's pages are released once all their grading is confirmed",()=>{
+  assert.deepEqual(releasedStudentUploads(graded(["s1"])).sort(),["p1","p2"]);
+});
+test("the blank assessment and answer key are never released",()=>{
+  const released=releasedStudentUploads(graded(["s1","s2"]));
+  assert.equal(released.includes("blank1"),false);
+  assert.equal(released.includes("key1"),false);
+  assert.deepEqual(released.sort(),["p1","p2","p3"]);
+});
+test("nothing is released while grading is still unconfirmed",()=>{
+  assert.deepEqual(releasedStudentUploads(graded([])),[]);
+});
+test("a page a still-in-progress student points at is held back",()=>{
+  const a=graded(["s1"]);
+  a.studentUploadIds={s1:["p1","shared"],s2:["shared"]};
+  assert.deepEqual(releasedStudentUploads(a),["p1"]);
+});
+test("forgetUploads unlinks the released pages and leaves the rest",()=>{
+  const a=graded(["s1"]);
+  const next=forgetUploads(a,["p1","p2"]);
+  assert.deepEqual(next.studentUploadIds,{s1:[],s2:["p3"]});
+  assert.deepEqual(next.uploadIds,["blank1","key1","p3"]);
+});
+test("forgetUploads with nothing released returns the assessment untouched",()=>{
+  const a=graded([]);
+  assert.equal(forgetUploads(a,[]),a);
+});

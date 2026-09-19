@@ -284,3 +284,50 @@ export function studentReport(a: Assessment, student: Student) {
     "\n\nThis report describes this assignment. One assignment does not establish long-term mastery."
   );
 }
+
+/**
+ * The scanned pages that have done their job and can be deleted.
+ *
+ * Both pilot teachers asked for student work photos to be deleted "after class
+ * analysis is generated". There is no such event -- class analysis is computed
+ * live from whatever grading has been confirmed, every time the tab is opened.
+ * The equivalent moment that does exist is per student: once every question of
+ * a student's work has been reviewed and confirmed, the photograph has given up
+ * everything it had, and the grades stand on their own.
+ *
+ * Only pages under studentUploadIds are considered, so the blank assessment and
+ * the answer key are never touched -- those are the teacher's own documents, not
+ * a child's handwriting. A page is held back if any student whose review is not
+ * finished still points at it, so a shared or mis-assigned page is never deleted
+ * out from under work that is still in progress.
+ */
+export function releasedStudentUploads(a: Assessment): string[] {
+  const byStudent = a.studentUploadIds || {};
+  const done = new Set<string>();
+  const held = new Set<string>();
+  for (const [studentId, ids] of Object.entries(byStudent)) {
+    const target = studentReview(a, studentId).complete ? done : held;
+    for (const id of ids || []) target.add(id);
+  }
+  return [...done].filter((id) => !held.has(id));
+}
+
+/**
+ * The assessment with those pages unlinked. Call alongside the delete so the
+ * app stops offering a thumbnail for a file that is no longer there.
+ */
+export function forgetUploads(a: Assessment, released: string[]): Assessment {
+  if (!released.length) return a;
+  const gone = new Set(released);
+  const studentUploadIds = Object.fromEntries(
+    Object.entries(a.studentUploadIds || {}).map(([studentId, ids]) => [
+      studentId,
+      (ids || []).filter((id) => !gone.has(id)),
+    ]),
+  );
+  return {
+    ...a,
+    studentUploadIds,
+    uploadIds: a.uploadIds.filter((id) => !gone.has(id)),
+  };
+}

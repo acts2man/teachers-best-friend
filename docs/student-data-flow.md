@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-18.
+Last verified against the running system: 2026-09-19.
 
 ---
 
@@ -19,7 +19,8 @@ Teacher's browser
                       └─(5)─> back to the app, then to the teacher
 ```
 
-A daily job (6) deletes uploaded work once its retention window passes.
+Confirming a student's grading deletes that student's scanned pages straight away.
+A daily job (6) sweeps up anything still left once its retention window passes.
 
 ---
 
@@ -61,10 +62,10 @@ unreachable from another teacher's session even if the application layer had a b
 | What is transmitted | Photographs and PDFs of assessments and completed student work |
 | Encrypted | Yes, TLS in transit, encrypted at rest |
 | Stored here | Bucket `teacher-documents`, private, no public URLs |
-| Retained | **30 days from upload**, then deleted by the job in step 6 |
+| Retained | Until the teacher confirms that student's grading, which deletes the pages immediately; **30 days from upload** at the outside, then deleted by the job in step 6 |
 | Used for training | No |
 | Other use | No |
-| Deletable | Yes, immediately by the teacher, and automatically at 30 days |
+| Deletable | Yes: immediately by the teacher, automatically on confirming that student's grading, and automatically at 30 days |
 
 Object paths are namespaced by owner (`<teacher id>/<upload id>`) and the bucket is not
 public, so a file is reachable only through an authenticated, authorised request.
@@ -170,7 +171,9 @@ data is involved in this path.
   in the Data Processing Addendum and giving districts notice.
 - Changing the retention window means updating four published pages: Privacy Policy,
   Student Data Privacy Commitments, How We Use AI, and the Data Processing Addendum.
-  They currently all say 30 days.
+  They currently all say deleted on confirming that student's grading, and 30 days at
+  the outside. Both halves of that sentence have to stay true: the second is the
+  backstop for work whose grading is never confirmed.
 - Changing the AI provider or model means re-checking the training and retention terms
   before the change ships, not after.
 - **Adding or changing an AI mode means re-reading section 4 before it ships.** A new

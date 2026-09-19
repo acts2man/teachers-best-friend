@@ -156,7 +156,7 @@ We use the information described above only to:
 
 | Data | Retention |
 |---|---|
-| Uploaded worksheet images | Automatically deleted 30 days after upload |
+| Uploaded worksheet images | Deleted as soon as you confirm that student's grading, and automatically 30 days after upload in any case |
 | Roster photographs | Deleted immediately after names are read |
 | Extracted answer text, scores, misconception records | Kept while the account is active |
 | Standards mastery records | Kept while the account is active |

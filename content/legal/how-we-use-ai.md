@@ -74,8 +74,10 @@ sees on a page, and the image is deleted automatically on a schedule rather than
 
 ## Where your work is stored
 
-Uploaded images go to private storage that only your account can reach. They are
-**deleted automatically 30 days after upload.**
+Uploaded images go to private storage that only your account can reach. A student's
+scanned pages are **deleted as soon as you confirm that student's grading** — once the
+scores are in, the photograph has nothing left to give. Anything still sitting there is
+**deleted automatically 30 days after upload** regardless.
 
 The results — the extracted answers, the scores, the mastery records — stay as long as
 your account is active, because that's the part you actually need. The photograph is
