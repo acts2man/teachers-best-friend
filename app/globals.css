@@ -694,3 +694,9 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .app-sidebar .footer-link{padding:7px 5px}
 .app-sidebar .teacher-account{margin-top:10px;padding-top:12px}
 .app-sidebar .footer-legal{padding:8px 5px 0}
+.error-page{max-width:34rem;margin:0 auto;padding:64px 24px;text-align:center;display:flex;flex-direction:column;gap:16px;align-items:center}
+.error-page h1{font-size:22px}
+.error-page p{line-height:1.65;color:var(--ink)}
+.error-page-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px}
+.error-page-meta{font-size:13px;opacity:.75}
+.error-page code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}

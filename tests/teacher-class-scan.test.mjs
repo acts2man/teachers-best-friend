@@ -478,3 +478,27 @@ test("the batch budget stays under the class_scan output ceiling",()=>{
   // And enough headroom that a verbose batch has somewhere to go.
   assert.ok(ceiling - BATCH_OUTPUT_BUDGET >= 4000, "not enough headroom over the budget");
 });
+
+// Telling a teacher on bad classroom wifi that the building is the problem,
+// rather than letting them retake a photograph that was never the issue.
+const {describeFailure}=bundle("lib/connection.ts");
+
+test("a dropped connection is named as one, not as a bad file",()=>{
+  const msg=describeFailure(new TypeError("Failed to fetch"),"That page couldn't be uploaded.");
+  assert.match(msg,/connection dropped/i);
+  assert.match(msg,/saved/i);
+});
+test("other network wordings browsers use are recognised too",()=>{
+  for(const wording of ["NetworkError when attempting to fetch resource.","Load failed","Network request failed"])
+    assert.match(describeFailure(new Error(wording),"fallback"),/connection dropped/i);
+});
+test("a real server message is passed through untouched",()=>{
+  assert.equal(
+    describeFailure(new Error("That file is larger than 12 MB."),"fallback"),
+    "That file is larger than 12 MB.",
+  );
+});
+test("something thrown that is not an Error still gets the fallback",()=>{
+  assert.equal(describeFailure("boom","Upload failed."),"Upload failed.");
+  assert.equal(describeFailure(undefined,"Upload failed."),"Upload failed.");
+});
