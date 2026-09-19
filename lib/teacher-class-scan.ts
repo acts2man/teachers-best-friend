@@ -323,3 +323,44 @@ export function planScanBatches(
   }
   return batches;
 }
+
+/**
+ * Runs a class scan's batches and puts the answers back into whole-scan
+ * numbering.
+ *
+ * This lives here rather than inside the component because it is where the
+ * scan can go quietly wrong. Each request is told about its own handful of
+ * students and answers in its own numbering, starting at zero; every batch
+ * therefore returns a "group 0", and if those are not mapped back, the whole
+ * class collapses onto the first few students -- every child holding somebody
+ * else's grades, with nothing on screen to suggest anything went wrong. That is
+ * the one failure in this flow that a teacher would not catch.
+ *
+ * `grade` is the request. Passing it in keeps this function free of the network
+ * so the mapping can be tested against a whole simulated class.
+ *
+ * `onBatch` is called after each one with the answers so far, so a caller can
+ * bank progress and resume rather than re-grading what is already done.
+ */
+export async function gradeInBatches(
+  batches: ScanBatch[],
+  grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,
+  onBatch?: (graded: GradedGroup[], nextBatch: number) => void,
+  startAt = 0,
+  already: GradedGroup[] = [],
+): Promise<GradedGroup[]> {
+  const graded: GradedGroup[] = [...already];
+  for (const [index, batch] of batches.entries()) {
+    if (index < startAt) continue;
+    const result = await grade(batch, index);
+    for (const g of result.groups ?? []) {
+      const at = batch.groupIndexes[g.group];
+      // A group number the batch was never told about is dropped rather than
+      // guessed at: attaching it to the wrong student is worse than losing it,
+      // because the teacher sees a grade either way.
+      if (at !== undefined) graded.push({ ...g, group: at });
+    }
+    onBatch?.(graded, index + 1);
+  }
+  return graded;
+}

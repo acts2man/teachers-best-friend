@@ -22,6 +22,7 @@ import {
   applyScannedGroups,
   groupPagesByCapture,
   groupPagesByName,
+  gradeInBatches,
   planScanBatches,
   resolveScannedGroups,
   type GradedGroup,
@@ -323,6 +324,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     explicit: number[] | null,
     resume?: Progress | null,
   ) {
+    // Mirrors what has been banked, so the in-flight job id can be recorded
+    // against the right point without waiting for a re-render.
+    let banked: GradedGroup[] = resume?.graded ?? [];
     const ids = pages.map((p) => p.bodyId);
     setPageUploadIds(ids);
     // Pass one: the name bands alone. No questions, no answer key, no work.
@@ -368,37 +372,36 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // Resume where an interrupted run stopped rather than grading, and paying,
     // from the top again.
     const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
-    const graded: GradedGroup[] = resuming ? [...resuming.graded] : [];
     let inFlight = resuming?.scanId ?? null;
-    for (const [index, batch] of batches.entries()) {
-      if (resuming && index < resuming.nextBatch) continue;
-      setStatus(
-        batches.length > 1
-          ? "Grading students " +
-              (batch.groupIndexes[0] + 1) +
-              "–" +
-              (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
-              " of " +
-              pageGroups.length +
-              "…"
-          : "Grading " +
-              pageGroups.length +
-              " student" +
-              (pageGroups.length === 1 ? "" : "s") +
-              "…",
-      );
-      // A batch already sent and still running is waited on, not repeated.
-      let d;
-      if (inFlight) {
-        try {
-          d = await resumeScan(inFlight);
-        } catch {
-          d = null;
+    const graded = await gradeInBatches(
+      batches,
+      async (batch, index) => {
+        setStatus(
+          batches.length > 1
+            ? "Grading students " +
+                (batch.groupIndexes[0] + 1) +
+                "\u2013" +
+                (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
+                " of " +
+                pageGroups.length +
+                "\u2026"
+            : "Grading " +
+                pageGroups.length +
+                " student" +
+                (pageGroups.length === 1 ? "" : "s") +
+                "\u2026",
+        );
+        // A batch already sent and still running is waited on, not repeated.
+        if (inFlight) {
+          const id = inFlight;
+          inFlight = null;
+          try {
+            return (await resumeScan(id)).result;
+          } catch {
+            // Gone or never finished; fall through and send it again.
+          }
         }
-        inFlight = null;
-      }
-      if (!d)
-        d = await analyzeRequest(
+        const d = await analyzeRequest(
           {
             mode: "class_scan",
             uploadIds: batch.uploadIds,
@@ -410,17 +413,18 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           },
           // Record the job before waiting on it, so a phone that sleeps
           // mid-grade picks this exact one up instead of paying for another.
-          { onScanId: (id) => setProgress({ graded, nextBatch: index, scanId: id }) },
+          { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) },
         );
-      // The model numbers its answers within the batch it was shown; put them
-      // back into the numbering of the whole scan.
-      for (const g of (d.result.groups ?? []) as GradedGroup[]) {
-        const at = batch.groupIndexes[g.group];
-        if (at !== undefined) graded.push({ ...g, group: at });
-      }
-      // Banked, so an interruption after this batch never re-grades it.
-      setProgress({ graded, nextBatch: index + 1, scanId: null });
-    }
+        return d.result;
+      },
+      // Banked after each batch, so an interruption never re-grades one.
+      (soFar, nextBatch) => {
+        banked = soFar;
+        setProgress({ graded: soFar, nextBatch, scanId: null });
+      },
+      resuming?.nextBatch ?? 0,
+      resuming?.graded ?? [],
+    );
     setProgress(null);
     const resolved = resolveScannedGroups(pageGroups, names, graded, ids, students);
     if (!resolved.length)
