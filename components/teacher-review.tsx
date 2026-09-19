@@ -31,8 +31,10 @@ import {
 import {
   activeQuestions,
   assignmentNextStep,
+  forgetUploads,
   parseAnswerKey,
   preparationGaps,
+  releasedStudentUploads,
   responseFlag,
   studentReport,
   studentReview,
@@ -113,15 +115,34 @@ export function StudentResponseReview({
   async function approveClear() {
     if (!prep.ready) return;
     const ids = new Set(summary.clear.map((r) => r.id));
-    await onSave(
-      {
-        ...a,
-        responses: a.responses.map((r) =>
-          ids.has(r.id) ? { ...r, verified: true } : r,
-        ),
-      },
-      summary.clear.length + " clear answers confirmed",
+    const confirmed = {
+      ...a,
+      responses: a.responses.map((r) =>
+        ids.has(r.id) ? { ...r, verified: true } : r,
+      ),
+    };
+    // Both pilot teachers asked for student work photos to go once the class
+    // analysis is in. Confirming the last question of a student's work is that
+    // moment for that student: the grades no longer need the photograph.
+    const released = releasedStudentUploads(confirmed);
+    const saved = await onSave(
+      forgetUploads(confirmed, released),
+      summary.clear.length +
+        " clear answers confirmed" +
+        (released.length
+          ? " · " +
+            released.length +
+            " scanned page" +
+            (released.length === 1 ? "" : "s") +
+            " deleted"
+          : ""),
     );
+    // Unlinked first, deleted second: a failed delete leaves a file the nightly
+    // purge still collects, where the reverse would leave a live thumbnail
+    // pointing at nothing.
+    if (saved !== false)
+      for (const id of released)
+        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
   }
 
   async function uploadPages(list: FileList | null) {

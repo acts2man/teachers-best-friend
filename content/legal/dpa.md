@@ -130,7 +130,7 @@ rather than claiming any of it is anonymous.
 
 | Data | Retention |
 |---|---|
-| Uploaded images of student work | Automatically deleted 30 days after upload |
+| Uploaded images of student work | Deleted once the teacher confirms that student's grading, and automatically 30 days after upload in any case |
 | Derived results and mastery records | Retained while the account is active |
 | Teacher notes about a student | Retained while the account is active, or until a teacher-set expiry |
 | Backups | Purged within [BACKUP WINDOW, e.g. 90 days] |
