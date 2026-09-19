@@ -331,3 +331,108 @@ export function forgetUploads(a: Assessment, released: string[]): Assessment {
     uploadIds: a.uploadIds.filter((id) => !gone.has(id)),
   };
 }
+
+/** One cluster of students who answered a question the same way. */
+export type AnswerGroup = {
+  key: string;
+  answer: string;
+  responseIds: string[];
+  studentIds: string[];
+  /** True when every response here already matches the key outright. */
+  correct: boolean;
+  match: number;
+  needsDecision: boolean;
+};
+
+/**
+ * Compares two written answers the way a teacher scanning a pile does: case,
+ * surrounding space, trailing punctuation and the difference between "65%" and
+ * "65 %" are not different answers. Deliberately conservative -- it will split
+ * two answers a teacher would have merged rather than merge two they would have
+ * kept apart, because a wrong merge assigns a grade nobody looked at.
+ */
+export function answerKey(answer: string) {
+  return answer
+    .toLowerCase()
+    .replace(/[\s,]+/g, "")
+    .replace(/[.;:!]+$/, "")
+    .trim();
+}
+
+/**
+ * Every distinct answer given to one question, with the students who gave it.
+ *
+ * This is what makes grading a class set by question rather than by student
+ * worth doing: thirty-six papers hold far fewer than thirty-six different
+ * answers, and the ones that repeat need deciding once, not once per child. It
+ * costs nothing extra -- every answer here was already read during grading, so
+ * this is sorting work we have already paid for, not a second look.
+ *
+ * Groups are ordered largest first, so the decision that clears the most papers
+ * is the one on top. `needsDecision` marks the ones worth a teacher's attention:
+ * a blank scores zero and an outright match scores full credit on their own.
+ */
+export function groupAnswers(
+  a: Assessment,
+  questionId: string,
+): AnswerGroup[] {
+  const question = a.questions.find((q) => q.id === questionId);
+  const groups = new Map<string, AnswerGroup>();
+  for (const r of a.responses) {
+    if (r.questionId !== questionId) continue;
+    const key = answerKey(r.answer);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.responseIds.push(r.id);
+      existing.studentIds.push(r.studentId);
+      existing.correct = existing.correct && r.correct;
+      existing.match = Math.min(existing.match, responseMatch(r));
+      continue;
+    }
+    groups.set(key, {
+      key,
+      answer: r.answer,
+      responseIds: [r.id],
+      studentIds: [r.studentId],
+      correct: r.correct,
+      match: responseMatch(r),
+      needsDecision: false,
+    });
+  }
+  return [...groups.values()]
+    .map((g) => ({
+      ...g,
+      // A blank is a zero and a clean match is full credit; neither needs the
+      // teacher. Everything in between is the partial credit they asked to be
+      // able to settle a batch at a time.
+      needsDecision:
+        !!question &&
+        !question.excluded &&
+        !!g.answer.trim() &&
+        !(g.correct && g.match >= 100),
+    }))
+    .sort((x, y) => y.responseIds.length - x.responseIds.length);
+}
+
+/**
+ * Applies one decision to every response in a group at once: the match score
+ * the teacher chose, marked correct at full credit, and confirmed so it stops
+ * asking. The misconception text the AI wrote is left alone -- the teacher
+ * changed the grade, not the diagnosis.
+ */
+export function applyGroupScore(
+  a: Assessment,
+  responseIds: string[],
+  match: number,
+): Assessment {
+  const ids = new Set(responseIds);
+  const score = Math.max(0, Math.min(100, Math.round(match)));
+  return {
+    ...a,
+    responses: a.responses.map((r) =>
+      ids.has(r.id)
+        ? { ...r, match: score, correct: score >= 100, verified: true }
+        : r,
+    ),
+  };
+}

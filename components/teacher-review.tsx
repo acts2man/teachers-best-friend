@@ -25,24 +25,154 @@ import {
   EmptyState,
   Pick,
   Pill,
+  Score,
   SectionTitle,
   printContent,
 } from "./teacher-shared";
 import {
   activeQuestions,
+  applyGroupScore,
   assignmentNextStep,
   forgetUploads,
+  groupAnswers,
   parseAnswerKey,
   preparationGaps,
   releasedStudentUploads,
   responseFlag,
   studentReport,
   studentReview,
+  type AnswerGroup,
 } from "@/lib/teacher-workflow";
 import { extractPdfText } from "@/lib/pdf-text";
-import type { Assessment, StudentResponse } from "@/lib/teacher-types";
+import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
+
+/**
+ * Grading a class set one question at a time instead of one student at a time.
+ *
+ * Thirty-six papers hold far fewer than thirty-six different answers. Every
+ * student who wrote the same thing is settled with one decision, and the
+ * grouping itself carries information a per-student pass hides: nine children
+ * making the identical mistake is one thing to reteach, not nine notes to
+ * write. Costs nothing extra -- the answers were all read during grading, so
+ * this only sorts what is already there.
+ */
+function GradeByQuestion({
+  assessment: a,
+  students,
+  onSave,
+  busy,
+}: {
+  assessment: Assessment;
+  students: Student[];
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+  busy: boolean;
+}) {
+  const questions = activeQuestions(a);
+  const [questionId, setQuestionId] = useState(questions[0]?.id || "");
+  const question = questions.find((q) => q.id === questionId) || questions[0];
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  if (!question) return null;
+  const groups = groupAnswers(a, question.id);
+  const outstanding = groups.filter((g) => g.needsDecision);
+  const nameFor = (id: string) => students.find((s) => s.id === id)?.name || "—";
+
+  async function score(group: AnswerGroup, match: number) {
+    await onSave(
+      applyGroupScore(a, group.responseIds, match),
+      group.responseIds.length +
+        (group.responseIds.length === 1 ? " answer" : " answers") +
+        " set to " +
+        match +
+        "%",
+    );
+  }
+
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Grade by question"
+        description="Every student who wrote the same answer is grouped together. Decide once and it applies to all of them."
+      />
+      <div className="review-student-toolbar">
+        <label>
+          Question
+          <Pick
+            label="Question to grade"
+            value={question.id}
+            onChange={setQuestionId}
+            options={questions.map((q) => ({
+              value: q.id,
+              label:
+                "Q" +
+                q.number +
+                " · " +
+                groupAnswers(a, q.id).filter((g) => g.needsDecision).length +
+                " to decide",
+            }))}
+          />
+        </label>
+        <Pill>Your key: {question.answer || "not set"}</Pill>
+      </div>
+      {!groups.length && (
+        <p className="cell-meta">No answers read for this question yet.</p>
+      )}
+      {groups.length > 0 && !outstanding.length && (
+        <p className="cell-meta">
+          Nothing left to decide on this question — every answer either matches
+          your key or is blank.
+        </p>
+      )}
+      {groups.map((g) => (
+        <div className="class-scan-row" key={g.key}>
+          <div className="class-scan-row-main">
+            <strong>{g.answer.trim() ? g.answer : "(blank)"}</strong>
+            <span className="cell-meta">
+              {g.studentIds.length}
+              {g.studentIds.length === 1 ? " student" : " students"} ·{" "}
+              {g.studentIds.map(nameFor).join(", ")}
+            </span>
+            {!g.needsDecision && (
+              <Pill>
+                {g.answer.trim() ? "Matches your key" : "Blank — scored zero"}
+              </Pill>
+            )}
+            {g.needsDecision && (
+              <div className="review-heading-actions">
+                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 100)}>
+                  Full credit
+                </Action>
+                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 50)}>
+                  Half
+                </Action>
+                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 0)}>
+                  No credit
+                </Action>
+                <input
+                  className="class-scan-name-input"
+                  aria-label={"Custom score for the answer " + g.answer}
+                  inputMode="numeric"
+                  placeholder="%"
+                  value={custom[g.key] ?? ""}
+                  onChange={(e) =>
+                    setCustom((c) => ({ ...c, [g.key]: e.target.value.replace(/[^0-9]/g, "") }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    const value = Number(custom[g.key]);
+                    if (Number.isFinite(value)) score(g, value);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          <Score value={Math.round(g.match)} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function StudentResponseReview({
   assessment: a,
@@ -281,6 +411,7 @@ export function StudentResponseReview({
   return (
     <div className="student-review-space">
       <ClassScanPanel assessment={a} />
+      <GradeByQuestion assessment={a} students={students} onSave={onSave} busy={busy} />
       <div className="review-student-toolbar">
         <label>
           Student
