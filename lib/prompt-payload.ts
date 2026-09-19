@@ -60,3 +60,37 @@ export function questionsForGrading(a: Assessment) {
     skill: q.skill,
   }));
 }
+
+/** How much of a transcribed passage travels with a grading request. Long
+ * enough for the short stories a pilot teacher described (3-10 pages), and a
+ * ceiling so one enormous upload cannot quietly inflate every scan. */
+export const PASSAGE_LIMIT = 40000;
+
+/**
+ * The shared reading passage, if this assessment has one, as a prompt fragment.
+ *
+ * A comprehension question cannot be marked honestly without the text it is
+ * about: asked "why did he change his mind", a model with only the question and
+ * the teacher's key is guessing. The story is read once when it is uploaded and
+ * kept as text, so every student's grading can carry all of it -- text is a
+ * fraction of the cost of the photographed pages, which is what makes sending
+ * it to all 150 students affordable at all.
+ *
+ * Empty string when there is no passage, so a math assessment sends nothing and
+ * costs exactly what it does today.
+ */
+export function passageForGrading(a: Assessment) {
+  const passage = (a.passage || "").trim();
+  if (!passage) return "";
+  const text =
+    passage.length > PASSAGE_LIMIT
+      ? passage.slice(0, PASSAGE_LIMIT) + "\n[passage truncated]"
+      : passage;
+  return (
+    " The questions below are about this shared reading passage. Judge each" +
+    " answer against the passage as well as the teacher's key, and never" +
+    " against your own recollection of the text. Passage: " +
+    JSON.stringify(text) +
+    "."
+  );
+}

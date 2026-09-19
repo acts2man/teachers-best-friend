@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { uprightPage } from "@/lib/image-prep";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
 import {
@@ -524,6 +525,9 @@ export function AssessmentView() {
               <TabsTrigger value="analysis">Class analysis</TabsTrigger>
             </TabsList>
             <TabsContent value="questions">
+              {(a.subject === "ELA" || a.subject === "Mixed" || !!a.passage) && (
+                <PassagePanel assessment={a} onSave={saveAssessment} />
+              )}
               {!a.targetStandards.length && (
                 <div className="review-notice">
                   <Target size={18} />
@@ -1375,6 +1379,180 @@ export function AssessmentView() {
         </div>
       </Modal>
     </>
+  );
+}
+
+/**
+ * The shared reading passage: photograph the story once, keep the text.
+ *
+ * A comprehension question cannot be marked honestly without the text it is
+ * about -- asked "why did the character change his mind", a model holding only
+ * the question and the teacher's key is guessing. The obvious fix, attaching
+ * the photographed pages to every student's grading, would pay to read the same
+ * story once per child. Reading it once here and carrying the text instead
+ * costs a fraction of that and gives every student the whole story.
+ */
+function PassagePanel({
+  assessment: a,
+  onSave,
+}: {
+  assessment: Assessment;
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+}) {
+  const { aiReady, busy } = useTeacher();
+  const [reading, setReading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(a.passage || "");
+  const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const words = (a.passage || "").trim()
+    ? (a.passage || "").trim().split(/\\s+/).length
+    : 0;
+
+  async function read(list: FileList | null) {
+    if (!list?.length || reading) return;
+    const files = Array.from(list);
+    if (files.length > 12) {
+      toast.error("Up to twelve pages of a passage at a time.");
+      return;
+    }
+    setReading(true);
+    try {
+      setStatus("Uploading " + files.length + (files.length === 1 ? " page…" : " pages…"));
+      const ids: string[] = [];
+      for (const raw of files) {
+        const page = await uprightPage(raw);
+        const form = new FormData();
+        form.append("file", page);
+        const r = await fetch("/api/uploads", { method: "POST", body: form });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        ids.push(d.id);
+      }
+      setStatus("Reading the passage…");
+      const result = await analyzeRequest({
+        mode: "passage",
+        uploadIds: ids,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+        assessmentId: a.id,
+      });
+      const text = String(result.result.text || "").trim();
+      if (!text) throw new Error("No text could be read from those pages.");
+      await onSave(
+        { ...a, passage: text },
+        "Passage read — it now goes with every student's grading",
+      );
+      setDraft(text);
+      // The photographs have given up everything they had; the text is what
+      // travels from here on.
+      for (const id of ids)
+        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The passage couldn't be read.");
+    } finally {
+      setReading(false);
+      setStatus("");
+      if (input.current) input.current.value = "";
+      if (camera.current) camera.current.value = "";
+    }
+  }
+
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Reading passage"
+        description="For comprehension questions. Photograph the story once — the text is kept and goes with every student's grading, so the AI marks answers against what they actually read."
+      >
+        <div className="review-heading-actions">
+          <input
+            ref={camera}
+            type="file"
+            className="sr-only"
+            accept="image/*"
+            capture="environment"
+            aria-label="Photograph a page of the passage"
+            onChange={(e) => read(e.target.files)}
+          />
+          <input
+            ref={input}
+            type="file"
+            className="sr-only"
+            multiple
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            aria-label="Upload pages of the passage"
+            onChange={(e) => read(e.target.files)}
+          />
+          <Action
+            variant="secondary small"
+            disabled={reading || busy || !aiReady}
+            onClick={() => camera.current?.click()}
+          >
+            {reading ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
+            Photograph the story
+          </Action>
+          <Action
+            variant="secondary small"
+            disabled={reading || busy || !aiReady}
+            onClick={() => input.current?.click()}
+          >
+            <Upload size={15} />
+            Upload pages
+          </Action>
+        </div>
+      </SectionTitle>
+      {status && (
+        <div className="read-document-status" role="status">
+          <LoaderCircle className="spin" size={18} />
+          <p>{status}</p>
+        </div>
+      )}
+      {!a.passage && !status && (
+        <p className="cell-meta">
+          No passage yet. Without one, a comprehension answer is judged against your
+          answer key alone.
+        </p>
+      )}
+      {a.passage && (
+        <>
+          <p className="cell-meta">
+            {words.toLocaleString()} words — sent with every student&rsquo;s grading.
+          </p>
+          <details className="review-advanced" open={open}>
+            <summary onClick={() => setOpen((v) => !v)}>Read or edit the passage</summary>
+            <textarea
+              aria-label="The reading passage"
+              value={draft}
+              rows={12}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <div className="review-heading-actions">
+              <Action
+                variant="secondary small"
+                disabled={busy || draft === (a.passage || "")}
+                onClick={() => onSave({ ...a, passage: draft.trim() }, "Passage updated")}
+              >
+                <Check size={15} />
+                Save changes
+              </Action>
+              <Action
+                variant="secondary small"
+                disabled={busy}
+                onClick={() => {
+                  setDraft("");
+                  onSave({ ...a, passage: "" }, "Passage removed");
+                }}
+              >
+                <X size={15} />
+                Remove passage
+              </Action>
+            </div>
+          </details>
+        </>
+      )}
+    </div>
   );
 }
 
