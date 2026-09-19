@@ -39,6 +39,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -1482,8 +1483,13 @@ export function StudentsView() {
                       )
                     ) {
                       setClearing(false);
-                      for (const id of cleared.uploadIds)
-                        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+                      const kept = await deleteUploads(cleared.uploadIds);
+                      if (kept)
+                        toast.error(
+                          kept +
+                            (kept === 1 ? " scanned page" : " scanned pages") +
+                            " couldn't be deleted just now. They'll be removed automatically.",
+                        );
                     }
                   }}
                 >

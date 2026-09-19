@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
+import { deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -1448,8 +1449,8 @@ function PassagePanel({
       setDraft(text);
       // The photographs have given up everything they had; the text is what
       // travels from here on.
-      for (const id of ids)
-        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+      // The text is out of them; the photographs have nothing left to give.
+      await deleteUploads(ids);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The passage couldn't be read.");
     } finally {

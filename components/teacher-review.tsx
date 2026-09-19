@@ -18,6 +18,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -270,9 +271,15 @@ export function StudentResponseReview({
     // Unlinked first, deleted second: a failed delete leaves a file the nightly
     // purge still collects, where the reverse would leave a live thumbnail
     // pointing at nothing.
-    if (saved !== false)
-      for (const id of released)
-        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+    if (saved !== false) {
+      const kept = await deleteUploads(released);
+      if (kept)
+        toast.error(
+          kept +
+            (kept === 1 ? " scanned page" : " scanned pages") +
+            " couldn't be deleted just now. They'll be removed automatically — tell us if you need them gone sooner.",
+        );
+    }
   }
 
   async function uploadPages(list: FileList | null) {

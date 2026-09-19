@@ -28,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
@@ -132,8 +133,13 @@ export function ClassesView() {
       )
     ) {
       setRemoveId(null);
-      for (const uploadId of uploads)
-        fetch("/api/uploads/" + uploadId, { method: "DELETE" }).catch(() => {});
+      const kept = await deleteUploads([...uploads]);
+      if (kept)
+        toast.error(
+          kept +
+            (kept === 1 ? " page" : " pages") +
+            " from that class couldn't be deleted just now. They'll be removed automatically.",
+        );
     }
   }
 
@@ -384,9 +390,15 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The roster couldn’t be read.");
     } finally {
-      // The roster itself is not kept once the names are read.
-      for (const id of ids)
-        fetch("/api/uploads/" + id, { method: "DELETE" }).catch(() => {});
+      // The roster itself is not kept once the names are read. "Deleted
+      // immediately after names are read" is a published commitment, so a
+      // failure here is said out loud rather than swallowed -- it is the one
+      // photograph in the app that carries a whole class list.
+      const kept = await deleteUploads(ids);
+      if (kept)
+        toast.error(
+          "The roster photo couldn't be deleted just now. It will be removed automatically — tell us if you need it gone sooner.",
+        );
       setWorking(false);
       if (input.current) input.current.value = "";
       if (camera.current) camera.current.value = "";
