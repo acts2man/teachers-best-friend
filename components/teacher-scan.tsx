@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { uprightPage } from "@/lib/image-prep";
+import { describeFailure } from "@/lib/connection";
 import {
   ArrowLeft,
   ArrowRight,
@@ -187,9 +188,7 @@ export function ScanView() {
       }
     } catch (e) {
       failed = true;
-      setError(
-        e instanceof Error ? e.message : "Upload failed. Please try again.",
-      );
+      setError(describeFailure(e, "Upload failed. Please try again."));
     } finally {
       setUploading(false);
       if (input.current) input.current.value = "";
@@ -420,9 +419,10 @@ export function ScanView() {
       }
     } catch (e) {
       setError(
-        e instanceof Error
-          ? e.message
-          : "The analysis couldn’t be completed. Your files are still saved.",
+        describeFailure(
+          e,
+          "The analysis couldn’t be completed. Your files are still saved.",
+        ),
       );
     } finally {
       setAnalyzing(false);

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
+import { describeFailure, useOnline } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
@@ -142,6 +143,7 @@ type Page = { key: string; label: string; bodyId: string; stripId: string | null
  */
 export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const { w, classroom, students, save, busy, aiReady } = useTeacher();
+  const online = useOnline();
   const [scanning, setScanning] = useState(false);
   const [adding, setAdding] = useState(false);
   const [status, setStatus] = useState("");
@@ -275,7 +277,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         });
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "That page couldn't be uploaded.");
+      toast.error(describeFailure(e, "That page couldn't be uploaded."));
     } finally {
       setAdding(false);
       setStatus("");
@@ -441,7 +443,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       );
     } catch (e) {
       toast.error(
-        (e instanceof Error ? e.message : "The pages couldn't be read.") +
+        describeFailure(e, "The pages couldn't be read.") +
           " The pages are uploaded — you can try grading again.",
       );
     } finally {
@@ -476,7 +478,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       await gradePages(pages, null);
     } catch (e) {
       toast.error(
-        (e instanceof Error ? e.message : "The pages couldn't be read.") +
+        describeFailure(e, "The pages couldn't be read.") +
           " The pages are uploaded — you can try scanning again.",
       );
     } finally {
@@ -669,6 +671,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             </div>
           )}
         </div>
+      )}
+      {!online && (
+        <p className="cell-meta" role="status">
+          You&rsquo;re offline. Pages you have already scanned are safe — adding more
+          needs the connection back.
+        </p>
       )}
       {status && (
         <div className="read-document-status" role="status">
