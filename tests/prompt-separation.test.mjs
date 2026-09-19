@@ -49,12 +49,17 @@ const workspace = {
   })),
 };
 
-const promptFor = (extra) => buildPrompt(
+const withPassage = (passage) => ({
+  ...workspace,
+  assessments: [{ ...assessment, passage }],
+});
+
+const promptFor = (extra, ws = workspace) => buildPrompt(
   analyzeInput.parse({
     grade: 7, subject: "Math", framework: "California",
     targetStandards: ["7.RP.3"], assessmentId: "a1", ...extra,
   }),
-  workspace, catalog, true,
+  ws, catalog, true,
 ).task;
 
 const mentionsAnyName = (text) =>
@@ -106,4 +111,51 @@ test("a class scan with no grouping is refused rather than sent ungrouped", () =
     () => promptFor({ mode: "class_scan", uploadIds: ["u1"], pageGroups: [] }),
     /Add scanned pages first/,
   );
+});
+
+// The shared reading passage: read once when it is uploaded, then carried with
+// every student's grading. A comprehension answer cannot be marked honestly
+// without the text it is about, and attaching the photographed pages to each
+// student would pay to read the same story once per child.
+const STORY = "The fox had never once considered forgiveness until that morning.";
+
+test("a story reaches the grading pass once the teacher has uploaded one", () => {
+  const task = promptFor(
+    { mode: "responses", uploadIds: ["u1"], studentId: "s0" },
+    withPassage(STORY),
+  );
+  assert.ok(task.includes(STORY), "the passage did not reach grading");
+  assert.match(task, /against the passage as well as the teacher/i);
+});
+
+test("a whole-class scan is given the story too", () => {
+  const task = promptFor(
+    { mode: "class_scan", uploadIds: ["u1"], pageGroups: [[0]] },
+    withPassage(STORY),
+  );
+  assert.ok(task.includes(STORY));
+});
+
+test("an assessment with no passage sends nothing extra, so math costs what it did", () => {
+  const withOut = promptFor({ mode: "responses", uploadIds: ["u1"], studentId: "s0" });
+  assert.equal(/shared reading passage/i.test(withOut), false);
+});
+
+test("the passage carries no student name into grading", () => {
+  const task = promptFor(
+    { mode: "class_scan", uploadIds: ["u1"], pageGroups: [[0]] },
+    withPassage(STORY + " " + ROSTER.join(" ")),
+  );
+  // The passage is teacher-supplied text, so if a name is in it that is the
+  // teacher's doing -- but the roster still must not be added by us.
+  assert.equal(task.includes("Maria Gonzalez, Jamal Thompson"), false);
+});
+
+test("reading a passage is shown no questions, no answer key and no student work", () => {
+  const task = promptFor({ mode: "passage", uploadIds: ["p1", "p2"] });
+  assert.equal(task.includes(ANSWER), false, "the answer key reached the passage read");
+  assert.equal(mentionsAnyName(task), false, "a roster name reached the passage read");
+  assert.equal(task.includes("How many apples?"), false, "a question reached the passage read");
+  assert.match(task, /transcribe/i);
+  assert.match(task, /do not answer any question/i);
 });

@@ -9,6 +9,7 @@ import {
 } from "@/lib/teacher-workflow";
 import {
   catalogForPrompt,
+  passageForGrading,
   questionsForGrading,
 } from "@/lib/prompt-payload";
 import type { Standard, Workspace } from "@/lib/teacher-types";
@@ -19,6 +20,7 @@ export type Mode =
   | "class_scan"
   | "name_strip"
   | "answer_key"
+  | "passage"
   | "lesson"
   | "catalog"
   | "roster";
@@ -55,6 +57,7 @@ export const analyzeInput = z.object({
     "class_scan",
     "name_strip",
     "answer_key",
+    "passage",
     "lesson",
     "catalog",
     "roster",
@@ -170,6 +173,11 @@ const nameStripSchema = obj({
     }),
   ),
 });
+const passageSchema = obj({
+  title: str,
+  text: str,
+  confidence: { type: "number", minimum: 0, maximum: 100 },
+});
 const answerKeySchema = obj({
   answers: arr(
     obj({
@@ -265,7 +273,9 @@ export function buildPrompt(
     task =
       "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. Compare the response with the confirmed teacher key and the question’s standard and component skill. Preserve written answers. Return an answer-match percentage from 0–100: 100 for fully correct, a defensible partial percentage for partially demonstrated knowledge, and 0 for missing or unrelated work. Assess mathematical or textual equivalence, not exact string equality. Diagnose a likely misconception with uncertainty, separating operation selection, reading, place value, fact fluency and regrouping. Do not infer a disability or fixed learner type. Missing/unreadable responses need confidence 0 and an explicit review message; never invent answers. Do not reproduce student names. Questions: " +
       JSON.stringify(questionsForGrading(a)) +
-      ". Additional work: " +
+      "." +
+      passageForGrading(a) +
+      " Additional work: " +
       p.text;
     schema = responseSchema;
   }
@@ -284,7 +294,9 @@ export function buildPrompt(
       "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. The name has already been removed from every page, so do not look for one, do not infer who any page belongs to, and do not report any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing or unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. If a page carries no readable answer for a question, return an empty answer with confidence 0 rather than inventing one. Report each group by its number below, not by page. Groups, as page positions: " +
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
       ". Questions: " +
-      JSON.stringify(a.questions.filter((q) => !q.excluded));
+      JSON.stringify(questionsForGrading(a)) +
+      "." +
+      passageForGrading(a);
     schema = classScanSchema;
   }
   if (p.mode === "name_strip") {
@@ -317,6 +329,20 @@ export function buildPrompt(
       ". Teacher answer-key text: " +
       p.text;
     schema = answerKeySchema;
+  }
+  if (p.mode === "passage") {
+    if (!hasContent && !p.text.trim())
+      throw new HttpError(400, "Add the story or passage first.");
+    // Read once, here, and keep the text. The alternative -- attaching the
+    // photographed pages to each student's grading -- pays to read the same
+    // story once per child, which for a ten-page story and a class set is the
+    // difference between pennies and real money, for no better result. Text
+    // costs a fraction of an image, so every student's grading can carry the
+    // whole story instead of none of it.
+    task =
+      "Transcribe this reading passage into plain text, in reading order. It is a story or article a class has been asked questions about, photographed a page at a time; the image at position N is page N. Preserve paragraph breaks, dialogue and any numbered lines or stanzas, because questions may refer to them. Do not summarise, abridge, correct, or add anything that is not on the page, and do not answer any question about it. Put [unreadable] where the text genuinely cannot be made out. Give the title as printed, or an empty title if none is shown, and an honest 0-100 confidence in the transcription. Teacher-typed text, if any, follows and is part of the passage: " +
+      p.text;
+    schema = passageSchema;
   }
   if (p.mode === "catalog") {
     const state = stateFor(p.framework);

@@ -76,7 +76,7 @@ This is the hop districts ask about, so it is the most specific.
 
 | Question | Answer |
 |---|---|
-| What is transmitted | The uploaded work, grade level, subject, the relevant standards, and question IDs |
+| What is transmitted | The uploaded work, grade level, subject, the relevant standards, question IDs, and -- where the teacher has uploaded one -- the transcribed text of the shared reading passage |
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
 | Name read from the image | Single-student mode: no. Whole-class stack scan: a separate request reads the cropped name band alone; the request that grades the work is sent the page with that band removed, so no request holds a name and that student's answers together |
 | Encrypted | Yes, TLS |
@@ -133,6 +133,33 @@ should not be described as zero.
 **Fallback.** A PDF, or a browser that cannot do the cut, sends the whole page to grading
 and reads no name from it; the teacher names that group by hand. That path trades the
 split for a page with a name on it, so it behaves exactly as the pre-split scan did.
+
+### Shared reading passage (`passage`, 19 Sep 2026)
+
+A new mode, checked against this section before it shipped.
+
+**What it sends.** Photographed pages of a story or article from a book, and any
+text the teacher typed. It is asked to transcribe, not to answer anything. No
+student work, no roster, no names, no answer key. Nothing a student wrote is in
+this request: the pages come from a published text, not from a child.
+
+**Why it exists, and what it changes downstream.** The transcribed text is kept
+on the assessment (`Assessment.passage`) and travels with every student's
+grading from then on (`passageForGrading()` in `lib/prompt-payload.ts`). That is
+new content in the grading request, so it is named here: it is the story, not
+the student. A comprehension answer cannot be marked honestly without the text
+it is about, and the alternative -- attaching the photographed pages to each
+student -- would pay to read the same story once per child and send a stack of
+images 150 times over instead of once.
+
+**Effect on identity.** None. The passage adds no identifier to any request, and
+the grading request carries the same student-free payload it did before. The
+`class_scan` prompt now sends `questionsForGrading()` rather than whole question
+objects, which is strictly less than it sent before.
+
+**The limit worth stating.** If a teacher photographs a page that happens to
+carry a student's handwriting or name, that goes in like any other uploaded
+image. This is the same honest limit already recorded above, not a new one.
 
 ## 5. Results back to the teacher
 

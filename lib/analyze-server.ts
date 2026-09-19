@@ -46,6 +46,9 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   // a small image, a few words out, no reasoning required.
   name_strip: { model: "gpt-5.4-nano", effort: "minimal", maxOutput: 1500 },
   answer_key: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 3000 },
+  // Transcribing a story runs once per assessment, not once per student, and a
+  // ten-page story needs room for all of it to come back.
+  passage: { model: "gpt-5.6-luna", effort: "minimal", maxOutput: 24000 },
   roster: { model: "gpt-5.4-nano", effort: "minimal", maxOutput: 1500 },
   assignment: { model: "gpt-5.6-luna", effort: "low", maxOutput: 6000 },
   lesson: { model: "gpt-5.4-mini", effort: "low", maxOutput: 6000 },
