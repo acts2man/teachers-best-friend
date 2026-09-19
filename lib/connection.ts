@@ -54,3 +54,35 @@ export function describeFailure(error: unknown, fallback: string) {
     return "The connection dropped. Your pages are saved — try again in a moment.";
   return message || fallback;
 }
+
+/**
+ * Deletes uploaded pages, and says how it went.
+ *
+ * Every caller used to fire these and swallow the outcome
+ * (`.catch(() => {})`), which meant a photograph of a child's work could fail
+ * to delete and nobody -- teacher or us -- would ever know. The nightly purge
+ * still catches it within the retention window, so nothing lingers forever, but
+ * "deleted when you confirm the grading" is a published commitment and a silent
+ * failure quietly turns that into "deleted within 30 days".
+ *
+ * Resolves to the number that did not go, so a caller can tell the teacher the
+ * truth. Deliberately never throws: a failed cleanup must not undo the save
+ * that preceded it.
+ */
+export async function deleteUploads(ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const r = await fetch("/api/uploads/" + encodeURIComponent(id), {
+          method: "DELETE",
+        });
+        // A page already gone is a page that is gone.
+        return r.ok || r.status === 404;
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return results.filter((ok) => !ok).length;
+}
