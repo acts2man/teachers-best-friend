@@ -502,3 +502,55 @@ test("something thrown that is not an Error still gets the fallback",()=>{
   assert.equal(describeFailure("boom","Upload failed."),"Upload failed.");
   assert.equal(describeFailure(undefined,"Upload failed."),"Upload failed.");
 });
+
+// The gradebook export. These numbers get typed into a district system and
+// become a child's grade, so the rules have to be the ones the teacher was
+// told: only confirmed answers count, and a half-reviewed class says so.
+const {gradebookCsv}=bundle("lib/teacher-workflow.ts");
+
+function scored(rows){
+  const questions=[1,2].map(n=>({id:"q"+n,number:n,text:"q"+n,passage:"",answer:"a",standard:"7.RP.3",
+    secondary:"",skill:"",dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false}));
+  return {
+    id:"a1",classId:"c1",title:"3.1 Quiz",subject:"Math",grade:7,framework:"California",createdAt:"",
+    status:"Ready",source:"manual",targetStandards:["7.RP.3"],answerKeyVerified:true,
+    uploadIds:[],studentUploadIds:{},questions,
+    responses:rows.map(([sid,qid,match,verified],i)=>({
+      id:"r"+i,studentId:sid,questionId:qid,answer:"x",correct:match===100,
+      match,misconception:"",confidence:99,verified,
+    })),
+  };
+}
+const asRows=(csv)=>csv.split("\n").map(line=>line.match(/"([^"]|"")*"/g).map(c=>c.slice(1,-1).replace(/""/g,'"')));
+
+test("one row per student, one column per question, plus the score",()=>{
+  const a=scored([["s1","q1",100,true],["s1","q2",50,true]]);
+  const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
+  assert.deepEqual(rows[0],["Student","Q1","Q2","Score %","Points","Reviewed"]);
+  assert.deepEqual(rows[1],["Maria G.","100","50","75","2/2","Yes"]);
+});
+test("an answer the teacher has not confirmed is left blank, not counted",()=>{
+  const a=scored([["s1","q1",100,true],["s1","q2",0,false]]);
+  const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
+  assert.equal(rows[1][2],"","an unconfirmed answer was exported as a grade");
+  assert.equal(rows[1][3],"100");
+  assert.equal(rows[1][5],"Partly");
+});
+test("a student with nothing reviewed is obvious rather than a zero",()=>{
+  const a=scored([["s1","q1",100,false]]);
+  const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
+  assert.equal(rows[1][3],"","an unreviewed student was exported as a score");
+  assert.equal(rows[1][5],"No");
+});
+test("a name containing a comma or quote does not break the columns",()=>{
+  const a=scored([["s1","q1",100,true],["s1","q2",100,true]]);
+  const rows=asRows(gradebookCsv(a,[student("s1",'O\'Neill, Sarah "Sadie"')]));
+  assert.equal(rows[1][0],'O\'Neill, Sarah "Sadie"');
+  assert.equal(rows[1].length,6);
+});
+test("every student on the roster appears, graded or not",()=>{
+  const a=scored([["s1","q1",100,true]]);
+  const rows=asRows(gradebookCsv(a,[student("s1","A B."),student("s2","C D."),student("s3","E F.")]));
+  assert.equal(rows.length,4);
+  assert.deepEqual(rows.slice(1).map(r=>r[0]),["A B.","C D.","E F."]);
+});
