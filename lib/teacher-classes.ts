@@ -96,3 +96,47 @@ export function removeStudent(w: Workspace, studentId: string): Workspace {
     ),
   };
 }
+
+/**
+ * Everything a teacher needs gone when they clear a class back to empty: the
+ * students, their graded answers, their evidence, and the scanned pages of
+ * their work. The class itself and the teacher's own assessments, questions and
+ * answer keys stay, so the next roster has something to be tested against.
+ *
+ * Returns the workspace alongside the upload ids the caller still has to delete
+ * from storage -- unlinking a photograph is not the same as deleting it, and a
+ * teacher clearing a roster means the second one.
+ */
+export function clearClassStudents(w: Workspace, classId: string) {
+  const leaving = w.students.filter((s) => s.classId === classId);
+  const ids = new Set(leaving.map((s) => s.id));
+  const uploadIds = new Set<string>();
+  const assessments = w.assessments.map((a) => {
+    const byStudent = a.studentUploadIds || {};
+    const keptStudentUploads: Record<string, string[]> = {};
+    for (const [studentId, pages] of Object.entries(byStudent)) {
+      if (ids.has(studentId)) for (const page of pages || []) uploadIds.add(page);
+      else keptStudentUploads[studentId] = pages || [];
+    }
+    return {
+      ...a,
+      responses: a.responses.filter((r) => !ids.has(r.studentId)),
+      studentUploadIds: keptStudentUploads,
+      uploadIds: a.uploadIds.filter((id) => !uploadIds.has(id)),
+    };
+  });
+  return {
+    workspace: {
+      ...w,
+      students: w.students.filter((s) => !ids.has(s.id)),
+      assessments,
+      groups: (w.groups || []).map((g) =>
+        g.studentIds?.some((id) => ids.has(id))
+          ? { ...g, studentIds: g.studentIds.filter((id) => !ids.has(id)) }
+          : g,
+      ),
+    },
+    uploadIds: [...uploadIds],
+    studentCount: leaving.length,
+  };
+}

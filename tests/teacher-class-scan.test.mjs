@@ -283,3 +283,53 @@ test("forgetUploads with nothing released returns the assessment untouched",()=>
   const a=graded([]);
   assert.equal(forgetUploads(a,[]),a);
 });
+
+// Clearing a roster back to empty: the students and their work go, the
+// teacher's own assessments and answer keys stay.
+const {clearClassStudents}=bundle("lib/teacher-classes.ts");
+
+function twoClasses(){
+  const a=assessment();
+  return {
+    classes:[{id:"c1",name:"P2"},{id:"c2",name:"P3"}],
+    students:[student("s1","Maria G."),student("s2","Jamal T."),student("s3","Ana R.","c2")],
+    assessments:[{...a,
+      responses:[
+        {id:"r1",studentId:"s1",questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99,verified:true},
+        {id:"r3",studentId:"s3",questionId:"q1",answer:"4",correct:false,match:0,misconception:"",confidence:99,verified:true},
+      ],
+      uploadIds:["blank1","key1","p1","p2","p3"],
+      studentUploadIds:{s1:["p1"],s2:["p2"],s3:["p3"]},
+    }],
+    groups:[{id:"g1",classId:"c1",name:"Reteach",studentIds:["s1","s2","s3"]}],
+  };
+}
+
+test("clearing a roster removes that class's students and returns their pages to delete",()=>{
+  const out=clearClassStudents(twoClasses(),"c1");
+  assert.equal(out.studentCount,2);
+  assert.deepEqual(out.workspace.students.map(s=>s.id),["s3"]);
+  assert.deepEqual(out.uploadIds.sort(),["p1","p2"]);
+});
+test("clearing a roster keeps the assessment, its questions and the answer key pages",()=>{
+  const out=clearClassStudents(twoClasses(),"c1");
+  const a=out.workspace.assessments[0];
+  assert.equal(a.questions.length,1);
+  assert.ok(a.uploadIds.includes("blank1"));
+  assert.ok(a.uploadIds.includes("key1"));
+});
+test("clearing one class leaves another class's students and work untouched",()=>{
+  const out=clearClassStudents(twoClasses(),"c1");
+  const a=out.workspace.assessments[0];
+  assert.deepEqual(a.responses.map(r=>r.studentId),["s3"]);
+  assert.deepEqual(a.studentUploadIds,{s3:["p3"]});
+  assert.ok(a.uploadIds.includes("p3"));
+  assert.deepEqual(out.workspace.groups[0].studentIds,["s3"]);
+});
+test("clearing a class with no students is a no-op",()=>{
+  const w=twoClasses();
+  w.students=w.students.filter(s=>s.classId!=="c1");
+  const out=clearClassStudents(w,"c1");
+  assert.equal(out.studentCount,0);
+  assert.deepEqual(out.uploadIds,[]);
+});
