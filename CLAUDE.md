@@ -22,9 +22,19 @@ teacher, or anywhere outside this repo — until all four are confirmed:
 
 1. **Pushed.** The commit is on the remote, not just in a working tree.
 2. **Tested.** `npx tsc --noEmit` clean, `npm run lint` at 0 errors, and
-   `npm test` showing no new failures. Two failures are pre-existing and
-   expected: `renders development preview metadata` and
-   `emits the catalog's animation and scrolling utilities`. Any others are new.
+   `npm test` fully green. **There are no expected failures.** There were two,
+   red since the day the app was imported, and "two failures are expected" sat
+   in this file for long enough to become furniture. Both turned out to be
+   asserting things the app has never done -- a meta tag whose name existed only
+   inside its own test, and a CSS utility from a component nothing renders. A
+   red suite you have learned to read past is how the third failure, the real
+   one, gets ignored. If a test fails, it is telling you something: fix the code
+   or fix the assertion, and do not add a line here.
+
+   Read the summary line -- `✖ N problems (X errors, Y warnings)`. The last two
+   lines of `npm run lint` are the count of *auto-fixable* problems, and
+   "0 errors and 1 warning potentially fixable" has already been misread as a
+   pass once, shipping a lint error.
 3. **Merged to `main`.** A branch is not a delivery. Check with
    `git log --oneline origin/main..<branch>` — anything listed is NOT live.
 4. **Deployed.** `main` builds to Netlify. A merge is not a deploy; confirm the
