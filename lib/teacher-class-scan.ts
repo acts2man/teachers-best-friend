@@ -192,9 +192,17 @@ export function applyScannedGroups(
   const responsesByStudent = new Map<string, StudentResponse[]>();
   const studentUploadIds: Record<string, string[]> = {};
   let colorOffset = students.length;
+  // The review list is matched when the scan finishes and saved when the
+  // teacher is ready, which can be a while later and need not be the same tab.
+  // A student removed in between leaves a group pointing at somebody who is no
+  // longer on the roster, and attaching a child's work to an id nothing renders
+  // puts it beyond reach without anything looking wrong. Treat that group as
+  // unmatched instead, so the work lands on a real student.
+  const onRoster = new Set(students.map((s) => s.id));
   for (const group of groups) {
     if (!group.pageUploadIds.length || !group.responses.length) continue;
-    let studentId = group.studentId;
+    let studentId =
+      group.studentId && onRoster.has(group.studentId) ? group.studentId : null;
     if (!studentId) {
       const created: Student = {
         id: crypto.randomUUID(),
