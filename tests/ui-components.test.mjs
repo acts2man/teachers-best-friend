@@ -41,7 +41,11 @@ test("emits the catalog's animation and scrolling utilities", async () => {
   assert.match(css, /--tw-enter-opacity/);
   assert.match(css, /scrollbar-width:\s*thin/);
   assert.match(css, /scrollbar-width:\s*none/);
-  assert.match(css, /scrollbar-gutter:\s*stable/);
+  // scrollbar-gutter is deliberately not asserted. It appears only in
+  // components/ui/message-scroller.tsx, which nothing in this app renders, so
+  // Tailwind is right not to ship the utility and this assertion was asking the
+  // build to emit dead CSS. The other seven here are real: they check the
+  // design system survives the build.
   assert.match(css, /scroll-fade-reveal-b/);
   assert.match(css, /mask-image:/);
   assert.match(css, /tw-shimmer/);
