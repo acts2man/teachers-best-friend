@@ -529,3 +529,65 @@ export function reteachGroup(
 export function withReteachGroup(groups: Group[], group: Group): Group[] {
   return [...groups.filter((g) => !(g.classId === group.classId && g.name === group.name)), group];
 }
+
+/** One point on a student's overall progress line: everything recorded on a
+ * given day, averaged. */
+export type ProgressPoint = {
+  date: string;
+  score: number;
+  records: number;
+  standards: string[];
+};
+
+/**
+ * A student's progress across every standard, not one at a time.
+ *
+ * The per-standard history answers "is this child getting better at 7.RP.3",
+ * which is the right question once you know which standard to ask about. The
+ * question a teacher actually opens a student page with -- is this child doing
+ * better than they were -- had no answer anywhere, because the evidence was
+ * only ever sliced one standard at a time.
+ *
+ * Same day, same point: several records on one afternoon are one lesson's worth
+ * of evidence, not several days of progress, and plotting them as separate
+ * points draws a line that slopes on nothing.
+ *
+ * Costs nothing. Every record here was written when a teacher confirmed
+ * grading they had already paid for.
+ */
+export function progressOverTime(student: Student): ProgressPoint[] {
+  const byDate = new Map<string, { total: number; records: number; standards: Set<string> }>();
+  for (const e of student.evidence) {
+    if (!e.date) continue;
+    const day = byDate.get(e.date) || { total: 0, records: 0, standards: new Set<string>() };
+    day.total += e.score;
+    day.records += 1;
+    if (e.standard) day.standards.add(e.standard);
+    byDate.set(e.date, day);
+  }
+  return [...byDate.entries()]
+    .map(([date, day]) => ({
+      date,
+      score: Math.round(day.total / day.records),
+      records: day.records,
+      standards: [...day.standards].sort(),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * The standard worth showing first on a student's page.
+ *
+ * It used to be whichever standard the catalog happened to list first, so a
+ * student with a term's worth of evidence on one standard could open onto a
+ * different one and show "Start their learning story" -- an empty state for a
+ * child who is not short of evidence at all. Their most recent record is both
+ * more useful and more honest.
+ */
+export function defaultFocusFor(student: Student | undefined, fallback: string) {
+  if (!student) return fallback;
+  const latest = [...student.evidence]
+    .filter((e) => e.standard)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  return latest?.standard || fallback;
+}

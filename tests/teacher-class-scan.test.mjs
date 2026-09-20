@@ -648,3 +648,46 @@ test("a reteach group leaves other groups and other classes alone",()=>{
   assert.equal(groups.length,3,"an unrelated group was dropped");
   assert.ok(groups.some(g=>g.classId==="c2"),"another class's group was dropped");
 });
+
+// A student's progress across every standard, and which standard their page
+// should open on.
+const {progressOverTime,defaultFocusFor}=bundle("lib/teacher-workflow.ts");
+const ev=(standard,score,date,source="Exit ticket")=>({id:standard+date+score,standard,score,date,source});
+const withEvidence=(evidence)=>({id:"s1",classId:"c1",name:"Maria G.",color:"#000",evidence,notes:""});
+
+test("several records on one day are one point, averaged",()=>{
+  const p=progressOverTime(withEvidence([
+    ev("7.RP.3",80,"2026-09-01"),ev("7.EE.1",60,"2026-09-01"),
+  ]));
+  assert.equal(p.length,1);
+  assert.equal(p[0].score,70);
+  assert.equal(p[0].records,2);
+  assert.deepEqual(p[0].standards,["7.EE.1","7.RP.3"]);
+});
+test("points come back oldest first, whatever order they were recorded",()=>{
+  const p=progressOverTime(withEvidence([
+    ev("7.RP.3",90,"2026-09-15"),ev("7.RP.3",50,"2026-09-01"),ev("7.RP.3",70,"2026-09-08"),
+  ]));
+  assert.deepEqual(p.map(x=>x.date),["2026-09-01","2026-09-08","2026-09-15"]);
+  assert.deepEqual(p.map(x=>x.score),[50,70,90]);
+});
+test("a student with no evidence has no progress line rather than a zero",()=>{
+  assert.deepEqual(progressOverTime(withEvidence([])),[]);
+});
+test("a record with no date is skipped instead of making an undefined point",()=>{
+  const p=progressOverTime(withEvidence([ev("7.RP.3",80,""),ev("7.RP.3",90,"2026-09-01")]));
+  assert.equal(p.length,1);
+  assert.equal(p[0].date,"2026-09-01");
+});
+test("a student page opens on the standard they were last assessed on",()=>{
+  const s=withEvidence([ev("7.EE.1",60,"2026-09-01"),ev("7.RP.3",80,"2026-09-15")]);
+  assert.equal(defaultFocusFor(s,"7.AA.1"),"7.RP.3");
+});
+test("a student with no evidence falls back to the catalogue's first standard",()=>{
+  assert.equal(defaultFocusFor(withEvidence([]),"7.AA.1"),"7.AA.1");
+  assert.equal(defaultFocusFor(undefined,"7.AA.1"),"7.AA.1");
+});
+test("evidence with no standard never becomes the opening focus",()=>{
+  const s=withEvidence([ev("",95,"2026-09-20"),ev("7.RP.3",80,"2026-09-15")]);
+  assert.equal(defaultFocusFor(s,"7.AA.1"),"7.RP.3");
+});
