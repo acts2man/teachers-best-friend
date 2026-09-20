@@ -58,6 +58,7 @@ import {
   TextLink,
   downloadText,
 } from "./teacher-shared";
+import { defaultFocusFor, progressOverTime } from "@/lib/teacher-workflow";
 import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
 import {
@@ -1107,6 +1108,66 @@ export function DiagnosticsView() {
   );
 }
 
+/**
+ * Whether a child is doing better than they were, across everything.
+ *
+ * The panel above this one answers "is this child getting better at 7.RP.3",
+ * which is the right question once you know which standard to ask about. It is
+ * not the question a teacher opens a student page with, and until now that one
+ * had no answer anywhere: the evidence was only ever sliced one standard at a
+ * time. Same day is one point, because several records on one afternoon are one
+ * lesson's worth of evidence and plotting them separately draws a line that
+ * slopes on nothing.
+ *
+ * Costs nothing -- every record here was written when a teacher confirmed
+ * grading they had already paid for.
+ */
+function OverallProgress({ student }: { student: Student }) {
+  const points = progressOverTime(student);
+  if (points.length < 2) return null;
+  const shown = points.slice(-8);
+  const first = shown[0].score;
+  const last = shown[shown.length - 1].score;
+  const change = last - first;
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Overall progress"
+        description="Every standard together, so you can see the direction before picking one apart."
+      >
+        <Pill tone={change > 0 ? "green" : change < 0 ? "amber" : "neutral"}>
+          {change > 0 ? "Up " : change < 0 ? "Down " : "Level at "}
+          {change === 0 ? last + "%" : Math.abs(change) + " points"}
+        </Pill>
+      </SectionTitle>
+      <div
+        className="evidence-bars"
+        role="img"
+        aria-label={shown
+          .map((p) => p.date + ": " + p.score + " percent across " + p.records + " records")
+          .join("; ")}
+      >
+        {shown.map((p) => (
+          <div key={p.date}>
+            <span>{p.score}%</span>
+            <i style={{ height: Math.max(8, p.score * 1.2) + "px" }} />
+            <small>
+              {new Date(p.date + "T12:00:00").toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              })}
+            </small>
+          </div>
+        ))}
+      </div>
+      <p className="method-note">
+        Each bar is one day&rsquo;s work averaged across {shown.length === 1 ? "that" : "the"}{" "}
+        standards assessed that day.
+      </p>
+    </div>
+  );
+}
+
 export function StudentsView() {
   const { w, students, classroom, catalog, save, busy, go } = useTeacher();
   const params = useSearchParams();
@@ -1114,7 +1175,10 @@ export function StudentsView() {
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("All students"),
     [view, setView] = useState("students"),
-    [focus, setFocus] = useState(catalog[0]?.code || ""),
+    // Seeded from the catalogue, then overridden below once a student is open:
+    // opening onto whichever standard the catalogue happened to list first
+    // showed "Start their learning story" to children with a term of evidence.
+    [focusOverride, setFocusOverride] = useState<{ for: string | null; code: string } | null>(null),
     [add, setAdd] = useState(false),
     [names, setNames] = useState(""),
     [evidenceOpen, setEvidenceOpen] = useState(false),
@@ -1126,9 +1190,21 @@ export function StudentsView() {
     [clearing, setClearing] = useState(false);
   useEffect(() => {
     setSelected(params.get("id"));
-    if (params.get("standard")) setFocus(params.get("standard")!);
   }, [params]);
   const student = students.find((s) => s.id === selected);
+  // Derived, not copied. The standard follows whichever student is open, unless
+  // a link named one or the teacher has picked one for that student. Doing this
+  // here rather than through an effect is what docs/url-derived-state.md asks
+  // for, and it is also the only way the default can depend on the student --
+  // an effect would have to run after the student changed, showing the previous
+  // one's standard for a frame.
+  const focus =
+    focusOverride && focusOverride.for === (student?.id ?? null)
+      ? focusOverride.code
+      : params.get("standard") ||
+        defaultFocusFor(student, catalog[0]?.code || "");
+  const setFocus = (code: string) =>
+    setFocusOverride({ for: student?.id ?? null, code });
   useEffect(() => setNote(student?.notes || ""), [student?.id]);
   const filtered = students.filter(
     (s) =>
@@ -1347,6 +1423,7 @@ export function StudentsView() {
               </p>
             </section>
           </div>
+          <OverallProgress student={student} />
           <div className="panel teacher-notes">
             <SectionTitle
               title="What you’re noticing"
