@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
-import { deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -208,7 +208,7 @@ export function AssessmentView() {
       }
     } catch (e) {
       setReadNotice(
-        e instanceof Error ? e.message : "The document couldn’t be read.",
+        describeFailure(e, "The document couldn’t be read."),
       );
     } finally {
       setReading(false);
@@ -1470,7 +1470,7 @@ function PassagePanel({
       // The text is out of them; the photographs have nothing left to give.
       await deleteUploads(ids);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The passage couldn't be read.");
+      toast.error(describeFailure(e, "The passage couldn't be read."));
     } finally {
       setReading(false);
       setStatus("");

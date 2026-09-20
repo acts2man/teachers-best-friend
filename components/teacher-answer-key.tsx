@@ -11,6 +11,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { describeFailure } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import { Action, EmptyState, Pill, SectionTitle } from "./teacher-shared";
 import {
@@ -69,7 +70,7 @@ export function AnswerKeyReview({
       }
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "The answer key couldn’t be uploaded.",
+        describeFailure(e, "The answer key couldn’t be uploaded."),
       );
     } finally {
       setUploading(false);
@@ -153,9 +154,7 @@ export function AnswerKeyReview({
       );
     } catch (e) {
       toast.error(
-        e instanceof Error
-          ? e.message
-          : "The key couldn’t be read. You can enter it manually.",
+        describeFailure(e, "The key couldn’t be read. You can enter it manually."),
       );
     } finally {
       setReading(false);

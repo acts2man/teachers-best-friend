@@ -49,6 +49,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import { describeFailure } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   PageTitle,
@@ -416,7 +417,7 @@ export function ReteachView() {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "The lesson couldn’t be created.",
+        describeFailure(e, "The lesson couldn’t be created."),
       );
     } finally {
       setAiBusy(false);
@@ -1670,7 +1671,7 @@ export function ResourcesView() {
       setUpload(d);
       if (!title) setTitle(f.name.replace(/\.[^.]+$/, ""));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(describeFailure(e, "Upload failed"));
     } finally {
       setUploading(false);
     }
@@ -1972,7 +1973,7 @@ export function SettingsView() {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Deletion failed. Try again.",
+        describeFailure(e, "Deletion failed. Try again."),
       );
     } finally {
       setErasing(false);

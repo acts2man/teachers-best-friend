@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Eye, LoaderCircle, Search } from "lucide-react";
+import { describeFailure } from "@/lib/connection";
 import { toast } from "sonner";
 import { Action, Modal, Pill } from "./teacher-shared";
 
@@ -46,7 +47,7 @@ export function ViewAsPicker() {
           // why, and reopening the picker retries.
           setTeachers([]);
           toast.error(
-            e instanceof Error ? e.message : "The account list couldn’t be loaded.",
+            describeFailure(e, "The account list couldn’t be loaded."),
           );
         }
       } finally {
@@ -77,7 +78,7 @@ export function ViewAsPicker() {
     } catch (e) {
       setStarting(null);
       toast.error(
-        e instanceof Error ? e.message : "That account couldn’t be opened.",
+        describeFailure(e, "That account couldn’t be opened."),
       );
     }
   }

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Action, EmptyState, Modal, Pick, Pill } from "./teacher-shared";
+import { describeFailure } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   TICKET_CATEGORIES,
@@ -65,7 +66,7 @@ export function SupportView() {
       setTickets(rows);
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Couldn’t load your tickets.",
+        describeFailure(e, "Couldn’t load your tickets."),
       );
       setTickets([]);
     }
@@ -209,7 +210,7 @@ function NewTicketForm({
       toast.success(`${ticket.ticket_ref} is open. We’ll reply here.`);
       onCreated(ticket);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn’t open that ticket.");
+      toast.error(describeFailure(e, "Couldn’t open that ticket."));
     } finally {
       setBusy(false);
     }
@@ -293,7 +294,7 @@ function TicketDetail({
       setTicket(t);
       setMessages(m);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn’t load that ticket.");
+      toast.error(describeFailure(e, "Couldn’t load that ticket."));
     }
   }
 
@@ -319,7 +320,7 @@ function TicketDetail({
       setReply("");
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "That reply didn’t send.");
+      toast.error(describeFailure(e, "That reply didn’t send."));
     } finally {
       setSending(false);
     }
