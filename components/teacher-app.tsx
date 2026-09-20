@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useUpdateAvailable } from "@/lib/app-version";
 import {
   House,
   ScanLine,
@@ -100,6 +101,29 @@ const prefetchRoutes = [
   "/resources",
   "/support",
 ];
+
+/**
+ * Tells a teacher when the app they are looking at is behind the one being
+ * served, and reloads on their word rather than ours.
+ *
+ * Never automatic. A reload in the middle of scanning a class would throw away
+ * the pages they have queued, and a fix they did not ask for is not worth the
+ * work they did. The scan draft survives a reload, but a half-typed answer or
+ * an unsaved review does not, so the timing stays theirs.
+ */
+function UpdateBanner() {
+  const stale = useUpdateAvailable();
+  if (!stale) return null;
+  return (
+    <div className="update-banner" role="status">
+      <span>
+        There&rsquo;s a newer version of the app. Reload when you&rsquo;re at a good
+        stopping point — anything you&rsquo;ve saved is safe.
+      </span>
+      <button onClick={() => window.location.reload()}>Reload now</button>
+    </div>
+  );
+}
 
 export default function TeacherApp({ view }: { view: string }) {
   // Seed from the module-level snapshot that survives client-side navigation.
@@ -596,6 +620,7 @@ export default function TeacherApp({ view }: { view: string }) {
             </div>
           </header>
           <main className="workspace-content" id="main-content">
+            <UpdateBanner />
             {error && (
               <div className="error-banner" role="alert">
                 <span>{error}</span>
