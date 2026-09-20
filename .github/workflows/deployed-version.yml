@@ -97,6 +97,32 @@ jobs:
           echo
           if [ -n "${matched}" ]; then
             echo "LIVE: ${matched} is serving ${EXPECTED}. Safe to tell a teacher it shipped."
+            echo
+
+            # Ask the grading route what build it is, separately.
+            #
+            # /api/version answering correctly only proves that one route is
+            # current. Every scan since build stamping shipped recorded a null
+            # stamp while this check was reporting real commits, which is only
+            # possible if the route doing the work is not the route answering
+            # here. That was going to stay a theory until a teacher happened to
+            # scan something. It is a GET, so ask it directly.
+            analyze_body="$(curl -sS --max-time 20 "${matched}/api/analyze" 2>/dev/null || true)"
+            analyze_commit="$(printf '%s' "${analyze_body}" | sed -n 's/.*"commit":"\([0-9a-f]\{7,40\}\)".*/\1/p')"
+
+            if [ -z "${analyze_commit}" ]; then
+              echo "NOTE: /api/analyze did not report a build (${analyze_body:-no body})."
+              echo "Expected on any deploy before this check existed. Not a failure."
+            elif [ "${analyze_commit}" = "${EXPECTED}" ]; then
+              echo "Grading route agrees: /api/analyze is also serving ${EXPECTED}."
+              echo "The two routes are the same build, so a null build stamp on a"
+              echo "scan is not staleness and needs another explanation."
+            else
+              echo "SPLIT BUILD: /api/version serves ${EXPECTED} but /api/analyze serves ${analyze_commit}."
+              echo "The grading route is running older code than the rest of the app."
+              echo "Fixes reported as shipped are not necessarily what is grading."
+              exit 1
+            fi
             exit 0
           fi
           if [ -z "${reachable}" ]; then
