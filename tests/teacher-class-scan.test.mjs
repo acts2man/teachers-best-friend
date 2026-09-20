@@ -606,3 +606,45 @@ test("questions and answer key travel; student work does not",()=>{
   // students, so a period never shows another period's work.
   assert.deepEqual(shared.responses,withWork.responses);
 });
+
+// A reteach group made from one wrong answer. Nine children who all wrote
+// "9.2" did not make nine mistakes -- they made one, and it has a name.
+const {reteachGroup,withReteachGroup}=bundle("lib/teacher-workflow.ts");
+const q4={id:"q4",number:4,text:"How many more?",passage:"",answer:"5.2",standard:"7.RP.3",
+  secondary:"",skill:"percent change",dok:2,alignment:100,confidence:100,level:"On grade",
+  reasoning:"",verified:true,excluded:false};
+
+test("a reteach group is named after the mistake, not the standard",()=>{
+  const g=reteachGroup("c1",q4,{answer:"9.2",studentIds:["s1","s2","s3"]});
+  assert.match(g.name,/Q4/);
+  assert.match(g.name,/9\.2/);
+  assert.equal(g.standard,"7.RP.3","the standard still rides along for lesson planning");
+  assert.deepEqual(g.studentIds,["s1","s2","s3"]);
+  assert.equal(g.classId,"c1");
+});
+test("a group of blanks says so rather than naming an empty answer",()=>{
+  assert.match(reteachGroup("c1",q4,{answer:"   ",studentIds:["s1"]}).name,/left blank/);
+});
+test("a question with no standard still makes a usable group",()=>{
+  const g=reteachGroup("c1",{...q4,standard:""},{answer:"9.2",studentIds:["s1"]});
+  assert.equal(g.standard,"");
+  assert.match(g.name,/Q4/);
+});
+test("the same student is never listed twice in a group",()=>{
+  assert.deepEqual(reteachGroup("c1",q4,{answer:"9.2",studentIds:["s1","s1","s2"]}).studentIds,["s1","s2"]);
+});
+test("making the same reteach group twice replaces it rather than stacking",()=>{
+  const first=reteachGroup("c1",q4,{answer:"9.2",studentIds:["s1","s2"]});
+  const again=reteachGroup("c1",q4,{answer:"9.2",studentIds:["s1","s2","s3"]});
+  const groups=withReteachGroup(withReteachGroup([],first),again);
+  assert.equal(groups.length,1);
+  assert.deepEqual(groups[0].studentIds,["s1","s2","s3"]);
+});
+test("a reteach group leaves other groups and other classes alone",()=>{
+  const mine=reteachGroup("c1",q4,{answer:"9.2",studentIds:["s1"]});
+  const otherQuestion=reteachGroup("c1",{...q4,number:7},{answer:"9.2",studentIds:["s2"]});
+  const otherClass={id:"g9",classId:"c2",name:mine.name,standard:"",studentIds:["s9"]};
+  const groups=withReteachGroup(withReteachGroup([otherClass],otherQuestion),mine);
+  assert.equal(groups.length,3,"an unrelated group was dropped");
+  assert.ok(groups.some(g=>g.classId==="c2"),"another class's group was dropped");
+});

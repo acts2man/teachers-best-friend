@@ -17,6 +17,7 @@ import {
   Plus,
   Printer,
   Upload,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { deleteUploads } from "@/lib/connection";
@@ -43,8 +44,10 @@ import {
   releasedStudentUploads,
   responseFlag,
   gradebookCsv,
+  reteachGroup,
   studentReport,
   studentReview,
+  withReteachGroup,
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
 import { extractPdfText } from "@/lib/pdf-text";
@@ -73,6 +76,7 @@ function GradeByQuestion({
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
   busy: boolean;
 }) {
+  const { w, classroom, save } = useTeacher();
   const questions = activeQuestions(a);
   const [questionId, setQuestionId] = useState(questions[0]?.id || "");
   const question = questions.find((q) => q.id === questionId) || questions[0];
@@ -81,6 +85,19 @@ function GradeByQuestion({
   const groups = groupAnswers(a, question.id);
   const outstanding = groups.filter((g) => g.needsDecision);
   const nameFor = (id: string) => students.find((s) => s.id === id)?.name || "—";
+
+  /** The grouping is already on screen; this only writes down what it means.
+   * Nine children with the same wrong answer are one thing to reteach, and
+   * "plan a lesson" from the group card already knows where to go. */
+  async function makeReteachGroup(group: AnswerGroup) {
+    const made = reteachGroup(classroom.id, question, group);
+    await save(
+      { ...w, groups: withReteachGroup(w.groups, made) },
+      made.studentIds.length +
+        (made.studentIds.length === 1 ? " student" : " students") +
+        " grouped for reteaching — find it under Groups",
+    );
+  }
 
   async function score(group: AnswerGroup, match: number) {
     await onSave(
@@ -153,6 +170,16 @@ function GradeByQuestion({
                 <Action variant="secondary small" disabled={busy} onClick={() => score(g, 0)}>
                   No credit
                 </Action>
+                {g.studentIds.length > 1 && (
+                  <Action
+                    variant="secondary small"
+                    disabled={busy}
+                    onClick={() => makeReteachGroup(g)}
+                  >
+                    <Users size={15} />
+                    Reteach these {g.studentIds.length}
+                  </Action>
+                )}
                 <input
                   className="class-scan-name-input"
                   aria-label={"Custom score for the answer " + g.answer}
