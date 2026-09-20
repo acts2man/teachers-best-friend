@@ -1,5 +1,6 @@
 import type {
   Assessment,
+  Group,
   Question,
   Student,
   StudentResponse,
@@ -483,4 +484,48 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
     ];
   });
   return [header, ...rows].map((row) => row.map(csvField).join(",")).join("\n");
+}
+
+/**
+ * A reteach group made from one wrong answer.
+ *
+ * The instructional groups this app already builds are statistical: every
+ * student sorted by the standard they are weakest in. Useful, and a different
+ * thing from what a teacher sees while grading. Nine children who all wrote
+ * "9.2" did not make nine mistakes -- they made one, and it has a name. That
+ * group is worth ten minutes on Monday in a way that "nine students are weak at
+ * 7.RP.3" is not, because the second does not say what to actually teach.
+ *
+ * The grouping is free. It comes out of answers already read and already
+ * grouped for batch grading; this only writes down what that grouping means.
+ *
+ * Named after the mistake rather than the standard, because that is the thing
+ * the teacher is about to address and the thing they will recognise in the
+ * list. The standard rides along so "plan a lesson" knows where to go.
+ */
+export function reteachGroup(
+  classId: string,
+  question: Question,
+  group: Pick<AnswerGroup, "answer" | "studentIds">,
+): Group {
+  const wrote = group.answer.trim();
+  return {
+    id: crypto.randomUUID(),
+    classId,
+    name: wrote
+      ? "Q" + question.number + ": wrote “" + wrote + "”"
+      : "Q" + question.number + ": left blank",
+    standard: question.standard || "",
+    studentIds: [...new Set(group.studentIds)],
+  };
+}
+
+/**
+ * Adds a reteach group, replacing an earlier one for the same mistake rather
+ * than stacking duplicates each time a teacher presses the button. Groups for
+ * other classes and other questions are left alone -- unlike the suggested
+ * groups, which are regenerated wholesale, this is one deliberate addition.
+ */
+export function withReteachGroup(groups: Group[], group: Group): Group[] {
+  return [...groups.filter((g) => !(g.classId === group.classId && g.name === group.name)), group];
 }
