@@ -1,3 +1,4 @@
+import { buildStamp } from "@/lib/build-info";
 import {
   writingTeacherId,
   readDocument,
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
             // different serverless function and is stamped separately, so a
             // disagreement between the two -- or with origin/main -- shows a
             // stale bundle that reading the source cannot reveal.
-            build_ref_start: process.env.COMMIT_REF ?? null,
+            build_ref_start: buildStamp(),
           })
           .eq("id", scanId);
         if (error) {

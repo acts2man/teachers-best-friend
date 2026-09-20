@@ -12,12 +12,18 @@
  * Public on purpose -- a commit SHA is already visible in the repository, and
  * an endpoint that needs a login cannot be checked when login is what broke.
  */
+import { BUILD_REF } from "@/lib/build-info";
+
 export const dynamic = "force-dynamic";
 
 export function GET() {
   return Response.json(
     {
-      commit: process.env.COMMIT_REF ?? null,
+      // The same constant the scan stamps use, so the two cannot disagree by
+      // accident. If this reports a commit and scans still record none, the
+      // two are being served by different builds, which is the thing this
+      // endpoint exists to reveal.
+      commit: BUILD_REF || null,
       branch: process.env.BRANCH ?? null,
       builtAt: process.env.BUILD_TIME ?? null,
       context: process.env.CONTEXT ?? null,

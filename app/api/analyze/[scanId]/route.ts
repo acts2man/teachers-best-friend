@@ -1,3 +1,4 @@
+import { buildStamp } from "@/lib/build-info";
 import {
   owningTeacherId,
   apiError,
@@ -153,7 +154,7 @@ export async function GET(
       .from("scans")
       // Stamped with the build that actually ran finalizeAnalysis, which is
       // the code every "it should already be fixed" question turns on.
-      .update({ result: output, build_ref_finish: process.env.COMMIT_REF ?? null })
+      .update({ result: output, build_ref_finish: buildStamp() })
       .eq("id", scanId);
     if (writeError)
       console.error("Storing scan result failed", writeError.message);
