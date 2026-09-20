@@ -183,3 +183,48 @@ test("an odd class size still grades everyone, including a short last batch", as
       [...Array(size).keys()], "class of " + size + " mis-numbered a student");
   }
 });
+
+test("a run that fails part-way leaves the graded students resolvable", async () => {
+  const batches = planScanBatches(pageGroups, uploadIds, QUESTIONS);
+  let banked = [];
+  await assert.rejects(
+    gradeInBatches(
+      batches,
+      (batch, index) => (index === 3 ? Promise.reject(new Error("out of scans")) : fakeModel(batch)),
+      (graded) => { banked = graded; },
+    ),
+    /out of scans/,
+  );
+  assert.ok(banked.length > 0, "nothing was banked before the failure");
+
+  // What the panel does with what it has: resolve, then keep only the groups
+  // that actually came back. A teacher has already paid for these.
+  const names = roster.map((s, i) => ({ page: i * PAGES_EACH, name: s.name, confidence: 95 }));
+  const done = new Set(banked.map((g) => g.group));
+  const shown = resolveScannedGroups(pageGroups, names, banked, uploadIds, roster)
+    .filter((_, i) => done.has(i));
+
+  assert.equal(shown.length, banked.length, "a graded student was dropped from the review list");
+  for (const row of shown) {
+    assert.ok(row.responses.length > 0, "a student shown for review has no grades");
+    const i = roster.findIndex((s) => s.id === row.studentId);
+    assert.ok(i >= 0, "a shown student is not on the roster");
+    assert.equal(row.responses[0].answer, roster[i].answerFor(0), "a partial result was misattributed");
+  }
+});
+
+test("students the failed run never reached are not shown as empty rows", async () => {
+  const batches = planScanBatches(pageGroups, uploadIds, QUESTIONS);
+  let banked = [];
+  await assert.rejects(
+    gradeInBatches(batches, (b, i) => (i === 1 ? Promise.reject(new Error("stop")) : fakeModel(b)),
+      (g) => { banked = g; }),
+    /stop/,
+  );
+  const names = roster.map((s, i) => ({ page: i * PAGES_EACH, name: s.name, confidence: 95 }));
+  const done = new Set(banked.map((g) => g.group));
+  const shown = resolveScannedGroups(pageGroups, names, banked, uploadIds, roster)
+    .filter((_, i) => done.has(i));
+  assert.ok(shown.length < CLASS_SIZE, "the whole class was shown after a partial run");
+  assert.ok(shown.every((r) => r.responses.length > 0), "an ungraded student was offered for review");
+});
