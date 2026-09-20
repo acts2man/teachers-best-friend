@@ -140,3 +140,39 @@ export function clearClassStudents(w: Workspace, classId: string) {
     studentCount: leaving.length,
   };
 }
+
+/**
+ * Whether an assessment's questions mean anything in a given class.
+ *
+ * The questions carry standards from one grade and framework's catalog. Shared
+ * into a class on a different one, the alignment scores are measured against
+ * standards those children are not being taught, and the class analysis has
+ * nothing to match on -- it does not fail, it quietly reports very little.
+ *
+ * Deliberately only a fact, not a rule. A teacher giving a seventh-grade test
+ * to a fourth-grade group for intervention is doing something sensible, and the
+ * app has no business refusing it. The picker says which classes are a mismatch
+ * and lets the teacher decide, because they know why and we do not.
+ */
+export function assessmentFitsClass(
+  a: Pick<Assessment, "grade" | "framework">,
+  c: Pick<Classroom, "grade" | "framework">,
+) {
+  return c.grade === a.grade && c.framework === a.framework;
+}
+
+/**
+ * Uses an existing assessment in another class as well. The questions and
+ * answer key are shared; each class keeps its own students' work, so nothing
+ * one period did shows up in another period's results.
+ */
+export function shareAssessmentWith(a: Assessment, classIds: string[]): Assessment {
+  const added = classIds.filter((id) => id && id !== a.classId);
+  if (!added.length) return a;
+  return {
+    ...a,
+    classIds: [...new Set([...assessmentClassIds(a), ...added])].filter(
+      (id) => id !== a.classId,
+    ),
+  };
+}

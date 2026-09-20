@@ -554,3 +554,55 @@ test("every student on the roster appears, graded or not",()=>{
   assert.equal(rows.length,4);
   assert.deepEqual(rows.slice(1).map(r=>r[0]),["A B.","C D.","E F."]);
 });
+
+// Using one assessment across several periods. A teacher who gives the same
+// test three times should set it up once, and each period must still get its
+// own results.
+const {assessmentFitsClass,shareAssessmentWith,assessmentClassIds,assessmentInClass}=bundle("lib/teacher-classes.ts");
+
+const cls=(id,grade=7,framework="California")=>({id,name:id,grade,framework,demo:false});
+const quiz={id:"a1",classId:"p2",title:"Quiz",subject:"Math",grade:7,framework:"California",
+  createdAt:"",status:"Ready",source:"manual",targetStandards:[],questions:[],responses:[],uploadIds:[]};
+
+test("another period of the same grade and framework is a match",()=>{
+  assert.equal(assessmentFitsClass(quiz,cls("p3")),true);
+});
+test("a different grade or framework is flagged as a mismatch, not refused",()=>{
+  assert.equal(assessmentFitsClass(quiz,cls("p5",4)),false);
+  assert.equal(assessmentFitsClass(quiz,cls("p6",7,"Texas")),false);
+  // Still shareable -- the teacher decides, the app only says what it costs.
+  assert.ok(assessmentInClass(shareAssessmentWith(quiz,["p5"]),"p5"));
+});
+test("sharing adds the class and keeps the original",()=>{
+  const shared=shareAssessmentWith(quiz,["p3"]);
+  assert.deepEqual(assessmentClassIds(shared).sort(),["p2","p3"]);
+  assert.ok(assessmentInClass(shared,"p2"));
+  assert.ok(assessmentInClass(shared,"p3"));
+});
+test("sharing twice does not duplicate a class",()=>{
+  const once=shareAssessmentWith(quiz,["p3"]);
+  const twice=shareAssessmentWith(once,["p3","p4"]);
+  assert.deepEqual(assessmentClassIds(twice).sort(),["p2","p3","p4"]);
+  assert.equal(new Set(twice.classIds).size,twice.classIds.length);
+});
+test("the home class never ends up duplicated in classIds",()=>{
+  const shared=shareAssessmentWith(quiz,["p2","p3"]);
+  assert.equal(shared.classIds.includes("p2"),false);
+  assert.deepEqual(assessmentClassIds(shared).sort(),["p2","p3"]);
+});
+test("sharing with nothing leaves the assessment untouched",()=>{
+  assert.equal(shareAssessmentWith(quiz,[]),quiz);
+});
+test("questions and answer key travel; student work does not",()=>{
+  const withWork={...quiz,
+    questions:[{id:"q1",number:1,text:"t",passage:"",answer:"2",standard:"",secondary:"",skill:"",
+      dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false}],
+    responses:[{id:"r1",studentId:"s1",questionId:"q1",answer:"2",correct:true,match:100,
+      misconception:"",confidence:99,verified:true}]};
+  const shared=shareAssessmentWith(withWork,["p3"]);
+  // Same assessment object, so the questions are literally the same ones.
+  assert.deepEqual(shared.questions,withWork.questions);
+  // Responses ride along on the record, but each class only ever sees its own
+  // students, so a period never shows another period's work.
+  assert.deepEqual(shared.responses,withWork.responses);
+});

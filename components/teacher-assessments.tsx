@@ -89,7 +89,12 @@ import {
   reconcileEvidence,
 } from "@/lib/teacher-data";
 import { extractUploadedPdfText } from "@/lib/pdf-text";
-import { classesFor } from "@/lib/teacher-classes";
+import { frameworkLabel } from "@/lib/states";
+import {
+  assessmentFitsClass,
+  classesFor,
+  shareAssessmentWith,
+} from "@/lib/teacher-classes";
 import type {
   Assessment,
   Question,
@@ -1164,17 +1169,30 @@ export function AssessmentView() {
                   {c.id === a.classId && (
                     <span className="cell-meta">created here</span>
                   )}
+                  {c.id !== a.classId && !assessmentFitsClass(a, c) && (
+                    // Not a refusal. A teacher giving a seventh-grade test to a
+                    // fourth-grade group for intervention is doing something
+                    // sensible; they just need to know the standards will not
+                    // line up, because the class analysis will look empty
+                    // rather than broken.
+                    <span className="cell-meta">
+                      {c.grade === 0 ? "Kindergarten" : "Grade " + c.grade}
+                      {c.framework !== a.framework ? " · " + frameworkLabel(c.framework) : ""}
+                      {" — standards won’t match"}
+                    </span>
+                  )}
                 </label>
               ))}
             </div>
             <Action
               disabled={busy}
               onClick={async () => {
-                const classIds = [...new Set([a.classId, ...linking])];
+                const shared = shareAssessmentWith({ ...a, classIds: [] }, linking);
+                const count = new Set([a.classId, ...(shared.classIds || [])]).size;
                 if (
                   await saveAssessment(
-                    { ...a, classIds },
-                    "Assessment shared with " + classIds.length + (classIds.length === 1 ? " class" : " classes"),
+                    shared,
+                    "Assessment shared with " + count + (count === 1 ? " class" : " classes"),
                   )
                 )
                   setLinking(null);
