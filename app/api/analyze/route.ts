@@ -38,6 +38,32 @@ import {
 // Cloudflare Worker build ignores this Next.js route export.
 export const maxDuration = 26;
 
+/**
+ * Which build is serving this route.
+ *
+ * Every scan since build stamping shipped has recorded a null stamp, while
+ * /api/version -- read by the deploy check, which has confirmed more than
+ * twenty deploys -- reported real commits the whole time. The stamp is written
+ * in the same UPDATE as provider_response_id, and provider_response_id is set
+ * on every one of those rows, so the statement ran and one column in it came
+ * back empty.
+ *
+ * Both read the same constant now, so if these two endpoints disagree they are
+ * being served by different builds, and the fix everyone has been told shipped
+ * may not be the code answering their requests. That question was going to sit
+ * unanswered until a teacher happened to scan something, which is no way to
+ * find out. This makes it a GET: no login, no scan, nothing spent, and the
+ * deploy check can ask both on every deploy.
+ *
+ * Returns only a commit SHA, which is already public in the repository.
+ */
+export function GET() {
+  return Response.json(
+    { route: "analyze", commit: buildStamp() },
+    { headers: { "cache-control": "no-store" } },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     guardOrigin(request);
