@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { describeFailure } from "@/lib/connection";
 import { useUpdateAvailable } from "@/lib/app-version";
 import {
   House,
@@ -219,7 +220,7 @@ export default function TeacherApp({ view }: { view: string }) {
       setError("");
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Your classroom couldn’t be loaded.",
+        describeFailure(e, "Your classroom couldn’t be loaded."),
       );
     }
   }
@@ -343,7 +344,7 @@ export default function TeacherApp({ view }: { view: string }) {
       return true;
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Changes couldn’t be saved.",
+        describeFailure(e, "Changes couldn’t be saved."),
       );
       return false;
     } finally {

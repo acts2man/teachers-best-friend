@@ -20,7 +20,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -341,7 +341,7 @@ export function StudentResponseReview({
           pdfText += (await extractPdfText(await file.arrayBuffer())) + "\n";
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The pages couldn’t be uploaded.");
+      toast.error(describeFailure(e, "The pages couldn’t be uploaded."));
     } finally {
       if (input.current) input.current.value = "";
       if (camera.current) camera.current.value = "";
@@ -387,7 +387,7 @@ export function StudentResponseReview({
       } catch (e) {
         await onSave(withFiles, "Pages saved");
         setNotice(
-          (e instanceof Error ? e.message : "The pages couldn’t be read.") +
+          (describeFailure(e, "The pages couldn’t be read.")) +
             " The pages are saved. Enter the answers below.",
         );
       }

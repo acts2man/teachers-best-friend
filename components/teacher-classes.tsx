@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
@@ -388,7 +388,7 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
       if (!names.length && !notice && (text.trim() || (ids.length && aiReady)))
         setNotice("No names were recognized. Try a clearer photo, or paste the names below.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The roster couldn’t be read.");
+      toast.error(describeFailure(e, "The roster couldn’t be read."));
     } finally {
       // The roster itself is not kept once the names are read. "Deleted
       // immediately after names are read" is a published commitment, so a
@@ -499,7 +499,7 @@ export function StandardsLoader({
         added.length + " " + frameworkLabel(framework) + " standards added to your library",
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The standards couldn’t be retrieved.");
+      toast.error(describeFailure(e, "The standards couldn’t be retrieved."));
     } finally {
       setLoading(false);
     }
