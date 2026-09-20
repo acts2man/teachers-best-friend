@@ -691,3 +691,33 @@ test("evidence with no standard never becomes the opening focus",()=>{
   const s=withEvidence([ev("",95,"2026-09-20"),ev("7.RP.3",80,"2026-09-15")]);
   assert.equal(defaultFocusFor(s,"7.AA.1"),"7.RP.3");
 });
+
+// The review list is matched when a scan finishes and saved when the teacher is
+// ready. A student removed in between used to leave the group pointing at
+// somebody no longer on the roster, and the work landed on an id nothing
+// renders -- present in the data, invisible on screen.
+test("work for a student removed since the scan lands on a real student",()=>{
+  const a=assessment();
+  const roster=[student("s1","Maria G.")];
+  const out=applyScannedGroups(a,roster,"c1",[
+    {studentId:"s1",name:"Maria G.",pageUploadIds:["p1"],
+     responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}]},
+    // Matched when the scan ran; gone from the roster by the time it saved.
+    {studentId:"deleted-since",name:"Jamal T.",pageUploadIds:["p2"],
+     responses:[{questionId:"q1",answer:"3",correct:false,match:0,misconception:"",confidence:99}]},
+  ]);
+  assert.equal(out.newStudents.length,1,"the orphaned group was not re-homed");
+  assert.equal(out.newStudents[0].name,"Jamal T.");
+  const ids=new Set([...roster,...out.newStudents].map(s=>s.id));
+  for(const r of out.assessment.responses)
+    assert.ok(ids.has(r.studentId),"a response was saved against a student who does not exist");
+  assert.equal(out.assessment.responses.filter(r=>r.studentId==="deleted-since").length,0);
+});
+test("a student still on the roster is matched, not duplicated",()=>{
+  const out=applyScannedGroups(assessment(),[student("s1","Maria G.")],"c1",[
+    {studentId:"s1",name:"Maria G.",pageUploadIds:["p1"],
+     responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}]},
+  ]);
+  assert.equal(out.newStudents.length,0,"an existing student was duplicated");
+  assert.equal(out.studentCount,1);
+});

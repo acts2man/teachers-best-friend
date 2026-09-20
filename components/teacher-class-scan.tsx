@@ -70,7 +70,18 @@ type Progress = {
   /** A batch already sent and still running, to pick up rather than repeat. */
   scanId: string | null;
 };
-type Draft = { piles: Page[][]; progress?: Progress | null };
+type Draft = { piles: Page[][]; progress?: Progress | null; savedAt?: number };
+
+/**
+ * How long an abandoned scan is worth offering back.
+ *
+ * The pages a draft points at are deleted on the retention schedule whether or
+ * not anyone came back for them, so a draft outlives its own uploads. Offering
+ * a teacher a month-old half-scan whose photographs no longer exist wastes
+ * their time and fails confusingly. Comfortably longer than anyone's grading
+ * session and comfortably shorter than the retention window.
+ */
+const DRAFT_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 
 /** localStorage is an external store, so it is read as one: a server snapshot
  * of null, a client snapshot of the raw string, and a subscription so a scan
@@ -89,7 +100,11 @@ function parseDraft(raw: string | null): Draft | null {
     // Drafts written before grading jobs were remembered are a bare array.
     const parsed = Array.isArray(stored) ? stored : stored?.piles;
     const progress = Array.isArray(stored) ? null : (stored?.progress ?? null);
+    const savedAt = Array.isArray(stored) ? null : stored?.savedAt;
     if (!Array.isArray(parsed)) return null;
+    // Older than the pages it refers to, so there is nothing useful left in it.
+    if (typeof savedAt === "number" && Date.now() - savedAt > DRAFT_LIFETIME)
+      return null;
     // Trust nothing that comes back: a half-written or hand-edited draft should
     // be dropped, not crash the panel a teacher is standing in front of.
     const piles = parsed
@@ -208,7 +223,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   useEffect(() => {
     try {
       if (piles.some((pile) => pile.length))
-        localStorage.setItem(draftKey(a.id), JSON.stringify({ piles, progress }));
+        localStorage.setItem(
+          draftKey(a.id),
+          JSON.stringify({ piles, progress, savedAt: Date.now() }),
+        );
       else localStorage.removeItem(draftKey(a.id));
     } catch {
       // A browser refusing storage is not a reason to stop a teacher scanning.
