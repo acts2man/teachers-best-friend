@@ -188,6 +188,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // still running on the provider's side is waited on rather than repeated,
   // because that one has already been billed.
   const resumeRef = useRef(false);
+  // What the run in progress has managed so far, so a failure part-way can
+  // still put it on screen rather than stranding work already paid for.
+  const partial = useRef<{
+    pageGroups: number[][];
+    names: PageName[];
+    ids: string[];
+    graded: GradedGroup[];
+  } | null>(null);
   useEffect(() => {
     if (!progress || scanning || groups || resumeRef.current) return;
     resumeRef.current = true;
@@ -368,6 +376,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // answer and came back incomplete, which cost the teacher the scan and told
     // them only to try fewer pages. The photographs are the expensive part and
     // there are exactly as many of them either way.
+    partial.current = { pageGroups, names, ids, graded: resume?.graded ?? [] };
     const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
     // Resume where an interrupted run stopped rather than grading, and paying,
     // from the top again.
@@ -406,6 +415,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             mode: "class_scan",
             uploadIds: batch.uploadIds,
             pageGroups: batch.groups,
+            // One teacher action, however many requests it takes.
+            batchIndex: index,
             grade: a.grade,
             subject: a.subject,
             framework: a.framework,
@@ -420,18 +431,40 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // Banked after each batch, so an interruption never re-grades one.
       (soFar, nextBatch) => {
         banked = soFar;
+        // Kept on the ref as well as in state: a failure is handled in the
+        // same tick, where the state from this run has not landed yet.
+        if (partial.current) partial.current.graded = soFar;
         setProgress({ graded: soFar, nextBatch, scanId: null });
       },
       resuming?.nextBatch ?? 0,
       resuming?.graded ?? [],
     );
     setProgress(null);
-    const resolved = resolveScannedGroups(pageGroups, names, graded, ids, students);
+    showGraded(pageGroups, names, graded, ids);
+  }
+
+  /** Puts whatever has been graded on screen. Called on the way out of a
+   * successful run and on the way out of a failed one, because a class set that
+   * stopped at student 18 has eighteen students' grades sitting in it that the
+   * teacher has already paid for. Leaving those unreachable and telling them to
+   * start again charges twice for the same work. */
+  function showGraded(
+    pageGroups: number[][],
+    names: PageName[],
+    graded: GradedGroup[],
+    ids: string[],
+  ) {
+    const done = new Set(graded.map((g) => g.group));
+    const resolved = resolveScannedGroups(pageGroups, names, graded, ids, students).filter(
+      (_, i) => done.has(i),
+    );
+    setPageUploadIds(ids);
     if (!resolved.length)
       toast.error(
         "No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.",
       );
     setGroups(resolved);
+    return resolved.length;
   }
 
   /** Grade everything scanned so far, one request per student's whole pile. */
@@ -446,11 +479,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         progress,
       );
     } catch (e) {
+      // Show whatever got through before saying what went wrong. A class set
+      // that stopped at student 18 has eighteen students already graded and
+      // already billed; those go on screen to be confirmed and saved, and the
+      // rest can be picked up by pressing Done again.
+      const shown = partial.current?.graded.length
+        ? showGraded(
+            partial.current.pageGroups,
+            partial.current.names,
+            partial.current.graded,
+            partial.current.ids,
+          )
+        : 0;
       toast.error(
         describeFailure(e, "The pages couldn't be read.") +
-          " The pages are uploaded — you can try grading again.",
+          (shown
+            ? " " +
+              shown +
+              (shown === 1 ? " student was" : " students were") +
+              " graded before it stopped — confirm those, then press Done for the rest."
+            : " The pages are uploaded — you can try grading again."),
       );
     } finally {
+      partial.current = null;
       setScanning(false);
       setStatus("");
     }

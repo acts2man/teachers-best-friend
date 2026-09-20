@@ -63,6 +63,12 @@ export const analyzeInput = z.object({
     "roster",
   ]),
   text: z.string().max(60000).default(""),
+  /** Which request of a split class scan this is. A class set is graded a few
+   * students at a time because one request for the whole class asks for more
+   * output than the model will return -- but it is still one teacher action, so
+   * only the first is billed. Same principle as name_strip: splitting a request
+   * for our own reasons must not spend a teacher's scans faster. */
+  batchIndex: z.number().int().min(0).default(0),
   uploadIds: z.array(z.string()).max(24).default([]),
   grade: z.number().int().min(0).max(12).default(4),
   subject: z.string().default("Math"),

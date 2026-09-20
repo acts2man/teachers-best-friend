@@ -103,11 +103,14 @@ export async function POST(request: Request) {
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      // A whole-class scan is one teacher action that makes two model calls:
-      // the name bands, then the work. Only the grading half is billed, so
-      // splitting the request for privacy does not cost a teacher twice or
-      // halve the scans their plan bought them.
-      const billable = !adminCatalog && p.mode !== "name_strip";
+      // A whole-class scan is one teacher action that makes several model
+      // calls: the name bands, then the work, and the work a few students at a
+      // time because one request for a whole class asks for more output than
+      // the model will return. Only the first grading request is billed.
+      // Splitting a request for our own reasons -- privacy, or size -- must not
+      // spend a teacher's scans faster than the work they actually asked for.
+      const continuation = p.mode === "class_scan" && p.batchIndex > 0;
+      const billable = !adminCatalog && p.mode !== "name_strip" && !continuation;
       scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, billable);
     }
 
