@@ -21,6 +21,10 @@ on:
         description: "Site to check. Leave blank to try the known candidates."
         required: false
         default: ""
+      billing:
+        description: "Is Stripe connected on the site? Flip to true once the keys are set."
+        required: false
+        default: "false"
   push:
     branches: [main]
 
@@ -31,7 +35,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # The smoke script lives in the repo, so this job now needs a checkout.
+      # The version check above never did, which is why there wasn't one.
+      - uses: actions/checkout@v4
+
       - name: Ask each candidate what it is running
+        id: deployed
         env:
           EXPECTED: ${{ github.sha }}
           INPUT_URL: ${{ github.event.inputs.url }}
@@ -98,6 +107,9 @@ jobs:
           if [ -n "${matched}" ]; then
             echo "LIVE: ${matched} is serving ${EXPECTED}. Safe to tell a teacher it shipped."
             echo
+            # The smoke step checks the same URL this one just confirmed,
+            # rather than guessing at it a second time.
+            echo "site=${matched}" >> "${GITHUB_OUTPUT}"
 
             # Ask the grading route what build it is, separately.
             #
@@ -132,3 +144,15 @@ jobs:
           echo "NOT LIVE: reachable, but nothing is serving ${EXPECTED}."
           echo "Do not tell a teacher this shipped. Check the deploy before saying anything."
           exit 1
+
+      # Confirming the commit only proves the right code is deployed. It says
+      # nothing about whether the site does the right thing -- a redirect in
+      # next.config.ts shadowed app/signup/page.tsx for a week while every
+      # local check passed and this workflow reported LIVE. These are the
+      # assertions that would have caught it, run from a network that can
+      # actually reach the site.
+      - name: Smoke-check the live site
+        if: steps.deployed.outputs.site != ''
+        env:
+          SMOKE_BILLING_ENABLED: ${{ github.event.inputs.billing || 'false' }}
+        run: node scripts/smoke-live.mjs "${{ steps.deployed.outputs.site }}" "${{ github.sha }}"

@@ -12,12 +12,26 @@ const nextConfig: NextConfig = {
     CONTEXT: process.env.CONTEXT ?? "",
     BUILD_TIME: new Date().toISOString(),
   },
+  /**
+   * Redirects here run BEFORE routing, so a source that matches a real page
+   * shadows it completely -- the page is built, deployed, and never reached.
+   *
+   * That is exactly what happened to /signup. This list carried
+   * { source: "/signup", destination: "/login" } from 2026-09-14, back when
+   * there was no sign-up page and /login was the whole story. When
+   * app/signup/page.tsx was added it never rendered in production: the live
+   * site answered GET /signup?plan=tier1 with a 307 to /login?plan=tier1, so
+   * a teacher who picked a paid plan arrived in SIGN-IN mode with their choice
+   * silently dropped.
+   *
+   * tests/next-config-redirects.test.mjs now fails if any source here matches
+   * a page.tsx or route.ts under app/, so this cannot be reintroduced quietly.
+   */
   async redirects() {
-    // Student work now lives inside each assessment.
     return [
+      // Student work now lives inside each assessment. There is no app/review,
+      // so this shadows nothing.
       { source: "/review", destination: "/assessments", permanent: false },
-      // The landing page's "Start free" buttons; sign-up lives on /login.
-      { source: "/signup", destination: "/login", permanent: false },
     ];
   },
   webpack(config, { isServer }) {
