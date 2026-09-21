@@ -18,11 +18,23 @@ the live catalog.
 
 Each file's contents were read back from
 `supabase_migrations.schema_migrations.statements` and written verbatim.
-Every one was then checked against an MD5 taken from the database, so the
-files are byte-identical to what was applied — not a re-derivation, and not
-a `pg_dump` of the current shape.
+Every one was then checked against an MD5 taken from the database — not a
+re-derivation, and not a `pg_dump` of the current shape.
 
-## Two things to know
+55 of the 64 are byte-identical to what was applied. The other nine were
+written here first and applied from here, so they carry a comment header the
+remote's copy does not have, or differ in line-wrapping. Their SQL is the same
+in both places, checked with comments and blank lines stripped from each side.
+Where the two disagree on anything that is not a comment or whitespace, the
+database is right and the file is wrong.
+
+The file **name** is not a free choice: it is `<version>_<name>.sql` exactly as
+`schema_migrations` records it. Nine files carried invented timestamps for a
+while, and two of them merged a pair of applied migrations into one file, which
+meant `supabase migration list` and this directory disagreed about what had run
+and in what order.
+
+## Three things to know
 
 **`20260908054530_add_teacher_workspace_backend.sql` is not in the applied
 history.** It creates `teacher_workspaces`, `teacher_uploads`, their RLS
@@ -37,6 +49,14 @@ functions defined a few files earlier — `get_workspace_json` is defined four
 times, `upsert_global_standards` three, `create_scan` four. That is what was
 actually run, in the order it was run, so a replay reproduces the real
 database. Read the *last* definition of anything to know its current shape.
+
+**Three cron jobs are not represented by a file here.** `purge-expired-uploads`
+(09:00 UTC), `purge-expired-student-notes` (09:15 UTC) and
+`roll-expired-billing-periods` (09:30 UTC, calling
+`public.roll_expired_billing_periods()`) were all scheduled from the SQL
+editor, so `cron.job` is the only record of them. The functions they call do
+have migrations; the schedules do not. Check `select * from cron.job` before
+assuming a nightly job exists.
 
 ## Working on the schema from here
 
