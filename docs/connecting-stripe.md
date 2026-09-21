@@ -262,10 +262,60 @@ Do this only once every step of Part 1 worked.
    - Configure the customer portal again in live mode.
 4. Replace all five variables in Netlify with the live values.
 5. Redeploy.
-6. Do one real checkout with a real card — your own. Then refund it from
+6. **Tell the smoke check that billing is on.** See the next section — one
+   setting, easy to forget, so do it here while you are thinking about it.
+7. Do one real checkout with a real card — your own. Then refund it from
    Stripe (**Payments → the payment → Refund**) and cancel the subscription.
    It costs you nothing but the few minutes, and it is the only way to know
    the live path works before a teacher finds out for you.
+
+---
+
+## Telling the smoke check that billing is on
+
+Every deploy to `main` runs a workflow that asks the live site a handful of
+questions — is the sign-up page reachable, does the homepage say the right
+number of pages, does the billing endpoint answer sensibly. It lives in
+`.github/workflows/deployed-version.yml` and calls `scripts/smoke-live.mjs`.
+
+One of those questions has two right answers, and which one is right depends
+on whether Stripe is connected:
+
+| Site state | `POST /api/billing/webhook` with a junk body answers |
+|---|---|
+| Stripe **not** connected | **503** — billing is off, refused before the body is read |
+| Stripe connected | **400** — the body carries no valid Stripe signature |
+
+Both are correct. Neither is a 500. The check is told which to expect by the
+`SMOKE_BILLING_ENABLED` environment variable, which the workflow reads from a
+`billing` input that defaults to `false`.
+
+**Until you connect Stripe:** nothing to do. The default is already right.
+
+**Once live mode is on:** edit `.github/workflows/deployed-version.yml` and
+change the `billing` input's default from `"false"` to `"true"`:
+
+```yaml
+      billing:
+        description: "Is Stripe connected on the site? Flip to true once the keys are set."
+        required: false
+        default: "true"     # <- was "false"
+```
+
+Commit it on a branch and merge it like any other change.
+
+If you forget, the next deploy after connecting Stripe fails with:
+
+```
+FAIL  POST /api/billing/webhook with junk is 503 — 400 (want 503)
+```
+
+which is the check telling you it is out of date, not the site being broken.
+Flip the default and it goes green.
+
+You can also run the workflow by hand at any time — **Actions → Deployed
+version → Run workflow** — and set **billing** to `true` or `false` for that
+one run without changing the file.
 
 ---
 
@@ -364,3 +414,9 @@ the whole diagnosis.
   editor at any time. It writes nothing — everything it does is rolled back —
   and confirms that one event cannot be processed twice and that a cancelled
   subscription is handed back to the monthly period roller.
+- `scripts/smoke-live.mjs` runs against the real site on every deploy to
+  `main`, from a GitHub runner. It is the only check that talks to production,
+  and it exists because a redirect in `next.config.ts` once shadowed the
+  sign-up page: the code was right, every local check passed, and the live
+  site still sent teachers somewhere else. See the section above for its one
+  setting.
