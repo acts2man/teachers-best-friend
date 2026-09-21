@@ -1,13 +1,15 @@
--- Cover the foreign keys that had no index, and stop one RLS policy
--- re-evaluating auth.uid() per row.
+-- Cover the foreign keys that had no index.
 --
--- Both are irrelevant at today's size -- eighty-five students, a few dozen
--- scans -- and both get awkward to add later under load. They matter in two
--- places as the app grows: a lookup by the referenced column (every assessment
--- in a class, every response from a scan), and a delete of the parent row,
--- where Postgres checks each child table for references and does it the slow
--- way without an index. Removing a student or clearing a roster is exactly that
--- delete, and it is a thing teachers now do from the UI.
+-- Irrelevant at today's size -- eighty-five students and a few dozen scans, where
+-- every one of these is a sequential scan over almost nothing. They start to
+-- matter in two places as the app grows: a lookup by the referenced column
+-- (every assessment in a class, every response from a scan), and a delete of the
+-- parent row, where Postgres has to check each child table for references and
+-- does it the slow way without an index. Removing a student or a class is
+-- exactly that delete, and it is a thing teachers now do from the UI.
+--
+-- Cheap to add now and awkward to add later under load, so they go in while the
+-- tables are small enough that building them costs nothing.
 create index if not exists admin_audit_log_actor_idx          on public.admin_audit_log (actor_id);
 create index if not exists assessment_standards_standard_idx  on public.assessment_standards (standard_id);
 create index if not exists assessment_standards_teacher_idx   on public.assessment_standards (teacher_id);
@@ -24,22 +26,3 @@ create index if not exists student_groups_class_idx           on public.student_
 create index if not exists student_responses_reteaching_idx   on public.student_responses (reteaching_id);
 create index if not exists student_responses_scan_idx         on public.student_responses (scan_id);
 create index if not exists support_messages_teacher_idx       on public.support_messages (teacher_id);
-
--- The insert policy on support_tickets called auth.uid() per row, so it was
--- re-evaluated for every row rather than once for the statement. A scalar
--- subquery lets the planner evaluate it a single time. Same rule, same result.
-do $$
-declare
-  body text;
-begin
-  select pg_get_expr(pol.polwithcheck, pol.polrelid)
-    into body
-    from pg_policy pol
-    join pg_class c on c.oid = pol.polrelid
-   where c.relname = 'support_tickets' and pol.polname = 'tickets_own_insert';
-
-  if body is not null and body like '%auth.uid()%' and body not like '%( SELECT auth.uid()%' then
-    execute 'alter policy tickets_own_insert on public.support_tickets with check ('
-      || replace(body, 'auth.uid()', '(select auth.uid())') || ')';
-  end if;
-end $$;
