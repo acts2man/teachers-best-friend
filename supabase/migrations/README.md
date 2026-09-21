@@ -22,7 +22,7 @@ Every one was then checked against an MD5 taken from the database, so the
 files are byte-identical to what was applied — not a re-derivation, and not
 a `pg_dump` of the current shape.
 
-## Two things to know
+## Three things to know
 
 **`20260908054530_add_teacher_workspace_backend.sql` is not in the applied
 history.** It creates `teacher_workspaces`, `teacher_uploads`, their RLS
@@ -37,6 +37,14 @@ functions defined a few files earlier — `get_workspace_json` is defined four
 times, `upsert_global_standards` three, `create_scan` four. That is what was
 actually run, in the order it was run, so a replay reproduces the real
 database. Read the *last* definition of anything to know its current shape.
+
+**Three cron jobs are not represented by a file here.** `purge-expired-uploads`
+(09:00 UTC), `purge-expired-student-notes` (09:15 UTC) and
+`roll-expired-billing-periods` (09:30 UTC, calling
+`public.roll_expired_billing_periods()`) were all scheduled from the SQL
+editor, so `cron.job` is the only record of them. The functions they call do
+have migrations; the schedules do not. Check `select * from cron.job` before
+assuming a nightly job exists.
 
 ## Working on the schema from here
 
