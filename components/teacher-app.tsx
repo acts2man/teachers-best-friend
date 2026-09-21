@@ -54,6 +54,7 @@ import {
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
+import { BillingView } from "./teacher-billing";
 import {
   fetchQuota,
   quotaLevel,
@@ -415,6 +416,7 @@ export default function TeacherApp({ view }: { view: string }) {
       ...libraryNav,
       { id: "scan", label: "New assessment" },
       { id: "students", label: "Roster" },
+      { id: "billing", label: "Plan and billing" },
       { id: "settings", label: "Settings" },
       { id: "support", label: "Support" },
       { id: "resources", label: "Teaching resources" },
@@ -664,6 +666,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <ResourcesView />
               ) : view === "support" ? (
                 <SupportView />
+              ) : view === "billing" ? (
+                <BillingView />
               ) : (
                 <SettingsView />
               )}
@@ -854,7 +858,10 @@ function QuotaMeter({ quota }: { quota: Quota | null }) {
           {level === "out"
             ? "Your plan’s scans are used up for this period."
             : "You’re close to this period’s limit."}{" "}
-          <Link href="/contact?topic=team">Get more scans</Link>
+          {/* Into the app's own billing page, not a contact form. A teacher
+              who is out of scans wants to see what a bigger plan costs, and
+              until now the only route was writing to us and waiting. */}
+          <Link href="/billing">See plans</Link>
         </p>
       )}
     </div>

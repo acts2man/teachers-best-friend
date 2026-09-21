@@ -232,7 +232,7 @@ records, and remediation.
 | [HOSTING PROVIDER] | Database and file storage | [REGION] | Yes — at rest |
 | [DEPLOYMENT PROVIDER] | Application hosting | [REGION] | In transit only |
 | OpenAI | AI processing | United States | Transiently, not retained |
-| [PAYMENT PROCESSOR] | Billing | United States | No |
+| Stripe | Billing | United States | No |
 
 Each is contractually bound to use information only to provide services to us and is
 prohibited from secondary use. We will give [SUBPROCESSOR NOTICE PERIOD] notice of

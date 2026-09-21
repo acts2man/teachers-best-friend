@@ -11,7 +11,7 @@ async function getPlans() {
   try {
     const { createClient } = await import("@supabase/supabase-js");
     const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!);
-    const { data } = await sb.from("plans").select("id,name,price_cents,scan_quota,seat_based,sort_order").eq("active", true).order("sort_order");
+    const { data } = await sb.from("plans").select("id,name,price_cents,scan_quota,seat_based,sort_order").eq("active", true).eq("listed", true).order("sort_order");
     if (data?.length) return data;
   } catch {}
   // Last-resort fallback only. Until the plans_read policy was opened to anon

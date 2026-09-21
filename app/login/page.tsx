@@ -35,8 +35,15 @@ export default function LoginPage() {
 
   // The admin variant is chosen by the URL (?next=/admin) so the landing
   // page and the admin gate can both deep-link straight to it.
+  //
+  // ?mode=signup opens straight on "create account". /signup sends teachers
+  // here with it, so someone who pressed "Start free" is not asked to find the
+  // toggle before they can do the thing they just clicked.
   useEffect(() => {
-    setAdmin(wantsAdmin(window.location.search));
+    const search = window.location.search;
+    setAdmin(wantsAdmin(search));
+    if (new URLSearchParams(search).get("mode") === "signup" && !wantsAdmin(search))
+      setMode("signup");
   }, []);
 
   function switchToAdmin() {

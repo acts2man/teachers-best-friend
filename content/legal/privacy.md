@@ -179,7 +179,7 @@ When an account is deleted, associated data is removed from active systems withi
 
 ## 6. Payment
 
-Payment is processed by [PAYMENT PROCESSOR, e.g. Stripe]. We do not receive or store
+Payment is processed by Stripe. We do not receive or store
 full payment card numbers. We store a customer reference, the subscription plan, and
 billing status.
 
@@ -197,7 +197,7 @@ information only to provide services to us:
 | [HOSTING PROVIDER, e.g. Supabase / AWS] | Database and file storage | All stored data |
 | [DEPLOYMENT PROVIDER, e.g. Netlify] | Application hosting | Requests in transit |
 | OpenAI | AI processing | Submitted work, transiently — see Section 8 |
-| [PAYMENT PROCESSOR] | Billing | Teacher payment details only |
+| Stripe | Billing | Teacher payment details only |
 
 **At a school's direction.** If a school or district has a contract with us covering a
 teacher's use, we share information with that school as the contract provides.
