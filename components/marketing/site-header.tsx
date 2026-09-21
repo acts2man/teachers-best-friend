@@ -80,7 +80,7 @@ export function SiteHeader() {
           {LINKS.map((l) => <Link key={l.href} href={l.href} onClick={close}>{l.label}</Link>)}
           <Link href="/login" onClick={close}>Sign in</Link>
         </nav>
-        <Link href="/signup" className="btn btn-mark" onClick={close}>Start free — 20 scans a month</Link>
+        <Link href="/signup" className="btn btn-mark" onClick={close}>Start free — 36 pages</Link>
       </div>
     </header>
   );

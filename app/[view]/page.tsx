@@ -14,6 +14,7 @@ const views = [
   "students",
   "classes",
   "resources",
+  "billing",
   "settings",
   "guide",
   "support",

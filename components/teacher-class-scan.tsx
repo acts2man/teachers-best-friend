@@ -14,7 +14,7 @@ import {
 import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { describeFailure, useOnline } from "@/lib/connection";
-import { announceScanComplete } from "@/lib/quota-client";
+import { announceScanComplete, isOutOfScans, SEE_PLANS } from "@/lib/quota-client";
 import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
@@ -606,15 +606,24 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             partial.current.ids,
           )
         : 0;
-      toast.error(
+      const message =
         describeFailure(e, "The pages couldn't be read.") +
-          (shown
-            ? " " +
-              shown +
-              (shown === 1 ? " student was" : " students were") +
-              " graded before it stopped — confirm those, then press Done for the rest."
-            : " The pages are uploaded — you can try grading again."),
-      );
+        (shown
+          ? " " +
+            shown +
+            (shown === 1 ? " student was" : " students were") +
+            " graded before it stopped — confirm those, then press Done for the rest."
+          : " The pages are uploaded — you can try grading again.");
+      // Out of scans is the one failure a teacher can actually do something
+      // about, so it comes with somewhere to go rather than just bad news.
+      if (isOutOfScans(message))
+        toast.error(describeFailure(e, "The pages couldn't be read."), {
+          action: {
+            label: SEE_PLANS.label,
+            onClick: () => window.location.assign(SEE_PLANS.href),
+          },
+        });
+      else toast.error(message);
     } finally {
       partial.current = null;
       setScanning(false);

@@ -156,7 +156,7 @@ or to train models.
 | [HOSTING PROVIDER] | Application hosting | Data in transit through the application |
 | [DATABASE AND STORAGE PROVIDER] | Database, file storage, authentication | Account data, uploads, derived results |
 | [AI PROVIDER] | Analysis of uploaded work | Uploaded work and grade or subject context, with a pseudonymous identifier in place of the student's name |
-| [PAYMENT PROCESSOR] | Subscription billing | Teacher billing details only; no student data |
+| Stripe | Subscription billing | Teacher billing details only; no student data |
 
 The current list is maintained at this page. We will give the LEA at least
 [SUBPROCESSOR NOTICE PERIOD, e.g. 30 days] notice before adding or replacing a

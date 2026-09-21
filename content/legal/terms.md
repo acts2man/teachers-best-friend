@@ -195,7 +195,7 @@ We may suspend an account that is doing these things.
 ## 9. Plans, payment, and trials
 
 Paid plans, their prices, and their usage allowances are shown at checkout and in your
-account settings. Payment is processed by [PAYMENT PROCESSOR, e.g. Stripe]; we do not
+account settings. Payment is processed by Stripe; we do not
 store full card numbers.
 
 Subscriptions renew automatically until cancelled. You may cancel at any time and your
