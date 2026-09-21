@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ShieldCheck, UserX, Trash2, Ban } from "lucide-react";
 import { LiveScanHero } from "@/components/marketing/live-scan-hero";
 import { Figure } from "@/components/marketing/figure";
+import { DeletedNotice } from "@/components/marketing/deleted-notice";
 import { Reveal, RevealGroup, RevealItem, StepsRail } from "@/components/marketing/motion";
 
 /* Pricing is read from the same table the app meters against, so the page
@@ -58,6 +59,7 @@ export default async function LandingPage() {
 
   return (
     <>
+      <DeletedNotice />
       {/* ---------------- Hero ---------------- */}
       <section className="mk-wrap hero">
         <Reveal className="hero-title">

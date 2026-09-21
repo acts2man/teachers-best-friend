@@ -64,6 +64,20 @@ editor, so `cron.job` is the only record of them. The functions they call do
 have migrations; the schedules do not. Check `select * from cron.job` before
 assuming a nightly job exists.
 
+A fourth, `purge-scan-payloads` (09:45 UTC, calling
+`public.purge_scan_payloads()`), **is** in a migration --
+`20260921233844_clear_scan_payloads_after_48_hours.sql` schedules it as well as
+defining the function, so this one replays from the directory rather than
+existing only in `cron.job`. New scheduled jobs should follow it rather than
+the three above. The full nightly sequence is now:
+
+| Time (UTC) | Job | What it clears |
+|---|---|---|
+| 09:00 | `purge-expired-uploads` | Uploaded images and PDFs past 30 days |
+| 09:15 | `purge-expired-student-notes` | Teacher notes past a teacher-set expiry |
+| 09:30 | `roll-expired-billing-periods` | Rolls billing periods that have ended |
+| 09:45 | `purge-scan-payloads` | `scans.params`, `.result`, `.error` past 48 hours |
+
 ## Working on the schema from here
 
 Apply changes as migrations against the project so the remote and this

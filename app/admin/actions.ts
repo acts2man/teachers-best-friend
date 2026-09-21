@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { requireAdmin, requireAppManager } from "@/lib/admin-gate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { deleteTeacherAccount } from "@/lib/account-deletion-server";
 
 /* Every write goes through an audited database function that itself
    re-verifies is_admin(). The app-layer check is belt; the DB check is braces. */
@@ -50,6 +52,32 @@ export async function resetTeacher(fd: FormData) {
   });
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/accounts/${str(fd, "teacher_id")}`); revalidatePath("/admin/accounts"); revalidatePath("/admin");
+}
+
+/**
+ * Delete an account on an LEA's request -- Data Processing Addendum, Section
+ * 7, which promises deletion on the LEA's request as well as by the teacher.
+ *
+ * Exactly the same server function the teacher's own button calls, so there is
+ * one deletion in this codebase rather than two that will drift. The only
+ * difference is the actor recorded on the audit line: the admin's id here,
+ * NULL when a teacher does it themselves. Neither writes an email.
+ *
+ * The confirmation is the account's own email address rather than a word like
+ * RESET. An admin working down a list of requests should have to look at which
+ * row they are on.
+ */
+export async function deleteAccount(fd: FormData) {
+  const admin = await requireAdmin();
+  const teacherId = str(fd, "teacher_id");
+  const { data } = await supabaseAdmin().auth.admin.getUserById(teacherId);
+  const email = data?.user?.email ?? "";
+  if (!email || str(fd, "confirm").trim().toLowerCase() !== email.toLowerCase())
+    throw new Error("Type the account's email address to confirm");
+  await deleteTeacherAccount(teacherId, { actorId: admin.id });
+  revalidatePath("/admin"); revalidatePath("/admin/accounts"); revalidatePath("/admin/audit");
+  // The page this was submitted from describes an account that no longer exists.
+  redirect("/admin/accounts");
 }
 
 export async function setPipelineStage(fd: FormData) {

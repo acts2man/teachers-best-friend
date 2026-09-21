@@ -142,6 +142,7 @@ agency's retention of ownership and control of pupil records.
 |---|---|
 | Uploaded worksheet images | Deleted once the teacher confirms that student's grading, and automatically 30 days after upload in any case |
 | Roster photographs | Deleted immediately after processing |
+| Grading results held for delivery | Cleared 48 hours after the scan |
 | Extracted answers, scores, misconception records | Held while the account is active |
 | Standards mastery records | Held while the account is active |
 | Teacher notes about a student | Held while active, or until a teacher-set expiry |

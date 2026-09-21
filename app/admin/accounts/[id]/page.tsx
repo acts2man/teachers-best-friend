@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { getAccount, getTeacherScans, getTeacherAudit, getPipeline, getCostBreakdown, supabaseAdmin } from "@/lib/supabase-admin";
-import { setPlan, setStatus, setAdminRole, setAppManagerRole, resetTeacher, addInternalNote, clearFailedScans } from "@/app/admin/actions";
+import { setPlan, setStatus, setAdminRole, setAppManagerRole, resetTeacher, addInternalNote, clearFailedScans, deleteAccount } from "@/app/admin/actions";
 import { startImpersonation } from "@/lib/impersonation-actions";
 import { currentIsAppManager } from "@/lib/admin-gate";
 import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtPerScan, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
@@ -178,6 +178,20 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
               <div style={{ display: "flex", gap: ".5rem" }}>
                 <input name="confirm" placeholder='Type RESET' style={{ width: "8rem" }} />
                 <button className="btn btn-danger btn-sm">Reset account</button>
+              </div>
+            </form>
+          </details>
+
+          <details style={{ borderTop: "1px solid var(--rule-faint)", paddingTop: "1rem" }}>
+            <summary style={{ cursor: "pointer", color: "var(--correct-red)", fontWeight: 600 }}>Delete this account</summary>
+            <form action={deleteAccount} style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>
+              <input type="hidden" name="teacher_id" value={a.teacher_id} />
+              <p className="muted" style={{ margin: 0, fontSize: ".85rem" }}>
+                For an LEA deletion request (DPA Section 7). Cancels any Stripe subscription first, then removes the login, profile, subscription, support threads and every class, student, assessment and uploaded file. Cost records survive with the teacher unlinked and no student content in them. Runs the same server function as the teacher’s own “Delete my account”, logged under your id.
+              </p>
+              <div style={{ display: "flex", gap: ".5rem" }}>
+                <input name="confirm" placeholder="Type the account’s email" style={{ width: "18rem" }} />
+                <button className="btn btn-danger btn-sm">Delete account</button>
               </div>
             </form>
           </details>

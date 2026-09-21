@@ -146,6 +146,21 @@ await check("POST /api/analyze unauthenticated is 401, not 500", async () => {
   return { ok: r.status === 401, detail: `${r.status}` };
 });
 
+await check("POST /api/account/delete unauthenticated is 401", async () => {
+  // The most destructive endpoint in the product. A stranger must not reach
+  // it, and it must not 500 on the way to saying so -- a 500 here would mean
+  // the route threw before the auth check, which is the shape of a bug that
+  // could later throw somewhere worse. The body is deliberately a plausible
+  // one: an empty body could be rejected for the wrong reason and look like a
+  // pass.
+  const r = await get("/api/account/delete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "nobody@example.invalid" }),
+  });
+  return { ok: r.status === 401, detail: `${r.status}` };
+});
+
 await check("POST /api/billing/checkout unauthenticated is 401", async () => {
   const r = await get("/api/billing/checkout", {
     method: "POST",
