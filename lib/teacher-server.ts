@@ -1,4 +1,8 @@
 import { cookies, headers } from "next/headers";
+import { HttpError } from "@/lib/http-error";
+import { countPages, contentHash } from "@/lib/page-count";
+
+export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { Workspace } from "@/lib/teacher-types";
@@ -149,17 +153,6 @@ export async function writingTeacherId() {
   return (await resolveOwningTeacher()).id;
 }
 
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    // Optional internal detail (e.g. an upstream provider's status and error
-    // body) recorded for diagnosis but never shown to the user.
-    public detail?: string,
-  ) {
-    super(message);
-  }
-}
 
 /**
  * Rejects cross-origin writes. Behind Netlify's proxy request.url is an
@@ -437,6 +430,12 @@ export async function saveDocument(
   bytes: ArrayBuffer,
 ) {
   const objectPath = `${ownerId}/${id}`;
+  // Before the file is stored, not after: a PDF that cannot be parsed is
+  // rejected here, so nothing lands in the bucket that the ledger cannot price.
+  const [pageCount, sha256] = await Promise.all([
+    countPages(file.type, bytes),
+    contentHash(bytes),
+  ]);
   if (hasSupabaseConfig()) {
     const supabase = await createClient();
     const { error: uploadError } = await supabase.storage
@@ -450,13 +449,18 @@ export async function saveDocument(
       object_path: objectPath,
       mime: file.type,
       size: file.size,
+      // Both worked out from the bytes on this side of the wire. See
+      // lib/page-count.ts: page count is what the teacher is charged, and the
+      // hash is what stops the same page being charged twice.
+      page_count: pageCount,
+      content_sha256: sha256,
       created_at: new Date().toISOString(),
     });
     if (rowError) {
       await supabase.storage.from(DOCUMENT_BUCKET).remove([objectPath]);
       throw rowError;
     }
-    return;
+    return { pageCount, sha256 };
   }
 
   const bucket = await sitesBucket();
@@ -468,6 +472,8 @@ export async function saveDocument(
       .prepare(
         "INSERT INTO teacher_uploads (id,owner_id,name,object_key,mime,size,created_at) VALUES (?,?,?,?,?,?,?)",
       )
+      // No page_count or content_sha256 here: the Sites host has no plans and
+      // no ledger, so there is nothing to meter and no column to put them in.
       .bind(
         id,
         ownerId,
@@ -482,6 +488,7 @@ export async function saveDocument(
     await bucket.delete(objectPath);
     throw error;
   }
+  return { pageCount, sha256 };
 }
 
 export async function readDocument(

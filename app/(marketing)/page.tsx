@@ -20,11 +20,9 @@ async function getPlans() {
   // the table metered "Tier 1" at $19.99, and omitted Tier 3 entirely. Keep it
   // in step with public.plans whenever prices change.
   return [
-    { id: "free", name: "Free", price_cents: 0, scan_quota: 20, seat_based: false, sort_order: 1 },
-    { id: "starter", name: "Starter", price_cents: 900, scan_quota: 150, seat_based: false, sort_order: 2 },
-    { id: "pro", name: "Tier 1", price_cents: 1999, scan_quota: 500, seat_based: false, sort_order: 3 },
-    { id: "team", name: "Team", price_cents: 1500, scan_quota: 500, seat_based: true, sort_order: 4 },
-    { id: "elite", name: "Tier 2", price_cents: 2999, scan_quota: 1000, seat_based: false, sort_order: 5 },
+    { id: "free", name: "Free", price_cents: 0, scan_quota: 36, seat_based: false, sort_order: 1 },
+    { id: "tier1", name: "Tier 1", price_cents: 1999, scan_quota: 500, seat_based: false, sort_order: 3 },
+    { id: "tier2", name: "Tier 2", price_cents: 2999, scan_quota: 1000, seat_based: false, sort_order: 5 },
     { id: "tier3", name: "Tier 3", price_cents: 3999, scan_quota: 1500, seat_based: false, sort_order: 6 },
   ];
 }
@@ -42,12 +40,10 @@ function SectionHead({ no, children }: { no: string; children: React.ReactNode }
 }
 
 const GOOD_FOR: Record<string, string> = {
-  free: "Trying it on one assignment",
-  starter: "One class, weekly checks",
-  pro: "Multiple periods, or checking every assignment",
-  elite: "Every assignment, every class, all year",
+  free: "Trying it on one class set",
+  tier1: "Multiple periods, or checking every assignment",
+  tier2: "Every assignment, every class, all year",
   tier3: "A whole department, or a heavy secondary load",
-  team: "A grade-level team or department, five or more",
 };
 
 /* $0 and whole-dollar plans read cleanly; a plan with cents (Elite, $29.99)
@@ -83,7 +79,7 @@ export default async function LandingPage() {
             what to do about it on Monday.
           </Reveal>
           <Reveal className="hero-actions" delay={0.2}>
-            <Link href="/signup" className="btn btn-mark">Start free — 20 scans a month</Link>
+            <Link href="/signup" className="btn btn-mark">Grade a whole class free — 36 pages</Link>
             <Link href="#how" className="btn btn-quiet">See how it works</Link>
           </Reveal>
           <Reveal as="p" className="hero-note" delay={0.28}>
@@ -369,21 +365,23 @@ export default async function LandingPage() {
         </Reveal>
         <div className="section-body">
           <Reveal as="p" className="pricing-intro">
-            Plans are measured in scans, because that’s what costs us money. One scan is
-            one student’s worksheet. A class of thirty, two assignments a week, is about
-            240 scans a month.
+            Plans are measured in scans, because that’s what costs us money. 1 scan =
+            1 page you photograph or upload — a student’s page, an answer key, a blank
+            assignment, a roster. A page is never charged twice, however many times we
+            look at it, and re-grading work you’ve already scanned is free. A class of
+            thirty, two assignments a week, is about 240 pages a month.
           </Reveal>
           <RevealGroup as="ul" className="plans">
             {plans.map((p) => (
-              <RevealItem as="li" key={p.id} className={`plan${p.id === "pro" ? " plan-pro" : ""}`}>
-                {p.id === "pro" && <span className="plan-tag">Recommended</span>}
+              <RevealItem as="li" key={p.id} className={`plan${p.id === "tier1" ? " plan-pro" : ""}`}>
+                {p.id === "tier1" && <span className="plan-tag">Recommended</span>}
                 <span className="plan-name">{p.name}</span>
                 <div className="plan-price">
                   <span className="price">{priceLabel(p.price_cents)}</span>
                   <span className="per">{p.price_cents === 0 ? "" : p.seat_based ? "/seat/month" : "/month"}</span>
                 </div>
                 <p className="plan-quota">
-                  <strong className="tabular">{p.scan_quota}</strong> scans per month{p.seat_based ? " per seat" : ""}
+                  <strong className="tabular">{p.scan_quota}</strong> pages per month{p.seat_based ? " per seat" : ""}
                 </p>
                 <dl className="plan-rows">
                   <div>
@@ -407,7 +405,7 @@ export default async function LandingPage() {
                     <dd>{p.id === "team" ? "Across the team" : p.id === "free" ? "—" : "Your classes"}</dd>
                   </div>
                 </dl>
-                <Link href={p.id === "team" ? "/contact" : `/signup?plan=${p.id}`} className={`btn ${p.id === "pro" ? "btn-mark" : "btn-quiet"}`}>
+                <Link href={p.id === "team" ? "/contact" : `/signup?plan=${p.id}`} className={`btn ${p.id === "tier1" ? "btn-mark" : "btn-quiet"}`}>
                   {p.id === "free" ? "Start free" : p.id === "team" ? "Talk to us" : "Choose " + p.name}
                 </Link>
               </RevealItem>

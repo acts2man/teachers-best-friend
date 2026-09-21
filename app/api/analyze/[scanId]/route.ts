@@ -12,6 +12,12 @@ import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { analyzeInput, finalizeAnalysis, responseText } from "@/lib/analyze-shared";
 import {
+  chargesForMode,
+  confirmPages,
+  generationKey,
+  releasePages,
+} from "@/lib/page-ledger";
+import {
   deleteBackgroundResponse,
   getBackgroundResponse,
   recordScanUsage,
@@ -19,6 +25,18 @@ import {
 } from "@/lib/analyze-server";
 
 export const maxDuration = 26;
+
+/**
+ * This route never charges. That is the whole reason it cannot double-charge.
+ *
+ * It replays scan.params, and a poll can be repeated any number of times -- by
+ * a phone waking up, by two tabs, by a client retrying. If charging lived here
+ * it would have to remember whether it had already run for this scan. Instead
+ * the pages were paid for once, in POST /api/analyze, before the job started;
+ * all this route does is say whether that work was delivered (confirm, which
+ * is idempotent) or not (release, which only ever gives back a reservation
+ * that was never confirmed).
+ */
 
 // A stored background analysis reports one of these provider statuses. Anything
 // other than "completed" that is terminal means the job will not produce usable
@@ -70,6 +88,9 @@ export async function GET(
     // exactly as the synchronous path would have.
     const parsedParams = analyzeInput.safeParse(scan.params);
     if (!parsedParams.success) {
+      // No params means no upload ids, so there is nothing to hand back by
+      // name. The reservation ages out on its own after two hours and stops
+      // counting against the teacher, which is the same outcome.
       await failScan(svc, scanId, config.key, providerId, model, false, "");
       throw new HttpError(500, "The analysis settings couldn’t be read.");
     }
@@ -101,6 +122,7 @@ export async function GET(
         storedMessage,
         remote.usage,
       );
+      await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: userMessage });
     }
 
@@ -118,6 +140,7 @@ export async function GET(
         message,
         remote.usage,
       );
+      await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: message });
     }
 
@@ -144,6 +167,7 @@ export async function GET(
         message,
         remote.usage,
       );
+      await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: message });
     }
 
@@ -165,6 +189,7 @@ export async function GET(
       usage: remote.usage,
       errorMessage: "",
     });
+    await settle(svc, user, p, scanId, true);
     await deleteBackgroundResponse(providerId, config.key);
 
     return Response.json({ status: "complete", result: output });
@@ -191,4 +216,25 @@ async function failScan(
     errorMessage: message,
   });
   await deleteBackgroundResponse(providerId, key);
+}
+
+/**
+ * Confirms or releases the pages this scan reserved.
+ *
+ * Both calls are safe to repeat: confirm only touches reservations that are
+ * not confirmed yet, and release only touches reservations that were never
+ * confirmed. A page that graded successfully in an earlier batch is not handed
+ * back because a later one failed.
+ */
+async function settle(
+  svc: ReturnType<typeof createServiceClient>,
+  teacher: string,
+  p: ReturnType<typeof analyzeInput.parse>,
+  scanId: string,
+  ok: boolean,
+) {
+  if (!chargesForMode(p.mode)) return;
+  const genKey = p.uploadIds.length === 0 ? generationKey(scanId) : null;
+  if (ok) await confirmPages(svc, teacher, p.uploadIds, genKey);
+  else await releasePages(svc, teacher, p.uploadIds, genKey);
 }

@@ -65,9 +65,14 @@ export const analyzeInput = z.object({
   text: z.string().max(60000).default(""),
   /** Which request of a split class scan this is. A class set is graded a few
    * students at a time because one request for the whole class asks for more
-   * output than the model will return -- but it is still one teacher action, so
-   * only the first is billed. Same principle as name_strip: splitting a request
-   * for our own reasons must not spend a teacher's scans faster. */
+   * output than the model will return.
+   *
+   * It no longer decides anything about billing. It used to: only batch 0 was
+   * billed, so that splitting a request for our own reasons did not spend a
+   * teacher's scans faster. The page ledger makes that structural instead --
+   * a later batch's pages are already paid for, so it charges nothing whether
+   * or not anyone remembers this field exists. Kept because the prompt and
+   * the progress UI still number the batches. */
   batchIndex: z.number().int().min(0).default(0),
   uploadIds: z.array(z.string()).max(24).default([]),
   grade: z.number().int().min(0).max(12).default(4),
