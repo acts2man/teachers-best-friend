@@ -45,7 +45,7 @@ AI requests use strict structured outputs, uploaded-file ownership checks, suppl
 
 ### Background analysis (optional)
 
-Netlify serverless functions are capped at ~26 seconds, so a long assessment scan can outlast the request. Setting `ANALYZE_ASYNC=1` (Supabase deployment only) switches `/api/analyze` to OpenAI background mode: the route starts the model job, returns a scan id immediately, and the client polls `/api/analyze/{scanId}` until the analysis finishes. The scan row (from the `scans` table) tracks the job; apply the `20260910000000_scan_async_results.sql` migration before enabling the flag. Background jobs are stored on OpenAI (`store:true`, required for polling) and deleted by the poll route as soon as the result is read. With the flag unset the synchronous path is unchanged and stores nothing on the provider.
+Netlify serverless functions are capped at ~26 seconds, so a long assessment scan can outlast the request. Setting `ANALYZE_ASYNC=1` (Supabase deployment only) switches `/api/analyze` to OpenAI background mode: the route starts the model job, returns a scan id immediately, and the client polls `/api/analyze/{scanId}` until the analysis finishes. The scan row (from the `scans` table) tracks the job; apply the `supabase/migrations/20260910195927_scan_async_results.sql` migration before enabling the flag. Background jobs are stored on OpenAI (`store:true`, required for polling) and deleted by the poll route as soon as the result is read. With the flag unset the synchronous path is unchanged and stores nothing on the provider.
 
 ## Scope and data notes
 
