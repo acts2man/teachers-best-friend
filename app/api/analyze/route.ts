@@ -17,7 +17,9 @@ import {
   buildPrompt,
   finalizeAnalysis,
   responseText,
+  type ResponsesResult,
 } from "@/lib/analyze-shared";
+import { checkSpendGate, enforceSpendGate } from "@/lib/spend-gate";
 import {
   chargePages,
   chargesForMode,
@@ -36,6 +38,7 @@ import {
   sharedCatalog,
   shareCatalog,
   isAdminUser,
+  aiHttpError,
 } from "@/lib/analyze-server";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
@@ -131,6 +134,16 @@ export async function POST(request: Request) {
       if (shared.length)
         return Response.json({ result: { standards: shared }, model: "shared-library" });
     }
+    // Money ceilings, before anything is charged and before the model is
+    // touched. A blocked request spends nothing and leaves nothing to unwind.
+    // Admins loading the shared standards library are exempt from their own
+    // daily cap -- that work is for every teacher, not them -- but it still
+    // counts toward the platform total, because the money was still spent.
+    if (svc) {
+      const gate = await checkSpendGate(svc, user, adminCatalog);
+      await enforceSpendGate(gate, user);
+    }
+
     let scanId: string | null = null;
     if (svc) {
       const [assessmentRow, studentRow] = await Promise.all([
@@ -185,13 +198,14 @@ export async function POST(request: Request) {
     // Supabase deployment, where the scans table tracks the job.
     if (svc && scanId && analyzeAsyncEnabled()) {
       try {
-        const providerId = await startModelBackground(
+        const started = await startModelBackground(
           settings,
           content,
           p.mode,
           schema,
           config.key,
         );
+        const providerId = started.value;
         const { error } = await svc
           .from("scans")
           .update({
@@ -199,6 +213,7 @@ export async function POST(request: Request) {
             provider_model: settings.model,
             params: p,
             status: "analyzing",
+            attempts: started.attempts,
             // Which build started this scan. The finishing half runs in a
             // different serverless function and is stamped separately, so a
             // disagreement between the two -- or with origin/main -- shows a
@@ -235,11 +250,14 @@ export async function POST(request: Request) {
     // such cap and keeps the longer budget.
     const aiTimeoutMs = hasSupabaseConfig() ? 24000 : 110000;
     let output: Record<string, unknown>;
-    let resultData: Awaited<ReturnType<typeof runModelSync>> | undefined;
+    let resultData: ResponsesResult | undefined;
+    // How many times the provider had to be asked. Recorded on the scan so
+    // provider flakiness is a number we can look at rather than a feeling.
+    let attempts = 1;
     let ok = false;
     let errorMessage = "";
     try {
-      resultData = await runModelSync(
+      const run = await runModelSync(
         settings,
         content,
         p.mode,
@@ -247,6 +265,8 @@ export async function POST(request: Request) {
         config.key,
         aiTimeoutMs,
       );
+      resultData = run.value;
+      attempts = run.attempts;
       if (resultData.status === "incomplete")
         throw new HttpError(
           422,
@@ -263,21 +283,18 @@ export async function POST(request: Request) {
         await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
       ok = true;
     } catch (e) {
-      errorMessage =
-        (e instanceof HttpError && e.detail) ||
-        (e instanceof Error ? e.message : String(e));
-      if (
-        e instanceof Error &&
-        (e.name === "TimeoutError" || e.name === "AbortError")
-      )
-        throw new HttpError(
-          504,
-          "This analysis took too long to finish. Your documents are saved — please try again with fewer pages.",
-        );
-      throw e;
+      // aiHttpError picks the sentence from the failure kind, so an account
+      // with no credit left does not read to a teacher as a problem with
+      // their upload. It also carries the attempt count out of the wrapper.
+      const failure = aiHttpError(e);
+      if (typeof (e as { attempts?: number }).attempts === "number")
+        attempts = (e as { attempts: number }).attempts;
+      errorMessage = failure.detail || failure.message;
+      throw e instanceof HttpError ? e : failure;
     } finally {
       await settleCharge(ok);
       if (svc && scanId) {
+        await svc.from("scans").update({ attempts }).eq("id", scanId);
         await recordScanUsage(svc, scanId, {
           ok,
           model: settings.model,

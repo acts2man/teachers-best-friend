@@ -128,6 +128,24 @@ await check(
   },
 );
 
+await check("POST /api/analyze unauthenticated is 401, not 500", async () => {
+  // The only thing about the retry and spend-cap work that is safely
+  // checkable from outside. Everything else in it sits behind a sign-in and a
+  // real model call, and a smoke check has no business spending money to
+  // prove a ceiling works -- that is what supabase/checks/spend-caps.sql is
+  // for, where nothing is charged and everything rolls back.
+  //
+  // What this does prove is worth having: the grading route still loads and
+  // still refuses a stranger. Those changes added imports to it, and a module
+  // that throws on load turns this into a 500 rather than a 401.
+  const r = await get("/api/analyze", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "responses", uploadIds: [] }),
+  });
+  return { ok: r.status === 401, detail: `${r.status}` };
+});
+
 await check("POST /api/billing/checkout unauthenticated is 401", async () => {
   const r = await get("/api/billing/checkout", {
     method: "POST",

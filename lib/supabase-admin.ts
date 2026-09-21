@@ -169,6 +169,33 @@ export async function getTickets(status?: string): Promise<AdminTicket[]> {
   return data as AdminTicket[];
 }
 
+export type PlatformAlert = {
+  id: string;
+  kind: string;
+  message: string;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+};
+
+/**
+ * Alerts nobody has acknowledged yet.
+ *
+ * These are conditions no teacher can resolve -- the AI account out of credit,
+ * a spend ceiling reached -- and they are on the overview because the failure
+ * they replace was one of these happening quietly while everyone assumed the
+ * app was fine.
+ */
+export async function getOpenAlerts(): Promise<PlatformAlert[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("platform_alerts")
+    .select("id, kind, message, detail, created_at")
+    .is("acknowledged_at", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return (data ?? []) as PlatformAlert[];
+}
+
 export async function getPipeline(): Promise<{ stages: PipelineStage[]; models: ModelPrice[] }> {
   const [s, m] = await Promise.all([
     supabaseAdmin().from("pipeline_config").select("*").order("stage"),

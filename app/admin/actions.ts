@@ -116,3 +116,13 @@ export async function clearFailedScans(fd: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath(`/admin/accounts/${teacher}`); revalidatePath("/admin/accounts"); revalidatePath("/admin/usage"); revalidatePath("/admin");
 }
+
+/** Dismisses a platform alert once an operator has dealt with it. */
+export async function acknowledgeAlert(fd: FormData) {
+  await requireAdmin();
+  const { error } = await supabaseAdmin().rpc("acknowledge_platform_alert", {
+    p_id: str(fd, "alert_id"),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}

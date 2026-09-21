@@ -18,6 +18,7 @@ import {
   releasePages,
 } from "@/lib/page-ledger";
 import {
+  aiHttpError,
   deleteBackgroundResponse,
   getBackgroundResponse,
   recordScanUsage,
@@ -97,7 +98,16 @@ export async function GET(
     const p = parsedParams.data;
     const isLesson = p.mode === "lesson";
 
-    const remote = await getBackgroundResponse(providerId, config.key);
+    // getBackgroundResponse already retries a transient refusal. Anything that
+    // still escapes is converted here so a teacher gets the sentence that
+    // matches the failure -- an account out of credit reads as an outage, not
+    // as a problem with what they uploaded.
+    let remote;
+    try {
+      remote = await getBackgroundResponse(providerId, config.key);
+    } catch (e) {
+      throw aiHttpError(e);
+    }
     const status = remote.status ?? "in_progress";
 
     if (status !== "completed") {

@@ -291,6 +291,28 @@
 .att-text { font-size: .875rem; font-weight: 500; line-height: 1.35; }
 .att-chev { color: var(--ad-ink-3); width: 16px; height: 16px; }
 
+/* ---- platform alerts ---- */
+/* Above everything, and loud. These are conditions where the app is not
+   working for teachers and no teacher can fix it. Renders nothing when there
+   is nothing wrong, so it never becomes furniture. */
+.ad-alerts { display: flex; flex-direction: column; gap: 8px; margin: 0 0 var(--ad-s-4); }
+.ad-alert { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 12px; padding: 12px 14px; border: 1px solid var(--ad-hair); border-left-width: 3px; border-radius: var(--ad-r-2); background: var(--ad-surface); }
+.ad-alert.is-bad { border-left-color: var(--ad-red); background: var(--ad-red-bg); }
+.ad-alert.is-bad > svg { color: var(--ad-red); }
+.ad-alert.is-warn { border-left-color: var(--ad-amber); background: var(--ad-amber-bg); }
+.ad-alert.is-warn > svg { color: var(--ad-amber); }
+.ad-alert > svg { margin-top: 2px; flex: none; }
+.ad-alert-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ad-alert-body strong { font-size: .875rem; font-weight: 700; color: var(--ad-ink); }
+.ad-alert-body p { margin: 0; font-size: .85rem; line-height: 1.45; color: var(--ad-ink); }
+.ad-alert-when { font-size: .7rem; color: var(--ad-ink-3); }
+.ad-alert-ack { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--ad-hair-2); border-radius: var(--ad-r-1); background: var(--ad-surface); color: var(--ad-ink-2); font-size: .78rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background-color .15s ease, color .15s ease; }
+.ad-alert-ack:hover { background: var(--ad-surface-2); color: var(--ad-ink); }
+@media (max-width: 640px) {
+  .ad-alert { grid-template-columns: auto 1fr; }
+  .ad-alert form { grid-column: 2; }
+}
+
 /* ---- empty states ---- */
 .ad-empty { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px dashed var(--ad-hair-2); border-radius: var(--ad-r-2); color: var(--ad-ink-2); font-size: .875rem; }
 .ad-empty svg { width: 18px; height: 18px; color: var(--ad-green-deep); flex: none; }

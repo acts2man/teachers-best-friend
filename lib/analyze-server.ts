@@ -11,27 +11,52 @@ import type {
   ResponsesResult,
   ResponsesUsage,
 } from "@/lib/analyze-shared";
+import {
+  AiCallError,
+  MIN_ATTEMPT_MS,
+  TEACHER_MESSAGES,
+  errorFromResponse,
+  withRetry,
+  type Attempted,
+} from "@/lib/ai-retry";
+import { alertOutOfCredit } from "@/lib/platform-alerts";
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
 const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
 
-const AI_UNAVAILABLE =
-  "The AI service couldn’t complete this analysis. Your documents are saved; please try again later.";
+/**
+ * Budget for handing a background job over.
+ *
+ * Its own number rather than the synchronous path's: this call returns as soon
+ * as OpenAI accepts the job, so it is fast when healthy and can afford to wait
+ * out a rate limit. The enqueue route is still inside a 26s function, so this
+ * leaves room to answer.
+ */
+const BACKGROUND_START_BUDGET_MS = 20000;
 
-// Builds the user-facing 502 while recording the provider's real status and
-// error body as internal detail, so an opaque failure can be diagnosed from the
-// scans table instead of inferred.
-async function aiUnavailable(where: string, result: Response) {
-  let body = "";
-  try {
-    body = (await result.text()).slice(0, 400);
-  } catch {
-    // ignore — the status alone is still useful
-  }
-  const detail = `openai ${where} ${result.status}${body ? ": " + body : ""}`;
-  console.error("OpenAI request failed", detail);
-  return new HttpError(502, AI_UNAVAILABLE, detail);
+/** Reading a stored result. Shorter: the poll route answers "still working". */
+const POLL_BUDGET_MS = 18000;
+
+/**
+ * Turns a failed provider call into the HttpError a route can return.
+ *
+ * The teacher-facing sentence comes from the failure kind, so "the account is
+ * out of credit" does not read as "your upload was bad" -- see
+ * TEACHER_MESSAGES in lib/ai-retry.ts. The provider's real status and body go
+ * into `detail`, which lands on the scans row, so an opaque failure can be
+ * diagnosed from the table rather than inferred.
+ */
+export function aiHttpError(e: unknown): HttpError {
+  if (!(e instanceof AiCallError))
+    return e instanceof HttpError
+      ? e
+      : new HttpError(502, TEACHER_MESSAGES.permanent, String(e));
+  console.error("OpenAI request failed", e.detail);
+  // 503 for an empty account: it is our problem, not a bad gateway, and it
+  // will keep being our problem until someone tops it up.
+  const status = e.kind === "out_of_credit" ? 503 : e.status === 408 ? 504 : 502;
+  return new HttpError(status, TEACHER_MESSAGES[e.kind], e.detail);
 }
 
 // ChatGPT Sites has no pipeline_config table, so that host keeps its fixed
@@ -220,20 +245,27 @@ export async function runModelSync(
   schema: unknown,
   key: string,
   timeoutMs: number,
-): Promise<ResponsesResult> {
-  const result = await fetch(OPENAI_RESPONSES, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + key,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(timeoutMs),
-    body: JSON.stringify(
-      requestBody(settings, content, mode, schema, { store: false }),
-    ),
-  });
-  if (!result.ok) throw await aiUnavailable("sync", result);
-  return (await result.json()) as ResponsesResult;
+): Promise<Attempted<ResponsesResult>> {
+  // The deadline is the whole budget, not the per-attempt one. Each attempt
+  // gets what is left of it, so a retry can never push the function past the
+  // platform's own ceiling and turn a reportable error into a gateway page.
+  const deadline = Date.now() + timeoutMs;
+  return withRetry(async () => {
+    const remaining = deadline - Date.now();
+    const result = await fetch(OPENAI_RESPONSES, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + key,
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(Math.max(remaining, MIN_ATTEMPT_MS)),
+      body: JSON.stringify(
+        requestBody(settings, content, mode, schema, { store: false }),
+      ),
+    });
+    if (!result.ok) throw await errorFromResponse(result, "sync");
+    return (await result.json()) as ResponsesResult;
+  }, { deadline, label: "sync", onOutOfCredit: alertOutOfCredit });
 }
 
 /**
@@ -247,25 +279,34 @@ export async function startModelBackground(
   mode: Mode,
   schema: unknown,
   key: string,
-): Promise<string> {
-  const result = await fetch(OPENAI_RESPONSES, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + key,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(20000),
-    body: JSON.stringify(
-      requestBody(settings, content, mode, schema, {
-        store: true,
-        background: true,
-      }),
-    ),
-  });
-  if (!result.ok) throw await aiUnavailable("create", result);
-  const data = (await result.json()) as { id?: string };
-  if (!data.id) throw new HttpError(502, AI_UNAVAILABLE, "openai create: no id");
-  return data.id;
+): Promise<Attempted<string>> {
+  // Starting a background job only hands the request over -- the model has not
+  // begun thinking yet -- so this returns in well under a second when it is
+  // healthy and has room for more retries than the synchronous path.
+  const deadline = Date.now() + BACKGROUND_START_BUDGET_MS;
+  return withRetry(async () => {
+    const result = await fetch(OPENAI_RESPONSES, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + key,
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify(
+        requestBody(settings, content, mode, schema, {
+          store: true,
+          background: true,
+        }),
+      ),
+    });
+    if (!result.ok) throw await errorFromResponse(result, "create");
+    const data = (await result.json()) as { id?: string };
+    // No id is a malformed success, not a transient failure. Retrying it would
+    // start a second job we also could not poll.
+    if (!data.id)
+      throw new AiCallError("permanent", 502, "openai create: no id", 1);
+    return data.id;
+  }, { deadline, label: "create", onOutOfCredit: alertOutOfCredit });
 }
 
 /** Retrieves a background analysis by its provider response id. */
@@ -273,12 +314,20 @@ export async function getBackgroundResponse(
   id: string,
   key: string,
 ): Promise<ResponsesResult> {
-  const result = await fetch(OPENAI_RESPONSES + "/" + encodeURIComponent(id), {
-    headers: { Authorization: "Bearer " + key },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!result.ok) throw await aiUnavailable("poll", result);
-  return (await result.json()) as ResponsesResult;
+  // Reading a result is cheap and idempotent, so a transient refusal here is
+  // worth one more go rather than telling a teacher their finished analysis
+  // failed. The client polls again anyway, but only after a delay the teacher
+  // spends watching a spinner.
+  const deadline = Date.now() + POLL_BUDGET_MS;
+  const { value } = await withRetry(async () => {
+    const result = await fetch(OPENAI_RESPONSES + "/" + encodeURIComponent(id), {
+      headers: { Authorization: "Bearer " + key },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!result.ok) throw await errorFromResponse(result, "poll");
+    return (await result.json()) as ResponsesResult;
+  }, { deadline, label: "poll", onOutOfCredit: alertOutOfCredit });
+  return value;
 }
 
 /**
