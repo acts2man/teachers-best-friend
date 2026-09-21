@@ -14,6 +14,8 @@ import {
 import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { describeFailure, useOnline } from "@/lib/connection";
+import { announceScanComplete } from "@/lib/quota-client";
+import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
@@ -115,7 +117,10 @@ function parseDraft(raw: string | null): Draft | null {
             !!page &&
             typeof (page as Page).bodyId === "string" &&
             typeof (page as Page).key === "string",
-        ),
+        )
+        // Drafts saved before pages were counted carry no count. A photograph
+        // is one page, which is what all of them were.
+        .map((page: Page) => ({ ...page, pages: page.pages ?? 1 })),
       );
     if (!piles.some((pile) => pile.length)) return null;
     const usable =
@@ -138,7 +143,14 @@ function parseDraft(raw: string | null): Draft | null {
 const EMPTY: Page[][] = [[]];
 
 /** One uploaded page, already straightened and split into work and name band. */
-type Page = { key: string; label: string; bodyId: string; stripId: string | null };
+type Page = {
+  key: string;
+  label: string;
+  bodyId: string;
+  stripId: string | null;
+  /** Pages in the body upload, counted server-side. A photograph is 1. */
+  pages: number;
+};
 
 /**
  * Scanning a whole class's work for one assessment.
@@ -235,6 +247,24 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   const captured = piles.flat();
   const busyScanning = scanning || adding;
+  // Body uploads this teacher has already paid for in this session. Pages
+  // added after a reservation are priced as new, which is what they are.
+  const [paidIds, setPaidIds] = useState<Set<string>>(() => new Set());
+  // Counted from what the server said each upload was, so a five-page PDF
+  // costs five and says so. paidPages is what this stack has already been
+  // charged for, which is everything once a run has been reserved.
+  const paidPages = useMemo(
+    () =>
+      captured.reduce(
+        (sum, page) => sum + (paidIds.has(page.bodyId) ? (page.pages ?? 1) : 0),
+        0,
+      ),
+    [captured, paidIds],
+  );
+  const cost = useMemo(
+    () => stackCost(captured.map((page) => page.pages ?? 1), paidPages),
+    [captured, paidPages],
+  );
 
   async function upload(file: File) {
     const form = new FormData();
@@ -242,7 +272,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     const r = await fetch("/api/uploads", { method: "POST", body: form });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    return d.id as string;
+    return { id: d.id as string, pages: Number(d.pages) || 1 };
   }
 
   /**
@@ -259,9 +289,15 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (!split) {
       // A PDF, or a browser that could not do the cut. Grade the whole page and
       // read no name from it; the teacher names that pile.
-      return { bodyId: await upload(page), stripId: null };
+      const whole = await upload(page);
+      return { bodyId: whole.id, stripId: null, pages: whole.pages };
     }
-    return { bodyId: await upload(split.body), stripId: await upload(split.strip) };
+    const body = await upload(split.body);
+    // The strip is uploaded too, but it is never reserved and never charged:
+    // it is the top of a page the teacher is already paying for. Charging per
+    // upload rather than per page would bill this class set twice.
+    const strip = await upload(split.strip);
+    return { bodyId: body.id, stripId: strip.id, pages: body.pages };
   }
 
   function canAccept(count: number) {
@@ -333,6 +369,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
+    // Give back anything reserved but never graded. Confirmed pages stay
+    // charged, so this cannot be used to undo work already delivered.
+    void releaseStack(pageUploadIds);
+    setPaidIds(new Set());
     setProgress(null);
     setEdited(EMPTY);
     setPageUploadIds([]);
@@ -355,7 +395,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     let banked: GradedGroup[] = resume?.graded ?? [];
     const ids = pages.map((p) => p.bodyId);
     setPageUploadIds(ids);
-    // Pass one: the name bands alone. No questions, no answer key, no work.
+
+    // Pay for the whole stack before any of it is sent, and before the privacy
+    // pass -- which is free, but still a model call, and a teacher who cannot
+    // afford the class set should not have us reading names off it first. The
+    // BODY ids only: a strip is the top of a page already in this list, and
+    // reserving it too would charge every page twice.
+    setStatus("Checking your scans…");
+    const reserved = await reserveStack(ids);
+    // Say what it actually cost. A re-grade charges nothing, and a teacher
+    // watching their meter deserves to be told that rather than left to infer
+    // it from a number that did not move.
+    if (reserved.charged === 0 && reserved.alreadyPaid > 0)
+      toast.success("These pages are already paid for — this re-grade uses no scans.");
     setStatus("Reading the name on each page…");
     const readable = pages
       .map((p, page) => ({ id: p.stripId, page }))
@@ -483,6 +535,51 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       );
     setGroups(resolved);
     return resolved.length;
+  }
+
+  /**
+   * Reserves the stack, or stops the whole thing.
+   *
+   * A 402 here means nothing has been charged and nothing has run: the teacher
+   * is told the size of the stack and what they have left, and no page reaches
+   * the model. That is the point of doing it first -- the alternative is
+   * grading eighteen students, stopping, and leaving them to work out what
+   * they were billed for.
+   */
+  async function reserveStack(ids: string[]) {
+    const r = await fetch("/api/scans/reserve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ uploadIds: ids, mode: "class_scan" }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Couldn't check your remaining scans.");
+    // The meter moves the moment the pages are reserved, not when grading
+    // finishes, so what it shows matches what has actually been committed.
+    announceScanComplete();
+    setPaidIds((prev) => new Set([...prev, ...ids]));
+    return d as { charged: number; alreadyPaid: number; remaining: number };
+  }
+
+  /** Hand a reserved stack back when the teacher abandons it. */
+  async function releaseStack(ids: string[]) {
+    if (!ids.length) return;
+    try {
+      await fetch("/api/scans/release", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ uploadIds: ids }),
+      });
+      setPaidIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      announceScanComplete();
+    } catch {
+      // An unconfirmed reservation stops counting after two hours by itself,
+      // so a failure here costs the teacher nothing and is not worth a toast.
+    }
   }
 
   /** Grade everything scanned so far, one request per student's whole pile. */
@@ -736,10 +833,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             <div className="review-heading-actions">
               <Action disabled={busyScanning || busy} onClick={gradeCaptured}>
                 {scanning ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
-                Done — grade {finishedPiles} student{finishedPiles === 1 ? "" : "s"}
+                {/* What this will cost, before they commit to it. A stack
+                    already paid for -- a re-grade -- reads "uses 0 scans",
+                    which is the question a teacher actually has at that
+                    moment. */}
+                {gradeButtonLabel(cost)}
               </Action>
               <Pill>
-                {captured.length} page{captured.length === 1 ? "" : "s"} scanned
+                {finishedPiles} student{finishedPiles === 1 ? "" : "s"}
               </Pill>
             </div>
           )}

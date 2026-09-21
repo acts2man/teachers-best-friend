@@ -19,6 +19,13 @@ import {
   responseText,
 } from "@/lib/analyze-shared";
 import {
+  chargePages,
+  chargesForMode,
+  confirmPages,
+  generationKey,
+  releasePages,
+} from "@/lib/page-ledger";
+import {
   analyzeAsyncEnabled,
   modelSettingsFor,
   recordScanUsage,
@@ -130,16 +137,47 @@ export async function POST(request: Request) {
         relationalRow(svc, "assessments", user, p.assessmentId),
         relationalRow(svc, "students", user, p.studentId),
       ]);
-      // A whole-class scan is one teacher action that makes several model
-      // calls: the name bands, then the work, and the work a few students at a
-      // time because one request for a whole class asks for more output than
-      // the model will return. Only the first grading request is billed.
-      // Splitting a request for our own reasons -- privacy, or size -- must not
-      // spend a teacher's scans faster than the work they actually asked for.
-      const continuation = p.mode === "class_scan" && p.batchIndex > 0;
-      const billable = !adminCatalog && p.mode !== "name_strip" && !continuation;
+      // scans.billable is now only a label on the cost log: "was this a
+      // teacher-facing call". What a teacher pays is decided by the page
+      // ledger below, per page, not per request. batchIndex used to matter
+      // here -- a continuation batch was free so that splitting a class set
+      // for our own reasons did not multiply the bill -- and it no longer
+      // does: a later batch's pages are already paid for, so it charges
+      // nothing without anyone having to remember that it should.
+      const billable = !adminCatalog && p.mode !== "name_strip";
       scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, billable);
     }
+
+    // Pay for the pages before the model is called. A request that cannot be
+    // paid for never reaches OpenAI, and a teacher is never charged for a
+    // stack that was only partly graded.
+    const charging = Boolean(svc && scanId && !adminCatalog && chargesForMode(p.mode));
+    // A generated lesson or passage has no page to charge, so it charges one
+    // against a key unique to this scan.
+    const genKey = charging && p.uploadIds.length === 0 ? generationKey(scanId!) : null;
+    if (charging) {
+      try {
+        await chargePages(svc!, user, p.uploadIds, p.mode, genKey);
+      } catch (e) {
+        // The scan row exists but nothing was spent on it; mark it failed so
+        // the cost log does not carry a queued row that never ran.
+        await recordScanUsage(svc!, scanId!, {
+          ok: false,
+          model: settings.model,
+          isLesson: p.mode === "lesson",
+          usage: undefined,
+          errorMessage:
+            (e instanceof HttpError && e.detail) ||
+            (e instanceof Error ? e.message : String(e)),
+        });
+        throw e;
+      }
+    }
+    const settleCharge = async (ok: boolean) => {
+      if (!charging) return;
+      if (ok) await confirmPages(svc!, user, p.uploadIds, genKey);
+      else await releasePages(svc!, user, p.uploadIds, genKey);
+    };
 
     // Background path: start the model job, hand the client a scan id to poll,
     // and return before the platform's function timeout. The poll route reads
@@ -173,6 +211,9 @@ export async function POST(request: Request) {
           throw new HttpError(500, "Couldn't start the analysis. Please try again.");
         }
       } catch (e) {
+        // The job never started, so the pages go back. Confirming them is the
+        // poll route's job, once there is a result to confirm.
+        await settleCharge(false);
         await recordScanUsage(svc, scanId, {
           ok: false,
           model: settings.model,
@@ -235,6 +276,7 @@ export async function POST(request: Request) {
         );
       throw e;
     } finally {
+      await settleCharge(ok);
       if (svc && scanId) {
         await recordScanUsage(svc, scanId, {
           ok,

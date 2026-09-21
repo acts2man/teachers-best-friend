@@ -46,12 +46,17 @@ export async function POST(request: Request) {
         "This file doesn’t match its format. Try exporting it again.",
       );
     const id = crypto.randomUUID();
-    await saveDocument(ownerId, id, file, bytes);
+    // pages comes back from the server's own count of the bytes, never from
+    // the browser. The client shows it so a teacher can see what a stack will
+    // cost before committing to it; the charge is worked out from the stored
+    // column regardless of what the client does with this number.
+    const { pageCount } = await saveDocument(ownerId, id, file, bytes);
     return Response.json({
       id,
       name: file.name,
       size: file.size,
       mime: file.type,
+      pages: pageCount,
     });
   } catch (error) {
     return apiError(error);

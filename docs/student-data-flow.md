@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-19.
+Last verified against the running system: 2026-09-21.
 
 ---
 
@@ -21,6 +21,13 @@ Teacher's browser
 
 Confirming a student's grading deletes that student's scanned pages straight away.
 A daily job (6) sweeps up anything still left once its retention window passes.
+
+Metering records a SHA-256 of each uploaded file's bytes (`teacher_uploads.content_sha256`,
+carried into `page_charges`) so the same page is never charged twice. It is a hash, not a
+copy: it identifies the bytes and cannot be turned back into them, it stays inside Supabase
+Postgres, and it is never sent to OpenAI. The charge row outlives the image on purpose --
+deleting a photograph must not hand back a page that was already graded -- so a hash of a
+page can remain after the page itself is gone.
 
 ---
 
