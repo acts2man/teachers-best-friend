@@ -7,14 +7,21 @@
 -- Pacific-day boundary in particular is the kind of thing that looks right in
 -- every test written in UTC and is wrong for seven hours a day in real life.
 --
+-- Every check asks spend_gate for its answer. Two of them used to compute the
+-- total with a side query of their own, which meant they were checking the
+-- arithmetic rather than the function: had the gate stopped counting, its own
+-- sum and the check's private one would have disagreed and the check would
+-- still have passed. A proof that never reads the thing it is proving is not a
+-- proof.
+--
 -- Same style as supabase/checks/page-charges.sql. Paste the whole file into
 -- the Supabase SQL editor. It raises one notice per check and then fails
--- deliberately with 'ROLLBACK: N of 8 checks passed'. Eight is a pass;
+-- deliberately with 'ROLLBACK: N of 9 checks passed'. Nine is a pass;
 -- anything less names what broke in the same message.
 --
 -- It builds its own teachers and its own scans, so it never reads or changes a
--- real teacher's rows. It does temporarily move the platform cap, which is why
--- the rollback matters.
+-- real teacher's rows. It does temporarily move the platform cap and turn off
+-- enable_seqscan for one EXPLAIN, which is why the rollback matters.
 
 do $$
 declare
@@ -26,6 +33,7 @@ declare
   v_g       record;
   v_today   date := (now() at time zone 'America/Los_Angeles')::date;
   v_cap     numeric;
+  v_node    text;
 begin
   -- ---------------------------------------------------------------
   -- Three teachers of our own: a capped one, an uncapped one, an admin.
@@ -103,22 +111,23 @@ begin
   end if;
 
   -- ===============================================================
-  -- 5. ...but the same spend still counts toward the platform total.
-  --    Exemption decides whose budget it comes out of, never whether
-  --    the money was spent.
+  -- 5. ...but the same spend still counts toward the platform total,
+  --    and the gate is what we ask. Exemption decides whose budget it
+  --    comes out of, never whether the money was spent.
+  --
+  --    For an exempt caller spend_gate reports the platform total as
+  --    spent_usd, so this reads the number the gate itself would block
+  --    on. Summing the scans here instead would prove only that sum()
+  --    works.
   -- ===============================================================
-  declare v_platform_spent numeric;
-  begin
-    select coalesce(sum(s.cost_usd), 0) into v_platform_spent
-      from public.scans s
-     where (s.created_at at time zone 'America/Los_Angeles')::date = v_today;
-    if v_platform_spent >= v_cap + 1 then
-      v_pass := v_pass + 1;
-      raise notice 'PASS 5  exempt spend still counts toward the platform total';
-    else
-      v_fail := v_fail || format('5: platform total %s does not include the exempt scan', v_platform_spent);
-    end if;
-  end;
+  select * into v_g from public.spend_gate(v_admin, true);
+  if v_g.spent_usd >= v_cap + 1 then
+    v_pass := v_pass + 1;
+    raise notice 'PASS 5  the gate counts exempt spend toward the platform total';
+  else
+    v_fail := v_fail || format('5: gate reports platform total %s, want at least %s',
+      coalesce(v_g.spent_usd::text, 'null'), v_cap + 1);
+  end if;
 
   -- ===============================================================
   -- 6. The platform cap blocks everyone, including uncapped beta and
@@ -156,7 +165,6 @@ begin
   declare
     v_late    timestamptz;
     v_early   timestamptz;
-    v_counted numeric;
   begin
     -- 23:30 Pacific yesterday, and 00:30 Pacific today, expressed as real
     -- instants. Building them this way rather than with a fixed -07:00 is
@@ -169,17 +177,18 @@ begin
     values (v_free, true, 'complete', 'responses', 0.10, v_late),
            (v_free, true, 'complete', 'responses', 0.20, v_early);
 
-    select coalesce(sum(s.cost_usd), 0) into v_counted
-      from public.scans s
-     where s.teacher_id = v_free
-       and (s.created_at at time zone 'America/Los_Angeles')::date = v_today;
+    -- Ask the gate. A sum written out here would agree with itself
+    -- perfectly while the gate quietly counted a UTC day, which is the
+    -- one failure this check exists to catch.
+    select * into v_g from public.spend_gate(v_free);
 
     -- Only the 00:30 one is today. The 23:30 one belongs to yesterday.
-    if v_counted = 0.20 then
+    if v_g.spent_usd = 0.20 then
       v_pass := v_pass + 1;
       raise notice 'PASS 7  23:30 Pacific counts to that day, 00:30 to the next';
     else
-      v_fail := v_fail || format('7: today counted %s (want 0.20)', v_counted);
+      v_fail := v_fail || format('7: the gate counted %s today (want 0.20)',
+        coalesce(v_g.spent_usd::text, 'null'));
     end if;
   end;
 
@@ -195,11 +204,56 @@ begin
     v_fail := v_fail || format('8: blocked %s spent %s (want false/0.20)', v_g.blocked, v_g.spent_usd);
   end if;
 
+  -- ===============================================================
+  -- 9. The platform sum is served by an index.
+  --    It used to filter on (created_at at time zone '...')::date =
+  --    today, which is computed per row, so no index could serve it and
+  --    EXPLAIN chose a sequential scan over the whole cost log even with
+  --    enable_seqscan = off -- there was no other plan to choose. This
+  --    runs before every grading request, so that was every request
+  --    reading every scan ever made.
+  --
+  --    enable_seqscan = off is the point of the check, not a trick to
+  --    make it pass: with it off the planner takes any index plan that
+  --    exists, so a sequential scan here means there is none, which is
+  --    exactly the state we are trying not to return to quietly.
+  -- ===============================================================
+  declare
+    v_from timestamptz := (v_today::timestamp)       at time zone 'America/Los_Angeles';
+    v_to   timestamptz := ((v_today + 1)::timestamp) at time zone 'America/Los_Angeles';
+    v_line text;
+    v_plan text := '';
+  begin
+    -- set local, so it is undone by the rollback as well as by the reset.
+    set local enable_seqscan = off;
+    for v_line in execute format(
+      'explain select coalesce(sum(s.cost_usd), 0) from public.scans s '
+      'where s.created_at >= %L and s.created_at < %L', v_from, v_to)
+    loop
+      v_plan := v_plan || v_line || E'\n';
+      if v_node is null and v_line like '%Scan%' then
+        v_node := btrim(v_line);
+      end if;
+    end loop;
+    reset enable_seqscan;
+
+    -- 'Index Scan' also matches 'Bitmap Index Scan', which is equally
+    -- fine; what must not appear is a Seq Scan.
+    if strpos(v_plan, 'Index Scan') > 0 and strpos(v_plan, 'Seq Scan') = 0 then
+      v_pass := v_pass + 1;
+      raise notice 'PASS 9  the platform sum uses an index: %', v_node;
+    else
+      v_fail := v_fail || format('9: plan is %s', coalesce(v_node, 'unreadable'));
+    end if;
+  end;
+
   -- ---------------------------------------------------------------
   -- Report, then roll the whole thing back.
   -- ---------------------------------------------------------------
-  raise exception 'ROLLBACK: % of 8 checks passed%', v_pass,
-    case when array_length(v_fail, 1) is null then ''
-         else ' | FAILURES: ' || array_to_string(v_fail, ' | ') end;
+  raise exception 'ROLLBACK: % of 9 checks passed | platform sum plan: % | %',
+    v_pass,
+    coalesce(v_node, '(not measured)'),
+    case when array_length(v_fail, 1) is null then 'no failures'
+         else 'FAILURES: ' || array_to_string(v_fail, ' | ') end;
 end;
 $$;
