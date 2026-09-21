@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Users, DollarSign, Coins, Percent, Zap, ScanLine, HardDrive, Database, ChevronRight, Inbox } from "lucide-react";
-import { getPlatformStats, getDailyUsage, getAccounts, getTickets } from "@/lib/supabase-admin";
+import { getPlatformStats, getDailyUsage, getAccounts, getTickets, getOpenAlerts } from "@/lib/supabase-admin";
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Kpi } from "@/components/admin/kpi";
 import { AttentionList, type AttentionItem } from "@/components/admin/attention";
+import { AlertBanner } from "@/components/admin/alert-banner";
 import { fmtUsd, fmtBytes, fmtRel, fmtPerScan } from "@/components/admin/format";
 
 export default async function AdminOverview() {
-  const [stats, daily, accounts, tickets] = await Promise.all([
-    getPlatformStats(), getDailyUsage(), getAccounts(), getTickets(),
+  const [stats, daily, accounts, tickets, alerts] = await Promise.all([
+    getPlatformStats(), getDailyUsage(), getAccounts(), getTickets(), getOpenAlerts(),
   ]);
 
   const openTickets = tickets.filter((t) => t.status === "open" || t.status === "escalated").slice(0, 5);
@@ -33,6 +34,9 @@ export default async function AdminOverview() {
 
   return (
     <>
+      {/* Above the title on purpose: if the AI account is out of credit,
+          nothing else on this page matters until it is fixed. */}
+      <AlertBanner alerts={alerts} />
       <h1>Overview</h1>
       <p className="ad-sub">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
 
