@@ -27,6 +27,7 @@ import {
   FileText,
   ShieldCheck,
   Trash2,
+  UserX,
   Settings,
   Target,
   LoaderCircle,
@@ -64,7 +65,6 @@ import {
   Modal,
   TextLink,
   printContent,
-  downloadText,
 } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
@@ -1954,7 +1954,11 @@ export function SettingsView() {
   const [teacher, setTeacher] = useState(w.settings.teacherName),
     [school, setSchool] = useState(w.settings.school),
     [erase, setErase] = useState(false),
-    [erasing, setErasing] = useState(false);
+    [erasing, setErasing] = useState(false),
+    [download, setDownload] = useState(false),
+    [closeAccount, setCloseAccount] = useState(false),
+    [typedEmail, setTypedEmail] = useState(""),
+    [closing, setClosing] = useState(false);
   useEffect(() => {
     setTeacher(w.settings.teacherName);
     setSchool(w.settings.school);
@@ -1977,6 +1981,26 @@ export function SettingsView() {
       );
     } finally {
       setErasing(false);
+    }
+  }
+  async function deleteAccount() {
+    setClosing(true);
+    try {
+      const r = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: typedEmail }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      // Their session is already gone server-side. A full navigation rather
+      // than a client route change, so nothing in memory outlives the account.
+      window.location.href = d.redirect ?? "/?deleted=1";
+    } catch (e) {
+      toast.error(
+        describeFailure(e, "Your account could not be deleted. Nothing was removed."),
+      );
+      setClosing(false);
     }
   }
   return (
@@ -2164,21 +2188,12 @@ export function SettingsView() {
         <section className="panel settings-card data-settings">
           <SectionTitle
             title="Your data stays in your hands"
-            description="Export a copy of your workspace or delete the records and documents you’ve saved."
+            description="Download a copy of everything we hold, or delete the records and documents you’ve saved."
           />
           <div className="data-actions">
-            <Action
-              variant="secondary"
-              onClick={() =>
-                downloadText(
-                  "teachers-best-friend-workspace.json",
-                  JSON.stringify(w, null, 2),
-                  "application/json",
-                )
-              }
-            >
+            <Action variant="secondary" onClick={() => setDownload(true)}>
               <Download size={16} />
-              Export workspace
+              Download my data
             </Action>
             {/* Not rendered at all while viewing another teacher's account.
                 A disabled destructive control is still a hazard, and the
@@ -2191,6 +2206,37 @@ export function SettingsView() {
             )}
           </div>
         </section>
+        {/* Deleting the account is its own card, not a third button beside
+            the other two. "Delete workspace data" empties the classroom and
+            leaves you signed in; this ends the account. Two irreversible
+            actions one tap apart, telling them apart by their labels, is how
+            the wrong one gets pressed. */}
+        {!readOnly && (
+          <section className="panel settings-card data-settings">
+            <SectionTitle
+              title="Close your account"
+              description="This is permanent, and it ends your access as well as your data."
+            />
+            <p className="field-help">
+              We delete your sign-in, your profile, every class, student,
+              assessment, piece of evidence, lesson, note and uploaded
+              document, and any support conversations you’ve had with us.
+            </p>
+            <p className="field-help">
+              We keep the cost records for the AI work already done — a date, a
+              model name, a token count and an amount. They carry nothing about
+              you or your students and nothing that links back to you. If you
+              have ever paid us, your payment processor keeps its own record of
+              that, which we can’t delete for you.
+            </p>
+            <div className="data-actions">
+              <Action variant="danger" onClick={() => setCloseAccount(true)}>
+                <UserX size={16} />
+                Delete my account
+              </Action>
+            </div>
+          </section>
+        )}
       </div>
       <AlertDialog open={erase} onOpenChange={setErase}>
         <AlertDialogContent>
@@ -2219,6 +2265,103 @@ export function SettingsView() {
                 <Trash2 size={16} />
               )}
               Delete all data
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={download} onOpenChange={setDownload}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Download my data</AlertDialogTitle>
+            <AlertDialogDescription>
+              Two files, built here from what we have stored rather than from
+              what this browser is showing. The JSON is everything: classes,
+              students, assessments, questions, evidence, lessons, resources,
+              groups and your notes. The CSV is one row per piece of standards
+              evidence, for opening in a spreadsheet.
+              <br />
+              <br />
+              Neither one contains photographs or PDFs of student work. Those
+              are deleted when you confirm a student’s grading, and 30 days
+              after upload in any case, so there are none left to include.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="data-actions">
+            <Action
+              variant="secondary"
+              onClick={() => {
+                window.location.href = "/api/account/export?format=json";
+              }}
+            >
+              <Download size={16} />
+              Everything, as JSON
+            </Action>
+            <Action
+              variant="secondary"
+              onClick={() => {
+                window.location.href = "/api/account/export?format=csv";
+              }}
+            >
+              <Download size={16} />
+              Students and evidence, as CSV
+            </Action>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={closeAccount}
+        onOpenChange={(open) => {
+          setCloseAccount(open);
+          if (!open) setTypedEmail("");
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes your sign-in, your profile, and every class,
+              student, assessment, piece of evidence, lesson, note, uploaded
+              document and support conversation on this account. It cannot be
+              undone, and we cannot get any of it back for you afterwards.
+              Download your data first if you want a copy.
+              <br />
+              <br />
+              We keep the cost records for AI work already done. They hold a
+              date, a model name, a token count and an amount, with nothing
+              about you or your students in them and no link back to you.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="form-stack">
+            Type your email address to confirm
+            <input
+              type="email"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={typedEmail}
+              disabled={closing}
+              onChange={(e) => setTypedEmail(e.target.value)}
+              placeholder="you@school.org"
+            />
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={closing}>
+              Keep my account
+            </AlertDialogCancel>
+            <button
+              className="action danger"
+              disabled={closing || typedEmail.trim().length === 0}
+              onClick={deleteAccount}
+            >
+              {closing ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <UserX size={16} />
+              )}
+              Delete my account
             </button>
           </AlertDialogFooter>
         </AlertDialogContent>

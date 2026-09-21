@@ -158,6 +158,7 @@ We use the information described above only to:
 |---|---|
 | Uploaded worksheet images | Deleted as soon as you confirm that student's grading, and automatically 30 days after upload in any case |
 | Roster photographs | Deleted immediately after names are read |
+| Grading results held for delivery | Cleared 48 hours after the scan |
 | Extracted answer text, scores, misconception records | Kept while the account is active |
 | Standards mastery records | Kept while the account is active |
 | Teacher notes about a student | Kept while the account is active, or until an expiry the teacher sets |

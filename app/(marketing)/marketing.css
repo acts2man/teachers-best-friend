@@ -610,3 +610,7 @@
 @media (prefers-reduced-motion: reduce) {
   .mk-mobile-nav { animation: none !important; }
 }
+
+/* Shown once, to someone whose account has just been deleted. Reassurance,
+   not an alert: the thing they asked for happened. */
+.deleted-notice{display:flex;align-items:center;gap:10px;margin:24px 0 0;padding:14px 18px;border-radius:12px;font-size:15px;font-weight:600;background:hsl(calc(96deg + var(--th)) calc(38% * var(--ts)) 94%);color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 24%);border:1px solid hsl(calc(137deg + var(--th)) calc(22% * var(--ts)) 82%)}

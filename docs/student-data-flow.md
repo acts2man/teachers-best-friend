@@ -53,7 +53,7 @@ request is authenticated against the teacher's Supabase session.
 | What is transmitted | Roster labels, question text, answer keys, scores, standards, misconceptions, teacher notes |
 | Encrypted | Yes, TLS in transit and at rest on disk |
 | Stored here | Yes, this is the system of record |
-| Retained | While the account is active; teacher notes may carry an earlier expiry |
+| Retained | While the account is active; teacher notes may carry an earlier expiry; grading results held for delivery are cleared 48 hours after the scan |
 | Used for training | No |
 | Other use | No |
 | Deletable | Yes, per student, class, assessment, or whole account |
@@ -61,6 +61,42 @@ request is authenticated against the teacher's Supabase session.
 
 Row-level security scopes every table to the owning teacher, so one teacher's data is
 unreachable from another teacher's session even if the application layer had a bug.
+
+### Grading results held for delivery (`scans.params`, `scans.result`)
+
+A background analysis stores the request it sent and the result it got back on the
+`scans` row, because the job finishes after the request that started it has ended and
+`GET /api/analyze/{scanId}` has to have something to hand the teacher when they come
+back. For a `responses` scan that result is a transcription of what a child wrote.
+
+Nothing else reads either column -- not a view, not a database function, not the admin
+pages, which select the cost and token columns by name. They are a delivery buffer, and
+they were kept forever: a scan from 11 September still held a student's answers, and
+deleting that student in the app left them behind.
+
+**Cleared 48 hours after the scan**, along with `scans.error`, by
+`purge-scan-payloads` (step 6). `catalog` scans are exempt: they carry a state's
+published standards, not student work. Everything that makes the row a financial
+record -- cost, tokens, models, timings, status -- is kept, which is the point: what
+survives an account is a receipt, not a copy of a child's work.
+
+### Deleting the whole account
+
+`POST /api/account/delete`, from Settings, confirmed by typing the account's email
+address. It cancels any payment subscription first and stops if that fails, removes
+every uploaded file through the Storage API, then deletes every row the teacher owns --
+profile, classes, students, assessments, questions, evidence, responses, groups,
+lessons, resources, custom standards, workspace, support threads, subscription, page
+charges -- and finally the sign-in itself.
+
+`scans` is the one exception, and it is deliberate: its `teacher_id` is set to NULL and
+its params, result and error are cleared, so the cost of work we already paid for
+survives as a row that names nobody. One line goes in the admin audit log recording that
+an account on a given plan was deleted, carrying no email and no name.
+
+An admin can run the identical function from the account page for a district's deletion
+request (DPA Section 7). An admin "viewing as" a teacher cannot: writes are refused for
+the whole of a view-as session, and this is the last place to make an exception.
 
 ## 3. Application to Storage
 
@@ -174,7 +210,7 @@ Returned scores, standards, and misconceptions are written to Postgres against t
 internal student record, which is where the teacher's chosen label is reattached. The
 teacher reviews and confirms before anything counts as final.
 
-## 6. The deletion job
+## 6. The deletion jobs
 
 | Item | Detail |
 |---|---|
@@ -183,6 +219,14 @@ teacher reviews and confirms before anything counts as final.
 | Scope | `teacher_uploads` and the legacy `uploads` table |
 | Method | Supabase Storage API, so the stored file is removed, not just its database row |
 | Failure behaviour | A row is only marked purged after its file is confirmed deleted, so a failed run retries on the next night rather than reporting work as gone while it is still there |
+
+| Item | Detail |
+|---|---|
+| What | `public.purge_scan_payloads()` |
+| Schedule | Daily at 09:45 UTC, via `pg_cron` |
+| Scope | `scans.params`, `scans.result` and `scans.error`, on rows older than 48 hours, every stage except `catalog` |
+| Method | Plain SQL `UPDATE ... SET NULL`; no storage involved |
+| Failure behaviour | Nothing to mark and nothing to half-do -- a failed run clears the same rows on the next night |
 
 **Why an edge function rather than SQL.** Postgres blocks direct `DELETE` against
 `storage.objects`. The documented escape hatch removes the metadata row but leaves the
@@ -216,3 +260,7 @@ data is involved in this path.
   ask what identity it carries.
 - Any change to what reaches the provider means updating the same four published pages
   listed above, and the "last verified" date at the top of this file.
+- **Adding a column that holds what a teacher or a student produced means deciding
+  when it is cleared, in the same change.** `scans.result` was added so a background
+  job could be collected and then kept a child's answers indefinitely, because nothing
+  in the change that added it was responsible for the other end of its life.

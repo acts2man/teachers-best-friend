@@ -37,7 +37,7 @@ jobs:
     steps:
       # The smoke script lives in the repo, so this job now needs a checkout.
       # The version check above never did, which is why there wasn't one.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Ask each candidate what it is running
         id: deployed
