@@ -71,7 +71,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { clearClassStudents, removeStudent } from "@/lib/teacher-classes";
+import { clearClassStudents, ensureDistinctNames, removeStudent } from "@/lib/teacher-classes";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import { MAX_PER_ADD } from "@/lib/roster-import";
 import {
@@ -1242,7 +1242,18 @@ export function StudentsView() {
       );
       return;
     }
-    const next = list.map((name, i) => ({
+    // Last guard before the names become records. The review list already
+    // works them out so no two students share one, but it is not the only way
+    // in -- a second tab, a stale list, a teacher who typed over a name -- and
+    // two students saved under one name in a class is not a cosmetic problem:
+    // it is what the name strip on a scanned page matches against, so a graded
+    // page has no way to tell which of them it belongs to. Numbers the second
+    // one rather than shortening again, which would undo the work above.
+    const distinct = ensureDistinctNames(
+      list,
+      students.map((s) => s.name),
+    );
+    const next = distinct.map((name, i) => ({
       id: crypto.randomUUID(),
       classId: classroom.id,
       name: name.slice(0, 80),

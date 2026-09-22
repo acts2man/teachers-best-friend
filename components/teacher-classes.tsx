@@ -34,6 +34,7 @@ import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill, downloadText } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
 import {
+  assignShortNames,
   classSummary,
   namesFromText,
   shortenName,
@@ -362,10 +363,10 @@ export function RosterScanner({
 }) {
   const { aiReady } = useTeacher();
   const [working, setWorking] = useState(false),
-    // Keyed by name rather than by index: the review list is rebuilt whenever
-    // the "first name and last initial" switch moves, and under that switch
-    // two rows can collapse into one -- so an index means a different student
-    // before and after the toggle.
+    // Keyed by the row's own key rather than by index or by name: the review
+    // list is rebuilt whenever the switch moves, so an index means a different
+    // student before and after the toggle -- and a class can hold two children
+    // called Maria Garcia, who must tick and edit independently.
     [found, setFound] = useState<ImportedName[]>([]),
     [skip, setSkip] = useState<Record<string, boolean>>({}),
     [edits, setEdits] = useState<Record<string, string>>({}),
@@ -506,15 +507,27 @@ export function RosterScanner({
     }
   }
 
-  const rows = buildReviewRows(found, existingNames, short);
-  const display = (name: string) => edits[name] ?? (short ? shortenName(name) : name);
+  const rows = buildReviewRows(found, existingNames);
   // Anyone already in the class starts unticked; the teacher can still tick
   // them if they really do want a second child of the same name.
-  const included = (r: (typeof rows)[number]) => !(skip[r.name] ?? r.existing);
-  const chosen = rows
-    .filter(included)
-    .map((r) => display(r.name).trim())
-    .filter(Boolean);
+  const included = (r: (typeof rows)[number]) => !(skip[r.key] ?? r.existing);
+  const ticked = rows.filter(included);
+  // Short names are worked out across everyone being saved at once, against
+  // the class as it stands, so Maria Garcia and Maria Gonzalez arrive as
+  // "Maria Ga." and "Maria Go." instead of both becoming "Maria G." and one of
+  // them overwriting the other in every list that follows. Unticked rows are
+  // left out of the calculation -- a name nobody is adding should not push a
+  // letter onto a name somebody is.
+  const auto = short
+    ? assignShortNames(
+        ticked.map((r) => ({ name: r.name, first: r.first, last: r.last })),
+        existingNames,
+      )
+    : ticked.map((r) => r.name);
+  const assigned = new Map(ticked.map((r, i) => [r.key, auto[i]]));
+  const display = (r: (typeof rows)[number]) =>
+    edits[r.key] ?? assigned.get(r.key) ?? (short ? shortenName(r.name) : r.name);
+  const chosen = ticked.map((r) => display(r).trim()).filter(Boolean);
   const tooMany = overLimitMessage(rows.length, chosen.length, (plan?.periods.length ?? 0) > 1);
 
   return (
@@ -591,20 +604,27 @@ export function RosterScanner({
         <>
           <div className="roster-preview">
             {rows.map((r) => (
-              <label key={r.name}>
+              <label key={r.key}>
                 <Checkbox
                   checked={included(r)}
-                  onCheckedChange={(v) => setSkip({ ...skip, [r.name]: !v })}
+                  onCheckedChange={(v) => setSkip({ ...skip, [r.key]: !v })}
                   aria-label={"Include " + r.name}
                 />
                 <input
                   type="text"
-                  value={display(r.name)}
-                  onChange={(e) => setEdits({ ...edits, [r.name]: e.target.value })}
+                  value={display(r)}
+                  onChange={(e) => setEdits({ ...edits, [r.key]: e.target.value })}
                   aria-label={"Name for " + r.name}
                 />
                 {r.existing && <Pill tone="amber">Already in this class</Pill>}
                 {r.preferred && <Pill tone="green">Preferred name</Pill>}
+                {r.possibleMatch && (
+                  // Said, not decided. "Maria G." in the class could be this
+                  // Maria or her classmate, and only the teacher knows which.
+                  <span className="field-help">
+                    Possible match: {r.possibleMatch} is already in this class
+                  </span>
+                )}
               </label>
             ))}
           </div>

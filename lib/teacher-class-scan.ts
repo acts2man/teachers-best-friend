@@ -4,6 +4,7 @@ import {
   normalizeRecognizedResponses,
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
+import { ensureDistinctNames } from "./teacher-classes";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape. */
@@ -199,15 +200,25 @@ export function applyScannedGroups(
   // puts it beyond reach without anything looking wrong. Treat that group as
   // unmatched instead, so the work lands on a real student.
   const onRoster = new Set(students.map((s) => s.id));
+  // The other way a class gains two students under one name. matchRosterStudent
+  // finds an enrolled student by first name and last initial, so two children
+  // saved as "Maria G." make every later scan of this class a coin toss over
+  // whose work a page is. A created student is numbered instead.
+  const usedNames = students.map((s) => s.name);
   for (const group of groups) {
     if (!group.pageUploadIds.length || !group.responses.length) continue;
     let studentId =
       group.studentId && onRoster.has(group.studentId) ? group.studentId : null;
     if (!studentId) {
+      const [name] = ensureDistinctNames(
+        [group.name.trim() || "Unnamed student"],
+        usedNames,
+      );
+      usedNames.push(name);
       const created: Student = {
         id: crypto.randomUUID(),
         classId,
-        name: group.name.trim() || "Unnamed student",
+        name,
         color: classroomColors[colorOffset % classroomColors.length],
         evidence: [],
         notes: "",

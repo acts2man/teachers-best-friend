@@ -30,17 +30,172 @@ export function classSummary(
   };
 }
 
+// Jr, Sr and the regnal numbers are not a family name, and taking their
+// initial gives a class full of "John J." and "Marcus I."
+//
+// Deliberately no bare "V": a last initial genuinely is one letter, so "Maria
+// V." -- a name this app writes itself -- would lose its surname entirely and
+// come back as "Maria". The fifth of his name is rarer than that mistake.
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+const isSuffix = (token: string) =>
+  NAME_SUFFIXES.has(token.toLowerCase().replace(/[.,]/g, ""));
+
+/**
+ * The given name and the family name, however the roster wrote them.
+ *
+ * Handles "Last, First" (one comma, the form school systems export) and
+ * trailing suffixes. Exported because the importer needs the same reading the
+ * shortener uses -- two different answers to "which word is the surname" is how
+ * a review list and a saved record end up disagreeing.
+ */
+export function nameParts(name: string): { first: string; last: string } {
+  const trimmed = name.trim();
+  const comma = trimmed.indexOf(",");
+  if (comma !== -1 && trimmed.indexOf(",", comma + 1) === -1) {
+    const last = trimmed.slice(0, comma).trim();
+    const first = trimmed.slice(comma + 1).trim();
+    if (last && first) return { first, last: dropSuffix(last) };
+  }
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { first: parts[0] || "", last: "" };
+  let end = parts.length - 1;
+  while (end > 0 && isSuffix(parts[end])) end -= 1;
+  // The first token only, which is what this has always done: middle names are
+  // not part of a "first name and last initial" alias.
+  return { first: parts[0], last: end > 0 ? parts[end] : "" };
+}
+
+function dropSuffix(value: string): string {
+  const parts = value.split(/\s+/).filter(Boolean);
+  let end = parts.length - 1;
+  while (end > 0 && isSuffix(parts[end])) end -= 1;
+  return parts.slice(0, end + 1).join(" ");
+}
+
 // Turn a printed roster into short, privacy-friendly aliases when asked.
 export function shortenName(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return parts[0] || "";
-  // "Last, First" rosters are common; put the first name first.
-  if (parts[0].endsWith(",")) {
-    const first = parts.slice(1).join(" ");
-    const last = parts[0].replace(/,$/, "");
-    return first + " " + last.charAt(0).toUpperCase() + ".";
+  const { first, last } = nameParts(name);
+  if (!last) return first;
+  return first + " " + last.charAt(0).toUpperCase() + ".";
+}
+
+/** A name to be saved, with the roster's own columns when we have them. */
+export type NameToSave = { name: string; first?: string; last?: string };
+
+/** Case, spacing and punctuation ignored. The identity two names share or do not. */
+export function nameKey(name: string): string {
+  return name.toLowerCase().replace(/[.\u2019']/g, "").replace(/\s+/g, " ").trim();
+}
+
+const capitalize = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1);
+
+/**
+ * Short names for a whole class at once, so no two students get the same one.
+ *
+ * "First name and last initial" is a privacy default, not an identity. Maria
+ * Garcia, Maria Gonzalez and Maria Guzman all shorten to "Maria G." -- and the
+ * importer, which deduplicated on the shortened form, silently dropped two of
+ * the three children. It also made them indistinguishable to the name-strip
+ * step of a class scan, which is a graded page landing on the wrong student.
+ *
+ * So the last name is extended one letter at a time until the group is
+ * distinct: Maria Ga., Maria Go., Maria Gu. The whole group moves together
+ * rather than only the ones that clashed, because "Maria G." next to "Maria
+ * Go." reads as a mistake.
+ *
+ * True namesakes -- same first name, same surname, two different children --
+ * cannot be told apart by any amount of letters, so they are numbered rather
+ * than merged. A number is ugly; losing a child off the roster is worse.
+ *
+ * `existing` is what the class already has. Those are never rewritten: a
+ * student who has been "Maria G." all term stays "Maria G.", and the import
+ * works around her.
+ */
+export function assignShortNames(
+  incoming: NameToSave[],
+  existing: string[] = [],
+): string[] {
+  const taken = new Set(existing.map(nameKey));
+  const out: string[] = new Array(incoming.length).fill("");
+
+  const parts = incoming.map((item) => {
+    if (item.first || item.last)
+      return { first: (item.first ?? "").trim(), last: (item.last ?? "").trim() };
+    return nameParts(item.name);
+  });
+
+  // Group by given name: only students sharing one can collide.
+  const groups = new Map<string, number[]>();
+  parts.forEach((p, i) => {
+    const key = nameKey(p.first);
+    groups.set(key, [...(groups.get(key) ?? []), i]);
+  });
+
+  const alias = (first: string, last: string, letters: number) => {
+    if (!last) return first;
+    if (letters >= last.length) return (first + " " + last).trim();
+    return first + " " + capitalize(last.slice(0, letters)) + ".";
+  };
+
+  for (const members of groups.values()) {
+    const longest = Math.max(...members.map((i) => parts[i].last.length), 1);
+    // The shortest alias length at which this group is distinct from itself
+    // AND from everyone already in the class.
+    let letters = longest;
+    for (let n = 1; n <= longest; n += 1) {
+      const seen = new Set<string>();
+      let clash = false;
+      for (const i of members) {
+        const key = nameKey(alias(parts[i].first, parts[i].last, n));
+        if (seen.has(key) || taken.has(key)) {
+          clash = true;
+          break;
+        }
+        seen.add(key);
+      }
+      if (!clash) {
+        letters = n;
+        break;
+      }
+    }
+    for (const i of members) {
+      const base = alias(parts[i].first, parts[i].last, letters);
+      let candidate = base;
+      let suffix = 2;
+      // Namesakes, or a clash with a student already enrolled.
+      while (taken.has(nameKey(candidate))) {
+        candidate = `${base} ${suffix}`;
+        suffix += 1;
+      }
+      taken.add(nameKey(candidate));
+      out[i] = candidate;
+    }
   }
-  return parts[0] + " " + parts[parts.length - 1].charAt(0).toUpperCase() + ".";
+  return out;
+}
+
+/**
+ * The save path's guard: names that are already final, made distinct.
+ *
+ * Deliberately does NOT shorten. By the time a name reaches the save it has
+ * been through the review list and may already be "Maria Ga." -- re-running
+ * the shortener on that would turn it back into "Maria G." and undo the very
+ * thing this change is for. It only appends a number when the name is already
+ * taken, which is what a second tab or a stale review list can produce.
+ */
+export function ensureDistinctNames(names: string[], existing: string[] = []): string[] {
+  const taken = new Set(existing.map(nameKey));
+  return names.map((name) => {
+    let candidate = name.trim();
+    let suffix = 2;
+    while (candidate && taken.has(nameKey(candidate))) {
+      candidate = `${name.trim()} ${suffix}`;
+      suffix += 1;
+    }
+    taken.add(nameKey(candidate));
+    return candidate;
+  });
 }
 
 // Fallback for typed PDF rosters when the AI reader is not connected: keep
