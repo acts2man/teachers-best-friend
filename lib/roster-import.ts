@@ -560,6 +560,20 @@ export function buildReviewRows(
   return rows;
 }
 
+/**
+ * What a screen reader is told this row is.
+ *
+ * Two children called Maria Garcia are now two rows, which is the point -- but
+ * two checkboxes both announcing "Include Maria Garcia" is a list a blind
+ * teacher cannot tick correctly, and the bug this change fixes would have been
+ * traded for a quieter one. The number is only added where there really is a
+ * second of her.
+ */
+export function rowLabel(row: ReviewRow): string {
+  const nth = Number(row.key.slice(row.key.lastIndexOf("#") + 1));
+  return nth > 1 ? `${row.name} (${nth})` : row.name;
+}
+
 /** "This file has 142 names..." -- or "" when everything fits. */
 export function overLimitMessage(total: number, selectable: number, hasPeriods: boolean): string {
   if (selectable <= MAX_PER_ADD) return "";

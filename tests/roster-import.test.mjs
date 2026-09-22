@@ -443,6 +443,14 @@ test("two children of the same name are two children; one child listed twice is 
   assert.equal(rows.length, 3, "nothing merged");
   assert.deepEqual(saved, ["Maria Garcia", "Maria Garcia 2", "Jose H."]);
   distinctly(saved);
+  // And two rows a screen reader cannot tell apart is the same bug wearing a
+  // different coat, so the second Maria is announced as the second Maria.
+  distinctly(rows.map(R.rowLabel));
+  assert.deepEqual(rows.map(R.rowLabel), [
+    "Maria Garcia",
+    "Maria Garcia (2)",
+    "Jose Herrera",
+  ]);
 
   // Same name, no distinguishing column, three rows: one child.
   const repeated = importFile("duplicates.csv");
@@ -520,6 +528,10 @@ test("the review list and the save path are the ones that use it", () => {
     "and identity no longer depends on the shorten switch",
   );
   assert.match(scanner, /\[r\.key\]/, "rows are keyed by identity, not by name");
+  assert.ok(
+    !/aria-label=\{"(Include|Name for) " \+ r\.name\}/.test(scanner),
+    "and two namesakes are announced as two students",
+  );
 
   const insights = fs.readFileSync(path.join(ROOT, "components/teacher-insights.tsx"), "utf8");
   assert.match(insights, /ensureDistinctNames\(/, "and the save has the last word");

@@ -48,6 +48,7 @@ import {
   parseDelimited,
   pasteLooksLikeTable,
   planImport,
+  rowLabel,
   type ImportPlan,
   type ImportedName,
 } from "@/lib/roster-import";
@@ -608,13 +609,13 @@ export function RosterScanner({
                 <Checkbox
                   checked={included(r)}
                   onCheckedChange={(v) => setSkip({ ...skip, [r.key]: !v })}
-                  aria-label={"Include " + r.name}
+                  aria-label={"Include " + rowLabel(r)}
                 />
                 <input
                   type="text"
                   value={display(r)}
                   onChange={(e) => setEdits({ ...edits, [r.key]: e.target.value })}
-                  aria-label={"Name for " + r.name}
+                  aria-label={"Name for " + rowLabel(r)}
                 />
                 {r.existing && <Pill tone="amber">Already in this class</Pill>}
                 {r.preferred && <Pill tone="green">Preferred name</Pill>}
