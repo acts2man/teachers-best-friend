@@ -182,6 +182,17 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
             </form>
           </details>
 
+          <div style={{ borderTop: "1px solid var(--rule-faint)", paddingTop: "1rem" }}>
+            <p style={{ fontWeight: 600, margin: "0 0 .35rem" }}>Export this teacher’s data</p>
+            <p className="muted" style={{ margin: "0 0 .6rem", fontSize: ".85rem" }}>
+              For a school or district request (DPA Section 5). The same files the teacher gets from their own Settings, with no images and no upload references. Writing it to the audit log under your id is the point of doing it here: an app manager viewing an account can no longer download it, because that left no record of the copy.
+            </p>
+            <div style={{ display: "flex", gap: ".5rem" }}>
+              <a className="btn btn-quiet btn-sm" href={`/api/admin/export/${a.teacher_id}?format=json`}>Everything, JSON</a>
+              <a className="btn btn-quiet btn-sm" href={`/api/admin/export/${a.teacher_id}?format=csv`}>Students and evidence, CSV</a>
+            </div>
+          </div>
+
           <details style={{ borderTop: "1px solid var(--rule-faint)", paddingTop: "1rem" }}>
             <summary style={{ cursor: "pointer", color: "var(--correct-red)", fontWeight: 600 }}>Delete this account</summary>
             <form action={deleteAccount} style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>

@@ -203,11 +203,21 @@ test("the route refuses while an admin is viewing as a teacher", () => {
     !/owningTeacherId/.test(route),
     "owningTeacherId would resolve to the impersonated teacher and allow the delete",
   );
+  // The cookie check moved into assertNotImpersonating() when downloads
+  // needed the same rule with a different sentence. Both halves are still
+  // asserted: that writingTeacherId defers to the guard, and that the guard
+  // refuses on the cookie's presence with a 403.
   assert.ok(
-    /export async function writingTeacherId\(\)[\s\S]*?IMPERSONATION_COOKIE[\s\S]*?throw new HttpError\(\s*403/.test(
+    /export async function writingTeacherId\(\) \{\s*await assertNotImpersonating\("write"\);/.test(
       teacherServer,
     ),
-    "writingTeacherId must still refuse on the impersonation cookie",
+    "writingTeacherId must go through the shared impersonation guard",
+  );
+  assert.ok(
+    /export async function assertNotImpersonating[\s\S]*?IMPERSONATION_COOKIE[\s\S]*?throw new HttpError\(403/.test(
+      teacherServer,
+    ),
+    "the guard must still refuse on the impersonation cookie",
   );
 });
 

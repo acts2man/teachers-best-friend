@@ -9,6 +9,7 @@
 // exist would be worse than saying plainly that there are none.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { buildSync } from "esbuild";
@@ -32,6 +33,13 @@ function bundle(entry) {
 }
 
 const X = bundle("lib/account-export.ts");
+const G = bundle("lib/impersonation-guard.ts");
+const exportRoute = fs.readFileSync(path.join(ROOT, "app/api/account/export/route.ts"), "utf8");
+const adminRoute = fs.readFileSync(
+  path.join(ROOT, "app/api/admin/export/[teacherId]/route.ts"),
+  "utf8",
+);
+const teacherServer = fs.readFileSync(path.join(ROOT, "lib/teacher-server.ts"), "utf8");
 
 /** A classroom with every shape that matters, upload ids scattered through it. */
 function workspace() {
@@ -192,4 +200,106 @@ test("the CSV contains no upload ids either", () => {
   const csv = X.buildExportCsv(workspace());
   for (const id of ["up_aaaaaaaa", "up_bbbbbbbb", "up_cccccccc", "up_dddddddd", "up_eeeeeeee"])
     assert.ok(!csv.includes(id));
+});
+
+// ---------------------------------------------------------------
+// Not while you are viewing someone else's account
+// ---------------------------------------------------------------
+//
+// The export route resolved the teacher with owningTeacherId(), which during
+// an admin view-as session resolves to the teacher being viewed. So an app
+// manager could download that teacher's entire classroom -- every student
+// name, every piece of evidence -- as a file, and nothing about it reached
+// admin_audit_log. The start of the view is logged; the copy taken during it
+// was not.
+
+test("the guard refuses a download whenever the cookie is present", () => {
+  // Presence, not resolution. A view-as session expires after 30 minutes; if
+  // it lapses mid-view the cookie is still in the browser while the id
+  // silently falls back to the manager's own, so "does it still resolve" is
+  // the test that fails open into someone else's account.
+  assert.equal(G.impersonationRefusal("any-session-token", "download"), G.IMPERSONATION_REFUSALS.download);
+  assert.equal(G.impersonationRefusal("expired-but-still-set", "download"), G.IMPERSONATION_REFUSALS.download);
+  // No cookie, no refusal.
+  assert.equal(G.impersonationRefusal(undefined, "download"), null);
+  assert.equal(G.impersonationRefusal(null, "download"), null);
+  assert.equal(G.impersonationRefusal("", "download"), null);
+});
+
+test("downloads and writes are refused separately, and say different things", () => {
+  assert.equal(G.impersonationRefusal("t", "write"), G.IMPERSONATION_REFUSALS.write);
+  assert.notEqual(G.IMPERSONATION_REFUSALS.download, G.IMPERSONATION_REFUSALS.write);
+  // The wording a teacher reads, matched to what they were actually doing.
+  assert.match(G.IMPERSONATION_REFUSALS.download, /downloads are turned off/);
+  assert.match(G.IMPERSONATION_REFUSALS.download, /Stop viewing to download your own data/);
+  assert.match(G.IMPERSONATION_REFUSALS.write, /changes are turned off/);
+});
+
+test("the export route goes through the download guard, not owningTeacherId", () => {
+  assert.ok(
+    /const teacherId = await downloadingTeacherId\(\)/.test(exportRoute),
+    "the export must resolve its teacher through downloadingTeacherId()",
+  );
+  // Comments stripped first: the route's own prose names owningTeacherId in
+  // order to say why it is not used, and matching that would be the assertion
+  // reading the explanation rather than the code.
+  const code = exportRoute
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.ok(
+    !/owningTeacherId/.test(code),
+    "owningTeacherId resolves to the impersonated teacher and is what caused this",
+  );
+  assert.ok(
+    /export async function downloadingTeacherId\(\) \{\s*await assertNotImpersonating\("download"\);/.test(
+      teacherServer,
+    ),
+    "downloadingTeacherId must call the guard before resolving anyone",
+  );
+  assert.ok(
+    /export async function assertNotImpersonating[\s\S]*?IMPERSONATION_COOKIE[\s\S]*?throw new HttpError\(403/.test(
+      teacherServer,
+    ),
+    "and the guard must throw 403 on the cookie",
+  );
+});
+
+// ---------------------------------------------------------------
+// The audited door that replaces it
+// ---------------------------------------------------------------
+
+test("the admin export writes an audit row before handing the file over", () => {
+  const auditAt = adminRoute.indexOf('p_action: "export_teacher_data"');
+  const returnAt = adminRoute.indexOf("return new Response(body");
+  assert.ok(auditAt > 0, "the admin export must log action export_teacher_data");
+  assert.ok(returnAt > 0);
+  assert.ok(auditAt < returnAt, "the audit line is written before the file is returned");
+  // And a failed audit write refuses rather than handing over an unlogged copy.
+  const between = adminRoute.slice(auditAt, returnAt);
+  assert.ok(/if \(error\)/.test(between) && /throw new HttpError\(/.test(between),
+    "a failed audit write must stop the export");
+});
+
+test("the admin export names the admin from the session, not the request", () => {
+  assert.ok(/const admin = await requireAdmin\(\)/.test(adminRoute));
+  assert.ok(/p_actor: admin\.id/.test(adminRoute));
+  // teacherId comes from the path; the actor never does.
+  assert.ok(!/p_actor:\s*teacherId/.test(adminRoute));
+});
+
+test("the admin audit detail carries counts, never content", () => {
+  const detail = adminRoute.slice(adminRoute.indexOf("p_detail:"), adminRoute.indexOf("});", adminRoute.indexOf("p_detail:")));
+  for (const key of ["classes", "students", "assessments", "format"])
+    assert.ok(detail.includes(key), `detail records ${key}`);
+  // Only lengths and the format string go in. An audit log that quoted what it
+  // was auditing would be a second copy of the thing it exists to track.
+  assert.ok(/\?\.length \?\? 0/.test(detail), "counts are lengths, not the rows themselves");
+  assert.ok(!/workspace\.students\[|\.name|\.evidence/.test(detail), "no student content in the audit detail");
+});
+
+test("the admin export builds the same files the teacher's own download does", () => {
+  // Two builders would drift, and a district would eventually receive
+  // something different from what the teacher sees.
+  assert.ok(/buildExportJson|buildExportCsv/.test(adminRoute));
+  assert.ok(/from "@\/lib\/account-export"/.test(adminRoute));
 });

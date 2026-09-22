@@ -1,5 +1,9 @@
 import { cookies, headers } from "next/headers";
 import { HttpError } from "@/lib/http-error";
+import {
+  impersonationRefusal,
+  type GuardedAction,
+} from "@/lib/impersonation-guard";
 import { countPages, contentHash } from "@/lib/page-count";
 
 export { HttpError };
@@ -127,9 +131,9 @@ export async function owningTeacherId() {
 }
 
 /**
- * The teacher id a WRITE may act on. Viewing another teacher's account is
- * strictly read-only, so this refuses outright while a "view as" session is
- * in play; reads keep using owningTeacherId().
+ * Refuses outright while a "view as" session is in play. The one place that
+ * knows about the cookie; lib/impersonation-guard.ts holds which actions are
+ * refused and what each one says.
  *
  * It tests for the cookie's PRESENCE, not for whether the session still
  * resolves, and that distinction is the whole point. A session expires after
@@ -141,18 +145,43 @@ export async function owningTeacherId() {
  * actually owned. Refusing on the cookie means only an explicit "stop
  * viewing" (which clears it) can re-enable writing.
  */
+export async function assertNotImpersonating(action: GuardedAction) {
+  if (!hasSupabaseConfig()) return;
+  const cookieStore = await cookies();
+  const refusal = impersonationRefusal(
+    cookieStore.get(IMPERSONATION_COOKIE)?.value,
+    action,
+  );
+  if (refusal) throw new HttpError(403, refusal);
+}
+
+/**
+ * The teacher id a WRITE may act on. Viewing another teacher's account is
+ * strictly read-only; reads keep using owningTeacherId().
+ */
 export async function writingTeacherId() {
-  if (hasSupabaseConfig()) {
-    const cookieStore = await cookies();
-    if (cookieStore.get(IMPERSONATION_COOKIE)?.value)
-      throw new HttpError(
-        403,
-        "You’re viewing another teacher’s account, so changes are turned off. Stop viewing to make changes of your own.",
-      );
-  }
+  await assertNotImpersonating("write");
   return (await resolveOwningTeacher()).id;
 }
 
+/**
+ * The teacher id a DOWNLOAD may act on.
+ *
+ * Reads use owningTeacherId(), which resolves to the teacher being viewed --
+ * that is the whole point of a view-as session. A download is not a read of
+ * that kind. It hands the viewer a file containing every student name and
+ * every piece of evidence in the account, the file outlives the session, and
+ * nothing about it reaches admin_audit_log: the start of the view is logged,
+ * the copy taken during it is not.
+ *
+ * So downloads refuse on the same cookie writes do. A school asking for a
+ * teacher's data goes through GET /api/admin/export/[teacherId], which is
+ * gated on is_admin() and writes an audit line naming the admin who took it.
+ */
+export async function downloadingTeacherId() {
+  await assertNotImpersonating("download");
+  return (await resolveOwningTeacher()).id;
+}
 
 /**
  * Rejects cross-origin writes. Behind Netlify's proxy request.url is an
