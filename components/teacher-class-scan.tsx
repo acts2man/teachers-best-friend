@@ -687,6 +687,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       toast.error("Nothing to save — every group was discarded.");
       return;
     }
+    // The button is disabled for this, but the check lives here too: a saved
+    // ambiguity is a child's grades on another child, and that is not
+    // something to leave resting on one piece of UI state.
+    const open = kept.filter((g) => g.candidateIds.length > 0);
+    if (open.length) {
+      toast.error(
+        open.length === 1
+          ? "One paper could belong to more than one student. Choose whose it is, or discard it."
+          : open.length +
+              " papers could belong to more than one student. Choose whose they are, or discard them.",
+      );
+      return;
+    }
     setSaving(true);
     const result = applyScannedGroups(
       a,
@@ -717,6 +730,22 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   const openPile = piles[piles.length - 1];
   const finishedPiles = piles.filter((pile) => pile.length).length;
+
+  const live = (groups ?? []).filter((g) => !discarded.has(g.key));
+  // Papers the roster could not narrow to one student. The teacher answers
+  // these; nothing is chosen for them, and nothing is saved until they have.
+  const undecided = live.filter((g) => g.candidateIds.length > 0);
+  // Two papers on one student. Not blocked -- a child really can hand in two
+  // sheets -- but it is the shape a misread name makes, so it is said plainly
+  // on both rows rather than left for the teacher to spot in the results.
+  const perStudent = new Map<string, number>();
+  for (const g of live)
+    if (g.studentId) perStudent.set(g.studentId, (perStudent.get(g.studentId) ?? 0) + 1);
+  const sharedWith = (g: ResolvedGroup) =>
+    g.studentId ? (perStudent.get(g.studentId) ?? 0) : 0;
+  const nameOfStudent = (id: string) => students.find((s) => s.id === id)?.name ?? "this student";
+  const firstNameRead = (g: ResolvedGroup) =>
+    g.detectedName.trim().split(/\s+/)[0] || "";
 
   return (
     <div className="panel class-scan-panel">
@@ -877,9 +906,23 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   {g.detectedName ? " · read as “" + g.detectedName + "”" : " · no name read"}
                 </span>
                 <Pick
-                  label="Match to a student"
-                  value={g.studentId ? "existing:" + g.studentId : "new"}
-                  onChange={(v) =>
+                  label={
+                    g.candidateIds.length
+                      ? "Which " + (firstNameRead(g) || "student") + "?"
+                      : "Match to a student"
+                  }
+                  // Nothing preselected while the question is open. An empty
+                  // value cannot be saved, so a teacher who scrolls past this
+                  // row is stopped rather than silently agreeing to a guess.
+                  value={
+                    g.candidateIds.length
+                      ? ""
+                      : g.studentId
+                        ? "existing:" + g.studentId
+                        : "new"
+                  }
+                  onChange={(v) => {
+                    if (!v) return;
                     updateGroup(g.key, {
                       studentId: v === "new" ? null : v.replace("existing:", ""),
                       name:
@@ -887,11 +930,25 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                           ? g.detectedName || g.name
                           : students.find((s) => s.id === v.replace("existing:", ""))?.name ||
                             g.name,
-                    })
-                  }
+                      // Answered. The row stops being a question, including
+                      // when the answer is "add as a new student".
+                      candidateIds: [],
+                    });
+                  }}
                   options={[
+                    ...(g.candidateIds.length
+                      ? [
+                          { value: "", label: "Choose a student…" },
+                          ...g.candidateIds.map((id) => ({
+                            value: "existing:" + id,
+                            label: nameOfStudent(id),
+                          })),
+                        ]
+                      : []),
                     { value: "new", label: "Add as a new student" },
-                    ...students.map((s) => ({ value: "existing:" + s.id, label: s.name })),
+                    ...students
+                      .filter((s) => !g.candidateIds.includes(s.id))
+                      .map((s) => ({ value: "existing:" + s.id, label: s.name })),
                   ]}
                 />
                 {!g.studentId && (
@@ -904,6 +961,18 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   />
                 )}
                 <Score value={Math.round(g.confidence)} />
+                {g.candidateIds.length > 0 && (
+                  <p className="key-notice" role="status">
+                    “{g.detectedName}” fits {g.candidateIds.length} students in this
+                    class. Choose whose paper this is before saving.
+                  </p>
+                )}
+                {sharedWith(g) > 1 && (
+                  <p className="key-notice" role="status">
+                    {sharedWith(g) === 2 ? "Two" : sharedWith(g)} papers matched to{" "}
+                    {nameOfStudent(g.studentId as string)}. Check which is whose.
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -915,8 +984,15 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               </button>
             </div>
           ))}
+          {undecided.length > 0 && (
+            <p className="key-notice" role="status">
+              {undecided.length} paper{undecided.length === 1 ? "" : "s"} could belong to
+              more than one student. Choose whose {undecided.length === 1 ? "it is" : "they are"},
+              or discard {undecided.length === 1 ? "it" : "them"}, and then save.
+            </p>
+          )}
           <div className="review-heading-actions">
-            <Action disabled={saving || busy} onClick={saveAll}>
+            <Action disabled={saving || busy || undecided.length > 0} onClick={saveAll}>
               {saving ? <LoaderCircle className="spin" size={16} /> : <Users size={16} />}
               Confirm &amp; save {groups.length - discarded.size} student
               {groups.length - discarded.size === 1 ? "" : "s"}

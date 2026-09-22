@@ -4,7 +4,7 @@ import {
   normalizeRecognizedResponses,
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
-import { ensureDistinctNames } from "./teacher-classes";
+import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape. */
@@ -82,38 +82,120 @@ export type ResolvedGroup = ScannedGroup & {
   studentId: string | null;
   name: string;
   pageUploadIds: string[];
+  /**
+   * The students this paper could belong to, when the roster cannot narrow it
+   * to one. Empty otherwise. A row with candidates has `studentId: null` on
+   * purpose -- nothing is chosen for the teacher, because choosing wrongly
+   * here puts a child's grades on another child.
+   */
+  candidateIds: string[];
 };
 
+/**
+ * A name reduced to what two people can be compared on.
+ *
+ * Accents are folded rather than deleted. The old version dropped every
+ * character outside a-z, so "María González" became "mara gonzlez" and matched
+ * nobody -- a child whose name is spelled correctly on the roster was the one
+ * the scanner could not find. NFD splits the letter from its accent and only
+ * the accent is removed.
+ *
+ * Digits and punctuation still go: "Maria G." and "Maria G" are one name, and
+ * a page number written next to a name is not part of it.
+ */
 function normalizeName(name: string) {
   return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/** The given name and the family name, normalized, suffixes dropped. */
+type NameParts = { first: string; last: string };
+
+function nameParts(name: string): NameParts | null {
+  const key = normalizeName(name);
+  if (!key) return null;
+  const tokens = key.split(" ").filter(Boolean);
+  let end = tokens.length - 1;
+  while (end > 0 && isNameSuffix(tokens[end])) end -= 1;
+  // Middle names are not part of the comparison, for the same reason the
+  // shortener ignores them: the roster holds "Maria G.", not "Maria Elena G."
+  return { first: tokens[0], last: end > 0 ? tokens[end] : "" };
+}
+
+const partsKey = (p: NameParts) => (p.last ? p.first + " " + p.last : p.first);
+
 /**
- * Loose name match against the roster: an exact normalized match, or the
- * same first name with the same last-name initial (handles "Maria G." vs
- * "Maria Gonzalez", nicknames aside). Returns undefined rather than guessing
- * when nothing lines up, so an unmatched page is never silently misfiled.
+ * Whether two family names can be the same one, written to different lengths.
+ *
+ * The roster stores an abbreviation the app itself chose -- "Ga.", "Go.",
+ * "Gu." -- and the page carries whatever the child wrote. Neither is wrong, so
+ * the shorter one has to be a prefix of the longer: "Go" fits Gonzalez, "Ga"
+ * does not, and a bare "G" fits all of them.
+ *
+ * This is the whole fix. The old rule compared only the FIRST LETTER of the
+ * surname, so Gonzalez, Garcia and Guzman were indistinguishable, and it then
+ * returned whichever of them had been added to the class first.
  */
+function surnamesFit(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  return a.length <= b.length ? b.startsWith(a) : a.startsWith(b);
+}
+
+/**
+ * What the roster can tell us about a name read off a page.
+ *
+ * Three answers, and the middle one is the reason this exists:
+ *   - `{ student }`  exactly one student on the roster can be this person
+ *   - `{ candidates }`  several can, and only the teacher can say which
+ *   - `{}`  nobody on the roster fits
+ *
+ * It used to return a student in all three cases. A name it could not resolve
+ * came back as `students.find(...)` -- the first student in roster order who
+ * shared a first name and a last initial -- and the review list then showed
+ * that as a confident match, already selected, next to a stack of graded
+ * pages. Maria Gonzalez's and Maria Guzman's tests both landed on Maria
+ * Garcia, and nothing on the screen said a choice had been made at all.
+ *
+ * An ambiguous answer is not a failure of the matcher. It is the matcher
+ * telling the truth about a class that contains two children it cannot tell
+ * apart from what is written on the paper.
+ */
+export type RosterMatch = { student?: Student; candidates?: Student[] };
+
 export function matchRosterStudent(
   name: string,
   students: Student[],
-): Student | undefined {
-  const key = normalizeName(name);
-  if (!key) return undefined;
-  const exact = students.find((s) => normalizeName(s.name) === key);
-  if (exact) return exact;
-  const tokens = key.split(" ");
-  const first = tokens[0];
-  const lastInitial = tokens.at(-1)?.[0];
-  if (!first || tokens.length < 2) return undefined;
-  return students.find((s) => {
-    const sTokens = normalizeName(s.name).split(" ");
-    return sTokens[0] === first && sTokens.at(-1)?.[0] === lastInitial;
+): RosterMatch {
+  const wanted = nameParts(name);
+  if (!wanted) return {};
+
+  const roster = students
+    .map((student) => ({ student, parts: nameParts(student.name) }))
+    .filter((r): r is { student: Student; parts: NameParts } => r.parts !== null);
+
+  // The name as written is exactly a roster name. Still checked for more than
+  // one hit: a class can hold two students stored under the same name, and
+  // picking either without asking is the bug this function was rewritten for.
+  const key = partsKey(wanted);
+  const exact = roster.filter((r) => partsKey(r.parts) === key);
+  if (exact.length === 1) return { student: exact[0].student };
+  if (exact.length > 1) return { candidates: exact.map((r) => r.student) };
+
+  const fits = roster.filter((r) => {
+    if (r.parts.first !== wanted.first) return false;
+    // A first name on its own -- or a roster entry that is only a first name.
+    // It fits every namesake, which is an answer as long as there is one.
+    if (!wanted.last || !r.parts.last) return true;
+    return surnamesFit(wanted.last, r.parts.last);
   });
+  if (fits.length === 1) return { student: fits[0].student };
+  if (fits.length > 1) return { candidates: fits.map((r) => r.student) };
+  return {};
 }
 
 /**
@@ -154,7 +236,7 @@ export function resolveScannedGroups(
     // the first, since that is what opened the group.
     const read = validPages.map((p) => nameOf.get(p)).find((n) => n?.name.trim());
     const detectedName = read?.name.trim() ?? "";
-    const guessed = matchRosterStudent(detectedName, students);
+    const { student, candidates } = matchRosterStudent(detectedName, students);
     return {
       pageIndexes: validPages,
       detectedName,
@@ -162,8 +244,12 @@ export function resolveScannedGroups(
       responses: gradedByGroup.get(i) ?? [],
       pageUploadIds: validPages.map((p) => pageUploadIds[p]),
       key: "group-" + i,
-      studentId: guessed?.id ?? null,
-      name: guessed?.name || detectedName || "Student " + (i + 1),
+      // Left unset when the roster offers several: an ambiguous paper must
+      // reach the teacher as a question, not as an answer they have to notice
+      // is wrong.
+      studentId: student?.id ?? null,
+      name: student?.name || detectedName || "Student " + (i + 1),
+      candidateIds: (candidates ?? []).map((c) => c.id),
     };
   });
 }
