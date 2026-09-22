@@ -9,13 +9,19 @@
  *
  * What a district export actually contains is student IDs, birthdates, home
  * addresses, guardian names and phone numbers. None of it is wanted and none of
- * it is kept: extractNames() returns strings, the parsed rows live in component
+ * it is kept: extractNames() returns names, the parsed rows live in component
  * state for as long as the dialog is open, and nothing else is ever read out of
  * them. The tests assert that no ID and no birthdate survives into the output,
  * because "we only use the name column" is a claim about every other column too.
  *
- * Imports only shortenName, which imports only types. Kept that way so the
- * whole module can be bundled and run in a test in a millisecond.
+ * The one exception, and it keeps nothing either: two rows reading "Maria
+ * Garcia" are one girl listed twice or two girls, and only the other columns
+ * can say which. extractNames compares them with each other, inside itself, and
+ * what comes out is an integer saying which Maria this is. Never the columns.
+ *
+ * Imports only shortenName and nameKey, from a module that imports only types.
+ * Kept that way so the whole thing can be bundled and run in a test in a
+ * millisecond.
  */
 import { nameKey, shortenName } from "./teacher-classes";
 
