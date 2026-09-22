@@ -17,7 +17,7 @@
  * Imports only shortenName, which imports only types. Kept that way so the
  * whole module can be bundled and run in a test in a millisecond.
  */
-import { shortenName } from "./teacher-classes";
+import { nameKey, shortenName } from "./teacher-classes";
 
 export type Row = string[];
 
@@ -494,10 +494,15 @@ export type ReviewRow = {
   possibleMatch?: string;
 };
 
-/** The key two names are compared on: case, spacing and punctuation ignored. */
-export function matchKey(name: string): string {
-  return name.toLowerCase().replace(/[.’']/g, "").replace(/\s+/g, " ").trim();
-}
+/**
+ * The key two names are compared on: case, spacing and punctuation ignored.
+ *
+ * Deliberately not a second implementation of one. The review list and the
+ * shortener have to agree to the letter about when two names are the same
+ * name, and two answers to that question drifting apart over one punctuation
+ * mark is the exact shape of the bug this module was just fixed for.
+ */
+export const matchKey = nameKey;
 
 /**
  * Merge what was imported with what the class already has.
