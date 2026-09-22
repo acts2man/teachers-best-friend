@@ -9,15 +9,21 @@
  *
  * What a district export actually contains is student IDs, birthdates, home
  * addresses, guardian names and phone numbers. None of it is wanted and none of
- * it is kept: extractNames() returns strings, the parsed rows live in component
+ * it is kept: extractNames() returns names, the parsed rows live in component
  * state for as long as the dialog is open, and nothing else is ever read out of
  * them. The tests assert that no ID and no birthdate survives into the output,
  * because "we only use the name column" is a claim about every other column too.
  *
- * Imports only shortenName, which imports only types. Kept that way so the
- * whole module can be bundled and run in a test in a millisecond.
+ * The one exception, and it keeps nothing either: two rows reading "Maria
+ * Garcia" are one girl listed twice or two girls, and only the other columns
+ * can say which. extractNames compares them with each other, inside itself, and
+ * what comes out is an integer saying which Maria this is. Never the columns.
+ *
+ * Imports only shortenName and nameKey, from a module that imports only types.
+ * Kept that way so the whole thing can be bundled and run in a test in a
+ * millisecond.
  */
-import { shortenName } from "./teacher-classes";
+import { nameKey, shortenName } from "./teacher-classes";
 
 export type Row = string[];
 
@@ -27,8 +33,21 @@ export type Row = string[];
  * `preferred` is shown to the teacher rather than applied quietly: a roster
  * that says a child is called Bo when the office record says Bao is telling you
  * something you should see, not something to paper over.
+ *
+ * `first` and `last` are the roster's own columns when the file had them, so a
+ * short name is built from what the school said rather than from re-splitting
+ * the joined string. "Maria de la Cruz" split back apart gives "Maria C.";
+ * the Last column gives "Maria D.", which is her name.
+ *
+ * `occurrence` tells two students of the same name apart -- see extractNames.
  */
-export type ImportedName = { name: string; preferred?: boolean };
+export type ImportedName = {
+  name: string;
+  preferred?: boolean;
+  first?: string;
+  last?: string;
+  occurrence?: number;
+};
 
 // ---------------------------------------------------------------
 // Bytes to text
@@ -301,6 +320,24 @@ export type ExtractResult = {
  * Every other column -- ID, email, birthdate, address, guardian, phone -- is
  * simply never read. Not filtered afterwards: never read. That is why the test
  * that greps the output for a birthdate is worth having.
+ *
+ * The one thing the other columns are used for, and it leaves nothing behind:
+ * telling two children of the same name apart. Two rows reading "Maria Garcia"
+ * are either one girl the office listed twice or two girls in the same class,
+ * and the only evidence either way is in the columns we refuse to keep. So each
+ * row's other cells are compared with each other, in this function, and thrown
+ * away; what survives is `occurrence`, a small integer:
+ *
+ *   - rows whose other columns agree are the same child listed twice, share an
+ *     occurrence, and become one row in the review list
+ *   - rows that differ anywhere -- a student ID, a birthdate, a homeroom -- are
+ *     two children, get 1 and 2, and both reach the teacher
+ *
+ * A file with no columns but the name has nothing to distinguish anyone by, so
+ * a repeated name there collapses. That is the safer default of the two: a
+ * teacher who really does have two Maria Garcias can add the second by hand and
+ * will notice she is missing, where an invented duplicate is a second empty
+ * record that quietly collects half her work.
  */
 export function extractNames(plan: ImportPlan, choice: ExtractChoice = {}): ExtractResult {
   const column = choice.nameColumn ?? plan.nameColumn;
@@ -308,6 +345,32 @@ export function extractNames(plan: ImportPlan, choice: ExtractChoice = {}): Extr
     plan.periodColumn !== null && choice.period
       ? plan.body.filter((r) => (r[plan.periodColumn as number] ?? "").trim() === choice.period)
       : plan.body;
+
+  // Columns the name itself was read out of. Everything else is what makes one
+  // row a different student from another row that reads the same.
+  const nameColumns = new Set(
+    [column, plan.firstColumn, plan.lastColumn, plan.preferredColumn].filter(
+      (i): i is number => typeof i === "number",
+    ),
+  );
+  const restOfRow = (row: Row) =>
+    row
+      .map((cell, i) => (nameColumns.has(i) ? "" : cell.trim().toLowerCase()))
+      .join("\u0000");
+
+  // name key -> the distinct rows seen under it -> which one this is.
+  const distinct = new Map<string, Map<string, number>>();
+  const occurrenceOf = (name: string, row: Row) => {
+    const key = matchKey(name);
+    const seen = distinct.get(key) ?? new Map<string, number>();
+    distinct.set(key, seen);
+    const rest = restOfRow(row);
+    const known = seen.get(rest);
+    if (known !== undefined) return known;
+    const next = seen.size + 1;
+    seen.set(rest, next);
+    return next;
+  };
 
   const names: ImportedName[] = [];
   for (const row of rows) {
@@ -321,16 +384,20 @@ export function extractNames(plan: ImportPlan, choice: ExtractChoice = {}): Extr
       if (name)
         names.push({
           name,
+          first,
+          last,
           // Only flagged when it actually differs: a preferred-name column
           // that repeats the legal name is noise, not information.
           preferred: Boolean(preferred && preferred !== officialFirst),
+          occurrence: occurrenceOf(name, row),
         });
       continue;
     }
     if (column === null || column === undefined) continue;
     const cell = (row[column] ?? "").trim();
     if (!cell) continue;
-    names.push({ name: flipLastFirst(cell) });
+    const name = flipLastFirst(cell);
+    names.push({ name, occurrence: occurrenceOf(name, row) });
   }
   return { names, total: names.length };
 }
@@ -419,41 +486,103 @@ export function pasteLooksLikeTable(text: string): boolean {
 export const MAX_PER_ADD = 100;
 
 export type ReviewRow = {
+  /** The full name, as the roster wrote it. */
   name: string;
-  /** Already on the roster: shown unticked, with a label. */
+  /** Stable identity for this row: the checkbox, the edit box, the React key. */
+  key: string;
+  /** The roster's own columns, when it had them. */
+  first?: string;
+  last?: string;
+  /** The same child is already on the roster: shown unticked, with a label. */
   existing: boolean;
   preferred: boolean;
+  /** A student already in the class this MIGHT be. Shown; never acted on. */
+  possibleMatch?: string;
 };
 
-/** The key two names are compared on: case, spacing and punctuation ignored. */
-export function matchKey(name: string): string {
-  return name.toLowerCase().replace(/[.’']/g, "").replace(/\s+/g, " ").trim();
-}
+/**
+ * The key two names are compared on: case, spacing and punctuation ignored.
+ *
+ * Deliberately not a second implementation of one. The review list and the
+ * shortener have to agree to the letter about when two names are the same
+ * name, and two answers to that question drifting apart over one punctuation
+ * mark is the exact shape of the bug this module was just fixed for.
+ */
+export const matchKey = nameKey;
 
 /**
  * Merge what was imported with what the class already has.
  *
- * Compared after shortening when the "first name and last initial" switch is
- * on, because that is what will actually be saved -- "Bo Nguyen" and "Bo N."
- * are the same child, and a class that already has one should not quietly gain
- * the other. Duplicates inside the file collapse to a single row.
+ * Identity is the FULL name, and only the full name. This used to compare the
+ * shortened form -- what would actually be saved -- which sounds right and is
+ * how Maria Garcia, Maria Gonzalez and Maria Guzman arrived as a single row
+ * called "Maria Garcia", with two children dropped in silence. A shortened name
+ * is a label the app prints; it is not who somebody is, and it can never be the
+ * thing two students are judged the same by.
+ *
+ * Against the class it is less tidy, because students already enrolled are
+ * stored in whatever form they were saved in -- often "Maria G." already, the
+ * surname gone for good. So when an imported name shortens to exactly an
+ * enrolled student's stored name, we cannot tell whether it is her or a
+ * classmate, and we say so rather than decide: the row stays ticked, with a
+ * "Possible match" note naming who she might be. The teacher knows which of
+ * their students is which; we do not. Deciding it here is what left Maria
+ * Gonzalez unticked and unimported because Maria Garcia was already in the
+ * class.
+ *
+ * Duplicates inside the file still collapse, on the full name together with the
+ * occurrence that came with it -- see extractNames for why the second Maria
+ * Garcia sometimes survives and sometimes does not.
  */
 export function buildReviewRows(
   imported: ImportedName[],
   existingNames: string[],
-  short: boolean,
 ): ReviewRow[] {
-  const asSaved = (name: string) => (short ? shortenName(name) : name);
-  const already = new Set(existingNames.map((n) => matchKey(asSaved(n))));
+  const enrolled = new Map(existingNames.map((n) => [matchKey(n), n.trim()]));
   const seen = new Set<string>();
   const rows: ReviewRow[] = [];
   for (const item of imported) {
-    const key = matchKey(asSaved(item.name));
-    if (!key || seen.has(key)) continue;
+    const nameKey = matchKey(item.name);
+    if (!nameKey) continue;
+    const key = `${nameKey}#${item.occurrence ?? 1}`;
+    if (seen.has(key)) continue;
     seen.add(key);
-    rows.push({ name: item.name, existing: already.has(key), preferred: Boolean(item.preferred) });
+
+    const existing = enrolled.has(nameKey);
+    // Only worth raising when it is not already a certainty, and only when
+    // shortening actually changes the name -- otherwise every exact match
+    // would report itself as a possible one. Checked whichever way the switch
+    // is set: the question is whether this is the same child, and that does
+    // not change with how we intend to print her name.
+    const shortKey = matchKey(shortenName(item.name));
+    const possible =
+      !existing && shortKey !== nameKey ? enrolled.get(shortKey) : undefined;
+
+    rows.push({
+      name: item.name,
+      key,
+      first: item.first,
+      last: item.last,
+      existing,
+      preferred: Boolean(item.preferred),
+      ...(possible ? { possibleMatch: possible } : {}),
+    });
   }
   return rows;
+}
+
+/**
+ * What a screen reader is told this row is.
+ *
+ * Two children called Maria Garcia are now two rows, which is the point -- but
+ * two checkboxes both announcing "Include Maria Garcia" is a list a blind
+ * teacher cannot tick correctly, and the bug this change fixes would have been
+ * traded for a quieter one. The number is only added where there really is a
+ * second of her.
+ */
+export function rowLabel(row: ReviewRow): string {
+  const nth = Number(row.key.slice(row.key.lastIndexOf("#") + 1));
+  return nth > 1 ? `${row.name} (${nth})` : row.name;
 }
 
 /** "This file has 142 names..." -- or "" when everything fits. */

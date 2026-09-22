@@ -37,6 +37,7 @@ function bundle(entry) {
 
 const R = bundle("lib/roster-import.ts");
 const F = bundle("lib/roster-file.ts");
+const C = bundle("lib/teacher-classes.ts");
 
 const bytes = (name) => fs.readFileSync(path.join(FIXTURES, name));
 const rowsOf = (name) => R.parseDelimited(R.decodeRosterBytes(bytes(name)));
@@ -192,27 +193,35 @@ test("duplicates inside the file collapse, and names already in the class come p
   const result = importFile("duplicates.csv");
   assert.equal(result.names.length, 4, "the file really does repeat a name");
 
-  const rows = R.buildReviewRows(result.names, [], false);
+  const rows = R.buildReviewRows(result.names, []);
   assert.deepEqual(
     rows.map((r) => r.name),
     ["Amelia Rivera", "Benjamin Okafor"],
     "three spellings of one child become one row",
   );
 
-  const withExisting = R.buildReviewRows(result.names, ["amelia   RIVERA"], false);
+  const withExisting = R.buildReviewRows(result.names, ["amelia   RIVERA"]);
   assert.equal(withExisting[0].existing, true, "already in the class, whatever the spacing and case");
   assert.equal(withExisting[1].existing, false);
 });
 
-test("a duplicate is caught after shortening, because that is what gets saved", () => {
-  // With the switch on, "Amelia Rivera" saves as "Amelia R." -- which is the
-  // same child as an "Amelia R." already on the roster.
+test("an enrolled short name is a possible match, not a decision", () => {
+  // This test used to assert the opposite: that "Amelia Rivera" arriving into a
+  // class holding "Amelia R." was the same child, settled, unticked. It is the
+  // behaviour this change exists to remove. Amelia R. is Amelia Rivera or she
+  // is Amelia Rodriguez, and the class list cannot say which -- it threw the
+  // surname away when it saved her. So the row is offered, ticked, with the
+  // doubt written on it, and the teacher settles it.
   const imported = [{ name: "Amelia Rivera" }, { name: "Benjamin Okafor" }];
-  const short = R.buildReviewRows(imported, ["Amelia R."], true);
-  assert.equal(short[0].existing, true);
-  // With the switch off the full names differ, and it is not claimed to be one.
-  const long = R.buildReviewRows(imported, ["Amelia R."], false);
-  assert.equal(long[0].existing, false);
+  const rows = R.buildReviewRows(imported, ["Amelia R."]);
+  assert.equal(rows[0].existing, false, "not claimed to be the same child");
+  assert.equal(rows[0].possibleMatch, "Amelia R.", "but the teacher is told");
+  assert.equal(rows[1].possibleMatch, undefined, "and nobody else is bothered");
+
+  // An exact full-name match is a certainty, and carries no doubt with it.
+  const exact = R.buildReviewRows(imported, ["Amelia Rivera"]);
+  assert.equal(exact[0].existing, true);
+  assert.equal(exact[0].possibleMatch, undefined);
 });
 
 // ---------------------------------------------------------------
@@ -344,6 +353,192 @@ test("the sample file is a two-column CSV with three made-up names", () => {
     "Benjamin Okafor",
     "Chloe Delacroix",
   ]);
+});
+
+// ---------------------------------------------------------------
+// Two children who shorten alike
+// ---------------------------------------------------------------
+
+/**
+ * The whole path a name walks, in the order the app walks it: the review list
+ * decides who is on it, the shortener names everyone at once against the class
+ * as it stands, and the save guard has the last word. Written out here because
+ * the bug this section exists for lived in the joins, not in any one step --
+ * each piece was defensible and the composition dropped children.
+ */
+function reviewAndSave(imported, existingNames = [], short = true) {
+  const rows = R.buildReviewRows(imported, existingNames);
+  const ticked = rows.filter((r) => !r.existing);
+  const shown = short
+    ? C.assignShortNames(
+        ticked.map((r) => ({ name: r.name, first: r.first, last: r.last })),
+        existingNames,
+      )
+    : ticked.map((r) => r.name);
+  return { rows, saved: C.ensureDistinctNames(shown, existingNames) };
+}
+
+const distinctly = (names) =>
+  assert.equal(new Set(names.map(C.nameKey)).size, names.length, `not all distinct: ${names}`);
+
+test("five students who all shorten alike all arrive, under five different names", () => {
+  // The bug, exactly as reported. Before this change the review list showed
+  // two rows -- Maria Garcia and Jose Hernandez -- and three children were
+  // gone, with nothing on the screen to say so.
+  const result = importFile("short-name-collisions.csv");
+  assert.deepEqual(justNames(result), [
+    "Maria Garcia",
+    "Maria Gonzalez",
+    "Maria Guzman",
+    "Jose Hernandez",
+    "Jose Herrera",
+  ]);
+
+  const { rows, saved } = reviewAndSave(result.names);
+  assert.equal(rows.length, 5, "every child reaches the teacher, switch on");
+  assert.deepEqual(saved, [
+    "Maria Ga.",
+    "Maria Go.",
+    "Maria Gu.",
+    "Jose Hern.",
+    "Jose Herr.",
+  ]);
+  distinctly(saved);
+
+  // The whole group moves together. "Maria G." beside "Maria Go." reads as a
+  // mistake somebody made, and the Joses needed four letters before Hernandez
+  // and Herrera parted company.
+  assert.ok(!saved.includes("Maria G."));
+
+  // With the switch off nothing was ever wrong, and nothing changes.
+  assert.deepEqual(reviewAndSave(result.names, [], false).saved, justNames(result));
+});
+
+test("an enrolled 'Maria G.' does not swallow Maria Gonzalez", () => {
+  const imported = [{ name: "Maria Gonzalez", first: "Maria", last: "Gonzalez" }];
+  const enrolled = ["Maria G."];
+  const { rows, saved } = reviewAndSave(imported, enrolled);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].existing, false, "ticked, not written off as already here");
+  assert.equal(rows[0].possibleMatch, "Maria G.", "with the doubt shown to the teacher");
+
+  assert.deepEqual(saved, ["Maria Go."]);
+  distinctly([...enrolled, ...saved]);
+  assert.deepEqual(enrolled, ["Maria G."], "and the student already here is untouched");
+});
+
+test("two children of the same name are two children; one child listed twice is one", () => {
+  // These two cases look identical in the name column and are told apart only
+  // by the columns this app refuses to keep. The file with a Student ID has
+  // evidence that row two is a different girl, so she is kept and numbered --
+  // a number is ugly, and losing a child off the roster is worse. The file
+  // with nothing but names has no such evidence, so a repeated name is read as
+  // the office listing one child twice and collapses. See extractNames: the
+  // other columns are compared inside it and thrown away, and all that comes
+  // out is which of them this is.
+  const namesakes = importFile("namesakes.csv");
+  assert.equal(namesakes.names.length, 3);
+  const { rows, saved } = reviewAndSave(namesakes.names);
+  assert.equal(rows.length, 3, "nothing merged");
+  assert.deepEqual(saved, ["Maria Garcia", "Maria Garcia 2", "Jose H."]);
+  distinctly(saved);
+  // And two rows a screen reader cannot tell apart is the same bug wearing a
+  // different coat, so the second Maria is announced as the second Maria.
+  distinctly(rows.map(R.rowLabel));
+  assert.deepEqual(rows.map(R.rowLabel), [
+    "Maria Garcia",
+    "Maria Garcia (2)",
+    "Jose Herrera",
+  ]);
+
+  // Same name, no distinguishing column, three rows: one child.
+  const repeated = importFile("duplicates.csv");
+  assert.equal(repeated.names.length, 4, "the file really does repeat her");
+  assert.deepEqual(reviewAndSave(repeated.names).rows.map((r) => r.name), [
+    "Amelia Rivera",
+    "Benjamin Okafor",
+  ]);
+});
+
+test("Jr, Sr and the regnal numbers are not a surname", () => {
+  assert.equal(C.shortenName("John Smith Jr."), "John S.");
+  assert.equal(C.shortenName("Smith Jr., John"), "John S.");
+  assert.equal(C.shortenName("John Smith Jr"), "John S.");
+  assert.equal(C.shortenName("Marcus Aurelius III"), "Marcus A.");
+  assert.equal(C.shortenName("Henry Tudor IV"), "Henry T.");
+  // Not "V": a last initial is one letter, so a bare V has to stay a surname
+  // or "Maria V." -- a name this app writes itself -- comes back as "Maria".
+  assert.equal(C.shortenName("Maria V."), "Maria V.");
+});
+
+test("a two-part surname is shortened from the column the school put it in", () => {
+  // Re-splitting "Jose Luis Hernandez Lopez" gives "Jose L." -- his middle
+  // name -- or "Jose L." for Lopez, depending which end you start from. The
+  // Last column says Hernandez Lopez, so the answer is H., and it is his.
+  const rows = R.parseDelimited(
+    "First Name,Last Name\nJose Luis,Hernandez Lopez\nMaria,de la Cruz\n",
+  );
+  const { names } = R.extractNames(R.planImport(rows));
+  assert.deepEqual(justNames({ names }), ["Jose Luis Hernandez Lopez", "Maria de la Cruz"]);
+  assert.deepEqual(names.map((n) => [n.first, n.last]), [
+    ["Jose Luis", "Hernandez Lopez"],
+    ["Maria", "de la Cruz"],
+  ]);
+  assert.deepEqual(reviewAndSave(names).saved, ["Jose Luis H.", "Maria D."]);
+
+  // And with only a joined name to go on, the old reading is all there is.
+  assert.equal(C.shortenName("Jose Luis Hernandez Lopez"), "Jose L.");
+});
+
+test("an import never renames a student who is already in the class", () => {
+  // A student who has been "Maria G." all term stays "Maria G." -- her name is
+  // on her work, in her parents' emails and in every report already sent. The
+  // import works around her.
+  const enrolled = ["Maria G.", "Jose H.", "Amelia Rivera"];
+  const before = [...enrolled];
+  const imported = [
+    { name: "Maria Guzman", first: "Maria", last: "Guzman" },
+    { name: "Jose Herrera", first: "Jose", last: "Herrera" },
+  ];
+  const { saved } = reviewAndSave(imported, enrolled);
+  assert.deepEqual(enrolled, before, "the class list is not rewritten");
+  distinctly([...enrolled, ...saved]);
+  assert.ok(!saved.includes("Maria G.") && !saved.includes("Jose H."));
+});
+
+test("the save path numbers a clash rather than shortening it again", () => {
+  // ensureDistinctNames is the last guard, and it must not re-shorten: by the
+  // time a name reaches it the review list may already have made it
+  // "Maria Ga.", and running the shortener over that gives "Maria G." back --
+  // undoing the entire fix at the final step.
+  assert.deepEqual(C.ensureDistinctNames(["Maria Ga."], ["Maria G."]), ["Maria Ga."]);
+  assert.deepEqual(C.ensureDistinctNames(["Maria G."], ["Maria G."]), ["Maria G. 2"]);
+  assert.deepEqual(C.ensureDistinctNames(["Ann B.", "Ann B."], []), ["Ann B.", "Ann B. 2"]);
+});
+
+test("the review list and the save path are the ones that use it", () => {
+  // The functions above are only worth anything if the screen calls them. A
+  // pure module proved correct beside a component that still shortens each
+  // name on its own is exactly the shape the bug had.
+  const scanner = fs.readFileSync(path.join(ROOT, "components/teacher-classes.tsx"), "utf8");
+  assert.match(scanner, /assignShortNames\(/, "the review list names everyone at once");
+  assert.ok(
+    !/buildReviewRows\([^)]*,\s*short\s*\)/.test(scanner),
+    "and identity no longer depends on the shorten switch",
+  );
+  assert.match(scanner, /\[r\.key\]/, "rows are keyed by identity, not by name");
+  assert.ok(
+    !/aria-label=\{"(Include|Name for) " \+ r\.name\}/.test(scanner),
+    "and two namesakes are announced as two students",
+  );
+
+  const insights = fs.readFileSync(path.join(ROOT, "components/teacher-insights.tsx"), "utf8");
+  assert.match(insights, /ensureDistinctNames\(/, "and the save has the last word");
+
+  // The other way a class gains two students under one name.
+  const scan = fs.readFileSync(path.join(ROOT, "lib/teacher-class-scan.ts"), "utf8");
+  assert.match(scan, /ensureDistinctNames\(/, "a scan may not create a second 'Maria G.' either");
 });
 
 // ---------------------------------------------------------------
