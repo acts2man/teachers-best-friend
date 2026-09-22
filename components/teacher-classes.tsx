@@ -12,6 +12,7 @@ import {
   Plus,
   School,
   Sparkles,
+  Table2,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -30,13 +31,26 @@ import {
 } from "@/components/ui/alert-dialog";
 import { describeFailure, deleteUploads } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
-import { Action, Modal, PageTitle, Pick, Pill } from "./teacher-shared";
+import { Action, Modal, PageTitle, Pick, Pill, downloadText } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
 import {
   classSummary,
   namesFromText,
   shortenName,
 } from "@/lib/teacher-classes";
+import {
+  SAMPLE_CSV,
+  buildReviewRows,
+  extractNames,
+  namesFromPaste,
+  overLimitMessage,
+  parseDelimited,
+  pasteLooksLikeTable,
+  planImport,
+  type ImportPlan,
+  type ImportedName,
+} from "@/lib/roster-import";
+import { ROSTER_FILE_ACCEPT, RosterFileError, rowsFromFile } from "@/lib/roster-file";
 import { extractPdfText } from "@/lib/pdf-text";
 import type { Classroom, Standard } from "@/lib/teacher-types";
 
@@ -339,21 +353,110 @@ export function ClassesView() {
 }
 
 // Photograph or upload a printed roster and turn it into a reviewed list.
-export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
+export function RosterScanner({
+  onAdd,
+  existingNames,
+}: {
+  onAdd: (names: string[]) => void;
+  existingNames: string[];
+}) {
   const { aiReady } = useTeacher();
   const [working, setWorking] = useState(false),
-    [found, setFound] = useState<string[]>([]),
-    [skip, setSkip] = useState<Record<number, boolean>>({}),
-    [edits, setEdits] = useState<Record<number, string>>({}),
+    // Keyed by name rather than by index: the review list is rebuilt whenever
+    // the "first name and last initial" switch moves, and under that switch
+    // two rows can collapse into one -- so an index means a different student
+    // before and after the toggle.
+    [found, setFound] = useState<ImportedName[]>([]),
+    [skip, setSkip] = useState<Record<string, boolean>>({}),
+    [edits, setEdits] = useState<Record<string, string>>({}),
     [short, setShort] = useState(true),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [paste, setPaste] = useState(""),
+    [plan, setPlan] = useState<ImportPlan | null>(null),
+    [column, setColumn] = useState(""),
+    [period, setPeriod] = useState("");
   const input = useRef<HTMLInputElement>(null),
-    camera = useRef<HTMLInputElement>(null);
+    camera = useRef<HTMLInputElement>(null),
+    sheet = useRef<HTMLInputElement>(null);
+
+  function clearReview() {
+    setFound([]);
+    setSkip({});
+    setEdits({});
+    setPlan(null);
+    setColumn("");
+    setPeriod("");
+  }
+
+  /** Re-read the table whenever the teacher answers one of the questions. */
+  function applyPlan(p: ImportPlan, col: string, per: string) {
+    if (p.mode === "choose" && col === "") {
+      setFound([]);
+      return;
+    }
+    const { names } = extractNames(p, {
+      nameColumn: col === "" ? undefined : Number(col),
+      period: per || undefined,
+    });
+    setFound(names);
+    setSkip({});
+    setEdits({});
+    setNotice(names.length ? "" : "There are no names in that column.");
+  }
+
+  async function readSpreadsheet(list: FileList | null) {
+    const file = list?.[0];
+    if (!file || working) return;
+    setWorking(true);
+    setNotice("");
+    clearReview();
+    try {
+      const rows = await rowsFromFile(file);
+      const p = planImport(rows);
+      setPlan(p);
+      // One column and no header still asks -- but with the only answer
+      // already selected, so it is a confirmation rather than a puzzle.
+      const col = p.mode === "choose" && p.candidates.length === 1 ? "0" : "";
+      setColumn(col);
+      applyPlan(p, col, "");
+    } catch (e) {
+      setNotice(
+        e instanceof RosterFileError
+          ? e.message
+          : describeFailure(e, "That file couldn’t be read."),
+      );
+    } finally {
+      setWorking(false);
+      if (sheet.current) sheet.current.value = "";
+    }
+  }
+
+  /** Typed or pasted names. Reviewed like everything else, never saved here. */
+  function reviewPaste() {
+    if (!paste.trim()) return;
+    setNotice("");
+    clearReview();
+    // Rows pasted out of a spreadsheet are a table, not a list of names.
+    // Splitting those on tabs would turn two columns into twice as many
+    // students.
+    if (pasteLooksLikeTable(paste)) {
+      const p = planImport(parseDelimited(paste));
+      setPlan(p);
+      const col = p.mode === "choose" && p.candidates.length === 1 ? "0" : "";
+      setColumn(col);
+      applyPlan(p, col, "");
+      return;
+    }
+    const names = namesFromPaste(paste);
+    setFound(names.map((name) => ({ name })));
+    if (!names.length) setNotice("No names were found in that text.");
+  }
 
   async function scan(list: FileList | null) {
     if (!list?.length || working) return;
     setWorking(true);
     setNotice("");
+    clearReview();
     const ids: string[] = [];
     let text = "";
     try {
@@ -382,9 +485,7 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
         setNotice(
           "Reading a photographed roster needs the AI connection. A typed PDF roster still works, or paste the names below.",
         );
-      setFound(names);
-      setSkip({});
-      setEdits({});
+      setFound(names.map((name) => ({ name })));
       if (!names.length && !notice && (text.trim() || (ids.length && aiReady)))
         setNotice("No names were recognized. Try a clearer photo, or paste the names below.");
     } catch (e) {
@@ -404,54 +505,161 @@ export function RosterScanner({ onAdd }: { onAdd: (names: string[]) => void }) {
       if (camera.current) camera.current.value = "";
     }
   }
-  const display = (i: number) =>
-    edits[i] ?? (short ? shortenName(found[i]) : found[i]);
-  const chosen = found
-    .map((_, i) => (skip[i] ? "" : display(i).trim()))
+
+  const rows = buildReviewRows(found, existingNames, short);
+  const display = (name: string) => edits[name] ?? (short ? shortenName(name) : name);
+  // Anyone already in the class starts unticked; the teacher can still tick
+  // them if they really do want a second child of the same name.
+  const included = (r: (typeof rows)[number]) => !(skip[r.name] ?? r.existing);
+  const chosen = rows
+    .filter(included)
+    .map((r) => display(r.name).trim())
     .filter(Boolean);
+  const tooMany = overLimitMessage(rows.length, chosen.length, (plan?.periods.length ?? 0) > 1);
+
   return (
     <div className="roster-scan">
       <div>
+        <Action variant="secondary small" disabled={working} onClick={() => sheet.current?.click()}>
+          {working ? <LoaderCircle className="spin" size={15} /> : <Table2 size={15} />}
+          Import a list
+        </Action>
         <Action variant="secondary small" disabled={working} onClick={() => input.current?.click()}>
-          {working ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}
+          <Upload size={15} />
           Upload a roster
         </Action>
         <Action variant="secondary small" disabled={working} onClick={() => camera.current?.click()}>
           <Camera size={15} />
           Photograph a roster
         </Action>
+        <input ref={sheet} type="file" className="sr-only" accept={ROSTER_FILE_ACCEPT} aria-label="Import a class list from a spreadsheet" onChange={(e) => readSpreadsheet(e.target.files)} />
         <input ref={input} type="file" className="sr-only" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-label="Upload a class roster" onChange={(e) => scan(e.target.files)} />
         <input ref={camera} type="file" className="sr-only" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Photograph a class roster" onChange={(e) => scan(e.target.files)} />
       </div>
       <p>
-        {found.length
+        {rows.length
           ? "Check the names, untick anyone who shouldn’t be added, then add them."
-          : "Take a photo of a printed roster or upload a PDF. Names are read, shown here for your review, and the roster image is not kept."}
+          : "Import a CSV or Excel file from your school system, photograph a printed roster, or paste the names below."}
+      </p>
+      <p className="field-help">
+        Spreadsheets are read on this device. Your file stays on your computer.
+        Only the names you add are saved.{" "}
+        <TextButton onClick={() => downloadText("roster-sample.csv", SAMPLE_CSV, "text/csv")}>
+          Download a sample file
+        </TextButton>
       </p>
       {notice && <p className="key-notice" role="status">{notice}</p>}
-      {found.length > 0 && (
+      {plan && plan.mode === "choose" && (
+        <div className="roster-question">
+          <Pick
+            label="Which column has the names?"
+            value={column}
+            onChange={(v) => {
+              setColumn(v);
+              applyPlan(plan, v, period);
+            }}
+            options={[
+              { value: "", label: "Choose a column…" },
+              ...plan.candidates.map((c) => ({
+                value: String(c.index),
+                label:
+                  (c.header || `Column ${c.index + 1}`) +
+                  " — " +
+                  (c.samples.filter(Boolean).join(", ") || "empty"),
+              })),
+            ]}
+          />
+        </div>
+      )}
+      {plan && plan.periods.length > 1 && (
+        <div className="roster-question">
+          <Pick
+            label="Which period belongs in this class?"
+            value={period}
+            onChange={(v) => {
+              setPeriod(v);
+              applyPlan(plan, column, v);
+            }}
+            options={[
+              { value: "", label: "All periods in the file" },
+              ...plan.periods.map((p) => ({ value: p, label: "Period " + p })),
+            ]}
+          />
+        </div>
+      )}
+      {rows.length > 0 && (
         <>
           <div className="roster-preview">
-            {found.map((original, i) => (
-              <label key={i}>
-                <Checkbox checked={!skip[i]} onCheckedChange={(v) => setSkip({ ...skip, [i]: !v })} aria-label={"Include " + original} />
-                <input type="text" value={display(i)} onChange={(e) => setEdits({ ...edits, [i]: e.target.value })} aria-label={"Name for " + original} />
+            {rows.map((r) => (
+              <label key={r.name}>
+                <Checkbox
+                  checked={included(r)}
+                  onCheckedChange={(v) => setSkip({ ...skip, [r.name]: !v })}
+                  aria-label={"Include " + r.name}
+                />
+                <input
+                  type="text"
+                  value={display(r.name)}
+                  onChange={(e) => setEdits({ ...edits, [r.name]: e.target.value })}
+                  aria-label={"Name for " + r.name}
+                />
+                {r.existing && <Pill tone="amber">Already in this class</Pill>}
+                {r.preferred && <Pill tone="green">Preferred name</Pill>}
               </label>
             ))}
           </div>
+          {tooMany && (
+            <p className="key-notice" role="status">
+              {tooMany}
+            </p>
+          )}
           <div className="roster-actions">
             <label className="switch-label">
-              <Switch checked={short} onCheckedChange={(v) => { setShort(v); setEdits({}); }} />
+              <Switch
+                checked={short}
+                onCheckedChange={(v) => {
+                  setShort(v);
+                  setEdits({});
+                }}
+              />
               First name and last initial
             </label>
-            <Action disabled={!chosen.length} onClick={() => onAdd(chosen)}>
+            <Action disabled={!chosen.length || Boolean(tooMany)} onClick={() => onAdd(chosen)}>
               <Plus size={15} />
               Add {chosen.length} {chosen.length === 1 ? "student" : "students"}
             </Action>
           </div>
         </>
       )}
+      <label>
+        Or type or paste student names
+        <textarea
+          value={paste}
+          className="question-paste"
+          onChange={(e) => setPaste(e.target.value)}
+          placeholder={"Amelia R.\nBenjamin L.\nChloe M."}
+        />
+      </label>
+      <Action variant="secondary small" disabled={!paste.trim()} onClick={reviewPaste}>
+        <ArrowRight size={15} />
+        Review these names
+      </Action>
     </div>
+  );
+}
+
+/** A link-looking button, for an action that is not navigation. */
+function TextButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button type="button" className="text-link" onClick={onClick}>
+      {children}
+    </button>
   );
 }
 

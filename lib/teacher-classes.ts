@@ -45,6 +45,12 @@ export function shortenName(name: string) {
 
 // Fallback for typed PDF rosters when the AI reader is not connected: keep
 // lines that look like names and drop headers, numbers, and emails.
+//
+// Returns everything it found. It used to end `.slice(0, 60)`, so a roster of
+// 64 children handed back 60 and said nothing -- four names simply were not
+// there, and nobody could tell that from looking. Whatever comes back goes
+// into the review list, where the teacher sees the count and is told plainly
+// if it is more than one add can carry.
 export function namesFromText(text: string) {
   const seen = new Set<string>();
   const names: string[] = [];
@@ -59,7 +65,7 @@ export function namesFromText(text: string) {
     seen.add(key);
     names.push(line);
   }
-  return names.slice(0, 60);
+  return names;
 }
 
 /**
