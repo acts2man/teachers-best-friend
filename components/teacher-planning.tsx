@@ -2190,21 +2190,29 @@ export function SettingsView() {
             title="Your data stays in your hands"
             description="Download a copy of everything we hold, or delete the records and documents you’ve saved."
           />
-          <div className="data-actions">
-            <Action variant="secondary" onClick={() => setDownload(true)}>
-              <Download size={16} />
-              Download my data
-            </Action>
-            {/* Not rendered at all while viewing another teacher's account.
-                A disabled destructive control is still a hazard, and the
-                server refuses the delete regardless. */}
-            {!readOnly && (
+          {/* Neither control is rendered while viewing another teacher's
+              account. A disabled destructive control is still a hazard, and
+              the server refuses both regardless -- the download because a
+              file of someone else's students outlives the session and appears
+              nowhere in the audit log, which is why an admin's copy is taken
+              from the account page instead. */}
+          {readOnly ? (
+            <p className="field-help">
+              You’re viewing another teacher’s account, so downloading and
+              deleting are turned off. Stop viewing to manage your own data.
+            </p>
+          ) : (
+            <div className="data-actions">
+              <Action variant="secondary" onClick={() => setDownload(true)}>
+                <Download size={16} />
+                Download my data
+              </Action>
               <Action variant="danger" onClick={() => setErase(true)}>
                 <Trash2 size={16} />
                 Delete workspace data
               </Action>
-            )}
-          </div>
+            </div>
+          )}
         </section>
         {/* Deleting the account is its own card, not a third button beside
             the other two. "Delete workspace data" empties the classroom and

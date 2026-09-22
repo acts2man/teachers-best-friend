@@ -161,6 +161,16 @@ await check("POST /api/account/delete unauthenticated is 401", async () => {
   return { ok: r.status === 401, detail: `${r.status}` };
 });
 
+await check("GET /api/account/export unauthenticated is 401", async () => {
+  // A whole classroom in one file is the highest-value response this app can
+  // produce, so the signed-out case is checked from outside rather than
+  // reasoned about. The impersonation refusal underneath it cannot be reached
+  // without a session and a view-as cookie, which is what
+  // tests/account-export.test.mjs covers.
+  const r = await get("/api/account/export?format=json");
+  return { ok: r.status === 401, detail: `${r.status}` };
+});
+
 await check("POST /api/billing/checkout unauthenticated is 401", async () => {
   const r = await get("/api/billing/checkout", {
     method: "POST",

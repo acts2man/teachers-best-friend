@@ -1,7 +1,7 @@
 import {
   apiError,
   HttpError,
-  owningTeacherId,
+  downloadingTeacherId,
   readWorkspace,
 } from "@/lib/teacher-server";
 import { buildExportCsv, buildExportJson } from "@/lib/account-export";
@@ -17,10 +17,18 @@ import type { Workspace } from "@/lib/teacher-types";
  * `?format=csv` returns one row per piece of standards evidence; anything else
  * returns the whole workspace as JSON. Neither carries an image or a reference
  * to one -- see lib/account-export.ts for why that is a feature.
+ *
+ * downloadingTeacherId(), not owningTeacherId(). owningTeacherId() resolves to
+ * the teacher being viewed during an admin "view as" session, so this route
+ * would have handed an app manager a file containing every student name and
+ * every piece of evidence in someone else's classroom -- with nothing written
+ * to admin_audit_log. The start of a view is logged; a copy taken during one
+ * was not. A school's request for a teacher's data goes through
+ * GET /api/admin/export/[teacherId], which is audited.
  */
 export async function GET(request: Request) {
   try {
-    const teacherId = await owningTeacherId();
+    const teacherId = await downloadingTeacherId();
     const saved = await readWorkspace(teacherId);
     if (!saved) throw new HttpError(404, "There is nothing saved to export yet.");
     const workspace = saved.data as Workspace;
