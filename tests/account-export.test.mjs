@@ -281,7 +281,11 @@ test("the admin export writes an audit row before handing the file over", () => 
 });
 
 test("the admin export names the admin from the session, not the request", () => {
-  assert.ok(/const admin = await requireAdmin\(\)/.test(adminRoute));
+  // requireAdminApi, not requireAdmin: the page gate redirects, and a
+  // redirect escaping a route handler is rendered as a 503 outage message to
+  // someone who is merely not an admin. tests/admin-api-gate.test.mjs holds
+  // that rule down for every route under app/api.
+  assert.ok(/const admin = await requireAdminApi\(\)/.test(adminRoute));
   assert.ok(/p_actor: admin\.id/.test(adminRoute));
   // teacherId comes from the path; the actor never does.
   assert.ok(!/p_actor:\s*teacherId/.test(adminRoute));
