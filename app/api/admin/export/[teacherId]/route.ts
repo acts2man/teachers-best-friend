@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/admin-gate";
+import { requireAdminApi } from "@/lib/admin-gate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { apiError, HttpError, readWorkspace } from "@/lib/teacher-server";
 import { buildExportCsv, buildExportJson } from "@/lib/account-export";
@@ -29,8 +29,10 @@ export async function GET(
   context: { params: Promise<{ teacherId: string }> },
 ) {
   try {
-    // Redirects a non-admin away before anything is read.
-    const admin = await requireAdmin();
+    // Throws 401/403 rather than redirecting: this is a fetch, and
+    // requireAdmin()'s redirect() would be caught by the catch below and
+    // rendered as a 503 outage message to someone who is simply not an admin.
+    const admin = await requireAdminApi();
     const { teacherId } = await context.params;
 
     const saved = await readWorkspace(teacherId);

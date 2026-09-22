@@ -171,6 +171,19 @@ await check("GET /api/account/export unauthenticated is 401", async () => {
   return { ok: r.status === 401, detail: `${r.status}` };
 });
 
+await check("GET /api/admin/export/… unauthenticated is 401, not 503", async () => {
+  // This answered 503 "We couldn't complete that request." until the route
+  // stopped using a page gate: requireAdmin() calls redirect(), redirect()
+  // throws NEXT_REDIRECT, the route's catch caught it, and apiError() renders
+  // an unrecognised throw as an outage. The id is the nil UUID -- a real one
+  // would be a live account id sitting in a public workflow file.
+  const r = await get("/api/admin/export/00000000-0000-0000-0000-000000000000?format=json");
+  return {
+    ok: r.status === 401,
+    detail: r.status === 503 ? "503 — the page gate is back" : `${r.status}`,
+  };
+});
+
 await check("POST /api/billing/checkout unauthenticated is 401", async () => {
   const r = await get("/api/billing/checkout", {
     method: "POST",

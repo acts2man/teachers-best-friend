@@ -43,6 +43,37 @@ export async function requireAdmin(): Promise<AdminIdentity> {
 }
 
 /**
+ * The same gate as requireAdmin(), for API routes.
+ *
+ * requireAdmin() calls redirect(), which is right for a page load and wrong
+ * for a fetch. redirect() throws NEXT_REDIRECT; a route handler's try/catch
+ * catches it like any other error and apiError() maps an unrecognised throw to
+ * a 503 "We couldn't complete that request." So a signed-out caller and a
+ * teacher who is simply not an admin both got an outage message, and a run of
+ * them in the logs would read as the site being down rather than as the gate
+ * doing its job.
+ *
+ * Nothing leaks either way -- the throw happens before anything is read -- but
+ * "you are not allowed" and "we are broken" are not interchangeable, least of
+ * all in what an operator sees at three in the morning.
+ *
+ * Same shape as requireAppManagerId() below, which has always done this
+ * correctly; this is the missing half of that pair, not a new idea.
+ */
+export async function requireAdminApi(): Promise<AdminIdentity> {
+  const userId = await getSessionUserId();
+  if (!userId) throw new HttpError(401, "Please sign in.");
+
+  const db = supabaseAdmin();
+  const { data: ok, error } = await db.rpc("is_admin", { p_user: userId });
+  if (error || !ok)
+    throw new HttpError(403, "That’s only available to administrators.");
+
+  const { data: u } = await db.auth.admin.getUserById(userId);
+  return { id: userId, email: u?.user?.email ?? "" };
+}
+
+/**
  * Call at the top of any page or action that starts/manages
  * impersonation. Requires admin or app-manager on an active account — the database
  * function re-checks can_impersonate() itself on every call, this is the redirect
