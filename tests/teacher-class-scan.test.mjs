@@ -16,24 +16,37 @@ function student(id,name,classId="c1"){return {id,classId,name,color:"#000",evid
 
 test("exact roster name matches regardless of case and spacing",()=>{
   const students=[student("s1"," Maria  Gonzalez ")];
-  assert.equal(matchRosterStudent("maria gonzalez",students).id,"s1");
+  assert.equal(matchRosterStudent("maria gonzalez",students).student.id,"s1");
 });
 test("first-name + last-initial matches a shortened name",()=>{
   const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
-  assert.equal(matchRosterStudent("Maria G.",students)?.id,"s1");
-  assert.equal(matchRosterStudent("Maria Gonzalez",students).id,"s1");
+  assert.equal(matchRosterStudent("Maria G.",students).student?.id,"s1");
+  assert.equal(matchRosterStudent("Maria Gonzalez",students).student.id,"s1");
 });
-test("an ambiguous shortened name resolves to the first roster match, in roster order — the teacher still confirms it before saving",()=>{
+test("an ambiguous shortened name is a question, not a pick",()=>{
+  // This test used to assert the opposite: that "Maria G." with two Marias on
+  // the roster "resolves to the first roster match, in roster order — the
+  // teacher still confirms it before saving". They did not confirm it. It
+  // arrived preselected, looking decided, and the second Maria's graded test
+  // went onto the first Maria's record. Roster order is not evidence.
   const students=[student("s1","Maria Gonzalez"),student("s2","Maria Garcia")];
-  assert.equal(matchRosterStudent("Maria G.",students)?.id,"s1");
+  const m=matchRosterStudent("Maria G.",students);
+  assert.equal(m.student,undefined,"nobody is chosen");
+  assert.deepEqual(m.candidates.map(s=>s.id),["s1","s2"],"both are offered");
 });
-test("a single-token name never matches (too ambiguous to guess)",()=>{
+test("a single-token name matches when only one student can be meant",()=>{
+  // "Maria" used to match nobody at all, which sent a real paper to the
+  // unmatched pile in a class with exactly one Maria in it.
   const students=[student("s1","Maria Gonzalez")];
-  assert.equal(matchRosterStudent("Maria",students),undefined);
+  assert.equal(matchRosterStudent("Maria",students).student.id,"s1");
+  const two=[student("s1","Maria Gonzalez"),student("s2","Maria Garcia")];
+  assert.equal(matchRosterStudent("Maria",two).student,undefined);
+  assert.equal(matchRosterStudent("Maria",two).candidates.length,2);
 });
-test("no match returns undefined rather than guessing",()=>{
+test("no match returns neither a student nor candidates",()=>{
   const students=[student("s1","Maria Gonzalez")];
-  assert.equal(matchRosterStudent("Jamal Thompson",students),undefined);
+  assert.deepEqual(matchRosterStudent("Jamal Thompson",students),{});
+  assert.deepEqual(matchRosterStudent("   ",students),{});
 });
 
 const name=(page,n,c=90)=>({page,name:n,confidence:n?c:0});
@@ -720,4 +733,159 @@ test("a student still on the roster is matched, not duplicated",()=>{
   ]);
   assert.equal(out.newStudents.length,0,"an existing student was duplicated");
   assert.equal(out.studentCount,1);
+});
+
+// ---------------------------------------------------------------
+// Whose paper is this?
+//
+// The roster below is what the importer now produces for a file holding
+// Maria Garcia, Maria Gonzalez, Maria Guzman, Jose Hernandez and Jose
+// Herrera -- five real children whose short names differ by one letter.
+//
+// Against that roster the old matcher answered "Maria Ga." to three of the
+// five questions below, confidently, with the graded pages already attached.
+// These tests are the record of what it must answer instead.
+// ---------------------------------------------------------------
+
+const FIVE = [
+  student("ga", "Maria Ga."),
+  student("go", "Maria Go."),
+  student("gu", "Maria Gu."),
+  student("hern", "Jose Hern."),
+  student("herr", "Jose Herr."),
+];
+const matchedId = (written, roster = FIVE) => matchRosterStudent(written, roster).student?.id;
+const candidateIds = (written, roster = FIVE) =>
+  (matchRosterStudent(written, roster).candidates ?? []).map((s) => s.id);
+
+test("a surname on the page picks the one student it can be", () => {
+  assert.equal(matchedId("Maria Gonzalez"), "go");
+  assert.equal(matchedId("Maria Guzman"), "gu");
+  assert.equal(matchedId("Maria Garcia"), "ga");
+  assert.equal(matchedId("Jose Herrera"), "herr");
+  assert.equal(matchedId("Jose Hernandez"), "hern");
+  // And none of them is quietly resolved to somebody else.
+  assert.deepEqual(candidateIds("Maria Gonzalez"), []);
+});
+
+test("an initial fits every surname that starts with it, so it is a question", () => {
+  assert.equal(matchedId("Maria G"), undefined);
+  assert.deepEqual(candidateIds("Maria G"), ["ga", "go", "gu"]);
+  assert.equal(matchedId("Jose H"), undefined);
+  assert.deepEqual(candidateIds("Jose H"), ["hern", "herr"]);
+});
+
+test("a first name alone offers every student who has it", () => {
+  assert.equal(matchedId("Maria"), undefined);
+  assert.deepEqual(candidateIds("Maria"), ["ga", "go", "gu"]);
+});
+
+test("the name the app itself wrote matches exactly", () => {
+  assert.equal(matchedId("Maria Go."), "go");
+  assert.equal(matchedId("maria  go"), "go", "however the child spaced it");
+  assert.equal(matchedId("Jose Hern."), "hern");
+});
+
+test("full names on the roster are narrowed by an initial no better than short ones", () => {
+  const full = [student("s1", "Maria Garcia"), student("s2", "Maria Gonzalez")];
+  assert.equal(matchedId("Maria G", full), undefined);
+  assert.deepEqual(candidateIds("Maria G", full), ["s1", "s2"]);
+  // But the full surname still resolves.
+  assert.equal(matchedId("Maria Gonzalez", full), "s2");
+});
+
+test("one Maria in the class is not an ambiguity", () => {
+  const one = [student("s1", "Maria Ga."), student("s2", "Jose Hern.")];
+  assert.equal(matchedId("Maria", one), "s1");
+  assert.equal(matchedId("Maria G", one), "s1");
+  assert.equal(matchedId("Maria Garcia", one), "s1");
+});
+
+test("a generational suffix is not a surname on either side", () => {
+  assert.equal(matchedId("Maria Gonzalez Jr."), "go");
+  assert.equal(matchedId("Jose Hernandez III"), "hern");
+  // And on the roster's side too: a class that stored the suffix still matches.
+  const withSuffix = [student("s1", "John Smith Jr."), student("s2", "John Baker")];
+  assert.equal(matchedId("John Smith", withSuffix), "s1");
+  assert.equal(matchedId("John S", withSuffix), "s1");
+});
+
+test("accents are folded, not deleted", () => {
+  // The old normalizer dropped every character outside a-z, so "María
+  // González" became "mara gonzlez" and matched nobody -- the child whose
+  // name is spelled properly was the one it could not find.
+  assert.equal(matchedId("María González"), "go");
+  assert.equal(matchedId("JOSÉ HERRERA"), "herr");
+  assert.equal(matchedId("Maria Guzmán"), "gu");
+});
+
+test("a name nobody on the roster shares is unmatched, not assigned", () => {
+  assert.deepEqual(matchRosterStudent("Jamal Thompson", FIVE), {});
+  assert.deepEqual(matchRosterStudent("Maria Fernandez", FIVE), {});
+});
+
+test("two students stored under one name are offered, never picked between", () => {
+  const twins = [student("a", "Maria Garcia"), student("b", "Maria Garcia")];
+  const m = matchRosterStudent("Maria Garcia", twins);
+  assert.equal(m.student, undefined);
+  assert.deepEqual(m.candidates.map((s) => s.id), ["a", "b"]);
+});
+
+// ---------------------------------------------------------------
+// What the review list is handed
+// ---------------------------------------------------------------
+
+test("an ambiguous paper reaches the review list as a question with no answer", () => {
+  const rows = resolveScannedGroups(
+    [[0], [1]],
+    [name(0, "Maria Gonzalez"), name(1, "Maria G")],
+    [{ group: 0, responses: [] }, { group: 1, responses: [] }],
+    ["u1", "u2"],
+    FIVE,
+  );
+  assert.equal(rows[0].studentId, "go", "the one that can be resolved, is");
+  assert.deepEqual(rows[0].candidateIds, []);
+
+  assert.equal(rows[1].studentId, null, "and the one that cannot is not guessed");
+  assert.deepEqual(rows[1].candidateIds, ["ga", "go", "gu"]);
+  assert.equal(rows[1].name, "Maria G", "the row still shows what was read");
+});
+
+test("two papers resolving to the same student both reach the teacher flagged", () => {
+  // Two sheets that both read as Maria Go. One of them is somebody else's, or
+  // it is her second page scanned as a new student. Either way the teacher has
+  // to look, so both rows carry the same studentId and the review list counts
+  // them rather than merging or dropping one.
+  const rows = resolveScannedGroups(
+    [[0], [1]],
+    [name(0, "Maria Gonzalez"), name(1, "Maria Go.")],
+    [{ group: 0, responses: [] }, { group: 1, responses: [] }],
+    ["u1", "u2"],
+    FIVE,
+  );
+  assert.equal(rows[0].studentId, "go");
+  assert.equal(rows[1].studentId, "go");
+
+  const perStudent = new Map();
+  for (const r of rows)
+    if (r.studentId) perStudent.set(r.studentId, (perStudent.get(r.studentId) ?? 0) + 1);
+  assert.equal(perStudent.get("go"), 2, "both papers are on one student, and countable");
+
+  // Neither paper is silently discarded on the way to being saved.
+  assert.equal(rows.length, 2);
+});
+
+test("the review screen asks, blocks and flags rather than defaulting", () => {
+  // The matcher can only offer candidates; it is the screen that must refuse
+  // to save while one is unanswered. Pinned here so the pure fix cannot be
+  // quietly undone by the component that uses it.
+  const ui = readFileSync("components/teacher-class-scan.tsx", "utf8");
+  assert.match(ui, /candidateIds\.length/, "ambiguity reaches the UI");
+  assert.match(ui, /"Which " \+ \(firstNameRead\(g\) \|\| "student"\) \+ "\?"/, "and is asked as a question");
+  assert.match(ui, /disabled=\{saving \|\| busy \|\| undecided\.length > 0\}/, "saving waits for the answer");
+  assert.match(ui, /papers matched to/, "and two papers on one student are named");
+  assert.ok(
+    !/value=\{g\.studentId \? "existing:" \+ g\.studentId : "new"\}/.test(ui),
+    "no ambiguous row is preselected",
+  );
 });

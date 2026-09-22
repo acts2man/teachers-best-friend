@@ -37,8 +37,19 @@ export function classSummary(
 // V." -- a name this app writes itself -- would lose its surname entirely and
 // come back as "Maria". The fifth of his name is rarer than that mistake.
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
-const isSuffix = (token: string) =>
+
+/**
+ * Whether a token is a generational suffix rather than a family name.
+ *
+ * Exported because the class-scan matcher has to read a name the same way the
+ * shortener wrote it. If the roster says "John S." because the shortener
+ * dropped the Jr., and the matcher then treats the Jr. on the page as his
+ * surname, the two disagree about who he is and his test lands nowhere.
+ */
+export const isNameSuffix = (token: string) =>
   NAME_SUFFIXES.has(token.toLowerCase().replace(/[.,]/g, ""));
+
+const isSuffix = isNameSuffix;
 
 /**
  * The given name and the family name, however the roster wrote them.
