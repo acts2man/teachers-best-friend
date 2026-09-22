@@ -73,6 +73,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { clearClassStudents, removeStudent } from "@/lib/teacher-classes";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
+import { MAX_PER_ADD } from "@/lib/roster-import";
 import {
   performanceBands,
   sharedGapGroups,
@@ -1180,7 +1181,6 @@ export function StudentsView() {
     // showed "Start their learning story" to children with a term of evidence.
     [focusOverride, setFocusOverride] = useState<{ for: string | null; code: string } | null>(null),
     [add, setAdd] = useState(false),
-    [names, setNames] = useState(""),
     [evidenceOpen, setEvidenceOpen] = useState(false),
     [score, setScore] = useState(""),
     [source, setSource] = useState("Exit ticket"),
@@ -1218,15 +1218,30 @@ export function StudentsView() {
   );
   const bands = performanceBands(students, catalog);
   const gapGroups = sharedGapGroups(students, catalog);
-  async function addStudents(fromRoster?: string[]) {
-    const list = (
-      fromRoster ||
-      names.split(/[\n,]/)
-    )
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .slice(0, 100);
+  /**
+   * Saves names that have already been through the review list.
+   *
+   * It used to do the parsing itself, with `names.split(/[\n,]/)` -- so
+   * "Nguyen, Bo", the form every school system exports, became two students
+   * called "Nguyen" and "Bo", saved immediately with nothing to check. And it
+   * ended `.slice(0, 100)`, so a class of 120 quietly became 100.
+   *
+   * Both jobs now belong to RosterScanner: it parses, it shows every name, it
+   * marks the ones already in this class, and it says so out loud when there
+   * are more than one add can carry. This only writes what came back.
+   */
+  async function addStudents(fromRoster: string[]) {
+    const list = fromRoster.map((x) => x.trim()).filter(Boolean);
     if (!list.length) return;
+    // Refused rather than trimmed. The review list does not offer more than
+    // this, so arriving here is a bug, and silently dropping the tail is
+    // exactly the behaviour being removed.
+    if (list.length > MAX_PER_ADD) {
+      toast.error(
+        `Only ${MAX_PER_ADD} students can be added at once. Untick some and add the rest afterwards.`,
+      );
+      return;
+    }
     const next = list.map((name, i) => ({
       id: crypto.randomUUID(),
       classId: classroom.id,
@@ -1242,7 +1257,6 @@ export function StudentsView() {
       )
     ) {
       setAdd(false);
-      setNames("");
     }
   }
   async function recordEvidence() {
@@ -1841,25 +1855,16 @@ export function StudentsView() {
         open={add}
         onClose={() => setAdd(false)}
         title="Meet your learners"
-        description="Photograph a roster, or type names with each student on a new line."
+        description="Import a class list from your school system, photograph a roster, or type the names."
       >
         <div className="form-stack">
+          {/* The paste box lives inside RosterScanner now. It used to save
+              straight from here, which is how an unreviewed "Nguyen, Bo"
+              became two students; everything goes through one review list. */}
           <RosterScanner
             onAdd={(list) => addStudents(list)}
+            existingNames={students.map((s) => s.name)}
           />
-          <label>
-            Or type student names or aliases
-            <textarea
-              value={names}
-              className="question-paste"
-              onChange={(e) => setNames(e.target.value)}
-              placeholder={"Amelia R.\nBenjamin L.\nChloe M."}
-            />
-          </label>
-          <Action disabled={busy || !names.trim()} onClick={() => addStudents()}>
-            Add to classroom
-            <ArrowRight size={16} />
-          </Action>
         </div>
       </Modal>
       <Modal

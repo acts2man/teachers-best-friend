@@ -702,3 +702,9 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .error-page code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .update-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;background:hsl(calc(96deg + var(--th)) calc(38% * var(--ts)) 92%);border:1px solid hsl(calc(96deg + var(--th)) calc(30% * var(--ts)) 78%);border-radius:11px;padding:12px 16px;margin-bottom:16px;font-size:14px}
 .update-banner button{border:none;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:600;background:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 28%);color:#f7f7ef}
+/* The two questions a roster file can raise: which column holds the names, and
+   which period belongs in this class. Asked one at a time, above the review
+   list, because the answer changes what the list shows. */
+.roster-question{margin:10px 0}
+.roster-question label{gap:6px}
+.roster-preview label [data-slot=pill]{flex-shrink:0}

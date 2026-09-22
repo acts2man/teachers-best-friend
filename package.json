@@ -40,6 +40,7 @@
     "react-hook-form": "^7.85.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.12.2",
+    "read-excel-file": "^9.3.10",
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
