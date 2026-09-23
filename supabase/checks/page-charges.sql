@@ -139,7 +139,12 @@ begin
   select * into v_r from public.charge_pages(v_teacher, v_body[31:36], 'class_scan');
   v_used := public.current_period_scan_count(v_teacher);
   begin
-    perform public.create_scan(v_teacher, null, null, null, null, true, 'class_scan');
+    -- create_scan now charges as it opens the row. Pass the pages it bills --
+    -- the six just charged above -- so it finds them already paid, charges
+    -- nothing new, and still opens the scan at exactly 36 of 36. (Passing no
+    -- uploads would make it charge a generation, a 37th page, and be refused --
+    -- which is not what this check is about.)
+    perform public.create_scan(v_teacher, null, null, null, v_body[31:36], true, 'class_scan');
     if v_used = 36 and v_r.remaining = 0 then
       v_pass := v_pass + 1;
       raise notice 'PASS  5  exactly 36 of 36 allowed, create_scan still opens';

@@ -35,7 +35,19 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 
 ## Runtime configuration
 
-The Netlify deployment uses Supabase Auth, Postgres, and the private `teacher-documents` Storage bucket. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in both the build and runtime environments. Also set `SUPABASE_SERVICE_ROLE_KEY` (server-only; the workspace, metering, and pipeline-routing RPCs are granted to the service role only) and `ALLOWED_ORIGINS` (comma-separated site origins allowed to POST; behind Netlify's proxy the origin check uses the forwarded host and this list rather than the internal request URL) in the Functions and Runtime scopes. Every public table and Storage object has owner-scoped row-level security based on `auth.uid()`.
+The Netlify deployment uses Supabase Auth, Postgres, and the private `teacher-documents` Storage bucket. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in both the build and runtime environments. Also set `SUPABASE_SERVICE_ROLE_KEY` (server-only; the workspace, metering, and pipeline-routing RPCs are granted to the service role only) and `ALLOWED_ORIGINS` (comma-separated site origins allowed to POST; behind Netlify's proxy the origin check uses the forwarded host and this list rather than the internal request URL) in the Functions and Runtime scopes. Set `CANONICAL_HOST` at **build** scope (it is inlined at build time, like `CONTEXT`) to the one host the app is allowed to serve from in production, e.g. `teachersbestfriend.netlify.app`. Every public table and Storage object has owner-scoped row-level security based on `auth.uid()`.
+
+### Every deploy permalink is a full copy of the app, carrying production credentials
+
+Netlify keeps an immutable permalink for **every** deploy, e.g. `https://<deploy-id>--teachersbestfriend.netlify.app`. That URL is not a preview of static files — it is a complete, permanently reachable copy of that build's serverless functions, running with the **production environment it was built with, including `SUPABASE_SERVICE_ROLE_KEY`**. Anyone with the link can use the app, and its server routes can read and write the production database with the service role. This is not hypothetical: a pilot teacher used a two-week-old permalink for nine days, and its scans ran against production with no metering, because that older build predated the page ledger. See [`docs/incident-response.md`](docs/incident-response.md).
+
+Three things contain this, and all three matter:
+
+- **The host guard** (`lib/canonical-host.ts`): in the `production` deploy context, any request whose host is not `CANONICAL_HOST` is refused server-side (`/api/*` and `/auth/*` via `proxy.ts`) and redirected to the canonical host client-side. This protects **every deploy built from now on**, because a build has to carry this code to enforce it. It can never reach *back* into a permalink that already exists.
+- **Deleting old deploys** removes their permalinks (a deleted permalink 404s everywhere), which is the only thing that neutralises permalinks of builds that predate the guard.
+- **Limiting Netlify's deploy retention** so old permalinks stop accumulating.
+
+Deploy previews (`deploy-preview`), branch deploys (`branch-deploy`) and local development are deliberately exempt from the host guard — their hostnames are legitimately not canonical and are how PR/branch checks reach the app. If `CANONICAL_HOST` is unset in production the app fails loud (refuses) rather than silently allowing every host.
 
 ChatGPT Sites retains its managed private audience, D1 `DB`, and R2 `BUCKET` bindings when the Supabase variables are absent. API routes select the available backend, validate authenticated ownership, and reject cross-origin writes.
 

@@ -5,6 +5,7 @@ import {
   type GuardedAction,
 } from "@/lib/impersonation-guard";
 import { countPages, contentHash } from "@/lib/page-count";
+import { canonicalHost, hostGuardEnforced } from "@/lib/canonical-host";
 
 export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
@@ -187,6 +188,15 @@ export async function downloadingTeacherId() {
  * Rejects cross-origin writes. Behind Netlify's proxy request.url is an
  * internal address, so the site origin is rebuilt from the forwarded host
  * headers and the ALLOWED_ORIGINS allow-list instead of request.url.
+ *
+ * This used to add `${forwardedProto}://${forwardedHost}` -- the request's own
+ * host -- to the allow-list unconditionally. That was the permalink hole: a
+ * stale copy is same-origin with itself, so its own writes always passed. Now
+ * the forwarded host is trusted only OUTSIDE production, where the host is
+ * legitimately not canonical (deploy previews, branch deploys, localhost) and
+ * there is nothing else to match against. In production the canonical host is
+ * the only same-origin value, and proxy.ts has already refused a non-canonical
+ * host before any route runs -- so this is defence in depth, not the only gate.
  */
 export function guardOrigin(request: Request) {
   const origin = request.headers.get("origin");
@@ -195,13 +205,21 @@ export function guardOrigin(request: Request) {
   const forwardedHost = h.get("x-forwarded-host") ?? h.get("host");
   const forwardedProto = h.get("x-forwarded-proto") ?? "https";
   const allowed = new Set<string>();
-  if (forwardedHost) allowed.add(`${forwardedProto}://${forwardedHost}`);
+  const canonical = canonicalHost();
+  if (canonical) allowed.add(`https://${canonical}`);
+  // The request's own host is same-origin with itself, which is precisely why
+  // it cannot be trusted in production. Outside production there is no canonical
+  // host to compare to and the forwarded host is the legitimate one.
+  if (!hostGuardEnforced() && forwardedHost)
+    allowed.add(`${forwardedProto}://${forwardedHost}`);
   // Explicit allow-list from env, comma-separated, e.g.
   // https://ateachersbestfriend.com,https://www.ateachersbestfriend.com
   for (const o of (process.env.ALLOWED_ORIGINS ?? "").split(","))
     if (o.trim()) allowed.add(o.trim());
   try {
-    allowed.add(new URL(request.url).origin);
+    // request.url is the internal proxy address in production, so this adds
+    // nothing there; outside production it is the real dev origin.
+    if (!hostGuardEnforced()) allowed.add(new URL(request.url).origin);
   } catch {
     // request.url can be relative or opaque behind a proxy; ignore it.
   }

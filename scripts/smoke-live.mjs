@@ -216,6 +216,55 @@ if (expectedCommit) {
 }
 
 // ---------------------------------------------------------------
+// The app refuses to run anywhere but its real address
+// ---------------------------------------------------------------
+//
+// The canonical host (this BASE, the one the deploy check just confirmed) must
+// serve normally -- the host guard must not refuse its own real address. Every
+// check above already exercised it; this states it directly against /api/version,
+// where a wrongly-tripped guard would show up as a 421 instead of a commit.
+
+await check("GET /api/version on the canonical host is not refused by the host guard", async () => {
+  const r = await get("/api/version");
+  if (r.status === 421)
+    return { ok: false, detail: "421 — the host guard is refusing the canonical host itself" };
+  return { ok: r.status === 200, detail: `${r.status}` };
+});
+
+// If a non-canonical host of this same site is reachable from the runner, it
+// must refuse (421) or redirect (3xx) rather than serve. There is no way to
+// discover a Netlify permalink URL from here, so this is opt-in: pass one via
+// SMOKE_NONCANONICAL_URL (e.g. a live deploy permalink) to have the check run.
+// Left unset, it records a skip rather than a false pass.
+const NONCANONICAL = (process.env.SMOKE_NONCANONICAL_URL ?? "").replace(/\/+$/, "");
+if (NONCANONICAL) {
+  await check(`A non-canonical host (${NONCANONICAL}) refuses or redirects, not serves`, async () => {
+    // /api/* is behind the server guard; /login is a page the client redirect
+    // rescues. Either "inert" (421) or "moved" (3xx) is correct; a 200 that
+    // serves the app is the nine-day failure.
+    const api = await (async () => {
+      try {
+        const res = await fetch(`${NONCANONICAL}/api/version`, { redirect: "manual" });
+        return res.status;
+      } catch {
+        return 0; // unreachable is fine: a deleted permalink is the goal
+      }
+    })();
+    const apiOk = api === 0 || api === 421 || (api >= 300 && api < 400);
+    return {
+      ok: apiOk,
+      detail: api === 0 ? "unreachable (deleted or blocked)" : `/api/version → ${api}`,
+    };
+  });
+} else {
+  record(
+    "A non-canonical host refuses or redirects",
+    true,
+    "skipped — set SMOKE_NONCANONICAL_URL to a permalink to exercise it",
+  );
+}
+
+// ---------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
 console.log("");

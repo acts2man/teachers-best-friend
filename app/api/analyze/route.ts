@@ -21,7 +21,6 @@ import {
 } from "@/lib/analyze-shared";
 import { checkSpendGate, enforceSpendGate } from "@/lib/spend-gate";
 import {
-  chargePages,
   chargesForMode,
   confirmPages,
   generationKey,
@@ -158,34 +157,32 @@ export async function POST(request: Request) {
       // does: a later batch's pages are already paid for, so it charges
       // nothing without anyone having to remember that it should.
       const billable = !adminCatalog && p.mode !== "name_strip";
-      scanId = await startScan(svc, user, assessmentRow, studentRow, p.mode, billable);
+      // The charge is performed inside create_scan now, in the same transaction
+      // that opens the scan row: a billable, charging-mode request is paid for
+      // before its row exists, so no caller -- not a stale copy of the app, not
+      // a background replay -- can open a scan that was never charged. A stack
+      // that does not fit the teacher's quota raises here, and no scan row is
+      // created (nothing to unwind). The scan is stamped with the build that
+      // opened it at the same moment.
+      scanId = await startScan(
+        svc,
+        user,
+        assessmentRow,
+        studentRow,
+        p.mode,
+        billable,
+        p.uploadIds,
+        process.env.COMMIT_REF || null,
+      );
     }
 
-    // Pay for the pages before the model is called. A request that cannot be
-    // paid for never reaches OpenAI, and a teacher is never charged for a
-    // stack that was only partly graded.
+    // Whether this scan carries a live page charge to settle after the model
+    // call. create_scan already reserved it; confirm on success, release on
+    // failure.
     const charging = Boolean(svc && scanId && !adminCatalog && chargesForMode(p.mode));
-    // A generated lesson or passage has no page to charge, so it charges one
-    // against a key unique to this scan.
+    // A generated lesson or passage had no page, so create_scan charged one
+    // against gen:<scanId>. The same key confirms or releases it below.
     const genKey = charging && p.uploadIds.length === 0 ? generationKey(scanId!) : null;
-    if (charging) {
-      try {
-        await chargePages(svc!, user, p.uploadIds, p.mode, genKey);
-      } catch (e) {
-        // The scan row exists but nothing was spent on it; mark it failed so
-        // the cost log does not carry a queued row that never ran.
-        await recordScanUsage(svc!, scanId!, {
-          ok: false,
-          model: settings.model,
-          isLesson: p.mode === "lesson",
-          usage: undefined,
-          errorMessage:
-            (e instanceof HttpError && e.detail) ||
-            (e instanceof Error ? e.message : String(e)),
-        });
-        throw e;
-      }
-    }
     const settleCharge = async (ok: boolean) => {
       if (!charging) return;
       if (ok) await confirmPages(svc!, user, p.uploadIds, genKey);

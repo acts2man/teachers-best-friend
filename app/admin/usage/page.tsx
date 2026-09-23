@@ -169,22 +169,29 @@ export default async function UsagePage() {
         <div className="ad-panel-head">
           <div className="ad-panel-title"><h2>What each teacher costs us, month by month</h2><span className="ad-count">{(econ ?? []).length}</span></div>
         </div>
-        <p className="muted" style={{ fontSize: ".875rem", margin: "0 0 12px", maxWidth: "72ch" }}>
-          For each teacher and month: what they pay us, what their scans cost us in AI, and what is left over. A free plan always shows a negative margin — that is the cost of the free tier. Click a teacher to see their full breakdown.
+        <p className="muted" style={{ fontSize: ".875rem", margin: "0 0 12px", maxWidth: "78ch" }}>
+          For each teacher and month. <strong>Billed</strong> is pages charged against their quota — the same meter they see and the
+          same number the <Link href="/admin/accounts">Accounts</Link> page shows. <strong>AI calls</strong> is billable model calls
+          that finished, which is what the per-scan cost is figured from. <strong>Teaching</strong> is what those calls cost us;
+          <strong> Admin/library</strong> is standards-library work we run for everyone and bill to no one (kept out of the per-scan
+          figure and the margin). A free plan always shows a negative margin — that is the cost of the free tier. Click a teacher for
+          the full breakdown.
         </p>
         <div className="ad-table-wrap">
           <table>
-            <thead><tr><th>Teacher</th><th>Month</th><th>Plan</th><th className="num">They pay</th><th className="num">Scans</th><th className="num">AI cost</th><th className="num">Per scan</th><th className="num">Lessons reused</th><th className="num">Margin</th></tr></thead>
+            <thead><tr><th>Teacher</th><th>Month</th><th>Plan</th><th className="num">They pay</th><th className="num">Billed</th><th className="num">AI calls</th><th className="num">Teaching</th><th className="num">Admin/library</th><th className="num">Per scan</th><th className="num">Lessons reused</th><th className="num">Margin</th></tr></thead>
             <tbody>
-              {(econ ?? []).length === 0 && <tr><td colSpan={9} className="muted">No completed scans yet.</td></tr>}
+              {(econ ?? []).length === 0 && <tr><td colSpan={11} className="muted">No completed scans yet.</td></tr>}
               {(econ ?? []).map((r: UnitEconomicsRow, i: number) => (
                 <tr key={i}>
                   <td><Link href={`/admin/accounts/${r.teacher_id}`}>{emailOf.get(r.teacher_id) ?? r.teacher_id.slice(0, 8)}</Link></td>
                   <td className="muted">{new Date(r.period + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</td>
                   <td>{r.plan_id}</td>
                   <td className="num">{fmtUsd(r.plan_price_usd)}</td>
-                  <td className="num">{r.scans}</td>
-                  <td className="num" title={`exact: ${fmtUsd(r.ai_cost_usd, 4)}`}>{fmtCents(r.ai_cost_usd)}</td>
+                  <td className="num" title="pages billed against quota (the teacher's meter)">{r.pages_billed}</td>
+                  <td className="num" title="billable model calls that finished">{r.scans}</td>
+                  <td className="num" title={`exact: ${fmtUsd(r.teaching_cost_usd, 4)}`}>{fmtCents(r.teaching_cost_usd)}</td>
+                  <td className="num" title={`admin/library work billed to nobody — exact: ${fmtUsd(r.admin_cost_usd, 4)}`}>{Number(r.admin_cost_usd) > 0 ? <span className="muted">{fmtCents(r.admin_cost_usd)}</span> : <span className="muted">—</span>}</td>
                   <td className="num"><CentsPill value={Number(r.avg_cost_per_scan)} /></td>
                   <td className="num">{r.cache_hit_rate_pct ?? "—"}{r.cache_hit_rate_pct != null && "%"}</td>
                   <td className="num">{Number(r.gross_margin_usd) < 0 ? <span className="kpi-delta bad">{fmtCents(r.gross_margin_usd)}</span> : <span className="kpi-delta good">{fmtCents(r.gross_margin_usd)}</span>}</td>
