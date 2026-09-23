@@ -235,12 +235,21 @@ export type UnitEconomicsRow = {
   plan_price_usd: number | string | null;
   scan_quota: number | null;
   period: string;
+  /** Billable, completed AI calls — the teaching scans the per-scan cost divides by. */
   scans: number | string | null;
+  /** Pages billed against quota this month, from the page ledger (the meter). Agrees with the accounts overview. */
+  pages_billed: number | string | null;
+  /** Every cent spent under this account this month (teaching + admin + failed $0). */
   ai_cost_usd: number | string | null;
+  /** The teacher's own billable, completed scans — the cost that belongs to them. */
+  teaching_cost_usd: number | string | null;
+  /** Admin/library work billed to nobody (billable = false). Shown beside teaching cost, never inside it. */
+  admin_cost_usd: number | string | null;
   avg_cost_per_scan: number | string | null;
   library_hits: number | string | null;
   library_misses: number | string | null;
   cache_hit_rate_pct: number | string | null;
+  /** What they pay minus TEACHING cost only. */
   gross_margin_usd: number | string | null;
 };
 

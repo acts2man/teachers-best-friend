@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-21.
+Last verified against the running system: 2026-09-23.
 
 ---
 
@@ -61,6 +61,28 @@ request is authenticated against the teacher's Supabase session.
 
 Row-level security scopes every table to the owning teacher, so one teacher's data is
 unreachable from another teacher's session even if the application layer had a bug.
+
+Metering also records, on each scan row, the content hashes it was billed against
+(`scans.charge_keys`, matching `teacher_uploads.content_sha256` / `page_charges`). These
+are hashes, not copies: they identify the bytes, stay inside Supabase Postgres, and are
+never sent to OpenAI. They are stored so "a billable scan has an attributable charge"
+stays answerable by query after the upload row is purged.
+
+### Every deploy runs with the full production environment, and its permalink never expires
+
+Netlify keeps a permanent, immutable URL for every deploy
+(`https://<deploy-id>--teachersbestfriend.netlify.app`). That URL is a **complete copy of
+that build's serverless functions running with the production environment**, which
+includes `SUPABASE_SERVICE_ROLE_KEY` — the key that bypasses every row-level-security
+policy above. A permalink is therefore a fully usable copy of the app with unrestricted
+read/write access to the production database, reachable by anyone who has the link, for
+as long as the deploy exists. A stale permalink was used against production for nine days
+(see `docs/incident-response.md`).
+
+What contains it: the host guard (`lib/canonical-host.ts`) refuses any production request
+whose host is not `CANONICAL_HOST`, so a permalink of any build **from the guard onward**
+is inert. It cannot reach into permalinks of older builds, so deleting old deploys and
+limiting Netlify's deploy retention remain necessary for those.
 
 ### Grading results held for delivery (`scans.params`, `scans.result`)
 
@@ -260,6 +282,11 @@ data is involved in this path.
   ask what identity it carries.
 - Any change to what reaches the provider means updating the same four published pages
   listed above, and the "last verified" date at the top of this file.
+- **A deploy permalink carries the production service key and never expires on its own.**
+  Keep Netlify's deploy retention limited, delete deploys that no longer need to exist,
+  and keep `CANONICAL_HOST` set so the host guard makes new permalinks inert. The guard
+  protects builds from itself onward only; old permalinks are contained solely by
+  deleting them.
 - **Adding a column that holds what a teacher or a student produced means deciding
   when it is cleared, in the same change.** `scans.result` was added so a background
   job could be collected and then kept a child's answers indefinitely, because nothing

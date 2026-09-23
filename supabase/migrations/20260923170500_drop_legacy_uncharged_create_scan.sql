@@ -1,0 +1,18 @@
+-- Close the last uncharged path: drop the legacy single-upload create_scan.
+--
+-- Migration 20260923170000 added the new create_scan(...uuid[]...) that charges
+-- as it opens a scan row, and deliberately LEFT the old single-upload signature
+-- in place so the currently deployed code kept working during the deploy. That
+-- old signature opens a scan row WITHOUT charging -- it is the last way a scan
+-- can exist uncharged.
+--
+-- APPLY THIS ONLY AFTER the new code is confirmed live (the deployed-version
+-- workflow reports the merge commit serving, /api/analyze agrees, and the smoke
+-- step is green). At that point nothing calls the old signature -- new code
+-- uses the uuid[] overload -- so dropping it is a no-op for live traffic and
+-- shuts the door on any stale copy that still knows the old shape.
+--
+-- After this, create_scan has exactly one signature and it charges. A scan
+-- cannot exist uncharged, by construction. supabase/checks/pages-charged.sql
+-- proves it.
+drop function if exists public.create_scan(uuid, uuid, uuid, uuid, uuid, boolean, text);

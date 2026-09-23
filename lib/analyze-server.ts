@@ -1,5 +1,6 @@
 import "server-only";
 import { HttpError } from "@/lib/teacher-server";
+import { ledgerError } from "@/lib/page-ledger";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pipelineStage } from "@/lib/pipeline-config";
@@ -116,8 +117,14 @@ export async function relationalRow(
 }
 
 /**
- * Reserves a metered scan before the model is called. Quota and account
- * state are enforced by create_scan; nothing reaches OpenAI if it refuses.
+ * Opens a metered scan AND pays for it, in one database transaction.
+ *
+ * create_scan performs the page charge itself now: a billable, charging-mode
+ * request is charged before its row exists, so this is the single point where
+ * quota, account state and the charge are all enforced. A stack that does not
+ * fit raises here and no scan row is created -- nothing reaches OpenAI and
+ * there is nothing to unwind. p_upload_ids are the pages this scan bills (empty
+ * for a generated lesson, which create_scan charges against gen:<scan>).
  */
 export async function startScan(
   svc: ServiceClient,
@@ -126,29 +133,30 @@ export async function startScan(
   student: { id: string; class_id: string | null } | null,
   stage: string,
   billable = true,
+  uploadIds: string[] = [],
+  buildRef: string | null = null,
 ) {
   const { data, error } = await svc.rpc("create_scan", {
     p_teacher: teacher,
     p_class_id: assessment?.class_id ?? student?.class_id ?? null,
     p_assessment_id: assessment?.id ?? null,
     p_student_id: student?.id ?? null,
-    p_upload_id: null, // Phase 3 wires uploads
+    p_upload_ids: uploadIds,
     p_billable: billable,
     p_stage: stage, // what kind of work this is, for the cost breakdown
+    p_build_ref: buildRef, // which build opened this scan
   });
   if (error) {
-    if (error.message.includes("SCAN_QUOTA_EXCEEDED"))
-      throw new HttpError(
-        402,
-        "You've used all your scans for this period. Upgrade your plan to keep going.",
-      );
-    if (error.message.includes("NO_SUBSCRIPTION"))
-      throw new HttpError(
-        402,
-        "This account has no active plan. Choose a plan to keep going.",
-      );
     if (error.message.includes("ACCOUNT_SUSPENDED"))
       throw new HttpError(403, "This account is paused. Contact support.");
+    // The charge failures create_scan can raise. ledgerError gives the teacher
+    // the page count and scans-left wording, the same as a direct charge would.
+    if (
+      error.message.includes("SCAN_QUOTA_EXCEEDED") ||
+      error.message.includes("NO_SUBSCRIPTION") ||
+      error.message.includes("UPLOAD_NOT_FOUND")
+    )
+      throw ledgerError(error.message);
     console.error("create_scan failed", error.code ?? "", error.message);
     throw new HttpError(500, "Couldn't start the analysis. Please try again.");
   }

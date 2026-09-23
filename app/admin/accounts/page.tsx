@@ -43,6 +43,11 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
     <>
       <h1>Accounts</h1>
       <p className="ad-sub">{all.length} teachers · {all.filter((a) => a.price_cents > 0).length} paying · {all.filter((a) => a.status !== "active").length} suspended</p>
+      <p className="muted" style={{ fontSize: ".8rem", margin: "-.35rem 0 .5rem", maxWidth: "80ch" }}>
+        <strong>Billed</strong> is pages charged against quota this period — the teacher&rsquo;s own meter, from the page ledger. It is
+        the same number the <Link href="/admin/usage">Usage &amp; cost</Link> page shows as &ldquo;Billed&rdquo;; that page&rsquo;s
+        &ldquo;AI calls&rdquo; counts model calls instead, which is a different thing.
+      </p>
 
       <div className="toolbar">
         <form method="get">
@@ -66,7 +71,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
             <tr>
               <th>Teacher</th>
               <th>Plan</th>
-              <th className="num"><SortLink k="scans_this_period" cur={sortKey}>Scans</SortLink></th>
+              <th className="num" title="pages billed against quota this period (the teacher's meter)"><SortLink k="scans_this_period" cur={sortKey}>Billed</SortLink></th>
               <th className="num">Quota</th>
               <th className="num"><SortLink k="ai_cost_this_period" cur={sortKey}>AI cost</SortLink></th>
               <th className="num"><SortLink k="students" cur={sortKey}>Students</SortLink></th>

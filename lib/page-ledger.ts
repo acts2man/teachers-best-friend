@@ -73,7 +73,13 @@ function quotaError(message: string): HttpError {
   );
 }
 
-function ledgerError(message: string): HttpError {
+/**
+ * Turns a charge_pages raise into the teacher-readable HttpError. Exported so
+ * create_scan's charge (surfaced through startScan) tells a teacher the same
+ * thing a direct charge would -- the page count and scans left, not a generic
+ * 500.
+ */
+export function ledgerError(message: string): HttpError {
   if (message.includes("SCAN_QUOTA_EXCEEDED")) return quotaError(message);
   if (message.includes("NO_SUBSCRIPTION"))
     return new HttpError(

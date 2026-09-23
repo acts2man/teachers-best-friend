@@ -7,9 +7,10 @@
 //
 // Two things make it safe, and both are checked here rather than assumed:
 //
-//   1. Structurally: chargePages is called once in the route, before the model
-//      call, and withRetry wraps only the fetch. The retry loop cannot reach
-//      the charge.
+//   1. Structurally: the charge happens once, in create_scan (invoked via
+//      startScan), before the model call, and withRetry wraps only the fetch.
+//      The retry loop cannot reach the charge. The route no longer charges
+//      directly -- enforcement moved into the database so no caller can skip it.
 //   2. Even if it did: charge_pages is keyed on the sha256 of the page bytes
 //      with a unique constraint, so a second charge for the same page is a
 //      no-op. The database is the backstop, proved against production in
@@ -75,23 +76,31 @@ test("the retried unit is the model call, and the charge sits outside it", async
   assert.equal(charges, 1, "but the teacher was charged once");
 });
 
-test("the route charges before the model call, not inside the retried unit", () => {
-  // Structural, against the real file. If someone later moves chargePages
-  // into the retried closure this fails, which is the point.
-  const chargeAt = route.indexOf("await chargePages(");
+test("the scan is opened (and charged) before the model call, not inside the retried unit", () => {
+  // Structural, against the real file. create_scan performs the charge as it
+  // opens the scan row, so startScan is the charge point; it must come before
+  // either model path. If someone later moves it into the retried closure this
+  // fails, which is the point.
+  const startAt = route.indexOf("await startScan(");
   const syncAt = route.indexOf("await runModelSync(");
   const bgAt = route.indexOf("await startModelBackground(");
-  assert.ok(chargeAt > 0, "chargePages should be called in the route");
+  assert.ok(startAt > 0, "startScan should be called in the route");
   assert.ok(syncAt > 0 && bgAt > 0, "both model paths should be in the route");
-  assert.ok(chargeAt < syncAt, "chargePages must come before the sync model call");
-  assert.ok(chargeAt < bgAt, "chargePages must come before the background start");
+  assert.ok(startAt < syncAt, "startScan must come before the sync model call");
+  assert.ok(startAt < bgAt, "startScan must come before the background start");
 });
 
-test("chargePages appears exactly once in the analyze route", () => {
-  const occurrences = route.split("chargePages(").length - 1;
-  // One import-site usage. More than one call site means two ways to charge,
-  // which is one more than a teacher can audit.
-  assert.equal(occurrences, 1, "there should be a single charge call site");
+test("the route never charges directly -- the charge lives in create_scan", () => {
+  // Enforcement moved into the database: a scan cannot exist uncharged because
+  // create_scan is the only way to open one and it charges first. The route
+  // calling chargePages itself would be a second, skippable path, which is the
+  // shape of the bug this whole change removes.
+  assert.ok(
+    !route.includes("chargePages("),
+    "the analyze route must not call chargePages -- create_scan charges",
+  );
+  const starts = route.split("await startScan(").length - 1;
+  assert.equal(starts, 1, "there should be a single scan-open (and charge) call site");
 });
 
 test("the retry wrapper never touches the ledger", () => {

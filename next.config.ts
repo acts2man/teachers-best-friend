@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
     BRANCH: process.env.BRANCH ?? "",
     CONTEXT: process.env.CONTEXT ?? "",
     BUILD_TIME: new Date().toISOString(),
+    // The one address the app is allowed to serve from (lib/canonical-host.ts).
+    // Inlined here at build time for the same reason CONTEXT is: the host guard
+    // runs both server-side (proxy.ts, guardOrigin) and in the browser (the
+    // on-load canonical redirect), and both must read the same value. Must be
+    // set at build scope in Netlify, alongside CONTEXT. Empty is handled as
+    // "fail loud in production" -- see hostRefusal().
+    CANONICAL_HOST: process.env.CANONICAL_HOST ?? "",
   },
   /**
    * Redirects here run BEFORE routing, so a source that matches a real page
