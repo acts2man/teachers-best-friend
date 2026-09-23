@@ -86,6 +86,79 @@ test("an unset canonical value fails loud in production, but stands down elsewhe
   // Outside production the value is expected to be unset, so there we allow.
   assert.equal(H.hostRefusal("anything.example", { context: "deploy-preview", canonical: "" }), null);
   assert.equal(H.hostRefusal("localhost:3000", { context: "", canonical: "" }), null);
+  // A value that is only blanks/commas is still "unset" -> fail loud in prod.
+  assert.ok(H.hostRefusal("anything.example", { context: "production", canonical: "  ,  " }));
+});
+
+test("normalizeHost tolerates how CANONICAL_HOST gets mis-entered, so a typo can't self-outage", () => {
+  // All of these are the same host. A value entered with a scheme or a trailing
+  // slash must still match, or production takes itself down on deploy with a
+  // message blaming the visitor's address.
+  const forms = [
+    "teachersbestfriend.netlify.app",
+    "https://teachersbestfriend.netlify.app",
+    "http://teachersbestfriend.netlify.app",
+    "teachersbestfriend.netlify.app/",
+    "https://teachersbestfriend.netlify.app/",
+    "https://teachersbestfriend.netlify.app/login?plan=tier1#top",
+    "teachersbestfriend.netlify.app:443",
+    "  teachersbestfriend.netlify.app  ",
+    "TeachersBestFriend.Netlify.App",
+    "teachersbestfriend.netlify.app.",
+  ];
+  for (const f of forms) {
+    assert.equal(H.normalizeHost(f), CANON, `normalizeHost(${JSON.stringify(f)})`);
+    // The same forms entered as the ENV value must still accept the real host.
+    assert.equal(
+      H.hostRefusal(CANON, { context: "production", canonical: f }),
+      null,
+      `CANONICAL_HOST=${JSON.stringify(f)} must accept the real host`,
+    );
+  }
+});
+
+test("a single-value CANONICAL_HOST behaves exactly as one host did", () => {
+  assert.deepEqual(H.canonicalHosts(CANON), [CANON]);
+  assert.equal(H.canonicalHost(CANON), CANON);
+  assert.equal(H.hostRefusal(CANON, { context: "production", canonical: CANON }), null);
+  assert.ok(H.hostRefusal("old--teachersbestfriend.netlify.app", { context: "production", canonical: CANON }));
+});
+
+test("two hosts: both are allowed, and the first is the redirect target", () => {
+  // The .com switchover: both live at once, the new domain listed first.
+  const list = "ateachersbestfriend.com, teachersbestfriend.netlify.app";
+  assert.deepEqual(H.canonicalHosts(list), ["ateachersbestfriend.com", "teachersbestfriend.netlify.app"]);
+
+  // Both accepted.
+  assert.equal(H.hostRefusal("ateachersbestfriend.com", { context: "production", canonical: list }), null);
+  assert.equal(H.hostRefusal("teachersbestfriend.netlify.app", { context: "production", canonical: list }), null);
+
+  // A third host is refused, and the message names the FIRST (the new domain).
+  const r = H.hostRefusal("old--teachersbestfriend.netlify.app", { context: "production", canonical: list });
+  assert.ok(r && r.includes("https://ateachersbestfriend.com"), "refusal names the first host");
+
+  // A stale bookmark on a non-canonical host is sent to the FIRST host.
+  const target = H.canonicalRedirectTarget(
+    { host: "old--teachersbestfriend.netlify.app", pathname: "/app", search: "?q=1", hash: "" },
+    { context: "production", canonical: list },
+  );
+  assert.equal(target, "https://ateachersbestfriend.com/app?q=1");
+
+  // But a request already on the second (still-allowed) host is left alone.
+  assert.equal(
+    H.canonicalRedirectTarget(
+      { host: "teachersbestfriend.netlify.app", pathname: "/app", search: "", hash: "" },
+      { context: "production", canonical: list },
+    ),
+    null,
+  );
+});
+
+test("a messy two-host value parses cleanly", () => {
+  const list = "  https://ateachersbestfriend.com/ ,  teachersbestfriend.netlify.app:443  ";
+  assert.deepEqual(H.canonicalHosts(list), ["ateachersbestfriend.com", "teachersbestfriend.netlify.app"]);
+  assert.equal(H.hostRefusal("teachersbestfriend.netlify.app", { context: "production", canonical: list }), null);
+  assert.equal(H.hostRefusal("ateachersbestfriend.com", { context: "production", canonical: list }), null);
 });
 
 test("the client redirect target keeps the path and query, and is null on the canonical host", () => {

@@ -5,7 +5,7 @@ import {
   type GuardedAction,
 } from "@/lib/impersonation-guard";
 import { countPages, contentHash } from "@/lib/page-count";
-import { canonicalHost, hostGuardEnforced } from "@/lib/canonical-host";
+import { canonicalHosts, hostGuardEnforced } from "@/lib/canonical-host";
 
 export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
@@ -205,8 +205,8 @@ export function guardOrigin(request: Request) {
   const forwardedHost = h.get("x-forwarded-host") ?? h.get("host");
   const forwardedProto = h.get("x-forwarded-proto") ?? "https";
   const allowed = new Set<string>();
-  const canonical = canonicalHost();
-  if (canonical) allowed.add(`https://${canonical}`);
+  // Every canonical host (one, or both during a domain switchover).
+  for (const c of canonicalHosts()) allowed.add(`https://${c}`);
   // The request's own host is same-origin with itself, which is precisely why
   // it cannot be trusted in production. Outside production there is no canonical
   // host to compare to and the forwarded host is the legitimate one.

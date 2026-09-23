@@ -49,6 +49,18 @@ Three things contain this, and all three matter:
 
 Deploy previews (`deploy-preview`), branch deploys (`branch-deploy`) and local development are deliberately exempt from the host guard — their hostnames are legitimately not canonical and are how PR/branch checks reach the app. If `CANONICAL_HOST` is unset in production the app fails loud (refuses) rather than silently allowing every host.
 
+`CANONICAL_HOST` is a **comma-separated list**; the first entry is canonical (the redirect target and the address the error message names), and every entry is allowed. Usually one entry. Each entry is normalized forgivingly (a stray `https://`, trailing slash, port, or wrong case still matches), so a mis-entered value can't take production down blaming the visitor.
+
+#### Runbook: changing the domain (e.g. when the `.com` lands)
+
+Because both addresses are live during the cutover and sessions, bookmarks and the Supabase redirect list move at different times, do this in order — and **redeploy at the end, because `CANONICAL_HOST` is baked in at build time** (a Netlify env change alone does nothing until a rebuild):
+
+1. **`CANONICAL_HOST` (Netlify, build scope)** → set to both hosts, **new domain first**: `ateachersbestfriend.com,teachersbestfriend.netlify.app`. Both stay allowed through the switchover; stale bookmarks are redirected to the new domain.
+2. **Supabase → Authentication → URL Configuration** → set **Site URL** to the new domain and add the new domain's callback (`https://ateachersbestfriend.com/auth/callback`) to the **Redirect URLs** list (keep the netlify.app entry until the cutover is done).
+3. **Smoke check's expected host** → update the candidate URL in `.github/workflows/deployed-version.yml` (`CANDIDATES`) to the new domain so the deploy check and smoke step run against it.
+4. **Redeploy** (push to `main` or trigger a build) so the new `CANONICAL_HOST` is inlined.
+5. Once traffic has fully moved and the netlify.app is no longer needed, drop it from `CANONICAL_HOST` (leaving just the `.com`) and redeploy, and remove the netlify.app redirect URL from Supabase.
+
 ChatGPT Sites retains its managed private audience, D1 `DB`, and R2 `BUCKET` bindings when the Supabase variables are absent. API routes select the available backend, validate authenticated ownership, and reject cross-origin writes.
 
 The existing server-side Responses adapter uses the hosted OPENAI_API_KEY secret and OPENAI_MODEL setting. Keys are never requested in a public browser form. Without a configured key, uploads and manual workflows work and automatic actions show their unconnected status. Sample results are explicitly labeled and are never substituted for analysis of uploaded work.

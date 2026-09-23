@@ -10,16 +10,24 @@
  * the production database while every internal signal looked fine.
  *
  * The hole was guardOrigin() trusting the request's own forwarded host. The
- * fix is a single canonical host, read from the environment, that every
- * production request is measured against. A permalink of a production deploy
- * still reports CONTEXT=production (it is the same build), so context alone
- * cannot tell it apart from the real site -- the HOST is the discriminator.
+ * fix is a canonical host, read from the environment, that every production
+ * request is measured against. A permalink of a production deploy still
+ * reports CONTEXT=production (it is the same build), so context alone cannot
+ * tell it apart from the real site -- the HOST is the discriminator.
  *
  * Honest limit: this protects every deploy BUILT FROM NOW ON, because a build
  * has to carry this code to enforce it. It can never appear inside a permalink
  * that already exists. That is why deleting old deploys and limiting Netlify's
  * deploy retention still matter; this guard contains new permalinks, it does
  * not reach back into old ones.
+ *
+ * CANONICAL_HOST is a comma-separated list (usually one entry). The FIRST entry
+ * is canonical -- the redirect target and the address error messages name --
+ * and every entry is allowed. One entry behaves exactly as a single host did.
+ * Two exist only during a domain switchover (the .com is coming): both the new
+ * domain and the netlify.app are live while sessions, bookmarks and the
+ * Supabase redirect list move over at their own pace, so both must be accepted
+ * and the new domain (listed first) is where a stale bookmark is sent.
  *
  * Isomorphic on purpose: proxy.ts (server), guardOrigin() (server) and the
  * on-load client redirect all decide with the same rule, from the same two
@@ -28,11 +36,40 @@
  * "server-only" import here.
  */
 
-/** The one address the app is allowed to serve from, e.g.
- * "teachersbestfriend.netlify.app". Bare host, no scheme, no path. Empty when
- * unset. Documented in .env.example as CANONICAL_HOST. */
-export function canonicalHost(): string {
-  return normalizeHost(process.env.CANONICAL_HOST);
+/**
+ * A host, reduced to just its name for comparison. Tolerant of the obvious
+ * ways CANONICAL_HOST gets mis-entered by a human in a dashboard field: a
+ * scheme, a trailing slash or path, a port, a trailing dot, stray whitespace,
+ * mixed case. Getting this wrong on the env value would take production down on
+ * deploy with a message blaming the visitor's address, so it is forgiving on
+ * purpose.
+ */
+export function normalizeHost(host: string | null | undefined): string {
+  let h = (host ?? "").trim().toLowerCase();
+  h = h.replace(/^[a-z][a-z0-9+.-]*:\/\//, ""); // strip a scheme like https://
+  h = h.replace(/[/?#].*$/, ""); // strip any path, query or fragment
+  h = h.replace(/\.+$/, ""); // strip a trailing dot (FQDN root, or a typo)
+  h = h.replace(/:\d+$/, ""); // strip a port
+  return h;
+}
+
+/**
+ * The allowed hosts, in order. The first is canonical (redirect target). Reads
+ * the comma-separated CANONICAL_HOST unless a raw value is passed (tests). Each
+ * entry is normalized and blanks are dropped, so "  https://A/ , b " parses to
+ * ["a", "b"].
+ */
+export function canonicalHosts(raw: string | null | undefined = process.env.CANONICAL_HOST): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map(normalizeHost)
+    .filter(Boolean);
+}
+
+/** The one canonical host -- the first entry -- for building a redirect target
+ * or naming the real address. Empty when unset. */
+export function canonicalHost(raw: string | null | undefined = process.env.CANONICAL_HOST): string {
+  return canonicalHosts(raw)[0] ?? "";
 }
 
 /** Netlify's build context: "production", "deploy-preview", "branch-deploy",
@@ -55,17 +92,14 @@ export function hostGuardEnforced(context: string = deployContext()): boolean {
   return context === "production";
 }
 
-/** Lowercase, trimmed, with any :port stripped so a host compares by name. */
-function normalizeHost(host: string | null | undefined): string {
-  return (host ?? "").trim().toLowerCase().replace(/:\d+$/, "");
-}
-
+/** True when the host matches any allowed canonical host. */
 export function isCanonicalHost(
   host: string | null | undefined,
-  canonical: string = canonicalHost(),
+  raw: string | null | undefined = process.env.CANONICAL_HOST,
 ): boolean {
-  if (!canonical) return false;
-  return normalizeHost(host) === normalizeHost(canonical);
+  const target = normalizeHost(host);
+  if (!target) return false;
+  return canonicalHosts(raw).includes(target);
 }
 
 /**
@@ -85,29 +119,35 @@ export function isCanonicalHost(
  */
 export function hostRefusal(
   host: string | null | undefined,
-  opts: { context?: string; canonical?: string } = {},
+  opts: { context?: string; canonical?: string | null } = {},
 ): string | null {
   const context = opts.context ?? deployContext();
   if (!hostGuardEnforced(context)) return null; // previews, branch deploys, dev
-  const canonical = opts.canonical ?? canonicalHost();
-  if (!canonical)
+  const raw = opts.canonical ?? process.env.CANONICAL_HOST;
+  const hosts = canonicalHosts(raw);
+  if (hosts.length === 0)
     return "A Teacher’s Best Friend is temporarily unavailable (the site address isn’t configured). Please try again shortly or contact support.";
-  if (isCanonicalHost(host, canonical)) return null;
-  return `A Teacher’s Best Friend runs at https://${canonical}. This copy at ${
+  if (hosts.includes(normalizeHost(host))) return null;
+  const primary = hosts[0];
+  return `A Teacher’s Best Friend runs at https://${primary}. This copy at ${
     normalizeHost(host) || "this address"
-  } is an old preview and can no longer be used — please go to https://${canonical} and update your bookmark.`;
+  } is an old preview and can no longer be used — please go to https://${primary} and update your bookmark.`;
 }
 
 /** The address the client should redirect to on load, or null to stay put.
  * Same rule as hostRefusal, but a bad host on a real page is rescued by moving
  * the person to the canonical site (keeping their path) rather than showing an
- * error -- that is what saves a bookmark. */
+ * error -- that is what saves a bookmark. The FIRST canonical host is the
+ * target, so a domain switchover sends stale bookmarks to the new domain. */
 export function canonicalRedirectTarget(
   location: { host: string; pathname: string; search: string; hash: string },
+  opts: { context?: string; canonical?: string | null } = {},
 ): string | null {
-  if (!hostGuardEnforced()) return null;
-  const canonical = canonicalHost();
-  if (!canonical) return null; // nothing to redirect to; the server fails loud
-  if (isCanonicalHost(location.host, canonical)) return null;
-  return `https://${canonical}${location.pathname}${location.search}${location.hash}`;
+  const context = opts.context ?? deployContext();
+  if (!hostGuardEnforced(context)) return null;
+  const raw = opts.canonical ?? process.env.CANONICAL_HOST;
+  const hosts = canonicalHosts(raw);
+  if (hosts.length === 0) return null; // nothing to redirect to; the server fails loud
+  if (hosts.includes(normalizeHost(location.host))) return null;
+  return `https://${hosts[0]}${location.pathname}${location.search}${location.hash}`;
 }
