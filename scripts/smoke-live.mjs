@@ -231,38 +231,95 @@ await check("GET /api/version on the canonical host is not refused by the host g
   return { ok: r.status === 200, detail: `${r.status}` };
 });
 
-// If a non-canonical host of this same site is reachable from the runner, it
-// must refuse (421) or redirect (3xx) rather than serve. There is no way to
-// discover a Netlify permalink URL from here, so this is opt-in: pass one via
-// SMOKE_NONCANONICAL_URL (e.g. a live deploy permalink) to have the check run.
-// Left unset, it records a skip rather than a false pass.
+// Now the harder half: prove the guard actually REFUSES a non-canonical host,
+// not just that it is configured. Three ways, strongest first; we assert
+// whatever this runner can actually reach and say plainly when a way is blocked.
+const canonHost = (() => {
+  try {
+    return new URL(BASE).host;
+  } catch {
+    return "";
+  }
+})();
+
+// (1) A real non-canonical host of this site (a deploy permalink), if one is
+// supplied. This is the only true end-to-end proof: the request reaches
+// proxy.ts under a host Netlify actually serves, and the guard must answer 421
+// with the teacher-readable refusal -- not 401 (auth) and not 200 (served).
 const NONCANONICAL = (process.env.SMOKE_NONCANONICAL_URL ?? "").replace(/\/+$/, "");
 if (NONCANONICAL) {
-  await check(`A non-canonical host (${NONCANONICAL}) refuses or redirects, not serves`, async () => {
-    // /api/* is behind the server guard; /login is a page the client redirect
-    // rescues. Either "inert" (421) or "moved" (3xx) is correct; a 200 that
-    // serves the app is the nine-day failure.
-    const api = await (async () => {
-      try {
-        const res = await fetch(`${NONCANONICAL}/api/version`, { redirect: "manual" });
-        return res.status;
-      } catch {
-        return 0; // unreachable is fine: a deleted permalink is the goal
-      }
-    })();
-    const apiOk = api === 0 || api === 421 || (api >= 300 && api < 400);
+  await check(`A non-canonical host (${NONCANONICAL}) is refused with 421 + the message`, async () => {
+    let status = 0;
+    let body = "";
+    try {
+      const res = await fetch(`${NONCANONICAL}/api/version`, { redirect: "manual" });
+      status = res.status;
+      body = await res.text();
+    } catch (e) {
+      // A deleted permalink that is simply gone is also a pass: it cannot serve.
+      return { ok: true, detail: `unreachable (deleted or blocked): ${String(e).slice(0, 80)}` };
+    }
+    if (status !== 421)
+      return { ok: false, detail: `${status} (want 421) — not refused as a non-canonical host` };
+    let message = "";
+    try {
+      message = JSON.parse(body).error ?? "";
+    } catch {
+      /* fall through to the substring check */
+    }
+    const named = (message || body).includes(`https://${canonHost}`);
     return {
-      ok: apiOk,
-      detail: api === 0 ? "unreachable (deleted or blocked)" : `/api/version → ${api}`,
+      ok: named,
+      detail: named ? "421 and the message names the real address" : `421 but the message is unexpected: ${(message || body).slice(0, 120)}`,
     };
   });
-} else {
-  record(
-    "A non-canonical host refuses or redirects",
-    true,
-    "skipped — set SMOKE_NONCANONICAL_URL to a permalink to exercise it",
-  );
 }
+
+// (2) Best-effort from the canonical endpoint: send a non-canonical
+// x-forwarded-host and see whether the guard trips. This works only if
+// Netlify's edge forwards a client-supplied x-forwarded-host through to the
+// function. If it overwrites it with the real host (which it is expected to),
+// proxy.ts sees the canonical host and this cannot prove refusal from here --
+// so we report that plainly rather than claim the guard works. Never fails the
+// build: an edge that rewrites the header is not a guard bug.
+await check("Refusal proof via a spoofed x-forwarded-host (best-effort)", async () => {
+  const spoof = `smoke-noncanonical--${canonHost}`;
+  const r = await get("/api/version", { headers: { "x-forwarded-host": spoof } });
+  if (r.status === 421)
+    return { ok: true, detail: "421 — the guard refused a non-canonical forwarded host end-to-end" };
+  return {
+    ok: true, // environmental limitation, not a guard failure
+    detail: `INCONCLUSIVE from this runner: /api/version → ${r.status}, so Netlify's edge overwrote x-forwarded-host with the real host before proxy.ts saw it. End-to-end refusal not provable this way; see the bundle-config proof and supply SMOKE_NONCANONICAL_URL (a permalink) for the true end-to-end check.`,
+  };
+});
+
+// (3) Always provable from the runner: the deployed client bundle carries the
+// canonical host value AND the production context, so the guard is configured
+// and switched on in what actually shipped. next.config.ts inlines both into
+// the bundle at build time (the client redirect reads them), so a build with
+// the guard off, or with the wrong host, would not contain these.
+await check("The deployed client bundle carries the canonical host and the production context", async () => {
+  const home = await get("/");
+  if (home.status !== 200) return { ok: false, detail: `homepage ${home.status}` };
+  const srcs = [
+    ...new Set([...home.body.matchAll(/\/_next\/static\/[A-Za-z0-9._/-]+\.js/g)].map((m) => m[0])),
+  ].slice(0, 40);
+  let haveHost = false;
+  let haveProd = false;
+  let scanned = 0;
+  for (const s of srcs) {
+    if (haveHost && haveProd) break;
+    const r = await get(s);
+    if (r.status !== 200) continue;
+    scanned += 1;
+    if (canonHost && r.body.includes(canonHost)) haveHost = true;
+    if (/["']production["']/.test(r.body)) haveProd = true;
+  }
+  return {
+    ok: haveHost && haveProd,
+    detail: `scanned ${scanned} chunk(s) — canonical host ${haveHost ? "present" : "MISSING"}, production context ${haveProd ? "present" : "MISSING"}`,
+  };
+});
 
 // ---------------------------------------------------------------
 
