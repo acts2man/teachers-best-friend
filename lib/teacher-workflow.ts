@@ -216,6 +216,33 @@ export function mergeStudentResponses(
   });
 }
 
+/**
+ * Points earned for a whole-test percentage, out of what the assessment is
+ * worth. Rounded to the nearest whole point, halves up (Math.round): a grade
+ * book counts whole points, and the percentage shown beside it stays the exact
+ * figure. Returns null when there is no score or no points total set.
+ */
+export function pointsForScore(
+  score: number | null,
+  pointsPossible?: number,
+): number | null {
+  if (score === null || !pointsPossible || pointsPossible <= 0) return null;
+  return Math.round((score / 100) * pointsPossible);
+}
+
+/**
+ * A whole-test score for display: "90%", or "90% · 18/20" when the assessment
+ * has a points total. "—" when there is no score yet.
+ */
+export function scoreLabel(
+  score: number | null,
+  pointsPossible?: number,
+): string {
+  if (score === null) return "—";
+  const pts = pointsForScore(score, pointsPossible);
+  return pts === null ? `${score}%` : `${score}% · ${pts}/${pointsPossible}`;
+}
+
 export function studentReport(a: Assessment, student: Student) {
   const summary = studentReview(a, student.id);
   const codes = [
@@ -240,7 +267,9 @@ export function studentReport(a: Assessment, student: Student) {
     (summary.complete
       ? "Confirmed assignment score: "
       : "Provisional score from reviewed answers: ") +
-    (summary.score === null ? "Not yet available" : summary.score + "%") +
+    (summary.score === null
+      ? "Not yet available"
+      : scoreLabel(summary.score, a.pointsPossible)) +
     "\n\nSTANDARDS EVIDENCE\n" +
     codes
       .map((code) => {

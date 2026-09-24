@@ -62,6 +62,9 @@ export function ScanView() {
     [linked, setLinked] = useState<string[]>([]);
   const [text, setText] = useState(""),
     [files, setFiles] = useState<Uploaded[]>([]);
+  // What the whole assessment is worth (optional). Kept as a string for the
+  // input; parsed to a number in makeAssessment.
+  const [points, setPoints] = useState("");
   const [uploading, setUploading] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [error, setError] = useState(""),
@@ -71,13 +74,19 @@ export function ScanView() {
       params.get("assessment") || "",
     ),
     [studentId, setStudentId] = useState(params.get("student") || "");
+  // The assessment this scan session has created. Once set, adding more pages
+  // re-reads the whole set into THIS assessment rather than spawning a second
+  // one -- so a multi-page test comes out as one test. See analyze().
+  const [createdId, setCreatedId] = useState("");
   const input = useRef<HTMLInputElement>(null),
     camera = useRef<HTMLInputElement>(null);
   const chosen = assessments.find((a) => a.id === assessmentId);
-  const editing =
-    mode === "assignment" && params.get("assessment")
-      ? assessments.find((a) => a.id === params.get("assessment"))
-      : undefined;
+  // Edit the assessment named in the URL, or the one this session just created
+  // (createdId). The latter is what lets a second page re-read into the same
+  // test instead of making a new one.
+  const editId =
+    (mode === "assignment" && (params.get("assessment") || createdId)) || "";
+  const editing = editId ? assessments.find((a) => a.id === editId) : undefined;
   const catalog = catalogFor(w, Number(grade), framework, subject).filter(
     (s) => !/not applicable/i.test(s.summary),
   );
@@ -118,6 +127,7 @@ export function ScanView() {
     setGrade(String(editing.grade));
     setFramework(editing.framework);
     setTargets(editing.targetStandards);
+    setPoints(editing.pointsPossible ? String(editing.pointsPossible) : "");
   }, [editing?.id]);
   function scopeChange(field: string, value: string) {
     setTargets([]);
@@ -206,6 +216,7 @@ export function ScanView() {
   function makeAssessment(
     questions: Question[],
     origin: "manual" | "ai",
+    storeIds: string[],
     suggestedTitle?: string,
   ): Assessment {
     return {
@@ -219,15 +230,26 @@ export function ScanView() {
       status: questions.length ? "Needs review" : "Draft",
       questions,
       responses: [],
+      // storeIds are the pages this read actually covered. Using them (rather
+      // than the `files` state, which lags a render behind the upload that
+      // triggered the read) keeps every page that was read recorded on the
+      // assessment, so a re-read over the whole set does not drop page 2.
       uploadIds: editing
-        ? [...new Set([...editing.uploadIds, ...files.map((f) => f.id)])]
-        : files.map((f) => f.id),
-      assignmentUploadIds: files.length
-        ? files.map((f) => f.id)
+        ? [...new Set([...editing.uploadIds, ...storeIds])]
+        : storeIds,
+      assignmentUploadIds: storeIds.length
+        ? [...new Set([...(editing?.assignmentUploadIds || []), ...storeIds])]
         : editing?.assignmentUploadIds || [],
       source: origin,
       targetStandards: standardsForReading,
       answerKeyVerified: false,
+      // Optional whole-test total. A blank, zero or non-number clears it, so a
+      // score shows as a percentage only. Editing keeps whatever was set unless
+      // the field was changed.
+      pointsPossible:
+        points.trim() && Number(points) > 0
+          ? Math.round(Number(points))
+          : undefined,
       ...(editing
         ? { classIds: editing.classIds }
         : linked.length
@@ -241,7 +263,11 @@ export function ScanView() {
       setError("Choose at least one intended standard.");
       return;
     }
-    const a = makeAssessment(makeManualQuestions(text), "manual");
+    const a = makeAssessment(
+      makeManualQuestions(text),
+      "manual",
+      files.map((f) => f.id),
+    );
     if (
       await save(
         {
@@ -320,7 +346,7 @@ export function ScanView() {
    * inside upload(), where the files it just stored are not in React state
    * yet, so reading `files` there would analyse the previous batch.
    */
-  async function analyze(ids?: string[]) {
+  async function analyze(ids?: string[], navigate = false) {
     // These used to be bare returns. When one of them fired -- on upload, or on
     // the teacher pressing "Read it again" -- the reading simply did not happen
     // and nothing on screen changed: no spinner, no error, no explanation. A
@@ -364,7 +390,8 @@ export function ScanView() {
         studentId,
       });
       if (mode === "assignment") {
-        const a = makeAssessment(d.result.questions, "ai", d.result.title);
+        const a = makeAssessment(d.result.questions, "ai", uploadIds, d.result.title);
+        const pages = a.assignmentUploadIds?.length || uploadIds.length;
         if (
           await save(
             {
@@ -374,12 +401,17 @@ export function ScanView() {
                 : [a, ...w.assessments],
               students: editing ? reconcileEvidence(w.students, a) : w.students,
             },
-            editing
-              ? "Revised assessment ready for review"
-              : "Assessment ready for review",
+            `${a.questions.length} question${a.questions.length === 1 ? "" : "s"} read from ${pages} page${pages === 1 ? "" : "s"} — add more pages, or continue to review`,
           )
-        )
-          go("/assessments?id=" + a.id);
+        ) {
+          // Stay on the scan view and remember this assessment. Adding another
+          // page re-reads the whole set INTO this same assessment (editing is
+          // now this id), so the questions come out as one test spanning every
+          // page, not one test per page. The teacher leaves with "Continue to
+          // review". Only an explicit navigate (unused today) would leave here.
+          setCreatedId(a.id);
+          if (navigate) go("/assessments?id=" + a.id);
+        }
       } else {
         // A second scan for the same student is another page of the same
         // test, not a replacement for the first. Layer it over what is already
@@ -730,6 +762,23 @@ export function ScanView() {
                   />
                 </label>
               )}
+              {mode === "assignment" && (
+                <label className="block-label">
+                  Points possible (optional)
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={points}
+                    onChange={(e) => setPoints(e.target.value)}
+                    placeholder="e.g. 20"
+                  />
+                  <span className="field-help">
+                    Set the total and a score shows both ways — 90% and 18/20.
+                  </span>
+                </label>
+              )}
               <div className="upload-privacy" role="note">
                 <ShieldCheck size={17} aria-hidden="true" />
                 <div>
@@ -955,6 +1004,15 @@ export function ScanView() {
                         : autoReads
                           ? "Read it again"
                           : "Read the assessment"}
+                  </Action>
+                )}
+                {mode === "assignment" && editId && (
+                  <Action
+                    disabled={busy || uploading || analyzing}
+                    onClick={() => go("/assessments?id=" + editId)}
+                  >
+                    Continue to review
+                    <ArrowRight size={17} />
                   </Action>
                 )}
                 {!aiReady && mode === "responses" && (

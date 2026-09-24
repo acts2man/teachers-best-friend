@@ -94,7 +94,18 @@ import {
   assessmentFitsClass,
   classesFor,
   shareAssessmentWith,
+  deleteAssessment,
 } from "@/lib/teacher-classes";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type {
   Assessment,
   Question,
@@ -116,7 +127,13 @@ export function AssessmentView() {
     [adding, setAdding] = useState(false),
     [reading, setReading] = useState(false),
     [readNotice, setReadNotice] = useState(""),
-    [linking, setLinking] = useState<string[] | null>(null);
+    [linking, setLinking] = useState<string[] | null>(null),
+    // The "Edit assessment" modal (rename + points possible), and the delete
+    // confirmation. editMeta holds the draft while the modal is open.
+    [editMeta, setEditMeta] = useState<{ title: string; points: string } | null>(
+      null,
+    ),
+    [deleting, setDeleting] = useState(false);
   const autoRead = useRef<string | null>(null);
   useEffect(() => {
     setSelected(params.get("id"));
@@ -328,6 +345,48 @@ export function AssessmentView() {
     )
       setResponseEdit(null);
   }
+  // Rename the assessment and set what it is worth. Points possible is optional:
+  // a blank clears it (back to percentage-only). A non-empty title is required.
+  async function saveMeta() {
+    if (!a || !editMeta) return;
+    const title = editMeta.title.trim();
+    if (!title) {
+      toast.error("Give the assessment a name.");
+      return;
+    }
+    const raw = editMeta.points.trim();
+    const points = raw ? Math.round(Number(raw)) : undefined;
+    if (raw && (!Number.isFinite(points!) || points! <= 0)) {
+      toast.error("Points possible must be a whole number above zero, or blank.");
+      return;
+    }
+    const next: Assessment = { ...a, title, pointsPossible: points };
+    if (
+      await save(
+        { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? next : x)) },
+        "Assessment updated",
+      )
+    )
+      setEditMeta(null);
+  }
+  // Delete the assessment and everything derived from it, then remove its
+  // uploaded pages from storage. See deleteAssessment for exactly what goes.
+  async function removeAssessment() {
+    if (!a) return;
+    const { workspace, uploadIds } = deleteAssessment(w, a.id);
+    if (await save(workspace, "“" + a.title + "” was deleted")) {
+      setDeleting(false);
+      setSelected(null);
+      go("/assessments");
+      const kept = await deleteUploads(uploadIds);
+      if (kept)
+        toast.error(
+          kept +
+            (kept === 1 ? " scanned page" : " scanned pages") +
+            " couldn't be deleted just now. They'll be removed automatically.",
+        );
+    }
+  }
   const filtered = assessments.filter(
     (x) =>
       (subject === "All subjects" || x.subject === subject) &&
@@ -444,6 +503,18 @@ export function AssessmentView() {
           >
             <Action
               variant="secondary"
+              onClick={() =>
+                setEditMeta({
+                  title: a.title,
+                  points: a.pointsPossible ? String(a.pointsPossible) : "",
+                })
+              }
+            >
+              <Pencil size={16} />
+              Edit
+            </Action>
+            <Action
+              variant="secondary"
               onClick={() => go("/scan?assessment=" + a.id)}
             >
               <Upload size={16} />
@@ -460,7 +531,89 @@ export function AssessmentView() {
               <Plus size={16} />
               Add student work
             </Action>
+            <Action variant="secondary" onClick={() => setDeleting(true)}>
+              <Trash2 size={16} />
+              Delete
+            </Action>
           </PageTitle>
+          <Modal
+            open={!!editMeta}
+            onClose={() => setEditMeta(null)}
+            title="Edit assessment"
+            description="Rename it, and set what the whole test is worth."
+          >
+            {editMeta && (
+              <form
+                className="form-stack"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveMeta();
+                }}
+              >
+                <label className="block-label">
+                  Assessment name
+                  <input
+                    value={editMeta.title}
+                    autoFocus
+                    onChange={(e) =>
+                      setEditMeta({ ...editMeta, title: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="block-label">
+                  Points possible (optional)
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    placeholder="e.g. 20"
+                    value={editMeta.points}
+                    onChange={(e) =>
+                      setEditMeta({ ...editMeta, points: e.target.value })
+                    }
+                  />
+                </label>
+                <p className="field-help">
+                  With a total set, a score shows both ways — 90% and 18/20.
+                  Leave it blank to show the percentage only.
+                </p>
+                <Action type="submit" disabled={busy || !editMeta.title.trim()}>
+                  <Check size={16} />
+                  Save assessment
+                </Action>
+              </form>
+            )}
+          </Modal>
+          <AlertDialog
+            open={deleting}
+            onOpenChange={(v) => !v && setDeleting(false)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete “{a.title}”?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes the assessment, its questions, every
+                  student’s answers and the evidence those answers produced, and
+                  all of its scanned pages. Your students and your other
+                  assessments stay. This can’t be undone — export a copy from
+                  “Export report” or Settings first if you need one.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>
+                  Keep assessment
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="action danger"
+                  disabled={busy}
+                  onClick={removeAssessment}
+                >
+                  Delete assessment
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <div className="assignment-status-bar">
             <div>
               <span>Standards alignment</span>

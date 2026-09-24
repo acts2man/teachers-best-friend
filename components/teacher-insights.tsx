@@ -71,7 +71,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { clearClassStudents, ensureDistinctNames, removeStudent } from "@/lib/teacher-classes";
+import {
+  clearClassStudents,
+  compareByLastName,
+  ensureDistinctNames,
+  removeStudent,
+} from "@/lib/teacher-classes";
 import { RosterScanner, StandardsLoader } from "./teacher-classes";
 import { MAX_PER_ADD } from "@/lib/roster-import";
 import {
@@ -1206,7 +1211,11 @@ export function StudentsView() {
   const setFocus = (code: string) =>
     setFocusOverride({ for: student?.id ?? null, code });
   useEffect(() => setNote(student?.notes || ""), [student?.id]);
-  const filtered = students.filter(
+  // Grade-book order: by last initial, then first name. The roster grid and the
+  // exported report both read from this, so a teacher sees the same order they
+  // keep their grade book in rather than insertion order.
+  const roster = [...students].sort((a, b) => compareByLastName(a.name, b.name));
+  const filtered = roster.filter(
     (s) =>
       s.name.toLowerCase().includes(query.toLowerCase()) &&
       (filter === "All students" ||
@@ -1329,6 +1338,14 @@ export function StudentsView() {
             >
               <Plus size={17} />
               Record evidence
+            </Action>
+            <Action
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setRemoving(true)}
+            >
+              <Trash2 size={16} />
+              Remove from roster
             </Action>
           </div>
           <div className="profile-layout">
@@ -1479,28 +1496,17 @@ export function StudentsView() {
               <Check size={16} />
             </Action>
           </div>
-          <div className="panel">
-            <SectionTitle
-              title="Remove from roster"
-              description="Takes this student off the class list along with their graded work and scanned pages. Everything else in the class is untouched."
-            />
-            <Action
-              variant="secondary small"
-              disabled={busy}
-              onClick={() => setRemoving(true)}
-            >
-              <Trash2 size={15} />
-              Remove {student.name}
-            </Action>
-          </div>
           <AlertDialog open={removing} onOpenChange={(v) => !v && setRemoving(false)}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Remove {student.name} from the roster?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  Are you sure you want to delete {student.name} from the roster?
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Their graded answers, evidence records, and scanned pages go with
-                  them, on every assessment in this class. This can’t be undone —
-                  export a copy from Settings first if you need one.
+                  This is permanent and cannot be retrieved. Their graded answers,
+                  evidence records, and scanned pages go with them, on every
+                  assessment in this class. Export a copy from Settings first if
+                  you need one.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1560,11 +1566,11 @@ export function StudentsView() {
                 Clear all {students.length} students from {classroom.name}?
               </AlertDialogTitle>
               <AlertDialogDescription>
-                Removes every student on this roster along with their graded answers,
-                evidence records and scanned pages. The scans are deleted from the
-                server, not just hidden. Your assessments, questions and answer keys
-                stay, so you can start a fresh roster against the same tests. This
-                can’t be undone.
+                This is permanent and cannot be retrieved. It removes every student
+                on this roster along with their graded answers, evidence records and
+                scanned pages, deleted from the server, not just hidden. Your
+                assessments, questions and answer keys stay, so you can start a fresh
+                roster against the same tests.
               </AlertDialogDescription>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={busy}>Keep roster</AlertDialogCancel>
@@ -1649,7 +1655,7 @@ export function StudentsView() {
                       "Student," +
                         catalog.map((s) => s.code).join(",") +
                         "\n" +
-                        students
+                        roster
                           .map(
                             (s) =>
                               '"' +

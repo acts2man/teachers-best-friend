@@ -47,9 +47,11 @@ import {
   reteachGroup,
   studentReport,
   studentReview,
+  pointsForScore,
   withReteachGroup,
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
+import { compareByLastName } from "@/lib/teacher-classes";
 import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
@@ -460,7 +462,10 @@ export function StudentResponseReview({
             onClick={() =>
               downloadText(
                 a.title.replace(/[^\w\d]+/g, "-").replace(/^-|-$/g, "") + "-grades.csv",
-                gradebookCsv(a, students),
+                gradebookCsv(
+                  a,
+                  [...students].sort((x, y) => compareByLastName(x.name, y.name)),
+                ),
                 "text/csv",
               )
             }
@@ -604,6 +609,11 @@ export function StudentResponseReview({
             <strong>
               {summary.score === null ? "—" : summary.score + "%"}
             </strong>
+            {summary.score !== null && a.pointsPossible ? (
+              <span className="review-score-points">
+                {pointsForScore(summary.score, a.pointsPossible)} / {a.pointsPossible} points
+              </span>
+            ) : null}
             <span>
               {summary.complete
                 ? "Confirmed assessment score"
