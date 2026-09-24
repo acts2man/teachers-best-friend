@@ -90,6 +90,32 @@ export function shortenName(name: string) {
   return first + " " + last.charAt(0).toUpperCase() + ".";
 }
 
+/**
+ * Roster order, the way a grade book runs: by last name, then first name.
+ *
+ * Sorts on the family name (the last token, per nameParts -- names are stored
+ * "First L.", so that token is the last initial), falling back to the given
+ * name when there is no last part. Case and accents are ignored, so "Álvarez"
+ * and "alvarez" sort together and next to each other.
+ */
+export function compareByLastName(a: string, b: string): number {
+  const fold = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .trim();
+  const pa = nameParts(a);
+  const pb = nameParts(b);
+  const lastA = fold(pa.last || pa.first);
+  const lastB = fold(pb.last || pb.first);
+  if (lastA !== lastB) return lastA < lastB ? -1 : 1;
+  const firstA = fold(pa.first);
+  const firstB = fold(pb.first);
+  if (firstA !== firstB) return firstA < firstB ? -1 : 1;
+  return 0;
+}
+
 /** A name to be saved, with the roster's own columns when we have them. */
 export type NameToSave = { name: string; first?: string; last?: string };
 
@@ -310,6 +336,57 @@ export function clearClassStudents(w: Workspace, classId: string) {
     },
     uploadIds: [...uploadIds],
     studentCount: leaving.length,
+  };
+}
+
+/**
+ * Everything that goes when a teacher deletes one assessment: the assessment
+ * itself (its questions and every student's responses to it, which live on the
+ * assessment), the evidence records those responses produced on each student,
+ * and any lesson's link to it. Returns the workspace alongside the upload ids
+ * the caller must delete from storage -- the assignment pages, the answer-key
+ * pages, and every student's scanned work for this assessment.
+ *
+ * What it LEAVES: the students themselves (only their evidence FROM THIS
+ * assessment goes, on every class it was shared with), the class, and other
+ * assessments. Server-side, sync_workspace removes the relational assessment
+ * row on the next save, which cascades its questions, responses and evidence
+ * links; the scan cost-log rows keep their history, their assessment link set
+ * to null rather than deleted.
+ *
+ * Pure; the caller persists the workspace and then deletes the upload ids.
+ */
+export function deleteAssessment(w: Workspace, assessmentId: string) {
+  const target = w.assessments.find((a) => a.id === assessmentId);
+  const uploadIds = new Set<string>();
+  if (target) {
+    for (const id of target.uploadIds || []) uploadIds.add(id);
+    for (const id of target.assignmentUploadIds || []) uploadIds.add(id);
+    for (const id of target.answerKeyUploadIds || []) uploadIds.add(id);
+    for (const pages of Object.values(target.studentUploadIds || {}))
+      for (const id of pages || []) uploadIds.add(id);
+  }
+  return {
+    workspace: {
+      ...w,
+      assessments: w.assessments.filter((a) => a.id !== assessmentId),
+      students: w.students.map((s) =>
+        s.evidence.some((e) => e.assessmentId === assessmentId)
+          ? {
+              ...s,
+              evidence: s.evidence.filter(
+                (e) => e.assessmentId !== assessmentId,
+              ),
+            }
+          : s,
+      ),
+      lessons: (w.lessons || []).map((l) =>
+        l.assessmentId === assessmentId
+          ? { ...l, assessmentId: undefined }
+          : l,
+      ),
+    },
+    uploadIds: [...uploadIds],
   };
 }
 

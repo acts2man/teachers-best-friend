@@ -85,6 +85,10 @@ export type Assessment = {
   studentUploadIds?: Record<string, string[]>;
   answerKeyVerified?: boolean;
   classIds?: string[];
+  // What the whole assessment is worth, if the teacher sets it (e.g. 20). When
+  // present, a whole-test score is shown both ways: the percentage and points
+  // out of this total. Optional -- absent means percentage only, as before.
+  pointsPossible?: number;
 };
 export type Classroom = {
   id: string;
