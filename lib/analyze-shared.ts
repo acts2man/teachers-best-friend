@@ -33,6 +33,29 @@ export type ModelSettings = {
   maxOutput: number;
 };
 
+/**
+ * The reasoning effort actually sent to the provider.
+ *
+ * "minimal" was a real setting on the gpt-5 generation this app began on, but
+ * every model it routes to now -- gpt-5.4-nano, gpt-5.6-luna and the rest --
+ * rejects it outright with a 400 ("Unsupported value: 'minimal' is not
+ * supported with the ... model. Supported values are: 'none', 'low', 'medium',
+ * 'high', and 'xhigh'."), and that 400 takes the whole request down. That is
+ * exactly what broke the class-scan name pass for a pilot teacher: the
+ * name_strip stage was configured "minimal", so every attempt to read the names
+ * off a scanned stack failed before any grading could start, and the flow
+ * reported only that the pages couldn't be read.
+ *
+ * "low" is the least reasoning these models still accept, so a lingering
+ * "minimal" -- from a pipeline_config row, an operator's admin edit, or the
+ * fixed Sites routing -- is sent as "low" rather than failing the call. Remove
+ * "minimal" from every config and this never fires; leave one behind and a
+ * teacher still gets graded instead of a dead request.
+ */
+export function providerEffort(effort: ReasoningEffort): ReasoningEffort {
+  return effort === "minimal" ? "low" : effort;
+}
+
 export type ResponsesUsage = {
   input_tokens?: number;
   output_tokens?: number;

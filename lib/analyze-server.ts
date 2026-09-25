@@ -12,6 +12,7 @@ import type {
   ResponsesResult,
   ResponsesUsage,
 } from "@/lib/analyze-shared";
+import { providerEffort } from "@/lib/analyze-shared";
 import {
   AiCallError,
   MIN_ATTEMPT_MS,
@@ -226,7 +227,7 @@ function requestBody(
     model: settings.model,
     store: extra.store,
     ...(extra.background ? { background: true } : {}),
-    reasoning: { effort: settings.effort },
+    reasoning: { effort: providerEffort(settings.effort) },
     instructions: INSTRUCTIONS,
     input: [{ role: "user", content }],
     text: {
