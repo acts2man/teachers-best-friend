@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
+import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import {
@@ -333,11 +334,7 @@ export function StudentResponseReview({
     try {
       for (const raw of incoming) {
         const file = await uprightPage(raw);
-        const form = new FormData();
-        form.append("file", file);
-        const r = await fetch("/api/uploads", { method: "POST", body: form }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await uploadFile(file);
         ids.push(d.id);
         if (!aiReady && file.type === "application/pdf")
           pdfText += (await extractPdfText(await file.arrayBuffer())) + "\n";

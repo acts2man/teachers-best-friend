@@ -1,4 +1,5 @@
 "use client";
+import { readJson } from "@/lib/utils";
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -71,7 +72,7 @@ export function BillingView() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/billing/state", { cache: "no-store" });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       setState(d as State);
     } catch (e) {
@@ -110,7 +111,7 @@ export function BillingView() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ plan }),
       });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       window.location.assign(d.url);
     } catch (e) {
@@ -123,7 +124,7 @@ export function BillingView() {
     setBusy("portal");
     try {
       const r = await fetch("/api/billing/portal", { method: "POST" });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       window.location.assign(d.url);
     } catch (e) {

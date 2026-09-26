@@ -594,6 +594,39 @@ export async function readDocument(
   };
 }
 
+/**
+ * Finds a teacher's already-stored upload by the hash of its content, so a
+ * client whose upload reply was lost in transit can recover the record its own
+ * file produced instead of failing or uploading a duplicate. Returns the most
+ * recent match, or null when there is none. The Sites host does not hash
+ * uploads (no ledger, no column), so recovery is a Supabase-host feature and
+ * returns null there.
+ */
+export async function findUploadByHash(
+  ownerId: string,
+  sha256: string,
+): Promise<{ id: string; name: string; size: number; mime: string; pages: number } | null> {
+  if (!hasSupabaseConfig()) return null;
+  const supabase = await createClient();
+  const { data: row, error } = await supabase
+    .from("teacher_uploads")
+    .select("id, name, size, mime, page_count")
+    .eq("owner_id", ownerId)
+    .eq("content_sha256", sha256)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    size: row.size,
+    mime: row.mime,
+    pages: Number(row.page_count) || 1,
+  };
+}
+
 export async function deleteDocument(ownerId: string, id: string) {
   if (hasSupabaseConfig()) {
     const supabase = await createClient();

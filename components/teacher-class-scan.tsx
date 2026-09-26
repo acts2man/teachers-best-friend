@@ -12,6 +12,8 @@ import {
   Undo2,
 } from "lucide-react";
 import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
+import { uploadFile } from "@/lib/upload-client";
+import { readJson } from "@/lib/utils";
 import { splitNameBand, uprightPage } from "@/lib/image-prep";
 import { describeFailure, useOnline } from "@/lib/connection";
 import { announceScanComplete, isOutOfScans, SEE_PLANS } from "@/lib/quota-client";
@@ -267,12 +269,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   );
 
   async function upload(file: File) {
-    const form = new FormData();
-    form.append("file", file);
-    const r = await fetch("/api/uploads", { method: "POST", body: form });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error);
-    return { id: d.id as string, pages: Number(d.pages) || 1 };
+    const d = await uploadFile(file);
+    return { id: d.id, pages: Number(d.pages) || 1 };
   }
 
   /**
@@ -552,7 +550,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ uploadIds: ids, mode: "class_scan" }),
     });
-    const d = await r.json().catch(() => ({}));
+    const d = await readJson(r).catch(() => ({}) as { error?: string });
     if (!r.ok) throw new Error(d.error || "Couldn't check your remaining scans.");
     // The meter moves the moment the pages are reserved, not when grading
     // finishes, so what it shows matches what has actually been committed.

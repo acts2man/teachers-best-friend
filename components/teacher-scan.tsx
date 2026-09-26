@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
+import { uploadFile } from "@/lib/upload-client";
 import { uprightPage } from "@/lib/image-prep";
 import { describeFailure } from "@/lib/connection";
 import {
@@ -171,11 +172,7 @@ export function ScanView() {
         // so a page shot in portrait arrives sideways. Straighten it once here,
         // before upload, so the stored file and everything downstream agree.
         const f = await uprightPage(raw);
-        const form = new FormData();
-        form.append("file", f);
-        const r = await fetch("/api/uploads", { method: "POST", body: form }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await uploadFile(f);
         setFiles((previous) => [...previous, d]);
         uploadedIds.push(d.id);
         if (!title && mode === "assignment")

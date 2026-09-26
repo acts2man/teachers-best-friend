@@ -1,5 +1,8 @@
 import "server-only";
 import { HttpError } from "@/lib/http-error";
+import { contentHash } from "@/lib/content-hash";
+
+export { contentHash };
 
 /**
  * How many pages a teacher is charged for an upload, and what identifies it.
@@ -12,22 +15,6 @@ import { HttpError } from "@/lib/http-error";
 
 /** Charging stops here. A stack this size is a mistake, not a class set. */
 export const MAX_PAGES_PER_UPLOAD = 200;
-
-/**
- * Identifies a page by its content rather than its upload row.
- *
- * The class-scan flow uploads every photograph twice -- the body crop and the
- * name strip are separate rows -- a teacher can upload the same file twice,
- * and an upload row is deleted well before the charge stops mattering. None of
- * those are the same page arriving twice, and all of them would look like it if
- * the upload id were the identity.
- */
-export async function contentHash(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 /**
  * Pages in an upload. Images are one page; a PDF is parsed.

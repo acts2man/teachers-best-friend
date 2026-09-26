@@ -1,4 +1,5 @@
 "use client";
+import { readJson } from "@/lib/utils";
 
 /**
  * The teacher-facing view of the scan meter.
@@ -33,7 +34,7 @@ export async function fetchQuota(): Promise<Quota | null> {
   try {
     const r = await fetch("/api/quota", { cache: "no-store" });
     if (!r.ok) return null;
-    const d = await r.json();
+    const d = await readJson(r);
     if (typeof d?.quota !== "number") return null;
     return {
       planId: d.plan_id ?? null,
