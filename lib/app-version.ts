@@ -1,4 +1,5 @@
 "use client";
+import { readJson } from "@/lib/utils";
 import { useEffect, useState } from "react";
 
 /**
@@ -32,7 +33,7 @@ export function useUpdateAvailable() {
       try {
         const r = await fetch("/api/version", { cache: "no-store" });
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await readJson(r);
         // Only an explicit disagreement counts. A missing or unreadable answer
         // means we do not know, and telling a teacher to reload on a guess is
         // worse than saying nothing.

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
+import { uploadFile } from "@/lib/upload-client";
 import { analyzeRequest } from "@/lib/analyze-client";
 import {
   Camera,
@@ -61,11 +62,7 @@ export function AnswerKeyReview({
     try {
       for (const raw of Array.from(files)) {
         const file = await uprightPage(raw);
-        const form = new FormData();
-        form.append("file", file);
-        const r = await fetch("/api/uploads", { method: "POST", body: form }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await uploadFile(file);
         uploaded.push({ id: d.id, mime: d.mime });
       }
     } catch (e) {

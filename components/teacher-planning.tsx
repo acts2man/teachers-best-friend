@@ -1,6 +1,8 @@
 "use client";
+import { readJson } from "@/lib/utils";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
+import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
@@ -1663,11 +1665,7 @@ export function ResourcesView() {
     if (!f) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", await uprightPage(f));
-      const r = await fetch("/api/uploads", { method: "POST", body: form }),
-        d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await uploadFile(await uprightPage(f));
       setUpload(d);
       if (!title) setTitle(f.name.replace(/\.[^.]+$/, ""));
     } catch (e) {
@@ -1968,7 +1966,7 @@ export function SettingsView() {
     setErasing(true);
     try {
       const r = await fetch("/api/workspace", { method: "DELETE" });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       await reload();
       setErase(false);
@@ -1991,7 +1989,7 @@ export function SettingsView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: typedEmail }),
       });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       // Their session is already gone server-side. A full navigation rather
       // than a client route change, so nothing in memory outlives the account.

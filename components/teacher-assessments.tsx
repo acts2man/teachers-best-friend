@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
+import { uploadFile } from "@/lib/upload-client";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { toast } from "sonner";
 import {
@@ -1595,11 +1596,7 @@ function PassagePanel({
       const ids: string[] = [];
       for (const raw of files) {
         const page = await uprightPage(raw);
-        const form = new FormData();
-        form.append("file", page);
-        const r = await fetch("/api/uploads", { method: "POST", body: form });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await uploadFile(page);
         ids.push(d.id);
       }
       setStatus("Reading the passage…");

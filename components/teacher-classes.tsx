@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
+import { uploadFile } from "@/lib/upload-client";
 import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowRight,
@@ -467,11 +468,7 @@ export function RosterScanner({
           text += (await extractPdfText(await file.arrayBuffer())) + "\n";
           continue;
         }
-        const form = new FormData();
-        form.append("file", await uprightPage(file));
-        const r = await fetch("/api/uploads", { method: "POST", body: form }),
-          d = await r.json();
-        if (!r.ok) throw new Error(d.error);
+        const d = await uploadFile(await uprightPage(file));
         ids.push(d.id);
       }
       let names: string[] = [];

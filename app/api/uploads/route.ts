@@ -1,10 +1,33 @@
 import {
   writingTeacherId,
+  owningTeacherId,
   saveDocument,
+  findUploadByHash,
   guardOrigin,
   apiError,
   HttpError,
 } from "@/lib/teacher-server";
+
+/**
+ * Recovers an upload by the hash of its content. The client falls back to this
+ * when the POST reply above could not be read (a compressed body a hop between
+ * the function and the page never decoded): the file may already be stored, and
+ * looking it up by content lets the teacher carry on without a duplicate upload
+ * or a second charge. Read-only and owner-scoped.
+ */
+export async function GET(request: Request) {
+  try {
+    const ownerId = await owningTeacherId();
+    const sha256 = new URL(request.url).searchParams.get("sha256") ?? "";
+    if (!/^[0-9a-f]{64}$/.test(sha256))
+      throw new HttpError(400, "Provide the file's content hash.");
+    const found = await findUploadByHash(ownerId, sha256);
+    if (!found) throw new HttpError(404, "No matching upload.");
+    return Response.json(found);
+  } catch (error) {
+    return apiError(error);
+  }
+}
 
 export async function POST(request: Request) {
   try {

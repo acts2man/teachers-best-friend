@@ -1,4 +1,5 @@
 "use client";
+import { readJson } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { Eye, LoaderCircle, Search } from "lucide-react";
 import { describeFailure } from "@/lib/connection";
@@ -38,7 +39,7 @@ export function ViewAsPicker() {
         const r = await fetch("/api/impersonation/candidates", {
           cache: "no-store",
         });
-        const d = await r.json();
+        const d = await readJson(r);
         if (!r.ok) throw new Error(d.error);
         if (!cancelled) setTeachers(d.teachers as Candidate[]);
       } catch (e) {
@@ -70,7 +71,7 @@ export function ViewAsPicker() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teacherId: teacher.id }),
       });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       // A full document load, not a router push: the workspace is cached in a
       // module-level variable, and it has to be rebuilt under the new identity.

@@ -1,4 +1,5 @@
 "use client";
+import { readJson } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -199,7 +200,7 @@ export default function TeacherApp({ view }: { view: string }) {
         router.replace("/login?next=" + encodeURIComponent(next));
         return;
       }
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       const nextSnapshot: WorkspaceSnapshot = {
         workspace: d.workspace,
@@ -329,7 +330,7 @@ export default function TeacherApp({ view }: { view: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace: next, revision }),
       });
-      const d = await r.json();
+      const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       workspaceSnapshot = {
         workspace: next,

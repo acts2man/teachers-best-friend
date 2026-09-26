@@ -27,10 +27,26 @@ export async function proxy(request: NextRequest) {
       // 421 Misdirected Request is exactly this case: the server was reached at
       // an address it will not answer for. The teacher app reads { error } from
       // the body regardless of status.
-      { status: 421, headers: { "cache-control": "no-store" } },
+      { status: 421, headers: { "cache-control": "no-store, no-transform" } },
     );
 
-  return updateSession(request);
+  const response = await updateSession(request);
+  // The app's API replies are small JSON, and the page parses them by hand.
+  // A hop between the function and the browser that re-compresses one, or
+  // strips its Content-Encoding while leaving the body compressed, leaves the
+  // page trying to JSON.parse raw brotli -- the "Unexpected token '', "8Ģk{"..."
+  // failure a teacher hit uploading a JPG. `no-transform` tells every
+  // intermediary (CDN, proxy, extension that honours it) to deliver the bytes
+  // untouched. The client is defended too (lib/upload-client.ts, readJson), but
+  // the cheapest fix is to not compress a 200-byte reply in the first place.
+  if (response && request.nextUrl.pathname.startsWith("/api/")) {
+    const existing = response.headers.get("cache-control");
+    if (!existing)
+      response.headers.set("cache-control", "no-transform");
+    else if (!/\bno-transform\b/.test(existing))
+      response.headers.set("cache-control", existing + ", no-transform");
+  }
+  return response;
 }
 
 // The app's screens are static pages that never read the session on the
