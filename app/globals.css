@@ -740,6 +740,10 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
    safe-area padding so the shutter and counter clear phone notches/home bars. */
 .scan-camera{position:fixed;inset:0;z-index:1100;display:flex;background:#000;color:#fff;overscroll-behavior:contain}
 .scan-camera-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+/* Same box + object-fit as the video, and the same aspect ratio (its intrinsic
+   size tracks the frame), so the detected-page outline lines up with the
+   cover-cropped video without any manual coordinate mapping. */
+.scan-camera-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;pointer-events:none}
 .scan-camera-flash{position:absolute;inset:0;background:#fff;z-index:3;animation:scan-flash .12s ease-out}
 @keyframes scan-flash{from{opacity:.85}to{opacity:0}}
 .scan-camera-top{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));background:linear-gradient(rgba(0,0,0,.55),transparent)}
@@ -768,3 +772,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .scan-camera-sheet-actions .scan-camera-btn{justify-content:center;background:hsl(calc(120deg + var(--th)) calc(12% * var(--ts)) 92%);color:var(--ink)}
 .scan-camera-sheet-actions .scan-camera-btn.primary{background:hsl(calc(154deg + var(--th)) calc(18% * var(--ts)) 43%);color:#fff}
 .scan-camera-sheet-actions .scan-camera-btn.danger{background:none;color:#b3261e}
+/* Low-confidence hint: shown in Auto mode when a page is seen but not trusted
+   enough to crop/auto-snap, so the teacher knows to steady it or tap. */
+.scan-camera-hint{position:absolute;left:50%;top:64px;z-index:2;transform:translateX(-50%);padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:#fff;background:rgba(0,0,0,.55)}
