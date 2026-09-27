@@ -450,6 +450,25 @@ export function groupAnswers(
  * asking. The misconception text the AI wrote is left alone -- the teacher
  * changed the grade, not the diagnosis.
  */
+/**
+ * The credit a teacher can give an answer in one tap.
+ *
+ * Replaces the old Full / Half / None with a finer scale Ricky asked for: the
+ * two ends, the quarters, and a 90% for a small slip like a sign error that
+ * shouldn't cost half the marks. Every value is a plain percentage stored in
+ * `response.match` (see applyGroupScore); nothing here is a new data shape, so
+ * existing work graded none/half/full is already 0/50/100 and needs no
+ * migration. Only 100 counts as fully correct — 90 and below are partial.
+ */
+export const CREDIT_LEVELS: { value: number; label: string }[] = [
+  { value: 0, label: "No credit" },
+  { value: 25, label: "25%" },
+  { value: 50, label: "Half" },
+  { value: 75, label: "75%" },
+  { value: 90, label: "90%" },
+  { value: 100, label: "Full" },
+];
+
 export function applyGroupScore(
   a: Assessment,
   responseIds: string[],

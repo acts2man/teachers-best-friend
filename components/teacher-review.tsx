@@ -39,6 +39,7 @@ import {
 import {
   activeQuestions,
   applyGroupScore,
+  CREDIT_LEVELS,
   assignmentNextStep,
   forgetUploads,
   groupAnswers,
@@ -284,15 +285,16 @@ function GradeByQuestion({
             <GroupWorkSample assessment={a} group={g} />
             {g.needsDecision && (
               <div className="review-heading-actions">
-                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 100)}>
-                  Full credit
-                </Action>
-                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 50)}>
-                  Half
-                </Action>
-                <Action variant="secondary small" disabled={busy} onClick={() => score(g, 0)}>
-                  No credit
-                </Action>
+                {CREDIT_LEVELS.map((level) => (
+                  <Action
+                    key={level.value}
+                    variant="secondary small"
+                    disabled={busy}
+                    onClick={() => score(g, level.value)}
+                  >
+                    {level.label}
+                  </Action>
+                ))}
                 {g.studentIds.length > 1 && (
                   <Action
                     variant="secondary small"
