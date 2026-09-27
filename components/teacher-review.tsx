@@ -19,6 +19,8 @@ import {
   Printer,
   Upload,
   Users,
+  X,
+  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { describeFailure, deleteUploads } from "@/lib/connection";
@@ -57,6 +59,123 @@ import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
+
+/**
+ * One student's actual work for this question, shown inside an answer group.
+ *
+ * The answer text alone -- "60" -- is not enough to decide partial credit; the
+ * teacher needs to see how the student got there. Everyone in a group wrote the
+ * same answer, so showing ONE student's page stands in for the rest (the
+ * teacher assumes the others reached it the same way), and a tap cycles to a
+ * different student when the first sample is unclear.
+ *
+ * The image is the name-removed body crop from studentUploadIds -- the same
+ * page already reachable from "Original student work", never the name strip --
+ * and it is shown with no student name, so the group stays about the work, not
+ * whose it is. The grading pass returns no reliable per-question location, so
+ * the whole page is shown, zoomable, rather than a wrong crop: showing the
+ * right work matters more than a tight frame.
+ */
+function GroupWorkSample({
+  assessment: a,
+  group,
+}: {
+  assessment: Assessment;
+  group: AnswerGroup;
+}) {
+  // Students in this group whose body pages are still on hand. Manually entered
+  // answers, or work already released after confirmation, have nothing to show.
+  const withWork = group.studentIds.filter(
+    (id) => (a.studentUploadIds?.[id]?.length ?? 0) > 0,
+  );
+  const [sample, setSample] = useState(0);
+  const [page, setPage] = useState(0);
+  const [zoom, setZoom] = useState(false);
+  const [full, setFull] = useState(false);
+  if (!withWork.length) return null;
+  const studentId = withWork[sample % withWork.length];
+  const pages = a.studentUploadIds?.[studentId] ?? [];
+  const uploadId = pages[page % pages.length];
+  if (!uploadId) return null;
+  const src = "/api/uploads/" + uploadId;
+  return (
+    <div className="work-sample">
+      <button
+        type="button"
+        className="work-sample-thumb"
+        onClick={() => {
+          setFull(false);
+          setZoom(true);
+        }}
+        aria-label="Enlarge a sample of student work for this question"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt="A student's work for this question" />
+        <span className="work-sample-hint">
+          <ZoomIn size={13} /> Sample work — tap to enlarge
+        </span>
+      </button>
+      <div className="work-sample-controls">
+        {pages.length > 1 &&
+          pages.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={
+                "work-sample-page" + (i === page % pages.length ? " is-current" : "")
+              }
+              onClick={() => setPage(i)}
+              aria-label={"Show page " + (i + 1) + " of this student's work"}
+            >
+              {i + 1}
+            </button>
+          ))}
+        {withWork.length > 1 && (
+          <button
+            type="button"
+            className="work-sample-another"
+            onClick={() => {
+              setSample((s) => (s + 1) % withWork.length);
+              setPage(0);
+            }}
+          >
+            Show another student’s work
+          </button>
+        )}
+      </div>
+      {zoom && (
+        <div
+          className="work-sample-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Student work, enlarged"
+          onClick={() => setZoom(false)}
+        >
+          <button
+            type="button"
+            className="work-sample-close"
+            aria-label="Close enlarged work"
+            onClick={() => setZoom(false)}
+          >
+            <X size={20} />
+          </button>
+          {/* Tapping the image toggles full resolution (and pans via the
+              scrolling overlay) instead of closing. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className={full ? "is-full" : ""}
+            src={src}
+            alt="A student's work for this question, enlarged"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFull((f) => !f);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Grading a class set one question at a time instead of one student at a time.
@@ -162,6 +281,7 @@ function GradeByQuestion({
                 {g.answer.trim() ? "Matches your key" : "Blank — scored zero"}
               </Pill>
             )}
+            <GroupWorkSample assessment={a} group={g} />
             {g.needsDecision && (
               <div className="review-heading-actions">
                 <Action variant="secondary small" disabled={busy} onClick={() => score(g, 100)}>

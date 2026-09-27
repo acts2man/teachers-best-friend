@@ -708,3 +708,18 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .roster-question{margin:10px 0}
 .roster-question label{gap:6px}
 .roster-preview label [data-slot=pill]{flex-shrink:0}
+/* One student's work shown inside an answer group in Grade-by-question, so a
+   partial-credit decision is made against the actual page, not just the typed
+   answer. Body crop only (name band already removed); no name is shown. */
+.work-sample{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-width:190px}
+.work-sample-thumb{position:relative;display:block;padding:0;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:9px;overflow:hidden;background:white;line-height:0}
+.work-sample-thumb img{display:block;width:100%;height:auto;max-height:130px;object-fit:cover;object-position:top center}
+.work-sample-hint{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;gap:4px;padding:3px 6px;font-size:11px;line-height:1.3;font-weight:600;color:#f7f7ef;background:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2% / .82)}
+.work-sample-controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.work-sample-page{min-width:24px;padding:2px 6px;font-size:12px;font-weight:600;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:7px;background:white;color:var(--ink)}
+.work-sample-page.is-current{background:hsl(calc(154deg + var(--th)) calc(18% * var(--ts)) 53.3%);border-color:transparent;color:#f7f7ef}
+.work-sample-another{padding:2px 4px;font-size:12px;font-weight:600;background:none;border:none;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);text-decoration:underline;text-underline-offset:2px}
+.work-sample-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto;background:rgba(12,20,16,.86);overscroll-behavior:contain}
+.work-sample-overlay img{max-width:100%;height:auto;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:zoom-in;touch-action:pinch-zoom}
+.work-sample-overlay img.is-full{max-width:none;cursor:zoom-out}
+.work-sample-close{position:fixed;top:12px;right:12px;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border:none;border-radius:999px;background:rgba(255,255,255,.92);color:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2%)}
