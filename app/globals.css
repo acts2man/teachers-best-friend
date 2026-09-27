@@ -723,3 +723,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .work-sample-overlay img{max-width:100%;height:auto;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:zoom-in;touch-action:pinch-zoom}
 .work-sample-overlay img.is-full{max-width:none;cursor:zoom-out}
 .work-sample-close{position:fixed;top:12px;right:12px;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border:none;border-radius:999px;background:rgba(255,255,255,.92);color:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2%)}
+/* The "Percent" credit entry in Grade by question: a compact number box that
+   opens beside the No credit / Half / Full presets when tapped, rather than a
+   second row of buttons. */
+.percent-entry{display:inline-flex;align-items:center;gap:6px}
+.percent-entry .class-scan-name-input{min-width:0;width:5.25rem;flex:0 0 auto;text-align:center}

@@ -31,16 +31,27 @@ const require = createRequire(import.meta.url);
 const { CREDIT_LEVELS, applyGroupScore, pointsForScore, scoreLabel } =
   bundle("lib/teacher-workflow.ts");
 
-test("the scale is exactly the six levels Ricky asked for, in order", () => {
+test("the presets are the three clean ones; any other value comes from Percent", () => {
   assert.deepEqual(
     CREDIT_LEVELS.map((l) => l.value),
-    [0, 25, 50, 75, 90, 100],
+    [0, 50, 100],
   );
-  assert.equal(CREDIT_LEVELS[0].label, "No credit");
-  assert.equal(CREDIT_LEVELS[2].label, "Half");
-  assert.equal(CREDIT_LEVELS.at(-1).label, "Full");
-  // The 90 exists specifically for a small slip.
-  assert.ok(CREDIT_LEVELS.some((l) => l.value === 90));
+  assert.deepEqual(
+    CREDIT_LEVELS.map((l) => l.label),
+    ["No credit", "Half", "Full"],
+  );
+});
+
+test("an arbitrary typed percent is stored, clamped, and only 100 is correct", () => {
+  for (const value of [25, 75, 90]) {
+    const a = applyGroupScore({ ...base, responses: [response("r", 0, false)] }, ["r"], value);
+    assert.equal(a.responses[0].match, value);
+    assert.equal(a.responses[0].correct, false, `${value} is partial`);
+    assert.equal(a.responses[0].verified, true);
+  }
+  // Out of range is clamped by applyGroupScore.
+  assert.equal(applyGroupScore({ ...base, responses: [response("r", 0, false)] }, ["r"], 150).responses[0].match, 100);
+  assert.equal(applyGroupScore({ ...base, responses: [response("r", 0, false)] }, ["r"], -20).responses[0].match, 0);
 });
 
 function response(id, match, correct) {
@@ -71,18 +82,23 @@ test("the new values are preserved through PR #69's points totals", () => {
   assert.equal(scoreLabel(90, undefined), "90%");
 });
 
-test("existing none/half/full work keeps its scores (no migration)", () => {
-  // These are the literal stored values; re-applying them is a no-op on match.
-  for (const [value, correct] of [[0, false], [50, false], [100, true]]) {
-    const a = applyGroupScore({ ...base, responses: [response("r", value, correct)] }, ["r"], value);
-    assert.equal(a.responses[0].match, value);
-    assert.equal(a.responses[0].correct, value === 100);
+test("work already graded at 25/75/90 keeps its score (no migration)", () => {
+  // The 25/75/90 from the earlier six-button scale are just stored percentages;
+  // they survive untouched and read back exactly.
+  const { responseMatch } = bundle("lib/teacher-metrics.ts");
+  for (const value of [0, 25, 50, 75, 90, 100]) {
+    assert.equal(responseMatch(response("r", value, value === 100)), value);
   }
 });
 
-test("the grade-by-question UI renders the shared scale, not hard-coded buttons", () => {
+test("the grade-by-question UI shows three presets plus a Percent entry", () => {
   const { readFileSync } = require("node:fs");
   const ui = readFileSync("components/teacher-review.tsx", "utf8");
-  assert.match(ui, /CREDIT_LEVELS\.map/, "buttons come from the shared constant");
-  assert.ok(!/>\s*Full credit\s*</.test(ui), "the old Full credit button is gone");
+  assert.match(ui, /CREDIT_LEVELS\.map/, "presets come from the shared constant");
+  // A Percent option that opens a number box, not another row of preset buttons.
+  assert.match(ui, /percentFor === g\.key/, "Percent toggles an inline entry");
+  assert.match(ui, /applyPercent\(g\)/, "the entry applies a typed percent");
+  assert.match(ui, /type="number"/, "the entry is a number box (numeric keyboard)");
+  // It pre-fills with the group's current score so a partial shows as itself.
+  assert.match(ui, /String\(Math\.round\(g\.match\)\)/, "Percent pre-fills the current score");
 });

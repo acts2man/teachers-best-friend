@@ -453,19 +453,16 @@ export function groupAnswers(
 /**
  * The credit a teacher can give an answer in one tap.
  *
- * Replaces the old Full / Half / None with a finer scale Ricky asked for: the
- * two ends, the quarters, and a 90% for a small slip like a sign error that
- * shouldn't cost half the marks. Every value is a plain percentage stored in
- * `response.match` (see applyGroupScore); nothing here is a new data shape, so
- * existing work graded none/half/full is already 0/50/100 and needs no
- * migration. Only 100 counts as fully correct — 90 and below are partial.
+ * Three clean presets — the six-button version read as too messy — with any
+ * other value reachable through the separate "Percent" entry (0–100). Every
+ * value is a plain percentage stored in `response.match` (see applyGroupScore),
+ * so a 25/75/90 already graded on the old scale keeps its score and simply
+ * shows as that percent; nothing here is a new data shape and no migration is
+ * needed. Only 100 counts as fully correct — everything below is partial.
  */
 export const CREDIT_LEVELS: { value: number; label: string }[] = [
   { value: 0, label: "No credit" },
-  { value: 25, label: "25%" },
   { value: 50, label: "Half" },
-  { value: 75, label: "75%" },
-  { value: 90, label: "90%" },
   { value: 100, label: "Full" },
 ];
 
