@@ -19,6 +19,7 @@ import {
   TextLink,
 } from "./teacher-shared";
 import { assignmentNextStep, preparationGaps } from "@/lib/teacher-workflow";
+import { gradeLabel } from "@/lib/grade-labels";
 
 const GUIDE_KEY = "tbf-guide-dismissed";
 
@@ -151,8 +152,8 @@ export default function HomeView() {
                 <div className="assignment-row-copy">
                   <h3>{a.title}</h3>
                   <p>
-                    {a.subject} · Grade {a.grade} · {a.questions.length}{" "}
-                    questions
+                    {a.subject} · {gradeLabel(a.grade, a.subject)} ·{" "}
+                    {a.questions.length} questions
                   </p>
                 </div>
                 <div className="assignment-row-next">

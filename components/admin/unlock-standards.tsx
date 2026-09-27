@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { stateFrameworks } from "@/lib/states";
-
-const GRADES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 
 /**
  * Loads a state's standards for one grade into the shared library, where every
@@ -27,7 +26,7 @@ export function UnlockStandards() {
     setLog([]);
     const subjects = subject === "Both" ? ["Math", "ELA"] : [subject];
     for (const s of subjects) {
-      const label = `${framework} · grade ${grade === 0 ? "K" : grade} · ${s}`;
+      const label = `${framework} · ${gradeLabel(grade, s)} · ${s}`;
       setLog((l) => [...l, `${label}: looking up…`]);
       try {
         const d = await analyzeRequest({ mode: "catalog", grade, framework, subject: s, text: "", refresh });
@@ -49,10 +48,22 @@ export function UnlockStandards() {
           <option value="Common Core">Common Core</option>
           {stateFrameworks.map((s) => <option key={s.abbr} value={s.state}>{s.state}</option>)}
         </select>
-        <select value={grade} onChange={(e) => setGrade(Number(e.target.value))} aria-label="Grade" disabled={busy}>
-          {GRADES.map((g) => <option key={g} value={g}>{g === 0 ? "Kindergarten" : `Grade ${g}`}</option>)}
+        <select value={grade} onChange={(e) => setGrade(Number(e.target.value))} aria-label="Grade or course" disabled={busy}>
+          {gradeOptions(subject === "Math" ? "Math" : undefined).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
-        <select value={subject} onChange={(e) => setSubject(e.target.value as "Math" | "ELA" | "Both")} aria-label="Subject" disabled={busy}>
+        <select
+          value={subject}
+          onChange={(e) => {
+            const next = e.target.value as "Math" | "ELA" | "Both";
+            setSubject(next);
+            // Calculus (13) is Math-only; a Both/ELA run can't use it.
+            setGrade((g) => gradeForSubject(g, next === "Math" ? "Math" : undefined));
+          }}
+          aria-label="Subject"
+          disabled={busy}
+        >
           <option value="Both">Math and ELA</option>
           <option value="Math">Math</option>
           <option value="ELA">ELA</option>

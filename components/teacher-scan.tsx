@@ -24,6 +24,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTeacher } from "./teacher-context";
 import { Action, EmptyState, PageTitle, Pick, Pill } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
 import { extractPdfText } from "@/lib/pdf-text";
 import { frameworkOptions } from "@/lib/states";
@@ -134,7 +135,12 @@ export function ScanView() {
     setTargets([]);
     setSearch("");
     if (field === "grade") setGrade(value);
-    if (field === "subject") setSubject(value as Subject);
+    if (field === "subject") {
+      setSubject(value as Subject);
+      // Calculus (grade 13) exists only for Math. Leaving another subject on
+      // it would show an empty picker, so drop it back to grade 12.
+      setGrade((g) => String(gradeForSubject(Number(g), value)));
+    }
     if (field === "framework") setFramework(value);
   }
   async function upload(list: FileList | null) {
@@ -532,15 +538,12 @@ export function ScanView() {
                 <p>Choose the grade and subject first.</p>
                 <div className="form-grid">
                   <label>
-                    Grade
+                    {subject === "Math" ? "Grade or course" : "Grade"}
                     <Pick
                       label="Assessment grade"
                       value={grade}
                       onChange={(v) => scopeChange("grade", v)}
-                      options={Array.from({ length: 13 }, (_, i) => ({
-                        value: String(i),
-                        label: i === 0 ? "Kindergarten" : "Grade " + i,
-                      }))}
+                      options={gradeOptions(subject)}
                     />
                   </label>
                   <label>
@@ -719,7 +722,8 @@ export function ScanView() {
                 </div>
                 {chosen && (
                   <p className="field-help">
-                    {chosen.subject} · Grade {chosen.grade} · {chosen.framework}{" "}
+                    {chosen.subject} · {gradeLabel(chosen.grade, chosen.subject)} ·{" "}
+                    {chosen.framework}{" "}
                     · {chosen.questions.filter((q) => !q.excluded).length}{" "}
                     questions
                   </p>
@@ -751,7 +755,7 @@ export function ScanView() {
             ) : (
               <div className="scan-scope-summary">
                 <div>
-                  <Pill>Grade {grade}</Pill>
+                  <Pill>{gradeLabel(Number(grade), subject)}</Pill>
                   <Pill>{subject}</Pill>
                   <span>
                     {framework} · {selected.length} intended standards
