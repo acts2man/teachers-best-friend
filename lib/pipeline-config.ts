@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type PipelineStage = {
   stage: string;
@@ -9,13 +9,7 @@ export type PipelineStage = {
   maxOutputTokens: number;
 };
 
-const REASONING_EFFORTS: ReasoningEffort[] = [
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-];
+const REASONING_EFFORTS: ReasoningEffort[] = ["none", "low", "medium", "high"];
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 let cache: { loadedAt: number; stages: Map<string, PipelineStage> } | null =
@@ -29,7 +23,12 @@ async function load() {
   if (error) throw error;
   const stages = new Map<string, PipelineStage>();
   for (const row of data ?? []) {
-    const effort = String(row.reasoning_effort ?? "");
+    // A row still on the retired "minimal" setting is read as "low" rather than
+    // dropped as malformed, so the stage keeps working until the migration
+    // rewrites it. Mirrors the send-site backstop in providerEffort. Any other
+    // unrecognized value is still rejected below.
+    const raw = String(row.reasoning_effort ?? "");
+    const effort = raw === "minimal" ? "low" : raw;
     const maxOutputTokens = Number(row.max_output_tokens);
     if (
       !row.stage ||
