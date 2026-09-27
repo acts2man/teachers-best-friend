@@ -752,6 +752,7 @@ export function StudentResponseReview({
               <ScanCamera
                 mode="single"
                 title={student.name}
+                assessmentId={a.id}
                 onComplete={(groups) => {
                   setCameraOpen(false);
                   const files = groups.flat();

@@ -868,6 +868,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           {cameraOpen && (
             <ScanCamera
               mode="class"
+              assessmentId={a.id}
               onComplete={(groups) => {
                 setCameraOpen(false);
                 if (groups.length) addCameraGroups(groups);

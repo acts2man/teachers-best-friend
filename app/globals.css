@@ -759,3 +759,12 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .scan-camera-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border:none;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-family:inherit;font-weight:600;font-size:14px}
 .scan-camera-btn.primary{background:#fff;color:#111}
 .scan-camera-error{margin:auto;max-width:22rem;display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;text-align:center}
+/* Confirm-discard and restore-unsaved sheets inside the camera. */
+.scan-camera-sheet{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.6)}
+.scan-camera-sheet-card{max-width:22rem;width:100%;display:flex;flex-direction:column;align-items:center;gap:12px;padding:22px;border-radius:14px;background:#fff;color:var(--ink);text-align:center}
+.scan-camera-sheet-card h2{font-size:18px}
+.scan-camera-sheet-card p{font-size:14px;color:#57635d}
+.scan-camera-sheet-actions{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px}
+.scan-camera-sheet-actions .scan-camera-btn{justify-content:center;background:hsl(calc(120deg + var(--th)) calc(12% * var(--ts)) 92%);color:var(--ink)}
+.scan-camera-sheet-actions .scan-camera-btn.primary{background:hsl(calc(154deg + var(--th)) calc(18% * var(--ts)) 43%);color:#fff}
+.scan-camera-sheet-actions .scan-camera-btn.danger{background:none;color:#b3261e}

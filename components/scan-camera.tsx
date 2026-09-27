@@ -1,56 +1,62 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Check, LoaderCircle, Upload, UserPlus, X } from "lucide-react";
+import { Camera, Check, LoaderCircle, RotateCcw, Upload, UserPlus, X } from "lucide-react";
 import {
   cameraSupported,
   describeCameraError,
   partitionByGroup,
   videoConstraints,
 } from "@/lib/camera";
+import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
 
-type Shot = { id: string; url: string; blob: Blob; group: number };
+type Shot = { id: string; url: string; blob: Blob; group: number; seq: number };
 
 /**
  * A full-screen, rapid-fire camera for scanning student work.
  *
  * The whole point (Ricky and Michael: "scan, scan, scan") is that the shutter
  * captures instantly and stays open — no Use Photo / Retake step the native
- * camera forces after every shot. Frames are held in memory as they're taken
- * and only uploaded when the teacher taps Done, so nothing slows the shutter.
- * "Next student" records a boundary between students; on Done the shots come
- * back grouped so they feed the existing declared per-student grouping.
+ * camera forces after every shot. "Next student" records a boundary; on Done
+ * the shots come back grouped so they feed the existing per-student grouping.
  *
- * It never traps the teacher: if the camera can't start (blocked, missing, in
- * use) it says so plainly and offers Upload, which always works.
+ * Two safety nets, because a class set is a lot to lose:
+ *  - Closing with pages in hand asks first (Keep scanning is the default).
+ *  - Every page is written to IndexedDB as it's taken (lib/scan-store), so an
+ *    interruption doesn't lose the class; reopening offers to restore them,
+ *    and they're cleared once Done hands off. Storage never blocks capture.
+ *
+ * It never traps the teacher: if the camera can't start it says so and offers
+ * Upload, which always works.
  */
 export function ScanCamera({
   mode,
   title,
+  assessmentId,
   onComplete,
   onCancel,
   onFallback,
 }: {
-  /** "class" shows Next student; "single" is one student's pages. */
   mode: "single" | "class";
   title?: string;
-  /** Captured pages, grouped per student (one group in single mode). */
+  /** Keys the offline-saved pages so a reopen can restore this assessment's. */
+  assessmentId: string;
   onComplete: (groups: File[][]) => void;
   onCancel: () => void;
-  /** The teacher chose Upload instead (or the camera failed). */
   onFallback: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const shotsRef = useRef<Shot[]>([]);
+  const seqRef = useRef(0);
   const [shots, setShots] = useState<Shot[]>([]);
   const [group, setGroup] = useState(0);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(true);
   const [flash, setFlash] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [restorable, setRestorable] = useState<Shot[] | null>(null);
 
-  // Keep a ref copy of shots so unmount teardown can revoke every object URL it
-  // created, even if the camera is closed from outside rather than by a button.
   useEffect(() => {
     shotsRef.current = shots;
   }, [shots]);
@@ -59,6 +65,28 @@ export function ScanCamera({
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
+
+  // Offer to restore pages left behind by an interruption for this assessment.
+  useEffect(() => {
+    let live = true;
+    loadShots(assessmentId)
+      .then((stored) => {
+        if (!live || !stored.length) return;
+        setRestorable(
+          stored.map((s) => ({
+            id: s.id,
+            url: URL.createObjectURL(s.blob),
+            blob: s.blob,
+            group: s.group,
+            seq: s.seq,
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [assessmentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,13 +134,19 @@ export function ScanCamera({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const captureGroup = group;
+    const seq = seqRef.current++;
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
+        const id = crypto.randomUUID();
         setShots((s) => [
           ...s,
-          { id: crypto.randomUUID(), url: URL.createObjectURL(blob), blob, group },
+          { id, url: URL.createObjectURL(blob), blob, group: captureGroup, seq },
         ]);
+        // Persist immediately; fire-and-forget so the shutter never waits, and
+        // storage failure just means we keep this page in memory only.
+        void saveShot({ id, assessmentId, group: captureGroup, seq, blob }).catch(() => {});
       },
       "image/jpeg",
       0.92,
@@ -128,6 +162,7 @@ export function ScanCamera({
       if (hit) URL.revokeObjectURL(hit.url);
       return s.filter((x) => x.id !== id);
     });
+    void deleteShot(id).catch(() => {});
   }
 
   function nextStudent() {
@@ -145,6 +180,8 @@ export function ScanCamera({
           new File([shot.blob], `scan-${gi + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
       ),
     );
+    // Handed off successfully — the saved copies are no longer needed.
+    void clearShots(assessmentId).catch(() => {});
     shots.forEach((s) => URL.revokeObjectURL(s.url));
     stop();
     onComplete(groups);
@@ -154,6 +191,29 @@ export function ScanCamera({
     shots.forEach((s) => URL.revokeObjectURL(s.url));
     stop();
     handler();
+  }
+
+  /** The close button: never silently drop a stack. */
+  function requestClose() {
+    if (shots.length > 0) setConfirmDiscard(true);
+    else leave(onCancel);
+  }
+  function discardAndClose() {
+    void clearShots(assessmentId).catch(() => {});
+    leave(onCancel);
+  }
+
+  function restore() {
+    if (!restorable) return;
+    setShots(restorable);
+    setGroup(restorable.reduce((m, s) => Math.max(m, s.group), 0));
+    seqRef.current = restorable.reduce((m, s) => Math.max(m, s.seq + 1), 0);
+    setRestorable(null);
+  }
+  function discardRestorable() {
+    restorable?.forEach((s) => URL.revokeObjectURL(s.url));
+    void clearShots(assessmentId).catch(() => {});
+    setRestorable(null);
   }
 
   const inCurrent = shots.filter((s) => s.group === group).length;
@@ -194,7 +254,7 @@ export function ScanCamera({
           type="button"
           className="scan-camera-icon-btn"
           aria-label="Close camera"
-          onClick={() => leave(onCancel)}
+          onClick={requestClose}
         >
           <X size={20} />
         </button>
@@ -256,6 +316,49 @@ export function ScanCamera({
           </div>
         </div>
       </div>
+
+      {restorable && (
+        <div className="scan-camera-sheet" role="dialog" aria-modal="true" aria-label="Restore pages">
+          <div className="scan-camera-sheet-card">
+            <RotateCcw size={26} />
+            <h2>Unsaved pages found</h2>
+            <p>
+              {restorable.length} page{restorable.length === 1 ? "" : "s"} from before are still
+              here. Restore them and keep going?
+            </p>
+            <div className="scan-camera-sheet-actions">
+              <button type="button" className="scan-camera-btn primary" onClick={restore}>
+                Restore {restorable.length} page{restorable.length === 1 ? "" : "s"}
+              </button>
+              <button type="button" className="scan-camera-btn" onClick={discardRestorable}>
+                Start fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDiscard && (
+        <div className="scan-camera-sheet" role="dialog" aria-modal="true" aria-label="Discard pages">
+          <div className="scan-camera-sheet-card">
+            <h2>Discard {shots.length} page{shots.length === 1 ? "" : "s"}?</h2>
+            <p>These scanned pages haven’t been saved to the assessment yet.</p>
+            <div className="scan-camera-sheet-actions">
+              <button
+                type="button"
+                className="scan-camera-btn primary"
+                autoFocus
+                onClick={() => setConfirmDiscard(false)}
+              >
+                Keep scanning
+              </button>
+              <button type="button" className="scan-camera-btn danger" onClick={discardAndClose}>
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
