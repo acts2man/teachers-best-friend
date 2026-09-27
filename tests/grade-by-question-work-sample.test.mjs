@@ -56,3 +56,15 @@ test("the sample is zoomable", () => {
   assert.match(ui, /work-sample-overlay/, "an enlarge overlay exists");
   assert.match(ui, /setFull\(\(f\) => !f\)/, "tapping toggles full resolution");
 });
+
+test("the sample is shown large by default, not a tap-to-open thumbnail", () => {
+  // Ricky: tap-to-zoom isn't a real fix — the work must be readable at a glance.
+  const css = readFileSync("app/globals.css", "utf8");
+  const img = css.match(/\.work-sample-thumb img\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(img, /width:100%/, "the sample fills the group width");
+  assert.ok(!/max-height:130px/.test(img), "no tiny thumbnail height");
+  assert.ok(!/object-fit:cover/.test(img), "the whole page is shown, not a cropped band");
+  const wrap = css.match(/\.work-sample\{([^}]*)\}/)?.[1] ?? "";
+  assert.ok(!/max-width:190px/.test(wrap), "the sample is no longer capped narrow");
+  assert.match(wrap, /width:100%/, "the sample spans the answer group");
+});
