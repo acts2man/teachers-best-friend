@@ -74,8 +74,12 @@ import { ClassScanPanel } from "./teacher-class-scan";
  * page already reachable from "Original student work", never the name strip --
  * and it is shown with no student name, so the group stays about the work, not
  * whose it is. The grading pass returns no reliable per-question location, so
- * the whole page is shown, zoomable, rather than a wrong crop: showing the
- * right work matters more than a tight frame.
+ * the whole page is shown rather than a wrong crop (cropping to the question is
+ * a later decision): showing the right work matters more than a tight frame.
+ *
+ * It is shown large by default -- as wide as the answer group allows, on phone
+ * and desktop -- so the handwriting is legible at a glance without tapping. Tap
+ * still opens a full-resolution, pannable view for close reading.
  */
 function GroupWorkSample({
   assessment: a,
@@ -113,7 +117,7 @@ function GroupWorkSample({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt="A student's work for this question" />
         <span className="work-sample-hint">
-          <ZoomIn size={13} /> Sample work — tap to enlarge
+          <ZoomIn size={13} /> Tap for full size
         </span>
       </button>
       <div className="work-sample-controls">
