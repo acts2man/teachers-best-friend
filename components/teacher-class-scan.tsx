@@ -19,6 +19,7 @@ import { describeFailure, useOnline } from "@/lib/connection";
 import { announceScanComplete, isOutOfScans, SEE_PLANS } from "@/lib/quota-client";
 import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
+import { ScanCamera } from "./scan-camera";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
 import { reconcileEvidence } from "@/lib/teacher-data";
@@ -208,6 +209,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const [groups, setGroups] = useState<ResolvedGroup[] | null>(null);
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const stack = useRef<HTMLInputElement>(null);
@@ -318,7 +320,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   /** Add pages to the student currently being scanned. */
-  async function addPages(list: FileList | null) {
+  async function addPages(list: FileList | File[] | null) {
     if (!list?.length || busyScanning) return;
     const files = Array.from(list);
     if (!ready() || !canAccept(files.length)) return;
@@ -354,6 +356,46 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       return;
     }
     setPiles((p) => [...p, []]);
+  }
+
+  /**
+   * Land the in-app camera's per-student groups into the piles. The camera
+   * buffered pages so its shutter stayed instant; this uploads them now,
+   * opening a fresh pile at each student boundary. Uses only functional
+   * setPiles so it never reads a pile length that a mid-loop await has already
+   * changed. The first group continues whatever pile is currently open, so a
+   * teacher who scanned a page by file first and then opened the camera keeps
+   * one student together.
+   */
+  async function addCameraGroups(groups: File[][]) {
+    const flat = groups.flat();
+    if (!flat.length || busyScanning) return;
+    if (!ready() || !canAccept(flat.length)) return;
+    setGroups(null);
+    setAdding(true);
+    try {
+      for (let g = 0; g < groups.length; g++) {
+        if (g > 0) setPiles((p) => [...p, []]);
+        for (const raw of groups[g]) {
+          setStatus("Uploading scanned pages…");
+          const prepared = await preparePage(raw);
+          setPiles((p) => {
+            const next = p.map((pile) => [...pile]);
+            next[next.length - 1].push({
+              key: crypto.randomUUID(),
+              label: raw.name || "Page",
+              ...prepared,
+            });
+            return next;
+          });
+        }
+      }
+    } catch (e) {
+      toast.error(describeFailure(e, "Those pages couldn't be uploaded."));
+    } finally {
+      setAdding(false);
+      setStatus("");
+    }
   }
 
   /** Undo the last page, or close an empty pile that was opened by mistake. */
@@ -823,6 +865,20 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             aria-label="Choose pages of this student's work"
             onChange={(e) => addPages(e.target.files)}
           />
+          {cameraOpen && (
+            <ScanCamera
+              mode="class"
+              onComplete={(groups) => {
+                setCameraOpen(false);
+                if (groups.length) addCameraGroups(groups);
+              }}
+              onCancel={() => setCameraOpen(false)}
+              onFallback={() => {
+                setCameraOpen(false);
+                camera.current?.click();
+              }}
+            />
+          )}
           {restored && captured.length > 0 && (
             <p className="cell-meta">
               Picked up where you left off — {captured.length} page
@@ -850,7 +906,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             <Action
               variant="secondary small"
               disabled={busyScanning || busy}
-              onClick={() => camera.current?.click()}
+              onClick={() => setCameraOpen(true)}
             >
               {adding ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
               Scan a page

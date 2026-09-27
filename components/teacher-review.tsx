@@ -60,6 +60,7 @@ import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
+import { ScanCamera } from "./scan-camera";
 
 /**
  * One student's actual work for this question, shown inside an answer group.
@@ -394,7 +395,8 @@ export function StudentResponseReview({
   const [limit, setLimit] = useState(12);
   const [uploading, setUploading] = useState(false),
     [status, setStatus] = useState(""),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [cameraOpen, setCameraOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null),
     camera = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -485,7 +487,7 @@ export function StudentResponseReview({
     }
   }
 
-  async function uploadPages(list: FileList | null) {
+  async function uploadPages(list: FileList | File[] | null) {
     if (!list?.length || !selected || uploading) return;
     if (!prep.ready) {
       toast.error("Confirm the standards and answer key before adding student work.");
@@ -723,7 +725,7 @@ export function StudentResponseReview({
             <Action
               variant="secondary"
               disabled={uploading || busy || !prep.ready}
-              onClick={() => camera.current?.click()}
+              onClick={() => setCameraOpen(true)}
             >
               <Camera size={16} />
               Take a photo
@@ -746,6 +748,22 @@ export function StudentResponseReview({
               aria-label={"Photograph pages for " + student.name}
               onChange={(e) => uploadPages(e.target.files)}
             />
+            {cameraOpen && (
+              <ScanCamera
+                mode="single"
+                title={student.name}
+                onComplete={(groups) => {
+                  setCameraOpen(false);
+                  const files = groups.flat();
+                  if (files.length) uploadPages(files);
+                }}
+                onCancel={() => setCameraOpen(false)}
+                onFallback={() => {
+                  setCameraOpen(false);
+                  camera.current?.click();
+                }}
+              />
+            )}
           </div>
         </div>
       )}
