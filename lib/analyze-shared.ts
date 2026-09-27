@@ -2,6 +2,12 @@ import { z } from "zod";
 import { HttpError } from "@/lib/teacher-server";
 import { allStandards } from "@/lib/teacher-catalog";
 import { stateFor } from "@/lib/states";
+import {
+  MAX_GRADE,
+  gradePromptLabel,
+  isMathCourseGrade,
+  mathCourseName,
+} from "@/lib/grade-labels";
 import { assessmentClassIds } from "@/lib/teacher-classes";
 import {
   normalizeRecognizedResponses,
@@ -101,7 +107,9 @@ export const analyzeInput = z.object({
    * the progress UI still number the batches. */
   batchIndex: z.number().int().min(0).default(0),
   uploadIds: z.array(z.string()).max(24).default([]),
-  grade: z.number().int().min(0).max(12).default(4),
+  // 0 = Kindergarten … 12, plus 13 for the Calculus course (Math only). The
+  // grade picker only ever offers 13 under Math; see lib/grade-labels.ts.
+  grade: z.number().int().min(0).max(MAX_GRADE).default(4),
   subject: z.string().default("Math"),
   framework: z.string().default("Common Core"),
   targetStandards: z.array(z.string()).max(100).default([]),
@@ -274,8 +282,8 @@ export function buildPrompt(
     if (!p.text.trim() && !hasContent)
       throw new HttpError(400, "Add a document or questions first.");
     task =
-      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. Grade " +
-      p.grade +
+      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. This assignment is for " +
+      gradePromptLabel(p.grade, p.subject) +
       ", subject " +
       p.subject +
       ", framework " +
@@ -390,20 +398,42 @@ export function buildPrompt(
     const label = state
       ? state.state + " (" + state.framework + ")"
       : "the Common Core State Standards";
+    const mathCourse = isMathCourseGrade(p.subject, p.grade)
+      ? mathCourseName(p.grade)
+      : null;
     task =
       "List the currently adopted, official " +
       (p.subject === "ELA" ? "English Language Arts" : "Mathematics") +
-      " academic standards for grade " +
-      (p.grade === 0 ? "K" : p.grade) +
+      " academic standards for " +
+      // High-school Math is organized by course, not by year: name the course.
+      (mathCourse ? "the " + mathCourse + " course" : "grade " + (p.grade === 0 ? "K" : p.grade)) +
       " in " +
       label +
       ". Use the exact standard codes as published by the state education agency" +
       (state ? " at " + state.site : "") +
-      ". If the state uses the Common Core or a close derivative, use the state's published codes. Include every grade-level standard, one entry per standard, in the published order. Do not include broader anchor standards, substandards folded into a parent, or standards from other grades. For each standard give a short teacher-friendly title, its domain or strand, its cluster or topic, a concise one- to two-sentence plain-language description of what the standard requires (a brief summary, NOT the full official paragraph), three component skills a student must show, the typical Webb DOK level, one likely misconception, and one example task. Keep every field brief so the whole grade fits in one response; the teacher will verify against the official document. Return at most 90 standards. Grade " +
-      p.grade +
-      ", subject " +
+      ". If the state uses the Common Core or a close derivative, use the state's published codes.";
+    if (mathCourse)
+      task +=
+        " Follow the California Mathematics Framework's traditional high-school pathway (Algebra I, Geometry, Algebra II) and assign each standard to the course that framework places it in; return only the standards for the " +
+        mathCourse +
+        " course, not the whole of high school." +
+        (mathCourse === "Pre-Calculus"
+          ? " Precalculus is built from the advanced (+) standards the framework assigns beyond Algebra II — trigonometric functions, vectors and matrices, complex numbers, rational functions, conic sections and the like; include those (+) standards and use their published (+) codes."
+          : "") +
+        (mathCourse === "Calculus"
+          ? " California's Common Core mathematics standards do not define a full Calculus course, so there are no CA-numbered Calculus standards to quote. List the standards for a standard single-variable Calculus course — limits and continuity, derivatives and their applications, integrals and the Fundamental Theorem, and applications of integration — using clear course-topic codes (for example CALC.1, CALC.2) rather than inventing California codes, and say in each description that it follows common Calculus scope. Include any (+) standards the framework does place in advanced courses where they apply."
+          : "");
+    task +=
+      " Include every standard for this " +
+      (mathCourse ? "course" : "grade") +
+      ", one entry per standard, in the published order. Do not include broader anchor standards, substandards folded into a parent, or standards from other " +
+      (mathCourse ? "courses" : "grades") +
+      ". For each standard give a short teacher-friendly title, its domain or strand, its cluster or topic, a concise one- to two-sentence plain-language description of what the standard requires (a brief summary, NOT the full official paragraph), three component skills a student must show, the typical Webb DOK level, one likely misconception, and one example task. Keep every field brief so the whole " +
+      (mathCourse ? "course" : "grade") +
+      " fits in one response; the teacher will verify against the official document. Return at most 90 standards. Subject " +
       p.subject +
-      ".";
+      ", " +
+      (mathCourse ? mathCourse + " course." : "grade " + p.grade + ".");
     schema = catalogSchema;
   }
   if (p.mode === "roster") {

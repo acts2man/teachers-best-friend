@@ -71,6 +71,7 @@ import {
 } from "./teacher-shared";
 import { classAnalysis, classAnalysisReport } from "@/lib/teacher-class-analysis";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { gradeLabel } from "@/lib/grade-labels";
 import {
   alignmentSuggestions,
   costaFor,
@@ -443,7 +444,7 @@ export function AssessmentView() {
                   <div className="assignment-row-copy">
                     <h2>{item.title}</h2>
                     <p>
-                      {item.subject} · Grade {item.grade} ·{" "}
+                      {item.subject} · {gradeLabel(item.grade, item.subject)} ·{" "}
                       {item.questions.length} questions · {item.framework}
                     </p>
                     <span className="assignment-row-detail">
@@ -490,8 +491,8 @@ export function AssessmentView() {
           <PageTitle
             eyebrow={
               a.subject.toUpperCase() +
-              " · GRADE " +
-              a.grade +
+              " · " +
+              gradeLabel(a.grade, a.subject).toUpperCase() +
               " · " +
               a.framework.toUpperCase()
             }

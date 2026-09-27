@@ -60,6 +60,7 @@ import {
 } from "./teacher-shared";
 import { defaultFocusFor, progressOverTime } from "@/lib/teacher-workflow";
 import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
+import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
 import {
   AlertDialog,
@@ -220,18 +221,19 @@ export function StandardsView() {
           ])}
         />
         <Pick
-          label="Grade"
+          label={subject === "Math" ? "Grade or course" : "Grade"}
           value={grade}
           onChange={setGrade}
-          options={Array.from({ length: 13 }, (_, i) => ({
-            value: String(i),
-            label: i === 0 ? "Kindergarten" : "Grade " + i,
-          }))}
+          options={gradeOptions(subject === "Math" ? "Math" : undefined)}
         />
         <Pick
           label="Subject"
           value={subject}
-          onChange={setSubject}
+          onChange={(v) => {
+            setSubject(v);
+            // Calculus (13) is Math-only; drop it if the subject leaves Math.
+            setGrade(String(gradeForSubject(Number(grade), v)));
+          }}
           options={["All subjects", "Math", "ELA"]}
         />
       </div>
@@ -327,7 +329,9 @@ export function StandardsView() {
           <SheetHeader>
             <SheetTitle>{detail?.code}</SheetTitle>
             <SheetDescription>
-              {detail?.framework} · Grade {detail?.grade} · {detail?.subject}
+              {detail?.framework} ·{" "}
+              {detail ? gradeLabel(detail.grade, detail.subject) : ""} ·{" "}
+              {detail?.subject}
             </SheetDescription>
           </SheetHeader>
           {detail && (
@@ -465,15 +469,12 @@ export function StandardsView() {
           </label>
           <div className="form-grid">
             <label>
-              Grade
+              {customSubject === "Math" ? "Grade or course" : "Grade"}
               <Pick
                 label="Grade"
                 value={grade}
                 onChange={setGrade}
-                options={Array.from({ length: 13 }, (_, i) => ({
-                  value: String(i),
-                  label: "Grade " + i,
-                }))}
+                options={gradeOptions(customSubject === "Math" ? "Math" : undefined)}
               />
             </label>
             <label>
@@ -481,7 +482,10 @@ export function StandardsView() {
               <Pick
                 label="Subject"
                 value={customSubject}
-                onChange={setCustomSubject}
+                onChange={(v) => {
+                  setCustomSubject(v);
+                  setGrade(String(gradeForSubject(Number(grade), v)));
+                }}
                 options={["Math", "ELA"]}
               />
             </label>
