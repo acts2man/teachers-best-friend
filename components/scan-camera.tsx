@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Check, LoaderCircle, RotateCcw, Upload, UserPlus, X } from "lucide-react";
+import { Camera, Check, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
 import {
   cameraSupported,
   describeCameraError,
@@ -10,23 +10,46 @@ import {
 import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
 
 type Shot = { id: string; url: string; blob: Blob; group: number; seq: number };
+type EdgeLib = typeof import("@/lib/edge-detect");
+type SnapLib = typeof import("@/lib/auto-snap");
+type DetectedQuad = { quad: import("@/lib/edge-detect").Quad; w: number; h: number; confident: boolean };
+
+const AUTO_KEY = "tbf.scan.autoSnap";
+const DETECT_W = 320; // downscaled working width for live detection
+const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
+const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
+
+function readAuto(): boolean {
+  try {
+    const v = localStorage.getItem(AUTO_KEY);
+    return v === null ? true : v === "1"; // default Auto (Ricky); remembered after
+  } catch {
+    return true;
+  }
+}
+function writeAuto(on: boolean) {
+  try {
+    localStorage.setItem(AUTO_KEY, on ? "1" : "0");
+  } catch {
+    /* private mode — the choice just won't persist */
+  }
+}
 
 /**
  * A full-screen, rapid-fire camera for scanning student work.
  *
- * The whole point (Ricky and Michael: "scan, scan, scan") is that the shutter
- * captures instantly and stays open — no Use Photo / Retake step the native
- * camera forces after every shot. "Next student" records a boundary; on Done
- * the shots come back grouped so they feed the existing per-student grouping.
+ * Instant shutter, no review step; "Next student" records a boundary and Done
+ * returns the shots grouped per student. Two safety nets: closing with pages in
+ * hand asks first, and every page is saved to IndexedDB as it's taken so an
+ * interruption can be restored (lib/scan-store) — storage never blocks capture.
  *
- * Two safety nets, because a class set is a lot to lose:
- *  - Closing with pages in hand asks first (Keep scanning is the default).
- *  - Every page is written to IndexedDB as it's taken (lib/scan-store), so an
- *    interruption doesn't lose the class; reopening offers to restore them,
- *    and they're cleared once Done hands off. Storage never blocks capture.
- *
- * It never traps the teacher: if the camera can't start it says so and offers
- * Upload, which always works.
+ * Page edges are detected live and outlined; on capture the page is cropped and
+ * straightened, BUT only when the detection is convincingly a page (large,
+ * rectangular, top near the frame top so the name band is never cut). Otherwise
+ * the full frame is kept — a wrong crop is worse than no crop. Auto-snap fires
+ * only on a confident page; low confidence shows "Hold steady or tap the
+ * shutter." Detection code is dependency-free and loaded only when the camera
+ * opens. If the camera can't start, the teacher is sent to Upload.
  */
 export function ScanCamera({
   mode,
@@ -38,18 +61,31 @@ export function ScanCamera({
 }: {
   mode: "single" | "class";
   title?: string;
-  /** Keys the offline-saved pages so a reopen can restore this assessment's. */
   assessmentId: string;
   onComplete: (groups: File[][]) => void;
   onCancel: () => void;
   onFallback: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const detectCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const shotsRef = useRef<Shot[]>([]);
   const seqRef = useRef(0);
+  const groupRef = useRef(0);
+  const autoRef = useRef(false);
+  const edgeRef = useRef<EdgeLib | null>(null);
+  const snapRef = useRef<SnapLib | null>(null);
+  const quadRef = useRef<DetectedQuad | null>(null);
+  const snapStateRef = useRef<import("@/lib/auto-snap").AutoSnapState | null>(null);
+  const lastDetectRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  const shootRef = useRef<() => void>(() => {});
+
   const [shots, setShots] = useState<Shot[]>([]);
   const [group, setGroup] = useState(0);
+  const [auto, setAuto] = useState(() => readAuto());
+  const [lowConfidence, setLowConfidence] = useState(false);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(true);
   const [flash, setFlash] = useState(false);
@@ -60,8 +96,16 @@ export function ScanCamera({
   useEffect(() => {
     shotsRef.current = shots;
   }, [shots]);
+  useEffect(() => {
+    groupRef.current = group;
+  }, [group]);
+  useEffect(() => {
+    autoRef.current = auto;
+  }, [auto]);
 
   const stop = useCallback(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
@@ -87,6 +131,142 @@ export function ScanCamera({
       live = false;
     };
   }, [assessmentId]);
+
+  function shoot() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    const fw = video.videoWidth;
+    const fh = video.videoHeight;
+    const scale = Math.min(1, CAPTURE_CAP / Math.max(fw, fh));
+    const cw = Math.round(fw * scale);
+    const ch = Math.round(fh * scale);
+    const cap = document.createElement("canvas");
+    cap.width = cw;
+    cap.height = ch;
+    const cctx = cap.getContext("2d");
+    if (!cctx) return;
+    cctx.drawImage(video, 0, 0, cw, ch);
+
+    // Crop + straighten only when the detection is confidently a page; anything
+    // less keeps the full frame, so a wrong crop never loses the top/name.
+    let out: HTMLCanvasElement = cap;
+    const edge = edgeRef.current;
+    const det = quadRef.current;
+    if (edge && det && det.confident) {
+      try {
+        const q = edge.scaleQuad(det.quad, cw / det.w, ch / det.h);
+        const warped = edge.warpPerspective(cctx.getImageData(0, 0, cw, ch), q);
+        const wc = document.createElement("canvas");
+        wc.width = warped.width;
+        wc.height = warped.height;
+        const wctx = wc.getContext("2d");
+        if (wctx) {
+          const id = wctx.createImageData(warped.width, warped.height);
+          id.data.set(warped.data);
+          wctx.putImageData(id, 0, 0);
+          out = wc;
+        }
+      } catch {
+        out = cap; // any warp trouble → the plain frame, never a lost shot
+      }
+    }
+
+    const captureGroup = groupRef.current;
+    const seq = seqRef.current++;
+    out.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const id = crypto.randomUUID();
+        setShots((s) => [
+          ...s,
+          { id, url: URL.createObjectURL(blob), blob, group: captureGroup, seq },
+        ]);
+        void saveShot({ id, assessmentId, group: captureGroup, seq, blob }).catch(() => {});
+      },
+      "image/jpeg",
+      0.92,
+    );
+    setFlash(true);
+    setTimeout(() => setFlash(false), 120);
+  }
+  useEffect(() => {
+    shootRef.current = shoot;
+  });
+
+  // Load the (dependency-free) detection code only once the camera is open.
+  useEffect(() => {
+    let live = true;
+    Promise.all([import("@/lib/edge-detect"), import("@/lib/auto-snap")]).then(([edge, snap]) => {
+      if (!live) return;
+      edgeRef.current = edge;
+      snapRef.current = snap;
+      snapStateRef.current = snap.initialAutoSnapState;
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Live detection + auto-snap loop.
+  useEffect(() => {
+    function frame(now: number) {
+      rafRef.current = requestAnimationFrame(frame);
+      const video = videoRef.current;
+      const edge = edgeRef.current;
+      const dc = detectCanvasRef.current;
+      const oc = overlayCanvasRef.current;
+      if (!video || !video.videoWidth || !edge || !dc || !oc) return;
+      if (now - lastDetectRef.current < DETECT_EVERY_MS) return;
+      lastDetectRef.current = now;
+
+      const fw = video.videoWidth;
+      const fh = video.videoHeight;
+      const dw = DETECT_W;
+      const dh = Math.max(1, Math.round((DETECT_W * fh) / fw));
+      if (dc.width !== dw) {
+        dc.width = dw;
+        dc.height = dh;
+        oc.width = dw;
+        oc.height = dh;
+      }
+      const dctx = dc.getContext("2d", { willReadFrequently: true });
+      const octx = oc.getContext("2d");
+      if (!dctx || !octx) return;
+      dctx.drawImage(video, 0, 0, dw, dh);
+      const quad = edge.findDocumentQuad(dctx.getImageData(0, 0, dw, dh));
+      const confident = !!quad && edge.isConfidentQuad(quad, dw, dh);
+      quadRef.current = quad ? { quad, w: dw, h: dh, confident } : null;
+      setLowConfidence(!!quad && !confident);
+
+      octx.clearRect(0, 0, dw, dh);
+      if (quad) {
+        // Solid green when we'll crop; dashed/soft when only a guess.
+        octx.lineWidth = confident ? 2.5 : 2;
+        octx.strokeStyle = confident ? "rgba(120,230,170,0.95)" : "rgba(245,205,110,0.9)";
+        octx.fillStyle = confident ? "rgba(120,230,170,0.14)" : "rgba(245,205,110,0.08)";
+        octx.setLineDash(confident ? [] : [6, 5]);
+        octx.beginPath();
+        octx.moveTo(quad[0].x, quad[0].y);
+        for (let i = 1; i < 4; i++) octx.lineTo(quad[i].x, quad[i].y);
+        octx.closePath();
+        octx.fill();
+        octx.stroke();
+      }
+
+      // Auto-snap only on a confident page; otherwise feed null so it can't fire.
+      const snap = snapRef.current;
+      if (autoRef.current && snap && snapStateRef.current) {
+        const r = snap.autoSnapStep(snapStateRef.current, { quad: confident ? quad : null, now });
+        snapStateRef.current = r.state;
+        if (r.fire) shootRef.current();
+      }
+    }
+    rafRef.current = requestAnimationFrame(frame);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,37 +303,13 @@ export function ScanCamera({
     };
   }, [stop]);
 
-  function shoot() {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-    const canvas = document.createElement("canvas");
-    // Capture at the stream's real pixel size, not the on-screen (cover-cropped)
-    // size, so the frame is the sharpest the camera gave us.
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const captureGroup = group;
-    const seq = seqRef.current++;
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const id = crypto.randomUUID();
-        setShots((s) => [
-          ...s,
-          { id, url: URL.createObjectURL(blob), blob, group: captureGroup, seq },
-        ]);
-        // Persist immediately; fire-and-forget so the shutter never waits, and
-        // storage failure just means we keep this page in memory only.
-        void saveShot({ id, assessmentId, group: captureGroup, seq, blob }).catch(() => {});
-      },
-      "image/jpeg",
-      0.92,
-    );
-    // A quick flash confirms the shot, since there is no review step.
-    setFlash(true);
-    setTimeout(() => setFlash(false), 120);
+  function toggleAuto() {
+    setAuto((a) => {
+      const next = !a;
+      writeAuto(next);
+      if (snapRef.current) snapStateRef.current = snapRef.current.initialAutoSnapState;
+      return next;
+    });
   }
 
   function removeShot(id: string) {
@@ -166,8 +322,6 @@ export function ScanCamera({
   }
 
   function nextStudent() {
-    // Only advance once the current student has a page, so an accidental double
-    // tap doesn't leave an empty student.
     if (!shots.some((x) => x.group === group)) return;
     setGroup((g) => g + 1);
   }
@@ -180,7 +334,6 @@ export function ScanCamera({
           new File([shot.blob], `scan-${gi + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
       ),
     );
-    // Handed off successfully — the saved copies are no longer needed.
     void clearShots(assessmentId).catch(() => {});
     shots.forEach((s) => URL.revokeObjectURL(s.url));
     stop();
@@ -193,7 +346,6 @@ export function ScanCamera({
     handler();
   }
 
-  /** The close button: never silently drop a stack. */
   function requestClose() {
     if (shots.length > 0) setConfirmDiscard(true);
     else leave(onCancel);
@@ -239,9 +391,9 @@ export function ScanCamera({
 
   return (
     <div className="scan-camera" role="dialog" aria-modal="true" aria-label="Scan student work">
-      {/* muted + playsInline are required for iOS Safari to show the stream
-          inline instead of taking over full-screen. */}
       <video ref={videoRef} className="scan-camera-video" muted playsInline autoPlay />
+      <canvas ref={overlayCanvasRef} className="scan-camera-overlay" aria-hidden="true" />
+      <canvas ref={detectCanvasRef} className="sr-only" aria-hidden="true" />
       {flash && <div className="scan-camera-flash" aria-hidden="true" />}
       <div className="scan-camera-top">
         <span className="scan-camera-count">
@@ -250,18 +402,34 @@ export function ScanCamera({
             ? "Student " + (group + 1) + " · " + inCurrent + (inCurrent === 1 ? " page" : " pages")
             : shots.length + (shots.length === 1 ? " page" : " pages")}
         </span>
-        <button
-          type="button"
-          className="scan-camera-icon-btn"
-          aria-label="Close camera"
-          onClick={requestClose}
-        >
-          <X size={20} />
-        </button>
+        <div className="scan-camera-side" style={{ flex: "0 0 auto" }}>
+          <button
+            type="button"
+            className={"scan-camera-btn" + (auto ? " primary" : "")}
+            aria-pressed={auto}
+            aria-label={auto ? "Auto capture on — switch to manual" : "Auto capture off — switch to auto"}
+            onClick={toggleAuto}
+          >
+            {auto ? <Zap size={15} /> : <ZapOff size={15} />} {auto ? "Auto" : "Manual"}
+          </button>
+          <button
+            type="button"
+            className="scan-camera-icon-btn"
+            aria-label="Close camera"
+            onClick={requestClose}
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
       {starting && (
         <div className="scan-camera-starting" role="status">
           <LoaderCircle className="spin" size={22} /> Starting camera…
+        </div>
+      )}
+      {!starting && auto && lowConfidence && (
+        <div className="scan-camera-hint" role="status">
+          Hold steady or tap the shutter
         </div>
       )}
       <div className="scan-camera-bottom">
