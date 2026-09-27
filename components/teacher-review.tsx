@@ -204,6 +204,9 @@ function GradeByQuestion({
   const [questionId, setQuestionId] = useState(questions[0]?.id || "");
   const question = questions.find((q) => q.id === questionId) || questions[0];
   const [custom, setCustom] = useState<Record<string, string>>({});
+  // Which group's "Percent" entry is open. Only one at a time; tapping a preset
+  // or applying a percent closes it.
+  const [percentFor, setPercentFor] = useState<string | null>(null);
   if (!question) return null;
   const groups = groupAnswers(a, question.id);
   const outstanding = groups.filter((g) => g.needsDecision);
@@ -223,6 +226,7 @@ function GradeByQuestion({
   }
 
   async function score(group: AnswerGroup, match: number) {
+    setPercentFor(null);
     await onSave(
       applyGroupScore(a, group.responseIds, match),
       group.responseIds.length +
@@ -231,6 +235,13 @@ function GradeByQuestion({
         match +
         "%",
     );
+  }
+
+  /** Apply the typed percent (0–100), if it is a real number. */
+  async function applyPercent(group: AnswerGroup) {
+    const value = Number(custom[group.key]);
+    if (!Number.isFinite(value) || custom[group.key] === undefined) return;
+    await score(group, Math.max(0, Math.min(100, value)));
   }
 
   return (
@@ -295,6 +306,54 @@ function GradeByQuestion({
                     {level.label}
                   </Action>
                 ))}
+                {/* "Percent" opens a small box for any whole number rather than
+                    adding a whole row of preset buttons. It pre-fills with the
+                    group's current score, so a partial already graded at 25/75/
+                    90 shows that number and can be nudged rather than retyped. */}
+                {percentFor === g.key ? (
+                  <form
+                    className="percent-entry"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      applyPercent(g);
+                    }}
+                  >
+                    <input
+                      className="class-scan-name-input"
+                      aria-label={"Percent credit for the answer " + g.answer}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={100}
+                      autoFocus
+                      placeholder="0–100"
+                      value={custom[g.key] ?? ""}
+                      onChange={(e) =>
+                        setCustom((c) => ({
+                          ...c,
+                          [g.key]: e.target.value.replace(/[^0-9]/g, "").slice(0, 3),
+                        }))
+                      }
+                    />
+                    <Action type="submit" variant="secondary small" disabled={busy}>
+                      Set %
+                    </Action>
+                  </form>
+                ) : (
+                  <Action
+                    variant="secondary small"
+                    disabled={busy}
+                    onClick={() => {
+                      setCustom((c) => ({
+                        ...c,
+                        [g.key]: c[g.key] ?? String(Math.round(g.match)),
+                      }));
+                      setPercentFor(g.key);
+                    }}
+                  >
+                    Percent
+                  </Action>
+                )}
                 {g.studentIds.length > 1 && (
                   <Action
                     variant="secondary small"
@@ -305,21 +364,6 @@ function GradeByQuestion({
                     Reteach these {g.studentIds.length}
                   </Action>
                 )}
-                <input
-                  className="class-scan-name-input"
-                  aria-label={"Custom score for the answer " + g.answer}
-                  inputMode="numeric"
-                  placeholder="%"
-                  value={custom[g.key] ?? ""}
-                  onChange={(e) =>
-                    setCustom((c) => ({ ...c, [g.key]: e.target.value.replace(/[^0-9]/g, "") }))
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter") return;
-                    const value = Number(custom[g.key]);
-                    if (Number.isFinite(value)) score(g, value);
-                  }}
-                />
               </div>
             )}
           </div>
