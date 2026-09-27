@@ -219,7 +219,12 @@ export function ScanView() {
     return {
       id: editing?.id || crypto.randomUUID(),
       classId: classroom.id,
-      title: title.trim() || suggestedTitle || "Untitled assessment",
+      // Trim to the database's 1-200 char limit so a long typed or AI title can
+      // never fail the save with assessments_title_check.
+      title: (title.trim() || suggestedTitle || "Untitled assessment").slice(
+        0,
+        200,
+      ),
       subject,
       grade: Number(grade),
       framework,
@@ -387,6 +392,16 @@ export function ScanView() {
         studentId,
       });
       if (mode === "assignment") {
+        // A read that found nothing is not an assessment. Saving an empty one
+        // buries the upload behind a "Draft" with zero questions and tells the
+        // teacher nothing about why. Keep the pages on screen so they can remove
+        // this one or add the right page, and say what to check.
+        if (!d.result.questions.length) {
+          setError(
+            "We didn’t find any questions on this page. Make sure it’s the worksheet or test, and that the photo is clear.",
+          );
+          return;
+        }
         const a = makeAssessment(d.result.questions, "ai", uploadIds, d.result.title);
         const pages = a.assignmentUploadIds?.length || uploadIds.length;
         if (

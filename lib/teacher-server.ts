@@ -287,6 +287,17 @@ function rpcFailure(name: string, error: { code?: string; message: string }) {
     error.code ?? "",
     error.message,
   );
+  // A known constraint tells the teacher exactly what to change. Without this,
+  // a violation surfaced as the generic "we couldn't complete that request",
+  // which is what a teacher saw when a 273-char AI title tripped
+  // assessments_title_check -- true, unactionable, and indistinguishable from
+  // an outage. Postgres check-violation is 23514.
+  const message = error.message ?? "";
+  if (error.code === "23514" && message.includes("assessments_title_check"))
+    return new HttpError(
+      400,
+      "An assessment name must be 200 characters or fewer. Please shorten it and try again.",
+    );
   return new HttpError(500, RPC_FAILURE_MESSAGE);
 }
 

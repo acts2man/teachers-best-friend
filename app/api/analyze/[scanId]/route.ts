@@ -199,7 +199,19 @@ export async function GET(
       usage: remote.usage,
       errorMessage: "",
     });
-    await settle(svc, user, p, scanId, true);
+    // An assignment read that found no questions delivered nothing the teacher
+    // can use, so it is not charged: hand the pages back rather than confirm
+    // them, and mark the scan non-billable so the pages-charged invariant --
+    // every billable, complete, charging-mode scan has an attributable charge
+    // -- stays true. The result is still returned so the client can keep the
+    // upload and say what to check.
+    const deliveredNothing =
+      p.mode === "assignment" &&
+      Array.isArray(output.questions) &&
+      (output.questions as unknown[]).length === 0;
+    await settle(svc, user, p, scanId, !deliveredNothing);
+    if (deliveredNothing)
+      await svc.from("scans").update({ billable: false }).eq("id", scanId);
     await deleteBackgroundResponse(providerId, config.key);
 
     return Response.json({ status: "complete", result: output });
