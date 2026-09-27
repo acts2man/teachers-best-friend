@@ -29,6 +29,7 @@ import {
   gradeInBatches,
   planScanBatches,
   resolveScannedGroups,
+  ungradedReservations,
   type GradedGroup,
   type PageName,
   type ResolvedGroup,
@@ -393,6 +394,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     let banked: GradedGroup[] = resume?.graded ?? [];
     const ids = pages.map((p) => p.bodyId);
     setPageUploadIds(ids);
+    // The pages this run has grouped, set once the name pass yields groups. Left
+    // null until then so a failure in the name pass releases the whole reserved
+    // stack (nothing has grouped or graded yet) rather than nothing.
+    let runGroups: number[][] | null = null;
 
     // Pay for the whole stack before any of it is sent, and before the privacy
     // pass -- which is free, but still a model call, and a teacher who cannot
@@ -407,108 +412,130 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (reserved.charged === 0 && reserved.alreadyPaid > 0)
       toast.success("These pages are already paid for — this re-grade uses no scans.");
     setStatus("Reading the name on each page…");
-    const readable = pages
-      .map((p, page) => ({ id: p.stripId, page }))
-      .filter((s): s is { id: string; page: number } => !!s.id);
-    let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
-    // Batched for the same reason grading is: one request holding every strip
-    // in a class set is a request whose size nobody chose.
-    const found = new Map<number, { name: string; confidence: number }>();
-    for (const slice of chunk(readable, NAME_BATCH)) {
-      const read = await analyzeRequest({
-        mode: "name_strip",
-        uploadIds: slice.map((s) => s.id),
-        grade: a.grade,
-        subject: a.subject,
-        framework: a.framework,
-        assessmentId: a.id,
-      });
-      // Each request numbers its answers within the strips it was shown; map
-      // them back to the page each strip was cut from.
-      for (const r of (read.result.pages ?? []) as PageName[]) {
-        const source = slice[r.page];
-        if (source) found.set(source.page, { name: r.name, confidence: r.confidence });
-      }
-    }
-    names = names.map((n) => {
-      const hit = found.get(n.page);
-      return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
-    });
-
-    // Pass two: the work, with the name bands gone, grouped either by what the
-    // teacher declared or by what pass one found. Shown no name at all.
-    const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
-
-    // One request per handful of students rather than one for the whole class.
-    // A class set asked for more output than the model would return in a single
-    // answer and came back incomplete, which cost the teacher the scan and told
-    // them only to try fewer pages. The photographs are the expensive part and
-    // there are exactly as many of them either way.
-    partial.current = { pageGroups, names, ids, graded: resume?.graded ?? [] };
-    const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
-    // Resume where an interrupted run stopped rather than grading, and paying,
-    // from the top again.
-    const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
-    let inFlight = resuming?.scanId ?? null;
-    const graded = await gradeInBatches(
-      batches,
-      async (batch, index) => {
-        setStatus(
-          batches.length > 1
-            ? "Grading students " +
-                (batch.groupIndexes[0] + 1) +
-                "\u2013" +
-                (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
-                " of " +
-                pageGroups.length +
-                "\u2026"
-            : "Grading " +
-                pageGroups.length +
-                " student" +
-                (pageGroups.length === 1 ? "" : "s") +
-                "\u2026",
-        );
-        // A batch already sent and still running is waited on, not repeated.
-        if (inFlight) {
-          const id = inFlight;
-          inFlight = null;
-          try {
-            return (await resumeScan(id)).result;
-          } catch {
-            // Gone or never finished; fall through and send it again.
-          }
+    try {
+      const readable = pages
+        .map((p, page) => ({ id: p.stripId, page }))
+        .filter((s): s is { id: string; page: number } => !!s.id);
+      let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
+      // Batched for the same reason grading is: one request holding every strip
+      // in a class set is a request whose size nobody chose.
+      const found = new Map<number, { name: string; confidence: number }>();
+      for (const slice of chunk(readable, NAME_BATCH)) {
+        const read = await analyzeRequest({
+          mode: "name_strip",
+          uploadIds: slice.map((s) => s.id),
+          grade: a.grade,
+          subject: a.subject,
+          framework: a.framework,
+          assessmentId: a.id,
+        });
+        // Each request numbers its answers within the strips it was shown; map
+        // them back to the page each strip was cut from.
+        for (const r of (read.result.pages ?? []) as PageName[]) {
+          const source = slice[r.page];
+          if (source) found.set(source.page, { name: r.name, confidence: r.confidence });
         }
-        const d = await analyzeRequest(
-          {
-            mode: "class_scan",
-            uploadIds: batch.uploadIds,
-            pageGroups: batch.groups,
-            // One teacher action, however many requests it takes.
-            batchIndex: index,
-            grade: a.grade,
-            subject: a.subject,
-            framework: a.framework,
-            assessmentId: a.id,
-          },
-          // Record the job before waiting on it, so a phone that sleeps
-          // mid-grade picks this exact one up instead of paying for another.
-          { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) },
-        );
-        return d.result;
-      },
-      // Banked after each batch, so an interruption never re-grades one.
-      (soFar, nextBatch) => {
-        banked = soFar;
-        // Kept on the ref as well as in state: a failure is handled in the
-        // same tick, where the state from this run has not landed yet.
-        if (partial.current) partial.current.graded = soFar;
-        setProgress({ graded: soFar, nextBatch, scanId: null });
-      },
-      resuming?.nextBatch ?? 0,
-      resuming?.graded ?? [],
-    );
-    setProgress(null);
-    showGraded(pageGroups, names, graded, ids);
+      }
+      names = names.map((n) => {
+        const hit = found.get(n.page);
+        return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+      });
+
+      // Pass two: the work, with the name bands gone, grouped either by what the
+      // teacher declared or by what pass one found. Shown no name at all.
+      const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
+      // The pages are grouped now, so a failure from here on releases only the
+      // groups that never graded rather than the whole reserved stack.
+      runGroups = pageGroups;
+
+      // One request per handful of students rather than one for the whole class.
+      // A class set asked for more output than the model would return in a single
+      // answer and came back incomplete, which cost the teacher the scan and told
+      // them only to try fewer pages. The photographs are the expensive part and
+      // there are exactly as many of them either way.
+      partial.current = { pageGroups, names, ids, graded: resume?.graded ?? [] };
+      const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
+      // Resume where an interrupted run stopped rather than grading, and paying,
+      // from the top again.
+      const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
+      let inFlight = resuming?.scanId ?? null;
+      const graded = await gradeInBatches(
+        batches,
+        async (batch, index) => {
+          setStatus(
+            batches.length > 1
+              ? "Grading students " +
+                  (batch.groupIndexes[0] + 1) +
+                  "\u2013" +
+                  (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
+                  " of " +
+                  pageGroups.length +
+                  "\u2026"
+              : "Grading " +
+                  pageGroups.length +
+                  " student" +
+                  (pageGroups.length === 1 ? "" : "s") +
+                  "\u2026",
+          );
+          // A batch already sent and still running is waited on, not repeated.
+          if (inFlight) {
+            const id = inFlight;
+            inFlight = null;
+            try {
+              return (await resumeScan(id)).result;
+            } catch {
+              // Gone or never finished; fall through and send it again.
+            }
+          }
+          const d = await analyzeRequest(
+            {
+              mode: "class_scan",
+              uploadIds: batch.uploadIds,
+              pageGroups: batch.groups,
+              // One teacher action, however many requests it takes.
+              batchIndex: index,
+              grade: a.grade,
+              subject: a.subject,
+              framework: a.framework,
+              assessmentId: a.id,
+            },
+            // Record the job before waiting on it, so a phone that sleeps
+            // mid-grade picks this exact one up instead of paying for another.
+            { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) },
+          );
+          return d.result;
+        },
+        // Banked after each batch, so an interruption never re-grades one.
+        (soFar, nextBatch) => {
+          banked = soFar;
+          // Kept on the ref as well as in state: a failure is handled in the
+          // same tick, where the state from this run has not landed yet.
+          if (partial.current) partial.current.graded = soFar;
+          setProgress({ graded: soFar, nextBatch, scanId: null });
+        },
+        resuming?.nextBatch ?? 0,
+        resuming?.graded ?? [],
+      );
+      setProgress(null);
+      showGraded(pageGroups, names, graded, ids);
+    } catch (e) {
+      // A run that stops partway leaves the pages it reserved up front but never
+      // graded still reserved. Hand exactly those back now instead of leaving a
+      // teacher to watch scans they did not spend sit on the meter for the ~2h
+      // expiry — Ricky's Sept 25 name-pass failure stranded 28+ that whole time.
+      // release_pages only returns unconfirmed reservations, so pages that did
+      // grade stay charged. Each grading batch already releases its own pages on
+      // failure; this covers the up-front reservation when the name pass dies,
+      // and every batch that was never reached.
+      void releaseStack(
+        ungradedReservations(
+          runGroups,
+          banked.map((g) => g.group),
+          ids,
+        ),
+      );
+      throw e;
+    }
   }
 
   /** Puts whatever has been graded on screen. Called on the way out of a

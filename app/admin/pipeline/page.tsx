@@ -19,7 +19,6 @@ const STAGE_GUIDE: { id: string; label: string; runs: string; often: string }[] 
 const UNUSED = new Set(["embedding"]);
 const EFFORTS: { v: string; label: string }[] = [
   { v: "none", label: "None" },
-  { v: "minimal", label: "Minimal (Luna rejects this)" },
   { v: "low", label: "Low (recommended)" },
   { v: "medium", label: "Medium" },
   { v: "high", label: "High" },

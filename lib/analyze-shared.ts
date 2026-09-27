@@ -25,7 +25,7 @@ export type Mode =
   | "catalog"
   | "roster";
 
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type ModelSettings = {
   model: string;
@@ -46,13 +46,16 @@ export type ModelSettings = {
  * off a scanned stack failed before any grading could start, and the flow
  * reported only that the pages couldn't be read.
  *
- * "low" is the least reasoning these models still accept, so a lingering
- * "minimal" -- from a pipeline_config row, an operator's admin edit, or the
- * fixed Sites routing -- is sent as "low" rather than failing the call. Remove
- * "minimal" from every config and this never fires; leave one behind and a
- * teacher still gets graded instead of a dead request.
+ * "minimal" is no longer an option anywhere in the app: it is gone from the
+ * ModelSettings/pipeline types, the Sites routing, the admin dropdown, and (by
+ * migration) the pipeline_config CHECK constraint. This guard is kept as the
+ * last line of defence: "low" is the least reasoning these models still accept,
+ * so a "minimal" that somehow reaches here -- a pipeline_config row written
+ * before the migration, a request replayed from an old payload -- is sent as
+ * "low" rather than taking the whole call down. It should never fire now; it
+ * costs nothing to keep, and the cost of it being gone is a dead request.
  */
-export function providerEffort(effort: ReasoningEffort): ReasoningEffort {
+export function providerEffort(effort: ReasoningEffort | "minimal"): ReasoningEffort {
   return effort === "minimal" ? "low" : effort;
 }
 

@@ -103,7 +103,7 @@ export type AdminTicket = {
 };
 
 export type PipelineStage = {
-  stage: string; model: string; reasoning_effort: "minimal" | "low" | "medium" | "high";
+  stage: string; model: string; reasoning_effort: "none" | "low" | "medium" | "high";
   max_output_tokens: number; notes: string | null; updated_at: string;
 };
 

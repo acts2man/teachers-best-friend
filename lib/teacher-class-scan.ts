@@ -447,6 +447,43 @@ export function planScanBatches(
  * `onBatch` is called after each one with the answers so far, so a caller can
  * bank progress and resume rather than re-grading what is already done.
  */
+/**
+ * The reserved pages a class scan never graded, given which groups did grade.
+ *
+ * A whole stack is reserved (and charged) up front, before the name pass and
+ * before any grading, so that a teacher who cannot afford the set is turned
+ * away with nothing spent. If the run then dies partway -- the name pass
+ * errors, or grading stops at student 18 -- the pages it never graded are still
+ * reserved. They fall out of the meter on their own after ~2h, but that is two
+ * hours of a teacher seeing scans they did not spend; Ricky's Sept 25 stack
+ * left 28+ reservations sitting that whole time. This says exactly which upload
+ * ids to hand back so the caller can release them at once.
+ *
+ * `pageGroups` is null when the run failed before the pages were grouped (the
+ * name pass is the usual culprit): nothing graded, so every reserved page is
+ * stranded. `gradedGroups` are the group indexes that completed; their pages
+ * were confirmed by the analyze route and are deliberately left out -- work
+ * that graded stays charged, and release_pages would skip them anyway.
+ */
+export function ungradedReservations(
+  pageGroups: number[][] | null,
+  gradedGroups: number[],
+  pageUploadIds: string[],
+): string[] {
+  if (!pageGroups)
+    return [...new Set(pageUploadIds.filter((id): id is string => !!id))];
+  const done = new Set(gradedGroups);
+  const stranded = new Set<string>();
+  pageGroups.forEach((pages, group) => {
+    if (done.has(group)) return;
+    for (const page of pages) {
+      const id = pageUploadIds[page];
+      if (id) stranded.add(id);
+    }
+  });
+  return [...stranded];
+}
+
 export async function gradeInBatches(
   batches: ScanBatch[],
   grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,

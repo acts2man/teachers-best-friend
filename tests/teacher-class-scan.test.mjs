@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
 import { readFileSync } from "node:fs";
 function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const shim={exports:{}};new Function("module","exports",result.outputFiles[0].text)(shim,shim.exports);return shim.exports}
-const {matchRosterStudent,groupPagesByName,resolveScannedGroups,applyScannedGroups}=bundle("lib/teacher-class-scan.ts");
+const {matchRosterStudent,groupPagesByName,resolveScannedGroups,applyScannedGroups,ungradedReservations}=bundle("lib/teacher-class-scan.ts");
 
 function assessment(){
   return {
@@ -888,4 +888,47 @@ test("the review screen asks, blocks and flags rather than defaulting", () => {
     !/value=\{g\.studentId \? "existing:" \+ g\.studentId : "new"\}/.test(ui),
     "no ambiguous row is preselected",
   );
+});
+
+// ---------------------------------------------------------------
+// Handing back the pages a failed run never graded
+// ---------------------------------------------------------------
+// A class stack is reserved (and charged) up front, before the name pass and
+// before grading. When the run dies partway the pages it never graded stay
+// reserved and count against the teacher until the ~2h expiry. Ricky's Sept 25
+// stack failed in the name pass and left 28+ reservations sitting. The client
+// releases exactly these ids at once; ungradedReservations decides which.
+
+test("a name-pass failure (no groups yet) strands the whole reserved stack", () => {
+  const ids = Array.from({ length: 28 }, (_, i) => "u" + i);
+  // pageGroups is null: the run never got as far as grouping the pages.
+  assert.deepEqual(ungradedReservations(null, [], ids), ids);
+});
+
+test("a partly graded run hands back only the groups that never graded", () => {
+  const ids = ["a", "b", "c", "d", "e"];
+  const pageGroups = [[0, 1], [2], [3, 4]]; // three students
+  // Groups 0 and 1 graded (and were confirmed); group 2 never ran.
+  assert.deepEqual(ungradedReservations(pageGroups, [0, 1], ids), ["d", "e"]);
+});
+
+test("a fully graded run strands nothing", () => {
+  const ids = ["a", "b", "c"];
+  const pageGroups = [[0], [1, 2]];
+  assert.deepEqual(ungradedReservations(pageGroups, [0, 1], ids), []);
+});
+
+test("released ids are unique and skip pages with no upload id", () => {
+  const ids = ["a", "b"]; // only two ids, but a group references page index 2
+  const pageGroups = [[0, 0], [1, 2]]; // duplicate ref, and an out-of-range one
+  const out = ungradedReservations(pageGroups, [], ids);
+  assert.deepEqual([...out].sort(), ["a", "b"]);
+});
+
+test("the class-scan component releases the ungraded reservations on failure", () => {
+  // The pure helper is only half the fix; the component must call it (and the
+  // release endpoint) when a run throws, or the reservations still strand.
+  const ui = readFileSync("components/teacher-class-scan.tsx", "utf8");
+  assert.match(ui, /ungradedReservations\(/, "the component computes the stranded ids");
+  assert.match(ui, /releaseStack\(\s*ungradedReservations\(/, "and releases them");
 });
