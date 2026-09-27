@@ -271,7 +271,7 @@ export function buildPrompt(
     if (!p.text.trim() && !hasContent)
       throw new HttpError(400, "Add a document or questions first.");
     task =
-      "Extract and segment every question from this assignment. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. Grade " +
+      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Match ONLY the supplied framework catalog; use empty standard and zero alignment if no catalog match or evidence is insufficient. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. Grade " +
       p.grade +
       ", subject " +
       p.subject +
@@ -481,6 +481,11 @@ export function finalizeAnalysis(
         422,
         "The analysis format needs review. Try fewer questions.",
       );
+    // The model is asked for a short test name, but a stray explanation still
+    // reaches us sometimes. Clamp it here so a long title can never be handed
+    // to the save path, where it would fail the assessments_title_check
+    // constraint (1-200 chars) and read to the teacher as a generic error.
+    output.title = parsed.data.title.trim().slice(0, 120);
     output.questions = parsed.data.questions.map((q) => ({
       ...q,
       id: crypto.randomUUID(),

@@ -183,9 +183,13 @@ export async function POST(request: Request) {
     // A generated lesson or passage had no page, so create_scan charged one
     // against gen:<scanId>. The same key confirms or releases it below.
     const genKey = charging && p.uploadIds.length === 0 ? generationKey(scanId!) : null;
+    // An assignment read that finds no questions delivered nothing the teacher
+    // can use, so it is not charged: the pages go back, exactly as on a failure.
+    // Set below, once the output is known.
+    let deliveredNothing = false;
     const settleCharge = async (ok: boolean) => {
       if (!charging) return;
-      if (ok) await confirmPages(svc!, user, p.uploadIds, genKey);
+      if (ok && !deliveredNothing) await confirmPages(svc!, user, p.uploadIds, genKey);
       else await releasePages(svc!, user, p.uploadIds, genKey);
     };
 
@@ -278,6 +282,10 @@ export async function POST(request: Request) {
       output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
       if (svc && p.mode === "catalog")
         await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
+      deliveredNothing =
+        p.mode === "assignment" &&
+        Array.isArray(output.questions) &&
+        (output.questions as unknown[]).length === 0;
       ok = true;
     } catch (e) {
       // aiHttpError picks the sentence from the failure kind, so an account
@@ -310,6 +318,12 @@ export async function POST(request: Request) {
           .from("scans")
           .update({ build_ref_start: ref, build_ref_finish: ref })
           .eq("id", scanId);
+        // The pages were handed back above, so this scan carries no live
+        // charge. Mark it non-billable so the pages-charged invariant --
+        // every billable, complete, charging-mode scan has an attributable
+        // charge -- stays true. The scan row still records what it cost us.
+        if (deliveredNothing)
+          await svc.from("scans").update({ billable: false }).eq("id", scanId);
       }
     }
     return Response.json({ result: output, model: settings.model });

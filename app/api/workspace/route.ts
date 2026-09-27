@@ -157,6 +157,13 @@ export async function PUT(request: Request) {
       );
     }
     const workspace = parsed.data.workspace as Workspace;
+    // The database caps an assessment title at 1-200 characters
+    // (assessments_title_check). Clamp every title here, once, so no client --
+    // a stale bundle, the blob backend, or a future call site that forgets --
+    // can hand sync_workspace a title that fails the whole save. A title is
+    // never allowed to be the reason a classroom cannot be saved.
+    for (const a of workspace.assessments)
+      if (typeof a.title === "string") a.title = a.title.slice(0, 200);
     const { revision } = parsed.data;
     if (!workspace.classes.some((item) => item.id === workspace.activeClassId))
       throw new HttpError(400, "Please select a classroom.");

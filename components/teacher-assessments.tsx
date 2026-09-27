@@ -350,7 +350,9 @@ export function AssessmentView() {
   // a blank clears it (back to percentage-only). A non-empty title is required.
   async function saveMeta() {
     if (!a || !editMeta) return;
-    const title = editMeta.title.trim();
+    // Trim to the database's 1-200 char limit so a long name can never fail the
+    // save with assessments_title_check.
+    const title = editMeta.title.trim().slice(0, 200);
     if (!title) {
       toast.error("Give the assessment a name.");
       return;
