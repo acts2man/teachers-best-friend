@@ -371,8 +371,16 @@ export type AnswerGroup = {
   /** True when every response here already matches the key outright. */
   correct: boolean;
   match: number;
+  /** True when the teacher has confirmed every response here (at any score). */
+  verified: boolean;
   needsDecision: boolean;
 };
+
+/** The short label for a credit score, matching the Grade-by-question buttons. */
+export function creditLabel(match: number): string {
+  const level = CREDIT_LEVELS.find((l) => l.value === match);
+  return level ? level.label : `${match}%`;
+}
 
 /**
  * Compares two written answers the way a teacher scanning a pile does: case,
@@ -416,6 +424,7 @@ export function groupAnswers(
       existing.responseIds.push(r.id);
       existing.studentIds.push(r.studentId);
       existing.correct = existing.correct && r.correct;
+      existing.verified = existing.verified && r.verified;
       existing.match = Math.min(existing.match, responseMatch(r));
       continue;
     }
@@ -425,6 +434,7 @@ export function groupAnswers(
       responseIds: [r.id],
       studentIds: [r.studentId],
       correct: r.correct,
+      verified: r.verified,
       match: responseMatch(r),
       needsDecision: false,
     });
@@ -432,13 +442,17 @@ export function groupAnswers(
   return [...groups.values()]
     .map((g) => ({
       ...g,
-      // A blank is a zero and a clean match is full credit; neither needs the
-      // teacher. Everything in between is the partial credit they asked to be
-      // able to settle a batch at a time.
+      // A group needs a decision only while it is unsettled. A blank scores
+      // zero and a clean match scores full credit on their own — and, crucially,
+      // once the teacher has confirmed every response here (at ANY score, Half
+      // or No credit included) the group is decided and must stop counting.
+      // The old check looked only at correct && match>=100, so a group settled
+      // below full credit stayed "to decide" forever — the bug Ricky hit.
       needsDecision:
         !!question &&
         !question.excluded &&
         !!g.answer.trim() &&
+        !g.verified &&
         !(g.correct && g.match >= 100),
     }))
     .sort((x, y) => y.responseIds.length - x.responseIds.length);
@@ -480,6 +494,34 @@ export function applyGroupScore(
         ? { ...r, match: score, correct: score >= 100, verified: true }
         : r,
     ),
+  };
+}
+
+/**
+ * Responses that need no per-group judgement — a blank (scored zero) or a clean
+ * match (full credit) — but haven't been confirmed yet, so they aren't counted.
+ * These are exactly what "Confirm the matching answers" settles from inside
+ * Grade by question, so the flow is self-contained rather than sending the
+ * teacher hunting for the confirm button in the per-student review.
+ */
+export function autoGradedToConfirm(a: Assessment): string[] {
+  const active = new Map(activeQuestions(a).map((q) => [q.id, q]));
+  return a.responses
+    .filter((r) => {
+      if (r.verified || !active.has(r.questionId)) return false;
+      const blank = !r.answer.trim();
+      const cleanMatch = r.correct && responseMatch(r) >= 100;
+      return blank || cleanMatch;
+    })
+    .map((r) => r.id);
+}
+
+/** Confirm (verify) responses at their current score, without changing it. */
+export function confirmResponses(a: Assessment, responseIds: string[]): Assessment {
+  const ids = new Set(responseIds);
+  return {
+    ...a,
+    responses: a.responses.map((r) => (ids.has(r.id) ? { ...r, verified: true } : r)),
   };
 }
 

@@ -775,3 +775,11 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* Low-confidence hint: shown in Auto mode when a page is seen but not trusted
    enough to crop/auto-snap, so the teacher knows to steady it or tap. */
 .scan-camera-hint{position:absolute;left:50%;top:64px;z-index:2;transform:translateX(-50%);padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:#fff;background:rgba(0,0,0,.55)}
+/* Grade-by-question: a settled group shows its score with a Change affordance,
+   and an all-graded state gives the clear next step so nothing is hunted for. */
+.grade-decided{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%)}
+.grade-change{background:none;border:none;padding:0 0 0 6px;font-family:inherit;font-size:13px;font-weight:600;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);text-decoration:underline;text-underline-offset:2px}
+.grade-done{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0;padding:14px 16px;border:1px solid hsl(calc(140deg + var(--th)) calc(22% * var(--ts)) 82%);border-radius:12px;background:hsl(calc(140deg + var(--th)) calc(30% * var(--ts)) 96%)}
+.grade-done > div{flex:1;min-width:0}
+.grade-done strong{display:block;font-size:15px}
+.grade-done p{margin:2px 0 0;font-size:13px;color:#57635d}
