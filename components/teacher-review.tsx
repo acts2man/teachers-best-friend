@@ -39,6 +39,9 @@ import {
 import {
   activeQuestions,
   applyGroupScore,
+  autoGradedToConfirm,
+  confirmResponses,
+  creditLabel,
   CREDIT_LEVELS,
   assignmentNextStep,
   forgetUploads,
@@ -212,9 +215,17 @@ function GradeByQuestion({
   // Which group's "Percent" entry is open. Only one at a time; tapping a preset
   // or applying a percent closes it.
   const [percentFor, setPercentFor] = useState<string | null>(null);
+  // Decided groups the teacher tapped "Change" on, so the buttons show again.
+  const [reopened, setReopened] = useState<Set<string>>(new Set());
+
+  const questionHasWork = (assessment: Assessment, id: string) =>
+    groupAnswers(assessment, id).some((g) => g.needsDecision);
+
   if (!question) return null;
   const groups = groupAnswers(a, question.id);
   const outstanding = groups.filter((g) => g.needsDecision);
+  const anyPending = questions.some((q) => questionHasWork(a, q.id));
+  const autoConfirmIds = autoGradedToConfirm(a);
   const nameFor = (id: string) => students.find((s) => s.id === id)?.name || "—";
 
   /** The grouping is already on screen; this only writes down what it means.
@@ -232,14 +243,28 @@ function GradeByQuestion({
 
   async function score(group: AnswerGroup, match: number) {
     setPercentFor(null);
-    await onSave(
-      applyGroupScore(a, group.responseIds, match),
+    setReopened((prev) => {
+      const next = new Set(prev);
+      next.delete(group.key);
+      return next;
+    });
+    const updated = applyGroupScore(a, group.responseIds, match);
+    const ok = await onSave(
+      updated,
       group.responseIds.length +
         (group.responseIds.length === 1 ? " answer" : " answers") +
         " set to " +
         match +
         "%",
     );
+    // Once this question has nothing left to decide, jump to the next one that
+    // does — decided against the just-saved state so it's never a beat behind.
+    if (ok !== false && !questionHasWork(updated, question.id)) {
+      const next = questions.find(
+        (q) => q.id !== question.id && questionHasWork(updated, q.id),
+      );
+      if (next) setQuestionId(next.id);
+    }
   }
 
   /** Apply the typed percent (0–100), if it is a real number. */
@@ -247,6 +272,19 @@ function GradeByQuestion({
     const value = Number(custom[group.key]);
     if (!Number.isFinite(value) || custom[group.key] === undefined) return;
     await score(group, Math.max(0, Math.min(100, value)));
+  }
+
+  /** Confirm the answers that need no judgement (blank or a clean match), so
+   * Grade by question finishes on its own instead of sending the teacher to the
+   * "Confirm clear answers" button in the per-student review below. */
+  async function confirmMatching() {
+    if (!autoConfirmIds.length) return;
+    await onSave(
+      confirmResponses(a, autoConfirmIds),
+      autoConfirmIds.length +
+        (autoConfirmIds.length === 1 ? " answer" : " answers") +
+        " confirmed",
+    );
   }
 
   return (
@@ -262,15 +300,13 @@ function GradeByQuestion({
             label="Question to grade"
             value={question.id}
             onChange={setQuestionId}
-            options={questions.map((q) => ({
-              value: q.id,
-              label:
-                "Q" +
-                q.number +
-                " · " +
-                groupAnswers(a, q.id).filter((g) => g.needsDecision).length +
-                " to decide",
-            }))}
+            options={questions.map((q) => {
+              const left = groupAnswers(a, q.id).filter((g) => g.needsDecision).length;
+              return {
+                value: q.id,
+                label: "Q" + q.number + " · " + (left ? left + " to decide" : "graded ✓"),
+              };
+            })}
           />
         </label>
         <Pill>Your key: {question.answer || "not set"}</Pill>
@@ -278,13 +314,35 @@ function GradeByQuestion({
       {!groups.length && (
         <p className="cell-meta">No answers read for this question yet.</p>
       )}
-      {groups.length > 0 && !outstanding.length && (
-        <p className="cell-meta">
-          Nothing left to decide on this question — every answer either matches
-          your key or is blank.
-        </p>
+      {groups.length > 0 && !anyPending && (
+        <div className="grade-done" role="status">
+          <Check size={22} />
+          <div>
+            <strong>All questions graded</strong>
+            {autoConfirmIds.length > 0 ? (
+              <p>
+                {autoConfirmIds.length} matching or blank answer
+                {autoConfirmIds.length === 1 ? "" : "s"} still need confirming to count
+                toward scores.
+              </p>
+            ) : (
+              <p>Every answer is decided and confirmed. Results are ready below.</p>
+            )}
+          </div>
+          {autoConfirmIds.length > 0 && (
+            <Action disabled={busy} onClick={confirmMatching}>
+              <Check size={16} /> Confirm {autoConfirmIds.length} answer
+              {autoConfirmIds.length === 1 ? "" : "s"}
+            </Action>
+          )}
+        </div>
       )}
-      {groups.map((g) => (
+      {groups.length > 0 && anyPending && !outstanding.length && (
+        <p className="cell-meta">This question is graded ✓ — pick another above, or it moves on for you.</p>
+      )}
+      {groups.map((g) => {
+        const showButtons = g.needsDecision || reopened.has(g.key);
+        return (
         <div className="class-scan-row" key={g.key}>
           <div className="class-scan-row-main">
             <strong>{g.answer.trim() ? g.answer : "(blank)"}</strong>
@@ -293,13 +351,26 @@ function GradeByQuestion({
               {g.studentIds.length === 1 ? " student" : " students"} ·{" "}
               {g.studentIds.map(nameFor).join(", ")}
             </span>
-            {!g.needsDecision && (
+            {!showButtons && g.verified && (
+              <span className="grade-decided">
+                <Check size={14} /> Graded · {creditLabel(Math.round(g.match))}
+                <button
+                  type="button"
+                  className="grade-change"
+                  disabled={busy}
+                  onClick={() => setReopened((p) => new Set(p).add(g.key))}
+                >
+                  Change
+                </button>
+              </span>
+            )}
+            {!showButtons && !g.verified && (
               <Pill>
                 {g.answer.trim() ? "Matches your key" : "Blank — scored zero"}
               </Pill>
             )}
             <GroupWorkSample assessment={a} group={g} />
-            {g.needsDecision && (
+            {showButtons && (
               <div className="review-heading-actions">
                 {CREDIT_LEVELS.map((level) => (
                   <Action
@@ -374,7 +445,8 @@ function GradeByQuestion({
           </div>
           <Score value={Math.round(g.match)} />
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
