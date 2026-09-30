@@ -32,12 +32,15 @@ const PERSISTED = {
   StudentResponse: [
     "id", "studentId", "questionId", "answer", "correct", "match",
     "misconception", "confidence", "verified", "errorType",
+    // Writing only, via student_writing_scores.
+    "rubricScore", "rubricReason",
   ],
   Assessment: [
     "id", "classId", "elaArea", "title", "subject", "grade", "framework",
     "createdAt", "status", "questions", "responses", "uploadIds", "source",
-    "passage", "targetStandards", "answerKeyUploadIds", "assignmentUploadIds",
-    "studentUploadIds", "answerKeyVerified", "classIds", "pointsPossible",
+    "passage", "genre", "rubric", "targetStandards", "answerKeyUploadIds",
+    "assignmentUploadIds", "studentUploadIds", "answerKeyVerified", "classIds",
+    "pointsPossible",
   ],
 };
 
