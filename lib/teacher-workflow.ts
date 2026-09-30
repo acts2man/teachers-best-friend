@@ -12,6 +12,33 @@ export function activeQuestions(a: Assessment) {
   return a.questions.filter((q) => !q.excluded);
 }
 
+/**
+ * Active questions the read left without a standard. When a whole read comes
+ * back like this (the model punted on a longer/multi-page test), the student-
+ * work step stays locked because preparationGaps needs a standard on every
+ * question. The UI uses this to tell the teacher and offer to assign one,
+ * rather than leaving a silent 0% and a dead end.
+ */
+export function questionsMissingStandard(a: Assessment): Question[] {
+  return activeQuestions(a).filter((q) => !q.standard);
+}
+
+/**
+ * Assigns a standard to every active question that has none, leaving questions
+ * that already have one untouched. Verification is unchanged: the teacher still
+ * confirms each question, so this is a starting point (the standard they already
+ * chose as intended), not a silent grade.
+ */
+export function assignStandardToUntagged(a: Assessment, code: string): Assessment {
+  if (!code) return a;
+  return {
+    ...a,
+    questions: a.questions.map((q) =>
+      !q.excluded && !q.standard ? { ...q, standard: code } : q,
+    ),
+  };
+}
+
 export function preparationGaps(a: Assessment) {
   // Writing has no questions and no answer key -- the rubric is the whole setup.
   // It is ready to grade the moment it has a rubric with every trait filled in,
