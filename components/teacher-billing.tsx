@@ -179,9 +179,9 @@ export function BillingView() {
         </div>
         <div className="billing-facts">
           <Pill>
-            {/* Pages, because that is the unit now: one scan is one page a
-                teacher photographs or uploads. */}
-            {used} of {usedQuota} scans used this period
+            {/* Credits are the teacher-facing unit: one credit is one page a
+                teacher photographs or uploads (1 credit = 1 page for now). */}
+            {used} of {usedQuota} credits used this period
           </Pill>
           {current && <Pill>Renews {renewal(current.periodEnd)}</Pill>}
         </div>
@@ -210,7 +210,7 @@ export function BillingView() {
                 <small>/month</small>
               </span>
               <span className="billing-plan-quota">
-                <strong className="tabular">{p.scan_quota}</strong> pages per month
+                <strong className="tabular">{p.scan_quota}</strong> credits per month
               </span>
               {isCurrent ? (
                 <Pill>Your plan</Pill>
@@ -232,9 +232,9 @@ export function BillingView() {
       </ul>
 
       <p className="billing-small">
-        1 scan = 1 page you photograph or upload. A page is never charged twice,
-        however many times we look at it, and re-grading work you’ve already
-        scanned is free.{" "}
+        1 credit = 1 page you photograph or upload. A page is never charged
+        twice, however many times we look at it, and re-grading work you’ve
+        already scanned is free.{" "}
         <a href="/#pricing" target="_blank" rel="noreferrer">
           See the full comparison <ExternalLink size={13} aria-hidden="true" />
         </a>

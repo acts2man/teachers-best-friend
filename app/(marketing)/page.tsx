@@ -367,7 +367,7 @@ export default async function LandingPage() {
         </Reveal>
         <div className="section-body">
           <Reveal as="p" className="pricing-intro">
-            Plans are measured in scans, because that’s what costs us money. 1 scan =
+            Plans are measured in credits, because pages are what cost us money. 1 credit =
             1 page you photograph or upload — a student’s page, an answer key, a blank
             assignment, a roster. A page is never charged twice, however many times we
             look at it, and re-grading work you’ve already scanned is free. A class of
@@ -383,7 +383,7 @@ export default async function LandingPage() {
                   <span className="per">{p.price_cents === 0 ? "" : p.seat_based ? "/seat/month" : "/month"}</span>
                 </div>
                 <p className="plan-quota">
-                  <strong className="tabular">{p.scan_quota}</strong> pages per month{p.seat_based ? " per seat" : ""}
+                  <strong className="tabular">{p.scan_quota}</strong> credits per month{p.seat_based ? " per seat" : ""}
                 </p>
                 <dl className="plan-rows">
                   <div>
@@ -414,7 +414,7 @@ export default async function LandingPage() {
             ))}
           </RevealGroup>
           <Reveal as="p" className="pricing-note">
-            Running out mid-month? Add 100 scans for $5, or move up a plan. We’ll tell you
+            Running out mid-month? Add 100 credits for $5, or move up a plan. We’ll tell you
             before you hit the limit, not after.
           </Reveal>
         </div>
@@ -439,7 +439,7 @@ export default async function LandingPage() {
               <li>Ready to execute the California Student Data Privacy Agreement</li>
               <li>AB 1584 provisions on request, including your ownership of student records</li>
               <li>District-directed deletion, honored without a contract</li>
-              <li>Site licensing with pooled scans and shared reteaching groups</li>
+              <li>Site licensing with pooled credits and shared reteaching groups</li>
             </ul>
             <Link href="/contact?topic=district" className="btn btn-quiet">Talk to us about your district</Link>
           </Reveal>
@@ -512,7 +512,7 @@ export default async function LandingPage() {
       {/* ---------------- Close ---------------- */}
       <Reveal as="section" className="mk-wrap section close">
         <h2>Try it on one assignment.</h2>
-        <p>Twenty scans free, every month, no card. If it saves you a Sunday, you’ll know.</p>
+        <p>Twenty credits free, every month, no card. If it saves you a Sunday, you’ll know.</p>
         <Link href="/signup" className="btn btn-mark">Start free</Link>
       </Reveal>
     </>

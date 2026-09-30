@@ -59,16 +59,19 @@ export function quotaLevel(q: Quota): "ok" | "low" | "out" {
  * Did this failure mean "out of scans"?
  *
  * The page ledger answers a stack that does not fit with a 402 carrying a
- * teacher-readable sentence ("This class set is 30 pages. You have 12 scans
+ * teacher-readable sentence ("This class set is 30 pages. You have 12 credits
  * left."). That sentence is good on its own, but it leaves the teacher with
  * nowhere to go, so the callers that surface it attach a way to see the plans.
  *
  * Matched on the wording the server actually sends rather than on a status
  * code, because by the time this runs the response has been flattened into an
- * Error message.
+ * Error message. Both "credits" (current) and "scans" (older builds) are
+ * matched so a client and server that deploy a moment apart still agree.
  */
 export function isOutOfScans(message: string): boolean {
-  return /scans? left|no scans left|used all your scans/i.test(message);
+  return /(credits?|scans?) left|no (credits?|scans?) left|used all your (credits|scans)/i.test(
+    message,
+  );
 }
 
 /** Where a teacher goes to do something about it. */

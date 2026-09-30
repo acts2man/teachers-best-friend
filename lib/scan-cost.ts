@@ -2,10 +2,10 @@
  * What a teacher is told a stack will cost, before they commit to it.
  *
  * Pure, and tested, because this is the sentence that has to be true. A
- * teacher who presses Grade after reading "uses 30 scans" and finds 30 gone is
- * fine; a teacher who reads it and finds 60 gone has been lied to by their own
- * software, and there is no version of that they should have to discover from
- * the meter afterwards.
+ * teacher who presses Grade after reading "uses 30 credits" and finds 30 gone
+ * is fine; a teacher who reads it and finds 60 gone has been lied to by their
+ * own software, and there is no version of that they should have to discover
+ * from the meter afterwards.
  */
 
 export type StackCost = {
@@ -31,18 +31,21 @@ function plural(n: number, word: string) {
 /**
  * The grade button's label.
  *
- * It states the charge even when the charge is zero, because "uses 0 scans" is
- * the answer to the question a teacher actually has when they re-grade a stack
- * they have already paid for.
+ * It states the charge even when the charge is zero, because "uses 0 credits"
+ * is the answer to the question a teacher actually has when they re-grade a
+ * stack they have already paid for.
+ *
+ * "pages" stays the physical page count of the stack; "credits" is the
+ * teacher-facing billing unit (1 credit = 1 page for now).
  */
 export function gradeButtonLabel(cost: StackCost): string {
   if (cost.pages === 0) return "Grade";
-  return `Grade ${plural(cost.pages, "page")} · uses ${plural(cost.charge, "scan")}`;
+  return `Grade ${plural(cost.pages, "page")} · uses ${plural(cost.charge, "credit")}`;
 }
 
 /** What a teacher is told when a stack does not fit what they have left. */
 export function overQuotaMessage(pages: number, remaining: number): string {
   return remaining === 0
-    ? `This class set is ${plural(pages, "page")}. You have no scans left this period.`
-    : `This class set is ${plural(pages, "page")}. You have ${plural(remaining, "scan")} left.`;
+    ? `This class set is ${plural(pages, "page")}. You have no credits left this period.`
+    : `This class set is ${plural(pages, "page")}. You have ${plural(remaining, "credit")} left.`;
 }

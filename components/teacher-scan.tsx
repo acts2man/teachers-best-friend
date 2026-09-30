@@ -975,10 +975,10 @@ export function ScanView() {
               <div className="review-notice" data-tone="warn">
                 <FileText size={19} />
                 <p>
-                  This period’s scans are used up ({quota!.used} of{" "}
+                  This period’s credits are used up ({quota!.used} of{" "}
                   {quota!.quota}). You can still save the assessment and enter
                   questions and answers by hand — reading it automatically
-                  needs more scans.
+                  needs more credits.
                 </p>
               </div>
             )}
