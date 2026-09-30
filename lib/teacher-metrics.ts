@@ -41,6 +41,101 @@ export function responseMatch(
   );
 }
 
+/**
+ * One cognitive-demand band's picture: how many of the assessment's questions
+ * sit at this level, how many answers have been graded at it, and the average
+ * answer match across those graded answers. Used for both the DOK (1-4) and
+ * Costa (1-3) breakdowns, per student and for the whole class.
+ */
+export type CognitiveRow = {
+  level: number;
+  name: string;
+  /** Active questions on the assessment at this level. */
+  questions: number;
+  /** Verified responses graded at this level (across the students passed in). */
+  assessed: number;
+  /** Average answer match across the graded answers, or null when none graded. */
+  percentCorrect: number | null;
+};
+
+function levelBreakdown(
+  questions: Question[],
+  responses: StudentResponse[],
+  levels: { level: number; name: string }[],
+  levelOf: (q: Question) => number,
+): CognitiveRow[] {
+  const active = questions.filter((q) => !q.excluded);
+  const byId = new Map(active.map((q) => [q.id, q]));
+  // Only verified answers count toward "% correct", the same rule the class and
+  // student mastery numbers already use -- an unreviewed answer is not yet
+  // confirmed right or wrong.
+  const graded = responses.filter((r) => r.verified && byId.has(r.questionId));
+  return levels
+    .map(({ level, name }) => {
+      const rs = graded.filter((r) => levelOf(byId.get(r.questionId)!) === level);
+      return {
+        level,
+        name,
+        questions: active.filter((q) => levelOf(q) === level).length,
+        assessed: rs.length,
+        percentCorrect: rs.length
+          ? Math.round(
+              rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length,
+            )
+          : null,
+      };
+    })
+    // Only levels the assessment actually assesses -- an empty DOK 4 row is noise.
+    .filter((row) => row.questions > 0);
+}
+
+/** % correct at each Webb DOK level (1-4) present on the assessment. */
+export function dokBreakdown(
+  questions: Question[],
+  responses: StudentResponse[],
+): CognitiveRow[] {
+  return levelBreakdown(
+    questions,
+    responses,
+    [1, 2, 3, 4].map((level) => ({ level, name: "DOK " + level })),
+    (q) => Math.min(4, Math.max(1, q.dok || 1)),
+  );
+}
+
+/** % correct at each Costa's level (1-3) present on the assessment. */
+export function costaBreakdown(
+  questions: Question[],
+  responses: StudentResponse[],
+): CognitiveRow[] {
+  return levelBreakdown(
+    questions,
+    responses,
+    costasLevels.map((c) => ({ level: c.level, name: "Costa " + c.level + " " + c.name })),
+    (q) => costaFor(q),
+  );
+}
+
+/** One line per cognitive band: "DOK 2: 78% correct across 5 questions (12 graded)". */
+export function cognitiveReportLines(rows: CognitiveRow[]): string {
+  return rows
+    .map(
+      (r) =>
+        r.name +
+        ": " +
+        (r.percentCorrect === null
+          ? "not yet graded"
+          : r.percentCorrect + "% correct") +
+        " across " +
+        r.questions +
+        " question" +
+        (r.questions === 1 ? "" : "s") +
+        " (" +
+        r.assessed +
+        " graded)",
+    )
+    .join("\n");
+}
+
 export function alignmentSuggestions(
   assessment: Assessment,
   catalog: Standard[],

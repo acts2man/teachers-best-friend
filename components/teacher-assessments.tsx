@@ -80,9 +80,12 @@ import { gradeLabel } from "@/lib/grade-labels";
 import { elaAreaLabel, usesPassage } from "@/lib/ela";
 import {
   alignmentSuggestions,
+  costaBreakdown,
   costaFor,
   costasLevels,
+  dokBreakdown,
   responseMatch,
+  type CognitiveRow,
 } from "@/lib/teacher-metrics";
 import {
   assignmentNextStep,
@@ -2236,6 +2239,59 @@ function ErrorTypeList({
   );
 }
 
+/**
+ * DOK (1-4) and Costa (1-3) breakdown: % correct at each level present on the
+ * assessment, with question counts. Renders nothing until something is graded at
+ * a level. Shared by the class view (all responses) and the student view (one
+ * student's).
+ */
+function CognitiveBreakdown({
+  questions,
+  responses,
+  heading,
+}: {
+  questions: Question[];
+  responses: import("@/lib/teacher-types").StudentResponse[];
+  heading: string;
+}) {
+  const dok = dokBreakdown(questions, responses);
+  const costa = costaBreakdown(questions, responses);
+  if (!dok.length && !costa.length) return null;
+  const group = (title: string, rows: CognitiveRow[]) =>
+    rows.length ? (
+      <div className="cognitive-group">
+        <span className="cell-meta">{title}</span>
+        {rows.map((r) => (
+          <div className="cognitive-row" key={r.name}>
+            <span className="cognitive-level">{r.name}</span>
+            {r.percentCorrect !== null && (
+              <Meter
+                value={r.percentCorrect}
+                tone={
+                  r.percentCorrect >= 80 ? "green" : r.percentCorrect >= 65 ? "" : "orange"
+                }
+              />
+            )}
+            <span className="cell-meta">
+              {r.percentCorrect === null
+                ? "Not yet graded"
+                : r.percentCorrect + "% correct"}{" "}
+              · {r.questions} question{r.questions === 1 ? "" : "s"} · {r.assessed}{" "}
+              graded
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+  return (
+    <div className="panel cognitive-breakdown">
+      <span className="cell-meta">{heading}</span>
+      {group("Webb DOK", dok)}
+      {group("Costa's levels", costa)}
+    </div>
+  );
+}
+
 function ClassAnalysisPanel({
   assessment: a,
   students,
@@ -2306,6 +2362,11 @@ function ClassAnalysisPanel({
           <ErrorTypeList tallies={errorTypes} go={go} />
         </div>
       )}
+      <CognitiveBreakdown
+        questions={a.questions}
+        responses={a.responses}
+        heading="Depth of knowledge across this assessment"
+      />
       <div className="student-groups-grid skill-gap-groups">
         {analysis.map((row) => (
           <section className="panel student-group-card skill" key={row.standard.code}>
