@@ -7,7 +7,7 @@
 // file, deciding which modes charge at all, and the sentence on the button
 // that tells a teacher what pressing it will spend.
 //
-// That sentence is the one a teacher acts on. If it says "uses 30 scans" and
+// That sentence is the one a teacher acts on. If it says "uses 30 credits" and
 // 60 disappear, the number they were shown was a lie, and they find out from
 // the meter afterwards.
 import test from "node:test";
@@ -43,6 +43,7 @@ function bundle(entry) {
 }
 
 const { stackCost, gradeButtonLabel, overQuotaMessage } = bundle("lib/scan-cost.ts");
+const { isOutOfScans } = bundle("lib/quota-client.ts");
 
 // ---------------------------------------------------------------
 // Counting a stack
@@ -86,31 +87,31 @@ test("charge never goes negative", () => {
 // What the button says
 // ---------------------------------------------------------------
 
-test("the grade button states pages and the scans they will spend", () => {
+test("the grade button states pages and the credits they will spend", () => {
   assert.equal(
     gradeButtonLabel(stackCost(Array(30).fill(1))),
-    "Grade 30 pages · uses 30 scans",
+    "Grade 30 pages · uses 30 credits",
   );
 });
 
 test("a re-grade says it costs nothing rather than staying silent", () => {
-  // "uses 0 scans" is the answer to the question a teacher has when they
+  // "uses 0 credits" is the answer to the question a teacher has when they
   // re-grade a class set they already paid for this morning.
   assert.equal(
     gradeButtonLabel(stackCost(Array(30).fill(1), 30)),
-    "Grade 30 pages · uses 0 scans",
+    "Grade 30 pages · uses 0 credits",
   );
 });
 
 test("a partly paid stack shows the real number, not the whole stack", () => {
   assert.equal(
     gradeButtonLabel(stackCost(Array(30).fill(1), 26)),
-    "Grade 30 pages · uses 4 scans",
+    "Grade 30 pages · uses 4 credits",
   );
 });
 
 test("singulars read as English", () => {
-  assert.equal(gradeButtonLabel(stackCost([1])), "Grade 1 page · uses 1 scan");
+  assert.equal(gradeButtonLabel(stackCost([1])), "Grade 1 page · uses 1 credit");
 });
 
 test("an empty stack says nothing about cost", () => {
@@ -121,7 +122,7 @@ test("a PDF stack prices by pages, not by files", () => {
   // Three files, one of them six pages: the button must not say "3".
   assert.equal(
     gradeButtonLabel(stackCost([1, 6, 1])),
-    "Grade 8 pages · uses 8 scans",
+    "Grade 8 pages · uses 8 credits",
   );
 });
 
@@ -132,15 +133,33 @@ test("a PDF stack prices by pages, not by files", () => {
 test("over quota says the size of the stack and what is left", () => {
   assert.equal(
     overQuotaMessage(30, 12),
-    "This class set is 30 pages. You have 12 scans left.",
+    "This class set is 30 pages. You have 12 credits left.",
   );
 });
 
-test("out of scans does not say 'you have 0 scans left'", () => {
+test("out of credits does not say 'you have 0 credits left'", () => {
   assert.equal(
     overQuotaMessage(30, 0),
-    "This class set is 30 pages. You have no scans left this period.",
+    "This class set is 30 pages. You have no credits left this period.",
   );
+});
+
+// The "See plans" action hangs off isOutOfScans matching the server's wording.
+// That is a cross-file coupling: change the message here and the matcher there
+// has to keep up, or a genuinely out-of-credits teacher gets a dead end.
+test("isOutOfScans matches the credits wording the server now sends", () => {
+  assert.equal(isOutOfScans(overQuotaMessage(30, 12)), true, "N credits left");
+  assert.equal(isOutOfScans(overQuotaMessage(30, 0)), true, "no credits left");
+  assert.equal(
+    isOutOfScans("You've used all your credits for this period. Upgrade your plan to keep going."),
+    true,
+    "used all your credits",
+  );
+  // Legacy 'scans' wording still matches, so a client and server that deploy a
+  // moment apart do not disagree during the rollout.
+  assert.equal(isOutOfScans("You have 12 scans left."), true, "legacy scans wording");
+  // An unrelated failure is not mistaken for out-of-credits.
+  assert.equal(isOutOfScans("The network connection dropped."), false);
 });
 
 // ---------------------------------------------------------------

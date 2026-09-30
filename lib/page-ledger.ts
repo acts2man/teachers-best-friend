@@ -61,14 +61,14 @@ function quotaError(message: string): HttpError {
   if (!m)
     return new HttpError(
       402,
-      "You've used all your scans for this period. Upgrade your plan to keep going.",
+      "You've used all your credits for this period. Upgrade your plan to keep going.",
       detail,
     );
   return new HttpError(
     402,
     remaining === 0
-      ? `This is ${needed} page${needed === 1 ? "" : "s"}. You have no scans left this period.`
-      : `This is ${needed} page${needed === 1 ? "" : "s"}. You have ${remaining} scan${remaining === 1 ? "" : "s"} left.`,
+      ? `This is ${needed} page${needed === 1 ? "" : "s"}. You have no credits left this period.`
+      : `This is ${needed} page${needed === 1 ? "" : "s"}. You have ${remaining} credit${remaining === 1 ? "" : "s"} left.`,
     detail,
   );
 }
@@ -76,7 +76,7 @@ function quotaError(message: string): HttpError {
 /**
  * Turns a charge_pages raise into the teacher-readable HttpError. Exported so
  * create_scan's charge (surfaced through startScan) tells a teacher the same
- * thing a direct charge would -- the page count and scans left, not a generic
+ * thing a direct charge would -- the page count and credits left, not a generic
  * 500.
  */
 export function ledgerError(message: string): HttpError {
@@ -95,7 +95,7 @@ export function ledgerError(message: string): HttpError {
 /**
  * Reserves every page in `uploadIds` before a model call, all or nothing.
  *
- * All or nothing is the point. A teacher with 12 scans left who photographs a
+ * All or nothing is the point. A teacher with 12 credits left who photographs a
  * class of 30 gets told so with nothing spent and nothing graded, rather than
  * 12 papers back and a bill for 12 with the rest of the stack still on the
  * desk.

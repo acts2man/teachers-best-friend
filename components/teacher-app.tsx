@@ -831,7 +831,7 @@ function EmptyWorkspace({
 }
 
 /**
- * Scans left this period, in the sidebar under "New assessment".
+ * Credits left this period, in the sidebar under "New assessment".
  *
  * The meter existed server-side from the start (/api/quota, my_scan_quota)
  * but nothing rendered it, so the first a teacher heard about their limit was
@@ -846,18 +846,18 @@ function QuotaMeter({ quota }: { quota: Quota | null }) {
     <div className="quota-meter" data-level={level}>
       <div className="quota-line">
         <span className="quota-count">
-          {level === "out" ? "No scans left" : `${quota.remaining} scans left`}
+          {level === "out" ? "No credits left" : `${quota.remaining} credits left`}
         </span>
         <span className="quota-of">of {quota.quota}</span>
       </div>
       <div className="quota-track" role="img"
-        aria-label={`${quota.used} of ${quota.quota} scans used this period`}>
+        aria-label={`${quota.used} of ${quota.quota} credits used this period`}>
         <span style={{ width: `${pct}%` }} />
       </div>
       {level !== "ok" && (
         <p className="quota-note">
           {level === "out"
-            ? "Your plan’s scans are used up for this period."
+            ? "Your plan’s credits are used up for this period."
             : "You’re close to this period’s limit."}{" "}
           {/* Into the app's own billing page, not a contact form. A teacher
               who is out of scans wants to see what a bigger plan costs, and

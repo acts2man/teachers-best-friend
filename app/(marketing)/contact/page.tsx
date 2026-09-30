@@ -28,7 +28,7 @@ const TOPICS: Record<string, { heading: string; blurb: string }> = {
   team: {
     heading: "Let’s talk about your team",
     blurb:
-      "Tell us how many teachers, which grades and subjects, and when you’d like to start. We’ll come back with pooled scans and shared reteaching groups priced for the group.",
+      "Tell us how many teachers, which grades and subjects, and when you’d like to start. We’ll come back with pooled credits and shared reteaching groups priced for the group.",
   },
 };
 

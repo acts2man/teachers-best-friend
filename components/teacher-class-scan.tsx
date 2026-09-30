@@ -446,13 +446,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // afford the class set should not have us reading names off it first. The
     // BODY ids only: a strip is the top of a page already in this list, and
     // reserving it too would charge every page twice.
-    setStatus("Checking your scans…");
+    setStatus("Checking your credits…");
     const reserved = await reserveStack(ids);
     // Say what it actually cost. A re-grade charges nothing, and a teacher
     // watching their meter deserves to be told that rather than left to infer
     // it from a number that did not move.
     if (reserved.charged === 0 && reserved.alreadyPaid > 0)
-      toast.success("These pages are already paid for — this re-grade uses no scans.");
+      toast.success("These pages are already paid for — this re-grade uses no credits.");
     setStatus("Reading the name on each page…");
     try {
       const readable = pages
@@ -620,7 +620,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       body: JSON.stringify({ uploadIds: ids, mode: "class_scan" }),
     });
     const d = await readJson(r).catch(() => ({}) as { error?: string });
-    if (!r.ok) throw new Error(d.error || "Couldn't check your remaining scans.");
+    if (!r.ok) throw new Error(d.error || "Couldn't check your remaining credits.");
     // The meter moves the moment the pages are reserved, not when grading
     // finishes, so what it shows matches what has actually been committed.
     announceScanComplete();
@@ -954,7 +954,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               <Action disabled={busyScanning || busy} onClick={gradeCaptured}>
                 {scanning ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
                 {/* What this will cost, before they commit to it. A stack
-                    already paid for -- a re-grade -- reads "uses 0 scans",
+                    already paid for -- a re-grade -- reads "uses 0 credits",
                     which is the question a teacher actually has at that
                     moment. */}
                 {gradeButtonLabel(cost)}
