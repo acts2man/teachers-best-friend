@@ -88,9 +88,23 @@ import {
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
+  writingRows,
+  writingScored,
+  writingConfirmed,
+  replaceWritingResponses,
+  setWritingScore,
+  confirmWritingScores,
 } from "@/lib/teacher-workflow";
 import { StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
+import { isWritingAssessment } from "@/lib/ela";
+import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
+import {
+  writingClassAnalysis,
+  type WritingDimensionSummary,
+} from "@/lib/teacher-class-analysis";
+import { splitNameBand } from "@/lib/image-prep";
+import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
   makeManualQuestions,
@@ -692,6 +706,28 @@ export function AssessmentView() {
               ))}
             </div>
           )}
+          {isWritingAssessment(a) ? (
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList className="page-tabs">
+                <TabsTrigger value="questions">1. Rubric</TabsTrigger>
+                <TabsTrigger value="responses">2. Student writing</TabsTrigger>
+                <TabsTrigger value="analysis">Class analysis</TabsTrigger>
+              </TabsList>
+              <TabsContent value="questions">
+                <WritingRubricPanel assessment={a} onSave={saveAssessment} />
+              </TabsContent>
+              <TabsContent value="responses">
+                <WritingReview
+                  assessment={a}
+                  students={students}
+                  onSave={saveAssessment}
+                />
+              </TabsContent>
+              <TabsContent value="analysis">
+                <WritingClassPanel assessment={a} students={students} go={go} />
+              </TabsContent>
+            </Tabs>
+          ) : (
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="page-tabs">
               <TabsTrigger value="questions">1. Assessment review</TabsTrigger>
@@ -1119,6 +1155,7 @@ export function AssessmentView() {
               <ClassAnalysisPanel assessment={a} students={students} catalog={catalog} go={go} />
             </TabsContent>
           </Tabs>
+          )}
         </>
       )}
       <Sheet open={!!edit} onOpenChange={(v) => !v && setEdit(null)}>
@@ -1581,6 +1618,388 @@ export function AssessmentView() {
  * story once per child. Reading it once here and carrying the text instead
  * costs a fraction of that and gives every student the whole story.
  */
+// The writing rubric, viewed and edited on the assessment. Starts from the
+// California default for the genre and grade; the teacher can rewrite any
+// trait's descriptor or change its max here.
+function WritingRubricPanel({
+  assessment: a,
+  onSave,
+}: {
+  assessment: Assessment;
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+}) {
+  const { busy } = useTeacher();
+  const [draft, setDraft] = useState<RubricDimension[]>(a.rubric ?? []);
+  const set = (id: string, patch: Partial<RubricDimension>) =>
+    setDraft((rows) => rows.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  const dirty = JSON.stringify(draft) !== JSON.stringify(a.rubric ?? []);
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Writing rubric"
+        description={
+          "The AI scores each trait against this rubric and you confirm every score. " +
+          (genreLabel(a.genre) ? genreLabel(a.genre) + " writing." : "")
+        }
+      />
+      {isSimplifiedBand(a.grade) && (
+        <div className="review-notice">
+          <Target size={18} />
+          <p>
+            Smarter Balanced doesn’t publish a K–2 writing rubric, so this is a
+            simple, age-appropriate version we wrote. Edit any trait to match how
+            you score.
+          </p>
+        </div>
+      )}
+      {draft.map((d) => (
+        <div className="class-scan-row" key={d.id}>
+          <div className="class-scan-row-main">
+            <label className="full">
+              Trait
+              <input
+                className="class-scan-name-input"
+                value={d.name}
+                aria-label={"Trait name"}
+                onChange={(e) => set(d.id, { name: e.target.value })}
+              />
+            </label>
+            <label className="full">
+              What each level means
+              <textarea
+                rows={3}
+                value={d.descriptor}
+                aria-label={d.name + " descriptor"}
+                onChange={(e) => set(d.id, { descriptor: e.target.value })}
+              />
+            </label>
+            <label>
+              Top score
+              <input
+                className="class-scan-name-input"
+                type="number"
+                min={1}
+                max={6}
+                value={d.max}
+                aria-label={d.name + " top score"}
+                onChange={(e) =>
+                  set(d.id, {
+                    max: Math.max(1, Math.min(6, Math.round(Number(e.target.value) || 1))),
+                  })
+                }
+              />
+            </label>
+          </div>
+        </div>
+      ))}
+      <div className="review-heading-actions">
+        <Action
+          disabled={busy || !dirty}
+          onClick={() => onSave({ ...a, rubric: draft }, "Rubric saved")}
+        >
+          <Check size={16} /> Save rubric
+        </Action>
+        {dirty && (
+          <Action variant="secondary" onClick={() => setDraft(a.rubric ?? [])}>
+            Undo changes
+          </Action>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Grading writing: per student, upload the essay (one piece, however many
+// pages), let the AI suggest a level and reason per rubric trait, and confirm or
+// change each. Replaces the answer-group flow, which does not fit an essay.
+function WritingReview({
+  assessment: a,
+  students,
+  onSave,
+}: {
+  assessment: Assessment;
+  students: import("@/lib/teacher-types").Student[];
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+}) {
+  const { aiReady, busy } = useTeacher();
+  const [selected, setSelected] = useState(students[0]?.id || "");
+  const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const student = students.find((s) => s.id === selected);
+  const rows = selected ? writingRows(a, selected) : [];
+  const hasScores = selected ? writingScored(a, selected) : false;
+
+  async function gradeEssay(list: FileList | null) {
+    if (!list || !selected) return;
+    const incoming = Array.from(list);
+    if (incoming.length > 12) {
+      toast.error("Add up to twelve pages for one essay at a time.");
+      return;
+    }
+    setUploading(true);
+    setStatus("Uploading the writing…");
+    const ids: string[] = [];
+    try {
+      for (let i = 0; i < incoming.length; i++) {
+        // The name sits at the top of the first page; cut that band off before
+        // upload so the essay the AI scores carries no name. Later pages go up
+        // whole. A browser that cannot cut falls back to the whole first page
+        // (the honest limit recorded in docs/student-data-flow.md §4).
+        let file: File;
+        if (i === 0) {
+          const split = await splitNameBand(incoming[i]);
+          file = split ? split.body : await uprightPage(incoming[i]);
+        } else {
+          file = await uprightPage(incoming[i]);
+        }
+        const d = await uploadFile(file);
+        ids.push(d.id);
+      }
+    } catch (e) {
+      toast.error(describeFailure(e, "The writing couldn’t be uploaded."));
+      setUploading(false);
+      setStatus("");
+      if (input.current) input.current.value = "";
+      return;
+    }
+    if (input.current) input.current.value = "";
+    const withFiles: Assessment = {
+      ...a,
+      uploadIds: [...new Set([...a.uploadIds, ...ids])],
+      studentUploadIds: {
+        ...a.studentUploadIds,
+        [selected]: [...new Set([...(a.studentUploadIds?.[selected] || []), ...ids])],
+      },
+    };
+    if (!aiReady) {
+      await onSave(withFiles, "Writing saved — scoring needs the AI connection");
+      setUploading(false);
+      setStatus("");
+      return;
+    }
+    setStatus("Scoring the writing against your rubric…");
+    try {
+      const d = await analyzeRequest({
+        mode: "writing",
+        text: "",
+        uploadIds: ids,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+        assessmentId: a.id,
+        studentId: selected,
+      });
+      const scored = replaceWritingResponses(
+        withFiles,
+        selected,
+        d.result.responses as import("@/lib/teacher-types").StudentResponse[],
+      );
+      await onSave(scored, "Suggested scores ready — confirm or change each one");
+    } catch (e) {
+      await onSave(withFiles, "Writing saved");
+      toast.error(
+        describeFailure(e, "The writing couldn’t be scored.") +
+          " The pages are saved; you can score by hand below.",
+      );
+    } finally {
+      setUploading(false);
+      setStatus("");
+    }
+  }
+
+  if (!students.length)
+    return (
+      <EmptyState
+        title="No students yet"
+        description="Add students to this class, then their writing can be scored here."
+      />
+    );
+
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Student writing"
+        description="One student at a time. Upload the whole piece; the AI suggests a level and a reason for each trait, and you decide."
+      />
+      <div className="review-student-toolbar">
+        <label>
+          Student
+          <Pick
+            label="Student to score"
+            value={selected}
+            onChange={setSelected}
+            options={students.map((s) => ({
+              value: s.id,
+              label: s.name + (writingConfirmed(a, s.id) ? " ✓" : ""),
+            }))}
+          />
+        </label>
+        {student && (
+          <div className="review-heading-actions">
+            <input
+              ref={input}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              hidden
+              onChange={(e) => gradeEssay(e.target.files)}
+            />
+            <Action disabled={uploading || busy} onClick={() => input.current?.click()}>
+              {uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}
+              {hasScores ? "Replace writing" : "Add writing"}
+            </Action>
+            {hasScores && !writingConfirmed(a, selected) && (
+              <Action
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  onSave(confirmWritingScores(a, selected), "Scores confirmed")
+                }
+              >
+                <CheckCheck size={16} /> Confirm all suggested
+              </Action>
+            )}
+          </div>
+        )}
+      </div>
+      {status && <p className="cell-meta">{status}</p>}
+      {!hasScores && !uploading && (
+        <p className="cell-meta">
+          No writing scored for {student?.name || "this student"} yet. Add the
+          pages above.
+        </p>
+      )}
+      {rows.map(({ dimension, response }) => (
+        <div className="class-scan-row" key={dimension.id}>
+          <div className="class-scan-row-main">
+            <strong>{dimension.name}</strong>
+            {response?.rubricReason && (
+              <span className="cell-meta">{response.rubricReason}</span>
+            )}
+            <div className="review-heading-actions">
+              {Array.from({ length: dimension.max + 1 }, (_, level) => (
+                <Action
+                  key={level}
+                  variant={
+                    response?.rubricScore === level && response?.verified
+                      ? "small"
+                      : "secondary small"
+                  }
+                  disabled={busy}
+                  onClick={() =>
+                    onSave(
+                      setWritingScore(a, selected, dimension.id, level),
+                      dimension.name + " set to " + level + " of " + dimension.max,
+                    )
+                  }
+                >
+                  {level}
+                </Action>
+              ))}
+              <span className="cell-meta">of {dimension.max}</span>
+              {response?.verified ? (
+                <Pill tone="green">
+                  <Check size={13} /> Confirmed
+                </Pill>
+              ) : response?.rubricScore !== undefined ? (
+                <Pill tone="amber">Suggested {response.rubricScore}</Pill>
+              ) : (
+                <Pill>Score this</Pill>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The class picture for a writing assessment: each rubric trait with the class
+// average, and the students who are strong, still developing, or not yet scored.
+function WritingClassPanel({
+  assessment: a,
+  students,
+  go,
+}: {
+  assessment: Assessment;
+  students: import("@/lib/teacher-types").Student[];
+  go: (url: string) => void;
+}) {
+  const scoredAny = a.responses.some(
+    (r) => r.verified && r.rubricScore !== undefined,
+  );
+  if (!scoredAny)
+    return (
+      <EmptyState
+        title="No confirmed writing yet"
+        description="Score and confirm at least one student's writing on the Student writing tab. The class picture appears here instantly."
+      />
+    );
+  const rows: WritingDimensionSummary[] = writingClassAnalysis(a, students);
+  return (
+    <div className="panel">
+      <SectionTitle
+        title="Class analysis"
+        description="Each rubric trait across the class, from your confirmed scores — no extra AI step."
+      />
+      <div className="student-groups-grid skill-gap-groups">
+        {rows.map((row) => (
+          <section className="panel student-group-card skill" key={row.dimension.id}>
+            <header>
+              <span className="group-icon">
+                <Target size={21} />
+              </span>
+              <Pill tone={row.averagePercent === null ? "neutral" : row.averagePercent >= 80 ? "green" : row.averagePercent >= 65 ? "neutral" : "amber"}>
+                Avg {row.averageLabel}
+              </Pill>
+            </header>
+            <h2>{row.dimension.name}</h2>
+            {row.averagePercent !== null && (
+              <Meter
+                value={row.averagePercent}
+                tone={row.averagePercent >= 80 ? "green" : row.averagePercent >= 65 ? "" : "orange"}
+              />
+            )}
+            {row.weak.length > 0 && (
+              <>
+                <span className="cell-meta">Still developing ({row.weak.length})</span>
+                <div className="group-members">
+                  {row.weak.map((member) => (
+                    <button key={member.id} onClick={() => go("/students?id=" + member.id)}>
+                      <Avatar student={member} size="small" />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {row.strong.length > 0 && (
+              <>
+                <span className="cell-meta">Strong ({row.strong.length})</span>
+                <div className="group-members">
+                  {row.strong.map((member) => (
+                    <button key={member.id} onClick={() => go("/students?id=" + member.id)}>
+                      <Avatar student={member} size="small" />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {row.notScored.length > 0 && (
+              <span className="cell-meta">
+                {row.notScored.length} student{row.notScored.length === 1 ? "" : "s"} not
+                yet scored on this trait
+              </span>
+            )}
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PassagePanel({
   assessment: a,
   onSave,

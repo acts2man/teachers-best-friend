@@ -2,6 +2,7 @@ import type {
   Assessment,
   Group,
   Question,
+  RubricDimension,
   Student,
   StudentResponse,
 } from "./teacher-types";
@@ -12,6 +13,23 @@ export function activeQuestions(a: Assessment) {
 }
 
 export function preparationGaps(a: Assessment) {
+  // Writing has no questions and no answer key -- the rubric is the whole setup.
+  // It is ready to grade the moment it has a rubric with every trait filled in,
+  // which the default always provides, so a fresh writing assessment is ready.
+  if (a.rubric) {
+    const dims = a.rubric.length;
+    const incomplete = a.rubric.filter(
+      (d) => !d.name.trim() || !(d.max > 0),
+    ).length;
+    return {
+      questions: dims,
+      standards: 0,
+      answers: 0,
+      targets: 0,
+      keyConfirmed: true,
+      ready: dims > 0 && incomplete === 0,
+    };
+  }
   const questions = activeQuestions(a);
   return {
     questions: questions.length,
@@ -96,6 +114,19 @@ export function studentReview(a: Assessment, studentId: string) {
 
 export function assignmentNextStep(a: Assessment) {
   const prep = preparationGaps(a);
+  // Writing has no questions/targets/answer key to chase: once the rubric is in
+  // place (it always is), the only step is adding and reviewing student writing.
+  if (a.rubric) {
+    if (a.responses.some((r) => !r.verified))
+      return {
+        label: "Review student writing",
+        href: "/assessments?id=" + a.id + "&tab=responses",
+      };
+    return {
+      label: "Add student writing",
+      href: "/assessments?id=" + a.id + "&tab=responses",
+    };
+  }
   if (!prep.questions)
     return {
       label: "Add questions",
@@ -223,6 +254,149 @@ export function normalizeRecognizedResponses(
       verified: false,
     };
   });
+}
+
+/** The AI's suggested rubric scores for one essay: a level and a one-line reason
+ * per dimension id. */
+export type WritingScore = {
+  dimensionId: string;
+  score: number;
+  reason: string;
+};
+
+/** The rubric dimensions of a writing assessment, or [] for any other kind. */
+export function rubricDimensions(a: Assessment): RubricDimension[] {
+  return a.rubric ?? [];
+}
+
+/**
+ * Maps the AI's suggested rubric scores onto StudentResponses -- one per rubric
+ * dimension, keyed by the dimension id (there are no questions on a writing
+ * assessment). Each score is clamped to that dimension's own max; `match` carries
+ * the percentage so mastery and the gradebook read it like any other response,
+ * while `rubricScore` keeps the raw level the teacher sees. Nothing is verified:
+ * these are suggestions the teacher confirms or changes. A dimension the AI did
+ * not score comes back unscored (match unset) so the teacher must set it.
+ */
+export function normalizeWritingScores(
+  a: Assessment,
+  studentId: string,
+  incoming: WritingScore[],
+): StudentResponse[] {
+  return rubricDimensions(a).map((d) => {
+    const got = incoming.find((s) => s.dimensionId === d.id);
+    const max = d.max > 0 ? d.max : 4;
+    const scored = got ? Math.max(0, Math.min(max, Math.round(got.score))) : undefined;
+    return {
+      id: crypto.randomUUID(),
+      studentId,
+      questionId: d.id,
+      answer: "",
+      correct: scored !== undefined && scored >= max,
+      // Percentage for mastery/gradebook; unset when the AI skipped it so it
+      // shows as still needing the teacher's score rather than a silent zero.
+      match: scored === undefined ? undefined : Math.round((scored / max) * 100),
+      rubricScore: scored,
+      rubricReason: got?.reason || "",
+      misconception: "",
+      confidence: got ? 100 : 0,
+      verified: false,
+    };
+  });
+}
+
+/** One rubric row for one student: the dimension and the response holding its
+ * score (or undefined when the essay has not been scored yet). */
+export type WritingRow = {
+  dimension: RubricDimension;
+  response?: StudentResponse;
+};
+
+/** The rubric rows for one student, in rubric order. */
+export function writingRows(a: Assessment, studentId: string): WritingRow[] {
+  return rubricDimensions(a).map((dimension) => ({
+    dimension,
+    response: a.responses.find(
+      (r) => r.studentId === studentId && r.questionId === dimension.id,
+    ),
+  }));
+}
+
+/** True once this student has a scored response for every rubric dimension. */
+export function writingScored(a: Assessment, studentId: string): boolean {
+  const rows = writingRows(a, studentId);
+  return rows.length > 0 && rows.every((r) => r.response?.rubricScore !== undefined);
+}
+
+/** True once the teacher has confirmed every rubric dimension for this student. */
+export function writingConfirmed(a: Assessment, studentId: string): boolean {
+  const rows = writingRows(a, studentId);
+  return rows.length > 0 && rows.every((r) => r.response?.verified);
+}
+
+/** Swaps in a fresh set of AI-suggested scores for one student, dropping any it
+ * had before for this assessment's rubric. */
+export function replaceWritingResponses(
+  a: Assessment,
+  studentId: string,
+  incoming: StudentResponse[],
+): Assessment {
+  const dimIds = new Set(rubricDimensions(a).map((d) => d.id));
+  return {
+    ...a,
+    responses: [
+      ...a.responses.filter(
+        (r) => !(r.studentId === studentId && dimIds.has(r.questionId)),
+      ),
+      ...incoming,
+    ],
+  };
+}
+
+/** Sets one dimension's level for one student and confirms that row. The level
+ * is clamped to the dimension's max; `match` carries the percentage so mastery
+ * and the gradebook read it like any other response. */
+export function setWritingScore(
+  a: Assessment,
+  studentId: string,
+  dimensionId: string,
+  score: number,
+): Assessment {
+  const dimension = rubricDimensions(a).find((d) => d.id === dimensionId);
+  if (!dimension) return a;
+  const max = dimension.max > 0 ? dimension.max : 4;
+  const level = Math.max(0, Math.min(max, Math.round(score)));
+  return {
+    ...a,
+    responses: a.responses.map((r) =>
+      r.studentId === studentId && r.questionId === dimensionId
+        ? {
+            ...r,
+            rubricScore: level,
+            match: Math.round((level / max) * 100),
+            correct: level >= max,
+            verified: true,
+          }
+        : r,
+    ),
+  };
+}
+
+/** Confirms every scored dimension for one student at its current level, so the
+ * teacher can accept the AI's suggestions in one step. A dimension the AI left
+ * unscored is skipped -- it still needs a level. */
+export function confirmWritingScores(a: Assessment, studentId: string): Assessment {
+  const dimIds = new Set(rubricDimensions(a).map((d) => d.id));
+  return {
+    ...a,
+    responses: a.responses.map((r) =>
+      r.studentId === studentId &&
+      dimIds.has(r.questionId) &&
+      r.rubricScore !== undefined
+        ? { ...r, verified: true }
+        : r,
+    ),
+  };
 }
 
 /**

@@ -675,11 +675,36 @@ export function reconcileEvidence(
           ]
         : [];
     });
+    // Writing has no questions; its evidence comes from the confirmed rubric
+    // scores, grouped by each trait's standard (traits can share one, e.g. two
+    // W.x traits), averaged the same way.
+    const rubricEvidence: Evidence[] = [];
+    if (a.rubric?.length) {
+      const byStandard = new Map<string, number[]>();
+      for (const d of a.rubric) {
+        const r = rs.find(
+          (x) => x.questionId === d.id && x.rubricScore !== undefined,
+        );
+        if (!r || !d.standard) continue;
+        const pct = r.match ?? (r.correct ? 100 : 0);
+        byStandard.set(d.standard, [...(byStandard.get(d.standard) || []), pct]);
+      }
+      for (const [code, pcts] of byStandard)
+        rubricEvidence.push({
+          id: a.id + "-" + s.id + "-" + code,
+          assessmentId: a.id,
+          standard: code,
+          score: Math.round(pcts.reduce((x, y) => x + y, 0) / pcts.length),
+          date: new Date().toISOString().slice(0, 10),
+          source: a.title,
+        });
+    }
     return {
       ...s,
       evidence: [
         ...s.evidence.filter((e) => e.assessmentId !== a.id),
         ...evidence,
+        ...rubricEvidence,
       ],
     };
   });

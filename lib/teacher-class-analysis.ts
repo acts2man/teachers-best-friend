@@ -1,11 +1,12 @@
 import type {
   Assessment,
+  RubricDimension,
   Standard,
   Student,
   StudentResponse,
 } from "./teacher-types";
 import { responseMatch } from "./teacher-metrics";
-import { activeQuestions } from "./teacher-workflow";
+import { activeQuestions, rubricDimensions } from "./teacher-workflow";
 
 /** One error type and the students who made it, most common first. */
 export type ErrorTypeTally = {
@@ -72,6 +73,68 @@ export function assessmentErrorTypes(
     a.responses.filter((r) => active.has(r.questionId)),
     students,
   );
+}
+
+/** One rubric dimension's class picture for a writing assessment. */
+export type WritingDimensionSummary = {
+  dimension: RubricDimension;
+  /** Mean confirmed level as a percentage of the dimension's max, or null. */
+  averagePercent: number | null;
+  /** The mean level shown against the max, e.g. "3.1 / 4", or "—". */
+  averageLabel: string;
+  strong: Student[];
+  weak: Student[];
+  notScored: Student[];
+};
+
+/**
+ * Per-dimension class breakdown for a writing assessment, from the teacher's
+ * confirmed rubric scores -- no AI call. Mirrors classAnalysis for key-based
+ * assessments: only confirmed scores count, a student at or above the mastery
+ * threshold is "strong", the rest "weak", and students with no confirmed score
+ * on that dimension are listed separately.
+ */
+export function writingClassAnalysis(
+  a: Assessment,
+  students: Student[],
+): WritingDimensionSummary[] {
+  return rubricDimensions(a).map((dimension) => {
+    const max = dimension.max > 0 ? dimension.max : 4;
+    const strong: Student[] = [];
+    const weak: Student[] = [];
+    const notScored: Student[] = [];
+    const levels: number[] = [];
+    for (const student of students) {
+      const r = a.responses.find(
+        (r) =>
+          r.studentId === student.id &&
+          r.questionId === dimension.id &&
+          r.verified &&
+          r.rubricScore !== undefined,
+      );
+      if (!r || r.rubricScore === undefined) {
+        notScored.push(student);
+        continue;
+      }
+      levels.push(r.rubricScore);
+      (responseMatch(r) >= MASTERY_THRESHOLD ? strong : weak).push(student);
+    }
+    const averageLevel = levels.length
+      ? levels.reduce((sum, n) => sum + n, 0) / levels.length
+      : null;
+    return {
+      dimension,
+      averagePercent:
+        averageLevel === null ? null : Math.round((averageLevel / max) * 100),
+      averageLabel:
+        averageLevel === null
+          ? "—"
+          : `${(Math.round(averageLevel * 10) / 10).toFixed(1)} / ${max}`,
+      strong,
+      weak,
+      notScored,
+    };
+  });
 }
 
 /**

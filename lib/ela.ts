@@ -26,7 +26,7 @@ export const ELA_AREAS: {
     value: "writing",
     label: "Writing",
     hint: "An essay scored against a rubric.",
-    available: false,
+    available: true,
   },
   {
     value: "language",
