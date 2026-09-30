@@ -31,7 +31,8 @@ export type Mode =
   | "passage"
   | "lesson"
   | "catalog"
-  | "roster";
+  | "roster"
+  | "rubric";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
@@ -96,6 +97,7 @@ export const analyzeInput = z.object({
     "lesson",
     "catalog",
     "roster",
+    "rubric",
   ]),
   text: z.string().max(60000).default(""),
   /** Which request of a split class scan this is. A class set is graded a few
@@ -252,6 +254,21 @@ const catalogSchema = obj({
   ),
 });
 const rosterSchema = obj({ students: arr(obj({ name: str })) });
+// Turning a teacher's own writing rubric (photographed or a PDF) into structured
+// traits. Each trait carries its name, its top score, a plain descriptor, and
+// the single best-matching standard code from the supplied catalog (empty when
+// none fits). The teacher confirms and edits every trait before it is scored
+// against, so this is a starting point, not the final rubric.
+const rubricSchema = obj({
+  traits: arr(
+    obj({
+      name: str,
+      max: { type: "integer", minimum: 1, maximum: 20 },
+      descriptor: str,
+      standard: str,
+    }),
+  ),
+});
 const lessonSchema = obj({
   objective: str,
   materials: arr(str),
@@ -484,6 +501,22 @@ export function buildPrompt(
       "Read this class roster. Return each student's name exactly as printed, one entry per student, in the order shown. Ignore headers, teacher names, dates, ID numbers, grades, emails, and any text that is not a student's name. Do not invent names for unreadable rows; skip them. Additional text: " +
       p.text;
     schema = rosterSchema;
+  }
+  if (p.mode === "rubric") {
+    if (!hasContent && !p.text.trim())
+      throw new HttpError(400, "Add a photo or PDF of your rubric first.");
+    task =
+      "Read this teacher's writing rubric and turn it into structured scoring traits. A trait is one row or criterion the rubric scores -- for example Purpose/Organization, Evidence/Elaboration, Conventions. For each trait return: its name exactly as the rubric labels it; its maximum score as a whole number (the highest point value on that trait's scale -- if the rubric uses levels like 1-4, the max is 4); a concise one- to two-sentence descriptor in plain language of what distinguishes a high score from a low one on that trait; and the single best-matching standard code chosen ONLY from the supplied catalog below, or an empty string when no catalog standard reasonably fits. Do not invent standard codes and do not force an unrelated one. Return one entry per trait in the order the rubric lists them, and transcribe only what the rubric actually contains -- do not add traits it does not have. This rubric is for " +
+      gradePromptLabel(p.grade, p.subject) +
+      ", subject " +
+      p.subject +
+      ", framework " +
+      p.framework +
+      ". Catalog for standard matching: " +
+      JSON.stringify(catalogForPrompt(catalog)) +
+      ". Teacher-typed rubric text, if any: " +
+      p.text;
+    schema = rubricSchema;
   }
   if (p.mode === "lesson") {
     const s = allStandards(w).find(
@@ -785,6 +818,37 @@ export function finalizeAnalysis(
         return true;
       })
       .slice(0, 60);
+  }
+  if (p.mode === "rubric") {
+    const parsed = z
+      .object({
+        traits: z
+          .array(
+            z.object({
+              name: z.string().max(120),
+              max: z.number().int().min(1).max(20),
+              descriptor: z.string().max(1000),
+              standard: z.string().max(40),
+            }),
+          )
+          .min(1)
+          .max(12),
+      })
+      .safeParse(output);
+    if (!parsed.success)
+      throw new HttpError(422, "The rubric couldn’t be read reliably.");
+    // Only a standard the catalog actually contains is kept -- a suggested code
+    // the model invented is dropped to an empty string, exactly as the
+    // assignment read does, so the teacher never confirms a code that is not real.
+    const codes = new Set(catalog.map((s) => s.code));
+    output.traits = parsed.data.traits
+      .map((t) => ({
+        name: t.name.trim(),
+        max: t.max,
+        descriptor: t.descriptor.trim(),
+        standard: codes.has(t.standard.trim()) ? t.standard.trim() : "",
+      }))
+      .filter((t) => t.name);
   }
   return output;
 }
