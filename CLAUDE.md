@@ -78,6 +78,35 @@ tripled the cost of a class set for no benefit over reading it once.
 Do not silently overrule the request either. Bring the tradeoff, propose the
 pivot, keep the outcome they asked for.
 
+## Workspace persistence: a new field is not saved until you save it
+
+The Supabase deployment does not store the workspace as a blob. `sync_workspace()`
+writes it into relational columns and `get_workspace_json()` reads it back, and
+each maps a **fixed, hand-written list of columns**. A field on a response, an
+assessment, a question -- any workspace type -- that those two functions do not
+name is silently dropped on save and gone on reload. It looks perfect in the
+browser until a refresh. This has shipped broken twice: `response.errorType`
+(the Class-view error-type roll-up vanished on reload) and
+`assessment.pointsPossible` (the points total reverted to a bare percentage).
+
+So: **any new field on a workspace type must be added to BOTH `sync_workspace`
+and `get_workspace_json` (in a migration), and proven with a save/reload round
+trip before you call it done.** Adding it to the TypeScript type or the
+`/api/workspace` Zod schema is not enough -- that schema is loose (`z.any()`)
+and will happily accept a field the database then throws away.
+
+Prove it the way the bug was found: a rolled-back transaction on production that
+adds the column + patched functions, runs `sync_workspace` with the field set,
+reads it back with `get_workspace_json`, confirms it survived, and `ROLLBACK`s.
+`tests/workspace-persistence-guard.test.mjs` is the tripwire -- it fails the
+moment a type's fields drift from the list of what is actually persisted, so you
+cannot add a field and forget this step.
+
+Writing rubric scores are keyed to rubric-trait ids, not question ids, so they
+do **not** ride the `student_responses` path (which inner-joins
+`assessment_questions`); they persist through their own table. Same rule: if it
+is in the workspace, a function has to write it and a function has to read it.
+
 ## Where continuity lives
 
 - `docs/student-data-flow.md` — every hop student data takes, what each vendor

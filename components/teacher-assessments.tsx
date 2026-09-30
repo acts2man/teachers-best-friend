@@ -77,6 +77,7 @@ import {
 } from "@/lib/teacher-class-analysis";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { gradeLabel } from "@/lib/grade-labels";
+import { elaAreaLabel, usesPassage } from "@/lib/ela";
 import {
   alignmentSuggestions,
   costaFor,
@@ -449,7 +450,11 @@ export function AssessmentView() {
                   <div className="assignment-row-copy">
                     <h2>{item.title}</h2>
                     <p>
-                      {item.subject} · {gradeLabel(item.grade, item.subject)} ·{" "}
+                      {item.subject}
+                      {elaAreaLabel(item.elaArea)
+                        ? " · " + elaAreaLabel(item.elaArea)
+                        : ""}{" "}
+                      · {gradeLabel(item.grade, item.subject)} ·{" "}
                       {item.questions.length} questions · {item.framework}
                     </p>
                     <span className="assignment-row-detail">
@@ -496,6 +501,9 @@ export function AssessmentView() {
           <PageTitle
             eyebrow={
               a.subject.toUpperCase() +
+              (elaAreaLabel(a.elaArea)
+                ? " · " + elaAreaLabel(a.elaArea).toUpperCase()
+                : "") +
               " · " +
               gradeLabel(a.grade, a.subject).toUpperCase() +
               " · " +
@@ -693,7 +701,7 @@ export function AssessmentView() {
               <TabsTrigger value="analysis">Class analysis</TabsTrigger>
             </TabsList>
             <TabsContent value="questions">
-              {(a.subject === "ELA" || a.subject === "Mixed" || !!a.passage) && (
+              {usesPassage(a) && (
                 <PassagePanel assessment={a} onSave={saveAssessment} />
               )}
               {!a.targetStandards.length && (
