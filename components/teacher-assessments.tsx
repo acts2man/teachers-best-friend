@@ -88,6 +88,8 @@ import {
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
+  questionsMissingStandard,
+  assignStandardToUntagged,
   writingRows,
   writingScored,
   writingConfirmed,
@@ -232,6 +234,14 @@ export function AssessmentView() {
           },
           questions.length + " questions read from your document",
         );
+        // A longer or multi-page read sometimes comes back with no standard on
+        // any question. Say so plainly and point at the one-tap fix below,
+        // rather than leaving a silent 0% and a locked next step.
+        const untagged = questions.filter((q) => !q.standard && !q.excluded);
+        if (untagged.length === questions.length && questions.length > 0)
+          setReadNotice(
+            "The read didn't tag these questions with a standard. Assign your intended standard to all of them below, or open a question to set it, then confirm.",
+          );
       } else {
         let text = "";
         for (const id of documents) text += (await extractUploadedPdfText(id)) + "\n\n";
@@ -780,6 +790,41 @@ export function AssessmentView() {
                   )}
                 </div>
               )}
+              {a.targetStandards.length > 0 &&
+                questionsMissingStandard(a).length > 0 && (
+                  <div className="review-notice" role="alert">
+                    <Target size={18} />
+                    <p>
+                      {questionsMissingStandard(a).length} question
+                      {questionsMissingStandard(a).length === 1 ? "" : "s"} came
+                      back without a standard, so the student-work step is
+                      waiting. Assign one of your intended standards to all of
+                      them, or open a question to set its own.
+                    </p>
+                    <div className="review-heading-actions">
+                      {a.targetStandards.map((code) => (
+                        <Action
+                          key={code}
+                          variant="secondary small"
+                          disabled={busy}
+                          onClick={() =>
+                            saveAssessment(
+                              assignStandardToUntagged(a, code),
+                              "Assigned " +
+                                code +
+                                " to " +
+                                questionsMissingStandard(a).length +
+                                " untagged question" +
+                                (questionsMissingStandard(a).length === 1 ? "" : "s"),
+                            )
+                          }
+                        >
+                          Assign {code} to untagged
+                        </Action>
+                      ))}
+                    </div>
+                  </div>
+                )}
               <div className="panel report-table">
                 <SectionTitle
                   title="Check what each question measures"
