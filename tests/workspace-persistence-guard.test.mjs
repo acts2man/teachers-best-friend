@@ -34,9 +34,9 @@ const PERSISTED = {
     "misconception", "confidence", "verified", "errorType",
   ],
   Assessment: [
-    "id", "classId", "title", "subject", "grade", "framework", "createdAt",
-    "status", "questions", "responses", "uploadIds", "source", "passage",
-    "targetStandards", "answerKeyUploadIds", "assignmentUploadIds",
+    "id", "classId", "elaArea", "title", "subject", "grade", "framework",
+    "createdAt", "status", "questions", "responses", "uploadIds", "source",
+    "passage", "targetStandards", "answerKeyUploadIds", "assignmentUploadIds",
     "studentUploadIds", "answerKeyVerified", "classIds", "pointsPossible",
   ],
 };
