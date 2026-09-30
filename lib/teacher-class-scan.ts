@@ -7,14 +7,12 @@ import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 
 /** One question's graded response as read off a scanned page, before it is
- * attached to a resolved student. Mirrors the "responses" AI mode's shape. */
+ * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
+ * transcribed answer and one verdict, no AI-guessed partial score. */
 export type ScannedResponse = {
   questionId: string;
   answer: string;
-  correct: boolean;
-  match: number;
-  misconception: string;
-  confidence: number;
+  verdict: "match" | "blank" | "other";
 };
 
 /** A name read off one page's cropped top band. */

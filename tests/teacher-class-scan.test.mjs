@@ -93,7 +93,7 @@ test("an unreadable name is left for the teacher rather than guessed from the ro
   assert.equal(resolved[0].name,"illegible");
 });
 test("grading is attached to the group it was returned for, not the order it arrived in",()=>{
-  const r=[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}];
+  const r=[{questionId:"q1",answer:"2",verdict:"match"}];
   const resolved=resolveScannedGroups(
     [[0],[1]],
     [name(0,"Maria"),name(1,"Jamal")],
@@ -118,8 +118,8 @@ test("applyScannedGroups grades a matched student and creates a record for an un
   const a=assessment();
   const students=[student("s1","Maria Gonzalez")];
   const result=applyScannedGroups(a,students,"c1",[
-    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:95}]},
-    {studentId:null,name:"New Kid",pageUploadIds:["u2"],responses:[{questionId:"q1",answer:"3",correct:false,match:0,misconception:"Miscounted",confidence:90}]},
+    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
+    {studentId:null,name:"New Kid",pageUploadIds:["u2"],responses:[{questionId:"q1",answer:"3",verdict:"other"}]},
   ]);
   assert.equal(result.newStudents.length,1);
   assert.equal(result.newStudents[0].name,"New Kid");
@@ -138,7 +138,7 @@ test("applyScannedGroups replaces a student's prior responses for this assessmen
   a.responses=[{id:"old",studentId:"s1",questionId:"q1",answer:"1",correct:false,match:0,misconception:"",confidence:80,verified:true}];
   const students=[student("s1","Maria Gonzalez")];
   const result=applyScannedGroups(a,students,"c1",[
-    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:95}]},
+    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
   ]);
   assert.equal(result.assessment.responses.length,1);
   assert.equal(result.assessment.responses[0].correct,true);
@@ -147,7 +147,7 @@ test("applyScannedGroups replaces a student's prior responses for this assessmen
 test("a group with no pages or no responses is skipped entirely",()=>{
   const a=assessment();
   const result=applyScannedGroups(a,[],"c1",[
-    {studentId:null,name:"Empty",pageUploadIds:[],responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:95}]},
+    {studentId:null,name:"Empty",pageUploadIds:[],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
     {studentId:null,name:"No answers",pageUploadIds:["u1"],responses:[]},
   ]);
   assert.equal(result.newStudents.length,0);
@@ -714,10 +714,10 @@ test("work for a student removed since the scan lands on a real student",()=>{
   const roster=[student("s1","Maria G.")];
   const out=applyScannedGroups(a,roster,"c1",[
     {studentId:"s1",name:"Maria G.",pageUploadIds:["p1"],
-     responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}]},
+     responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
     // Matched when the scan ran; gone from the roster by the time it saved.
     {studentId:"deleted-since",name:"Jamal T.",pageUploadIds:["p2"],
-     responses:[{questionId:"q1",answer:"3",correct:false,match:0,misconception:"",confidence:99}]},
+     responses:[{questionId:"q1",answer:"3",verdict:"other"}]},
   ]);
   assert.equal(out.newStudents.length,1,"the orphaned group was not re-homed");
   assert.equal(out.newStudents[0].name,"Jamal T.");
@@ -729,7 +729,7 @@ test("work for a student removed since the scan lands on a real student",()=>{
 test("a student still on the roster is matched, not duplicated",()=>{
   const out=applyScannedGroups(assessment(),[student("s1","Maria G.")],"c1",[
     {studentId:"s1",name:"Maria G.",pageUploadIds:["p1"],
-     responses:[{questionId:"q1",answer:"2",correct:true,match:100,misconception:"",confidence:99}]},
+     responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
   ]);
   assert.equal(out.newStudents.length,0,"an existing student was duplicated");
   assert.equal(out.studentCount,1);

@@ -134,8 +134,7 @@ export const analyzeInput = z.object({
 
 export type AnalyzeParams = z.infer<typeof analyzeInput>;
 
-const str = { type: "string" },
-  bool = { type: "boolean" };
+const str = { type: "string" };
 const obj = (properties: Record<string, unknown>) => ({
   type: "object",
   properties,
@@ -177,26 +176,16 @@ const questionSchema = obj({
   reasoning: str,
 });
 const assessmentSchema = obj({ title: str, questions: arr(questionSchema) });
+// The AI's whole job on a graded answer now: transcribe what the student wrote
+// and give one verdict. It does NOT assign partial credit and does not diagnose
+// a misconception. "match" is full credit and "blank" is zero -- both settle on
+// their own; "other" carries no score and is routed to the teacher to decide in
+// Grade by question. Equivalent answers ("12 cm³" vs "12 cubic cm") are "match".
+const verdict = { type: "string", enum: ["match", "blank", "other"] };
 const responseSchema = obj({
-  responses: arr(
-    obj({
-      questionId: str,
-      answer: str,
-      correct: bool,
-      match: pct,
-      misconception: str,
-      confidence: pct,
-    }),
-  ),
+  responses: arr(obj({ questionId: str, answer: str, verdict })),
 });
-const classScanResponseItem = obj({
-  questionId: str,
-  answer: str,
-  correct: bool,
-  match: { type: "number", minimum: 0, maximum: 100 },
-  misconception: str,
-  confidence: { type: "number", minimum: 0, maximum: 100 },
-});
+const classScanResponseItem = obj({ questionId: str, answer: str, verdict });
 // Grading a stack. Keyed by the group number the app supplied -- no name and
 // no page segmentation, because both are settled before this call is made.
 const classScanSchema = obj({
@@ -316,7 +305,7 @@ export function buildPrompt(
     if (!hasContent && !p.text.trim())
       throw new HttpError(400, "Add student work first.");
     task =
-      "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. Compare the response with the confirmed teacher key and the question’s standard and component skill. Preserve written answers. Return an answer-match percentage from 0–100: 100 for fully correct, a defensible partial percentage for partially demonstrated knowledge, and 0 for missing or unrelated work. Assess mathematical or textual equivalence, not exact string equality. Diagnose a likely misconception with uncertainty, separating operation selection, reading, place value, fact fluency and regrouping. Do not infer a disability or fixed learner type. Missing/unreadable responses need confidence 0 and an explicit review message; never invent answers. Do not reproduce student names. Questions: " +
+      "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if the answer matches the teacher's key, \"blank\" if the student left it empty, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string equality: \"12 cm³\" and \"12 cubic cm\" are a match, and so is any answer that means the same thing as the key. Do NOT assign partial credit and do NOT guess a score -- an answer that is not a clear match or a clear blank is \"other\", and the teacher decides it. Preserve written answers exactly. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions and do not reproduce student names. Questions: " +
       JSON.stringify(questionsForGrading(a)) +
       "." +
       passageForGrading(a) +
@@ -336,7 +325,7 @@ export function buildPrompt(
     if (!p.pageGroups.length)
       throw new HttpError(400, "Add scanned pages first.");
     task =
-      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. The name has already been removed from every page, so do not look for one, do not infer who any page belongs to, and do not report any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs, compare against the confirmed teacher key and standard, score an answer-match percentage from 0-100 (100 fully correct, a defensible partial for partial work, 0 for missing or unrelated), assess mathematical or textual equivalence rather than exact string match, and note a likely misconception with uncertainty rather than diagnosing a fixed learner type. If a page carries no readable answer for a question, return an empty answer with confidence 0 rather than inventing one. Report each group by its number below, not by page. Groups, as page positions: " +
+      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. The name has already been removed from every page, so do not look for one, do not infer who any page belongs to, and do not report any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if it matches the teacher's key, \"blank\" if the page has no answer for it, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string match. Do NOT assign partial credit and do NOT guess a score -- anything that is not a clear match or a clear blank is \"other\", for the teacher to decide. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions. Report each group by its number below, not by page. Groups, as page positions: " +
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
       ". Questions: " +
       JSON.stringify(questionsForGrading(a)) +
@@ -539,10 +528,7 @@ export function finalizeAnalysis(
           z.object({
             questionId: z.string(),
             answer: z.string(),
-            correct: z.boolean(),
-            match: pctField,
-            misconception: z.string(),
-            confidence: pctField,
+            verdict: z.enum(["match", "blank", "other"]),
           }),
         ),
       })
@@ -568,10 +554,7 @@ export function finalizeAnalysis(
                 z.object({
                   questionId: z.string(),
                   answer: z.string(),
-                  correct: z.boolean(),
-                  match: pctField,
-                  misconception: z.string(),
-                  confidence: pctField,
+                  verdict: z.enum(["match", "blank", "other"]),
                 }),
               ),
             }),
