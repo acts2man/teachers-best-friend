@@ -51,5 +51,23 @@ export async function extractUploadedPdfText(uploadId: string) {
   if (!response.ok) return "";
   if (!(response.headers.get("content-type") || "").includes("application/pdf"))
     return "";
-  return extractPdfText(await response.arrayBuffer());
+  return safePdfText(await response.arrayBuffer());
+}
+
+/**
+ * Browser text extraction that never throws.
+ *
+ * The client-side read is a convenience, never a gate. A PDF the browser cannot
+ * decode -- an unusual encoder, a blocked or missing worker, an encrypted file,
+ * a scanned page with no text layer -- must still upload and be read on the
+ * server, not stop the teacher where they stand. Every failure comes back as an
+ * empty string so the caller keeps the upload and falls through to the server
+ * reader, showing a message only if that also comes back with nothing.
+ */
+export async function safePdfText(data: ArrayBuffer): Promise<string> {
+  try {
+    return await extractPdfText(data);
+  } catch {
+    return "";
+  }
 }

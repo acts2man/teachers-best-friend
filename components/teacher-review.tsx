@@ -61,7 +61,7 @@ import {
 } from "@/lib/teacher-workflow";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { errorTypesFor } from "@/lib/error-types";
-import { extractPdfText } from "@/lib/pdf-text";
+import { safePdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
@@ -616,8 +616,12 @@ export function StudentResponseReview({
         const file = await uprightPage(raw);
         const d = await uploadFile(file);
         ids.push(d.id);
+        // A browser PDF read is best-effort: safePdfText swallows a decode
+        // failure so it can never abort the upload of this or the remaining
+        // pages. The page is saved either way; when AI is connected the server
+        // reads it below, and a message only follows if that also finds nothing.
         if (!aiReady && file.type === "application/pdf")
-          pdfText += (await extractPdfText(await file.arrayBuffer())) + "\n";
+          pdfText += (await safePdfText(await file.arrayBuffer())) + "\n";
       }
     } catch (e) {
       toast.error(describeFailure(e, "The pages couldn’t be uploaded."));

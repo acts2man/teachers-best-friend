@@ -54,7 +54,7 @@ import {
   type ImportedName,
 } from "@/lib/roster-import";
 import { ROSTER_FILE_ACCEPT, RosterFileError, rowsFromFile } from "@/lib/roster-file";
-import { extractPdfText } from "@/lib/pdf-text";
+import { safePdfText } from "@/lib/pdf-text";
 import type { Classroom, Standard } from "@/lib/teacher-types";
 
 const gradeOptions = Array.from({ length: 13 }, (_, i) => ({
@@ -465,7 +465,9 @@ export function RosterScanner({
     try {
       for (const file of Array.from(list).slice(0, 4)) {
         if (!aiReady && file.type === "application/pdf") {
-          text += (await extractPdfText(await file.arrayBuffer())) + "\n";
+          // Best-effort browser read (safePdfText never throws). With AI the
+          // roster is uploaded and read on the server instead, below.
+          text += (await safePdfText(await file.arrayBuffer())) + "\n";
           continue;
         }
         const d = await uploadFile(await uprightPage(file));
