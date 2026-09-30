@@ -77,6 +77,12 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   // single-student path; same cheap model, and the pages are already grouped by
   // the app, so this stage needs no reasoning either.
   class_scan: { model: "gpt-5.6-luna", effort: "none", maxOutput: 24000 },
+  // Writing is the ONE place the AI exercises judgment: scoring an essay against
+  // a rubric. It gets a little reasoning ("low") on the cheap model -- unlike the
+  // key-based verdicts, a defensible rubric level needs the model to actually
+  // weigh the writing. Output is tiny (a level + one line per dimension). The
+  // teacher confirms every score, so this is a suggestion, not the last word.
+  writing: { model: "gpt-5.6-luna", effort: "low", maxOutput: 2000 },
   // Reading a name off a cropped strip is the cheapest thing the app does:
   // a small image, a few words out, the least reasoning the model allows.
   name_strip: { model: "gpt-5.4-nano", effort: "low", maxOutput: 1500 },

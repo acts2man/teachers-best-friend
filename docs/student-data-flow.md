@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-23.
+Last verified against the running system: 2026-09-30.
 
 ---
 
@@ -225,6 +225,39 @@ objects, which is strictly less than it sent before.
 **The limit worth stating.** If a teacher photographs a page that happens to
 carry a student's handwriting or name, that goes in like any other uploaded
 image. This is the same honest limit already recorded above, not a new one.
+
+### ELA writing, scored against a rubric (`writing`, 30 Sep 2026)
+
+A new AI mode, checked against this section before it shipped. It is the one
+mode where the model exercises judgment: it scores one student's essay against
+the teacher's rubric and suggests a level plus a one-line reason per trait. The
+teacher confirms or changes every score before it counts.
+
+**What it sends.** The pages of one student's writing (read together as one
+piece), the rubric traits with their descriptors and maximums, the genre, the
+grade, and any teacher notes. **What it does not send:** no roster, no student
+list, no teacher/school/district name, and no student name as text.
+
+**Name read from the image.** No. This is single-student, so the app already
+knows whose work it is and never needs the model to read a name. Because
+rubric scoring is judgment (a name could bias it), the app cuts the name band
+off the **first** page before upload -- the same top-band cut used by the
+class scan (`splitNameBand` / `NAME_BAND` in `lib/image-prep.ts`) -- and sends
+the band-removed page. No separate name request is made, since identity is
+already known locally. The prompt also tells the model never to report or
+reproduce a name.
+
+**The honest limit that remains.** The band is a fixed fraction of page one,
+not a detector: a name written lower down, in a margin, or on a later page
+stays in the image, as does a name in a PDF or a browser that cannot do the
+cut (that path sends the whole page, exactly as single-student `responses`
+does). The exposure is one name on one page, never linked to a student record
+by anything in the request. It is not zero and is not described as zero.
+
+**Effect on retention.** None new. A `writing` scan is a `responses`-style
+scan for retention: its `scans.params`/`scans.result` are the delivery buffer
+cleared 48 hours after the scan (step 6), and the pages follow the same Storage
+retention and per-student deletion-on-confirm as every other student upload.
 
 ## 5. Results back to the teacher
 

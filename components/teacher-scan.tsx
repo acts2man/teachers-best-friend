@@ -37,6 +37,11 @@ import {
 } from "@/lib/teacher-workflow";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { offeredElaAreas } from "@/lib/ela";
+import {
+  defaultRubric,
+  WRITING_GENRES,
+  type WritingGenre,
+} from "@/lib/writing-rubrics";
 
 type Uploaded = { id: string; name: string; size: number; mime: string };
 export function ScanView() {
@@ -57,7 +62,9 @@ export function ScanView() {
   const [title, setTitle] = useState(""),
     [subject, setSubject] = useState<Subject>("Math"),
     // Which ELA area, when the subject is ELA. Ignored for Math.
-    [elaArea, setElaArea] = useState<ElaArea>("reading");
+    [elaArea, setElaArea] = useState<ElaArea>("reading"),
+    // The writing genre, when the ELA area is Writing. Picks the default rubric.
+    [genre, setGenre] = useState<WritingGenre>("informational");
   const [grade, setGrade] = useState(String(classroom.grade)),
     [framework, setFramework] = useState(
       classroom.demo ? "California" : classroom.framework,
@@ -109,6 +116,9 @@ export function ScanView() {
   // already chose, their choice is not thereby undone, and dropping it silently
   // left the read with nothing to match against.
   const standardsForReading = selected.length ? selected : targets;
+  // Writing skips the standards picker and the document read: the rubric is the
+  // whole setup, so phase 1 offers a genre and creates the assessment directly.
+  const isWriting = subject === "ELA" && elaArea === "writing";
   const prepared = chosen && preparationGaps(chosen).ready;
   useEffect(() => {
     const id = params.get("assessment"),
@@ -130,6 +140,7 @@ export function ScanView() {
     setTitle(editing.title);
     setSubject(editing.subject);
     setElaArea(editing.elaArea || "reading");
+    setGenre(editing.genre || "informational");
     setGrade(String(editing.grade));
     setFramework(editing.framework);
     setTargets(editing.targetStandards);
@@ -292,6 +303,31 @@ export function ScanView() {
           students: editing ? reconcileEvidence(w.students, a) : w.students,
         },
         editing ? "Revised assessment saved for review" : "Assessment saved",
+      )
+    )
+      go("/assessments?id=" + a.id);
+  }
+  // Writing needs no document read and no answer key: the assessment is the
+  // rubric. Build it from the genre and grade, save, and go to its detail page
+  // where the teacher confirms the rubric and adds each student's essay.
+  async function createWriting() {
+    const base = makeAssessment([], "manual", []);
+    const a: Assessment = {
+      ...base,
+      elaArea: "writing",
+      genre,
+      rubric: defaultRubric(genre, Number(grade)),
+      status: "Ready",
+    };
+    if (
+      await save(
+        {
+          ...w,
+          assessments: editing
+            ? w.assessments.map((item) => (item.id === a.id ? a : item))
+            : [a, ...w.assessments],
+        },
+        editing ? "Writing assessment updated" : "Writing assessment created",
       )
     )
       go("/assessments?id=" + a.id);
@@ -621,6 +657,41 @@ export function ScanView() {
                   </div>
                 )}
               </div>
+              {isWriting ? (
+                <div className="standards-menu">
+                  <div className="target-picker-heading">
+                    <div>
+                      <h2>What kind of writing?</h2>
+                      <p>
+                        Pick the genre. We&apos;ll start you on California&apos;s
+                        rubric for this grade — you can view and edit it next.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="target-standard-list">
+                    {WRITING_GENRES.map((option) => (
+                      <label
+                        key={option.value}
+                        className={
+                          "target-standard-option " +
+                          (genre === option.value ? "selected" : "")
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="writing-genre"
+                          checked={genre === option.value}
+                          onChange={() => setGenre(option.value)}
+                        />
+                        <span>
+                          <strong>{option.label}</strong>
+                          <p>{option.hint}</p>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div className="standards-menu">
                 <div className="target-picker-heading">
                   <div>
@@ -701,13 +772,25 @@ export function ScanView() {
                   />
                 )}
               </div>
+              )}
             </div>
             <div className="setup-footer">
-              <span>Your selections guide alignment and coverage.</span>
-              <Action disabled={!selected.length} onClick={() => setPhase(2)}>
-                Continue to upload
-                <ArrowRight size={17} />
-              </Action>
+              <span>
+                {isWriting
+                  ? "You'll confirm the rubric and add each student's writing next."
+                  : "Your selections guide alignment and coverage."}
+              </span>
+              {isWriting ? (
+                <Action disabled={busy} onClick={createWriting}>
+                  {editing ? "Save writing assessment" : "Create writing assessment"}
+                  <ArrowRight size={17} />
+                </Action>
+              ) : (
+                <Action disabled={!selected.length} onClick={() => setPhase(2)}>
+                  Continue to upload
+                  <ArrowRight size={17} />
+                </Action>
+              )}
             </div>
           </section>
         ) : (

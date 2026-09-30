@@ -72,6 +72,23 @@ export type StudentResponse = {
    * Grade by question. One per answer group; empty/absent means untagged. See
    * lib/error-types.ts for the list. */
   errorType?: string;
+  /** Writing only: the raw rubric level the teacher confirmed for this dimension
+   * (0..dimension.max). `match` still carries the percentage (score/max*100) so
+   * mastery and the gradebook read it the same as any other response; this keeps
+   * the level the teacher actually sees ("3 of 4"). */
+  rubricScore?: number;
+  /** Writing only: the AI's one-line reason, tied to the student's writing, for
+   * the level it suggested. Shown beside the score for the teacher to weigh. */
+  rubricReason?: string;
+};
+/** One row of a writing rubric: a trait scored 0..max with a descriptor the
+ * teacher can edit, and the standard its scores count toward for mastery. */
+export type RubricDimension = {
+  id: string;
+  name: string;
+  max: number;
+  descriptor: string;
+  standard: string;
 };
 export type Assessment = {
   id: string;
@@ -91,6 +108,11 @@ export type Assessment = {
   uploadIds: string[];
   source: "sample" | "manual" | "ai";
   passage?: string;
+  /** Writing only: the genre being scored. Picks the default rubric. */
+  genre?: "informational" | "narrative";
+  /** Writing only: the rubric the AI scores against and the teacher can edit.
+   * Absent on every non-writing assessment. */
+  rubric?: RubricDimension[];
   targetStandards: string[];
   answerKeyUploadIds?: string[];
   assignmentUploadIds?: string[];

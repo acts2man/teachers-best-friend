@@ -11,6 +11,7 @@ import {
 import { assessmentClassIds } from "@/lib/teacher-classes";
 import {
   normalizeRecognizedResponses,
+  normalizeWritingScores,
   preparationGaps,
 } from "@/lib/teacher-workflow";
 import {
@@ -24,6 +25,7 @@ export type Mode =
   | "assignment"
   | "responses"
   | "class_scan"
+  | "writing"
   | "name_strip"
   | "answer_key"
   | "passage"
@@ -87,6 +89,7 @@ export const analyzeInput = z.object({
     "assignment",
     "responses",
     "class_scan",
+    "writing",
     "name_strip",
     "answer_key",
     "passage",
@@ -193,6 +196,18 @@ const classScanSchema = obj({
     obj({
       group: { type: "integer", minimum: 0 },
       responses: arr(classScanResponseItem),
+    }),
+  ),
+});
+// Writing: one score and one one-line reason per rubric dimension the app
+// supplies. The score is a whole number; each dimension's real ceiling (2 or 4)
+// is enforced in finalize, since a JSON schema cannot vary the max per item.
+const writingSchema = obj({
+  scores: arr(
+    obj({
+      dimensionId: str,
+      score: { type: "integer", minimum: 0, maximum: 4 },
+      reason: str,
     }),
   ),
 });
@@ -332,6 +347,43 @@ export function buildPrompt(
       "." +
       passageForGrading(a);
     schema = classScanSchema;
+  }
+  if (p.mode === "writing") {
+    const a = w.assessments.find((a) => a.id === p.assessmentId);
+    if (
+      !a ||
+      !w.students.some(
+        (s) =>
+          s.id === p.studentId && assessmentClassIds(a).includes(s.classId),
+      )
+    )
+      throw new HttpError(
+        400,
+        "Choose a student from this assessment’s classroom.",
+      );
+    if (!a.rubric || !a.rubric.length)
+      throw new HttpError(
+        400,
+        "Set up the writing rubric before scoring essays.",
+      );
+    if (!hasContent && !p.text.trim())
+      throw new HttpError(400, "Add the student's writing first.");
+    const rubric = a.rubric.map((d) => ({
+      dimensionId: d.id,
+      trait: d.name,
+      max: d.max,
+      descriptor: d.descriptor,
+    }));
+    task =
+      "You are scoring ONE student's " +
+      (a.genre === "narrative" ? "narrative" : "informational") +
+      " writing against the teacher's rubric, for " +
+      gradePromptLabel(a.grade, a.subject) +
+      ". Every page you are given is one continuous piece of writing by this one student -- read them together, in order, as a single essay, not as separate answers. For each rubric dimension below, return its dimensionId, an integer score from 0 up to that dimension's own max, and ONE short sentence of reasoning that points to something specific in this student's writing rather than repeating the rubric wording. Return exactly one entry per dimension and invent no others. Score honestly against the descriptor -- this is a suggestion the teacher will confirm or change, so do not inflate. The student's name has been removed from the page and is not your concern: never report, guess, or reproduce any name. Rubric: " +
+      JSON.stringify(rubric) +
+      ". Teacher notes: " +
+      p.text;
+    schema = writingSchema;
   }
   if (p.mode === "name_strip") {
     if (!hasContent) throw new HttpError(400, "Add scanned pages first.");
@@ -539,6 +591,28 @@ export function finalizeAnalysis(
       a,
       p.studentId!,
       checked.data.responses,
+    );
+  }
+  if (p.mode === "writing") {
+    const a = w.assessments.find((a) => a.id === p.assessmentId);
+    if (!a) throw new HttpError(400, "This assessment could not be found.");
+    const checked = z
+      .object({
+        scores: z.array(
+          z.object({
+            dimensionId: z.string(),
+            score: z.number().int().min(0).max(4),
+            reason: z.string(),
+          }),
+        ),
+      })
+      .safeParse(output);
+    if (!checked.success)
+      throw new HttpError(422, "The writing scores need manual review.");
+    output.responses = normalizeWritingScores(
+      a,
+      p.studentId!,
+      checked.data.scores,
     );
   }
   if (p.mode === "class_scan") {

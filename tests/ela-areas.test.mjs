@@ -24,10 +24,10 @@ function bundle(entry) {
 const { ELA_AREAS, offeredElaAreas, elaAreaLabel, isWritingAssessment, usesPassage } =
   bundle("lib/ela.ts");
 
-test("the area list is the three areas in call order, writing not yet offered", () => {
+test("the area list is the three areas in call order, all now offered", () => {
   assert.deepEqual(ELA_AREAS.map((a) => a.value), ["reading", "writing", "language"]);
-  assert.deepEqual(offeredElaAreas().map((a) => a.value), ["reading", "language"]);
-  assert.equal(ELA_AREAS.find((a) => a.value === "writing").available, false);
+  assert.deepEqual(offeredElaAreas().map((a) => a.value), ["reading", "writing", "language"]);
+  assert.equal(ELA_AREAS.find((a) => a.value === "writing").available, true);
 });
 
 test("elaAreaLabel names an area, and is blank when there is none", () => {
