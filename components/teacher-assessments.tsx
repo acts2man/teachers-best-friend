@@ -97,6 +97,7 @@ import {
 } from "@/lib/teacher-workflow";
 import { StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
+import { ScanCamera } from "./scan-camera";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
 import {
@@ -2013,12 +2014,12 @@ function PassagePanel({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(a.passage || "");
   const input = useRef<HTMLInputElement>(null);
-  const camera = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const words = (a.passage || "").trim()
     ? (a.passage || "").trim().split(/\\s+/).length
     : 0;
 
-  async function read(list: FileList | null) {
+  async function read(list: FileList | File[] | null) {
     if (!list?.length || reading) return;
     const files = Array.from(list);
     if (files.length > 12) {
@@ -2060,7 +2061,6 @@ function PassagePanel({
       setReading(false);
       setStatus("");
       if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
     }
   }
 
@@ -2072,15 +2072,6 @@ function PassagePanel({
       >
         <div className="review-heading-actions">
           <input
-            ref={camera}
-            type="file"
-            className="sr-only"
-            accept="image/*"
-            capture="environment"
-            aria-label="Photograph a page of the passage"
-            onChange={(e) => read(e.target.files)}
-          />
-          <input
             ref={input}
             type="file"
             className="sr-only"
@@ -2089,10 +2080,27 @@ function PassagePanel({
             aria-label="Upload pages of the passage"
             onChange={(e) => read(e.target.files)}
           />
+          {cameraOpen && (
+            <ScanCamera
+              mode="single"
+              title="Reading passage"
+              assessmentId={a.id}
+              onComplete={(groups) => {
+                setCameraOpen(false);
+                const captured = groups.flat();
+                if (captured.length) read(captured);
+              }}
+              onCancel={() => setCameraOpen(false)}
+              onFallback={() => {
+                setCameraOpen(false);
+                input.current?.click();
+              }}
+            />
+          )}
           <Action
             variant="secondary small"
             disabled={reading || busy || !aiReady}
-            onClick={() => camera.current?.click()}
+            onClick={() => setCameraOpen(true)}
           >
             {reading ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
             Photograph the story

@@ -29,6 +29,7 @@ import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
 import { extractPdfText } from "@/lib/pdf-text";
 import { frameworkOptions } from "@/lib/states";
 import { StandardsLoader } from "./teacher-classes";
+import { ScanCamera } from "./scan-camera";
 import {
   activeQuestions,
   mergeStudentResponses,
@@ -90,8 +91,8 @@ export function ScanView() {
   // re-reads the whole set into THIS assessment rather than spawning a second
   // one -- so a multi-page test comes out as one test. See analyze().
   const [createdId, setCreatedId] = useState("");
-  const input = useRef<HTMLInputElement>(null),
-    camera = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const chosen = assessments.find((a) => a.id === assessmentId);
   // Edit the assessment named in the URL, or the one this session just created
   // (createdId). The latter is what lets a second page re-read into the same
@@ -158,7 +159,7 @@ export function ScanView() {
     }
     if (field === "framework") setFramework(value);
   }
-  async function upload(list: FileList | null) {
+  async function upload(list: FileList | File[] | null) {
     if (!list) return;
     // Dropping the files on the floor because a read is already running looks
     // identical to the upload silently failing. Say so.
@@ -220,7 +221,6 @@ export function ScanView() {
     } finally {
       setUploading(false);
       if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
     }
     // Reading the assessment was a button, with a "save without reading"
     // escape hatch beside it. A teacher who uploads a test always wants it
@@ -960,7 +960,7 @@ export function ScanView() {
                       </Action>
                       <Action
                         variant="secondary"
-                        onClick={() => camera.current?.click()}
+                        onClick={() => setCameraOpen(true)}
                         disabled={uploading || analyzing}
                       >
                         <Camera size={16} />
@@ -980,15 +980,23 @@ export function ScanView() {
                       aria-label="Choose work to upload"
                       onChange={(e) => upload(e.target.files)}
                     />
-                    <input
-                      ref={camera}
-                      type="file"
-                      className="sr-only"
-                      accept="image/jpeg,image/png,image/webp"
-                      capture="environment"
-                      aria-label="Photograph work"
-                      onChange={(e) => upload(e.target.files)}
-                    />
+                    {cameraOpen && (
+                      <ScanCamera
+                        mode="single"
+                        title={mode === "responses" ? "Student pages" : "Blank assessment"}
+                        assessmentId={createdId || editing?.id || "scan-draft"}
+                        onComplete={(groups) => {
+                          setCameraOpen(false);
+                          const captured = groups.flat();
+                          if (captured.length) upload(captured);
+                        }}
+                        onCancel={() => setCameraOpen(false)}
+                        onFallback={() => {
+                          setCameraOpen(false);
+                          input.current?.click();
+                        }}
+                      />
+                    )}
                   </div>
                 </TabsContent>
                 <TabsContent value="paste">
