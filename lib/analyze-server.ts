@@ -69,10 +69,14 @@ export function aiHttpError(e: unknown): HttpError {
 // coerces a stray "minimal" as a last resort, but nothing in this table sends
 // one.
 const sitesModelSettings: Record<Mode, ModelSettings> = {
-  responses: { model: "gpt-5.6-luna", effort: "low", maxOutput: 3000 },
+  // Grading now asks the model for one verdict per answer (match/blank/other),
+  // not a partial score or a misconception, so it needs no reasoning: effort
+  // "none" drops the reasoning tokens that were the bulk of this stage's cost.
+  responses: { model: "gpt-5.6-luna", effort: "none", maxOutput: 3000 },
   // One call grades a whole scanned stack, so it needs far more room than the
-  // single-student path; same cheap model, a little reasoning to split pages.
-  class_scan: { model: "gpt-5.6-luna", effort: "low", maxOutput: 24000 },
+  // single-student path; same cheap model, and the pages are already grouped by
+  // the app, so this stage needs no reasoning either.
+  class_scan: { model: "gpt-5.6-luna", effort: "none", maxOutput: 24000 },
   // Reading a name off a cropped strip is the cheapest thing the app does:
   // a small image, a few words out, the least reasoning the model allows.
   name_strip: { model: "gpt-5.4-nano", effort: "low", maxOutput: 1500 },

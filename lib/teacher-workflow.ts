@@ -168,27 +168,58 @@ export function parseAnswerKey(text: string, questions: Question[]) {
   return answers;
 }
 
+/**
+ * What the AI returns per graded question now: the transcribed answer and one
+ * verdict. It no longer guesses a partial score or a misconception -- "other"
+ * is the answer that goes to the teacher to decide.
+ */
+export type RecognizedResponse = {
+  questionId: string;
+  answer: string;
+  verdict: "match" | "blank" | "other";
+};
+
+/**
+ * Maps the AI's verdicts onto StudentResponses.
+ *
+ * The AI decides three things and only three: a clean "match" is full credit
+ * (correct, match 100), a "blank" is zero, and everything else is "other" --
+ * which carries NO score. Its match is left unset so it shows as unresolved and
+ * surfaces in Grade by question for the teacher to decide, rather than the app
+ * inventing a partial the AI was told not to guess. A question the AI did not
+ * report (or reported twice) is treated as blank and flagged for a look.
+ */
 export function normalizeRecognizedResponses(
   a: Assessment,
   studentId: string,
-  incoming: Omit<StudentResponse, "id" | "studentId" | "verified">[],
+  incoming: RecognizedResponse[],
 ): StudentResponse[] {
   return activeQuestions(a).map((q) => {
     const matches = incoming.filter((r) => r.questionId === q.id);
     const response = matches.length === 1 ? matches[0] : undefined;
+    const isMatch = response?.verdict === "match";
+    // Blank when the AI said "blank", and also when nothing usable came back at
+    // all -- a missing or duplicated question is not the teacher's to decide.
+    const isBlank = !response || response.verdict === "blank";
     return {
       id: crypto.randomUUID(),
       studentId,
       questionId: q.id,
-      answer: response?.answer || "",
-      correct: response?.correct || false,
-      match: response ? responseMatch(response) : 0,
+      answer: isBlank ? "" : response.answer || "",
+      correct: isMatch,
+      // match 100 for a clean match, 0 for a blank, and UNSET for "other" so no
+      // AI-guessed partial is stored -- responseMatch reads unset as 0 for the
+      // running total while groupAnswers still surfaces it for a decision.
+      match: isMatch ? 100 : isBlank ? 0 : undefined,
       misconception:
-        response?.misconception ||
-        (matches.length > 1
+        matches.length > 1
           ? "More than one answer was recognized. Check the original work."
-          : "No readable answer was recognized. Check the original work."),
-      confidence: response?.confidence || 0,
+          : matches.length === 0
+            ? "No readable answer was recognized. Check the original work."
+            : "",
+      // Reading confidence is now binary: the AI either read an answer for this
+      // question (100) or it did not (0). It no longer estimates a percentage.
+      confidence: response ? 100 : 0,
       verified: false,
     };
   });
