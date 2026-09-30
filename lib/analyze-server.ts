@@ -183,6 +183,85 @@ export async function startScan(
 }
 
 /**
+ * Reading a document is a pure function of its bytes, so the same page read
+ * twice should give the same answer -- not a question tagged 72% one time and
+ * 35% the next. These are the stages where that holds: transcribing a test, a
+ * passage, a roster, or a teacher's answer key off the page. Grading stages
+ * (responses, class_scan, writing) are deliberately excluded -- their output
+ * depends on the answer key and questions, which a teacher can change between
+ * reads, so a cached grade could be stale.
+ */
+const REUSABLE_READ_MODES = new Set<Mode>([
+  "assignment",
+  "passage",
+  "roster",
+  "answer_key",
+]);
+
+export function reusableReadMode(mode: Mode): boolean {
+  return REUSABLE_READ_MODES.has(mode);
+}
+
+/**
+ * A stored result for the exact same pages, read the same way, for this teacher.
+ *
+ * When a teacher re-reads pages the app has already read for them -- the "Read
+ * again" button, or a re-uploaded PDF -- this hands back the result the model
+ * gave the first time, so the second read is instant, free, and identical
+ * instead of a fresh model call that can disagree with the first.
+ *
+ * The match is on the set of content hashes, computed exactly as create_scan
+ * builds charge_keys (distinct content_sha256, or `upload:<id>` when a hash is
+ * missing), so byte-identical pages match even across different upload rows.
+ * Only complete, billable scans that still carry a result are reused: a result
+ * cleared by the 48h retention window is a miss and a fresh read runs. An
+ * assignment scan that found no questions was marked non-billable, so it is
+ * never reused as an empty answer.
+ */
+export async function reusablePriorResult(
+  svc: ServiceClient,
+  teacher: string,
+  mode: Mode,
+  uploadIds: string[],
+): Promise<Record<string, unknown> | null> {
+  if (!reusableReadMode(mode) || uploadIds.length === 0) return null;
+  const { data: rows, error: hashError } = await svc
+    .from("teacher_uploads")
+    .select("id, content_sha256")
+    .eq("owner_id", teacher)
+    .in("id", uploadIds);
+  if (hashError) {
+    console.error("Reuse hash lookup failed", hashError.message);
+    return null;
+  }
+  if (!rows || rows.length !== uploadIds.length) return null;
+  const keys = Array.from(
+    new Set(rows.map((r) => r.content_sha256 || "upload:" + r.id)),
+  ).sort();
+  if (!keys.length) return null;
+  // contains + containedBy is set equality: both this scan's charge_keys and
+  // ours are distinct sets, so each containing the other means they are equal.
+  const { data, error } = await svc
+    .from("scans")
+    .select("result, created_at")
+    .eq("teacher_id", teacher)
+    .eq("stage", mode)
+    .eq("status", "complete")
+    .eq("billable", true)
+    .not("result", "is", null)
+    .contains("charge_keys", keys)
+    .containedBy("charge_keys", keys)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    console.error("Reuse scan lookup failed", error.message);
+    return null;
+  }
+  const result = data?.[0]?.result as Record<string, unknown> | null | undefined;
+  return result ?? null;
+}
+
+/**
  * Records token usage for a scan. Cost is computed by trigger from
  * model_pricing, so it is never passed. Telemetry failures are logged and
  * swallowed: a successful analysis is never discarded because of them.

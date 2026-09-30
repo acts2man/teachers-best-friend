@@ -188,19 +188,29 @@ export function ScanView() {
     const uploadedIds: string[] = [];
     let failed = false;
     try {
-      for (const raw of incoming) {
-        // A phone records its rotation in EXIF instead of rotating the pixels,
-        // so a page shot in portrait arrives sideways. Straighten it once here,
-        // before upload, so the stored file and everything downstream agree.
-        const f = await uprightPage(raw);
-        const d = await uploadFile(f);
-        setFiles((previous) => [...previous, d]);
-        uploadedIds.push(d.id);
-        if (!title && mode === "assignment")
-          setTitle(f.name.replace(/\.[^.]+$/, ""));
-        // Without an AI connection, a typed PDF can still fill the questions
-        // or answers automatically.
-        if (!aiReady && f.type === "application/pdf") {
+      // A phone records its rotation in EXIF instead of rotating the pixels,
+      // so a page shot in portrait arrives sideways. Straighten each page once
+      // here, before upload, so the stored file and everything downstream
+      // agree. Straightening is CPU work on the device and gains nothing from
+      // running in parallel, so it stays sequential to keep memory low on a
+      // phone.
+      const prepped: File[] = [];
+      for (const raw of incoming) prepped.push(await uprightPage(raw));
+      // Uploading, though, is network-bound: on a classroom connection the wait
+      // is almost all round-trip latency, so sending every page at once instead
+      // of one after another is where a multi-page read gets noticeably faster.
+      // Order is preserved -- Promise.all resolves in input order -- so page N
+      // stays page N.
+      const uploaded = await Promise.all(prepped.map((f) => uploadFile(f)));
+      setFiles((previous) => [...previous, ...uploaded]);
+      uploadedIds.push(...uploaded.map((d) => d.id));
+      if (!title && mode === "assignment" && prepped[0])
+        setTitle(prepped[0].name.replace(/\.[^.]+$/, ""));
+      // Without an AI connection, a typed PDF can still fill the questions
+      // or answers automatically.
+      if (!aiReady) {
+        for (const f of prepped) {
+          if (f.type !== "application/pdf") continue;
           const extracted = await extractPdfText(await f.arrayBuffer());
           if (extracted) {
             setText((previous) =>
@@ -1058,6 +1068,18 @@ export function ScanView() {
                 </p>
               )}
             </section>
+            {(uploading || analyzing) && (
+              <div className="review-notice" role="status" aria-live="polite">
+                <LoaderCircle size={19} className="spin" />
+                <p>
+                  {uploading
+                    ? "Uploading your pages…"
+                    : mode === "responses"
+                      ? "Reading the student work — this can take a little longer for a full class set."
+                      : "Reading the assessment — longer tests take a little longer to read."}
+                </p>
+              </div>
+            )}
             {readNotice && (
               <div className="review-notice" role="status">
                 <FileText size={19} />
