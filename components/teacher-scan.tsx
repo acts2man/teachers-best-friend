@@ -35,7 +35,8 @@ import {
   parseAnswerKey,
   preparationGaps,
 } from "@/lib/teacher-workflow";
-import type { Assessment, Question, Subject } from "@/lib/teacher-types";
+import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
+import { offeredElaAreas } from "@/lib/ela";
 
 type Uploaded = { id: string; name: string; size: number; mime: string };
 export function ScanView() {
@@ -54,7 +55,9 @@ export function ScanView() {
   const [phase, setPhase] = useState(1),
     [source, setSource] = useState("upload");
   const [title, setTitle] = useState(""),
-    [subject, setSubject] = useState<Subject>("Math");
+    [subject, setSubject] = useState<Subject>("Math"),
+    // Which ELA area, when the subject is ELA. Ignored for Math.
+    [elaArea, setElaArea] = useState<ElaArea>("reading");
   const [grade, setGrade] = useState(String(classroom.grade)),
     [framework, setFramework] = useState(
       classroom.demo ? "California" : classroom.framework,
@@ -126,6 +129,7 @@ export function ScanView() {
     if (!editing) return;
     setTitle(editing.title);
     setSubject(editing.subject);
+    setElaArea(editing.elaArea || "reading");
     setGrade(String(editing.grade));
     setFramework(editing.framework);
     setTargets(editing.targetStandards);
@@ -232,6 +236,8 @@ export function ScanView() {
         200,
       ),
       subject,
+      // Only ELA carries an area; Math leaves it unset.
+      elaArea: subject === "ELA" ? elaArea : undefined,
       grade: Number(grade),
       framework,
       createdAt: editing?.createdAt || new Date().toISOString(),
@@ -555,6 +561,20 @@ export function ScanView() {
                       options={["Math", "ELA"]}
                     />
                   </label>
+                  {subject === "ELA" && (
+                    <label className="full">
+                      ELA area
+                      <Pick
+                        label="ELA area"
+                        value={elaArea}
+                        onChange={(v) => setElaArea(v as ElaArea)}
+                        options={offeredElaAreas().map((a) => ({
+                          value: a.value,
+                          label: a.label,
+                        }))}
+                      />
+                    </label>
+                  )}
                   <label className="full">
                     Standards
                     <Pick

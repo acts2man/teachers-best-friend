@@ -1,4 +1,8 @@
 export type Subject = "Math" | "ELA" | "Mixed";
+/** The three ELA areas a teacher picks from when the subject is ELA. Reading and
+ * Language grade against an answer key (the same match/blank/other verdicts as
+ * Math); Writing is scored against a rubric. See lib/ela.ts. */
+export type ElaArea = "reading" | "writing" | "language";
 export type Standard = {
   code: string;
   title: string;
@@ -74,6 +78,10 @@ export type Assessment = {
   classId: string;
   title: string;
   subject: Subject;
+  /** For ELA assessments, which of the three areas this is. Absent on Math and
+   * on ELA assessments made before areas existed -- those keep working as the
+   * answer-key flow they already were. */
+  elaArea?: ElaArea;
   grade: number;
   framework: string;
   createdAt: string;
