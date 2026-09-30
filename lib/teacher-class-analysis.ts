@@ -1,6 +1,20 @@
-import type { Assessment, Standard, Student } from "./teacher-types";
+import type {
+  Assessment,
+  Standard,
+  Student,
+  StudentResponse,
+} from "./teacher-types";
 import { responseMatch } from "./teacher-metrics";
 import { activeQuestions } from "./teacher-workflow";
+
+/** One error type and the students who made it, most common first. */
+export type ErrorTypeTally = {
+  errorType: string;
+  students: Student[];
+  /** How many tagged answers carried this error type (an answer per student
+   * per question), so a student who made it on two questions counts twice. */
+  count: number;
+};
 
 export type StandardMastery = {
   standard: Standard;
@@ -9,9 +23,56 @@ export type StandardMastery = {
   notGraded: Student[];
   percentMastered: number | null;
   instruction: "Whole class" | "Small group" | "On track";
+  /** The error types tagged on this standard's answers, most common first. */
+  errorTypes: ErrorTypeTally[];
 };
 
 const MASTERY_THRESHOLD = 70;
+
+/**
+ * Tallies the error types a teacher tagged across a set of responses, with the
+ * students who made each. Untagged answers are ignored. Ordered most common
+ * first so the class view leads with what most needs addressing.
+ */
+export function tallyErrorTypes(
+  responses: StudentResponse[],
+  students: Student[],
+): ErrorTypeTally[] {
+  const byId = new Map(students.map((s) => [s.id, s]));
+  const byType = new Map<string, { students: Map<string, Student>; count: number }>();
+  for (const r of responses) {
+    const errorType = (r.errorType || "").trim();
+    if (!errorType) continue;
+    const entry = byType.get(errorType) || { students: new Map(), count: 0 };
+    entry.count += 1;
+    const student = byId.get(r.studentId);
+    if (student) entry.students.set(student.id, student);
+    byType.set(errorType, entry);
+  }
+  return [...byType.entries()]
+    .map(([errorType, e]) => ({
+      errorType,
+      students: [...e.students.values()],
+      count: e.count,
+    }))
+    .sort((a, b) => b.count - a.count || a.errorType.localeCompare(b.errorType));
+}
+
+/**
+ * The error types tagged across the whole assessment, most common first, with
+ * the students who made each. The assessment-level view Ricky and Michael asked
+ * for; the per-standard version lives on each StandardMastery row.
+ */
+export function assessmentErrorTypes(
+  a: Assessment,
+  students: Student[],
+): ErrorTypeTally[] {
+  const active = new Set(activeQuestions(a).map((q) => q.id));
+  return tallyErrorTypes(
+    a.responses.filter((r) => active.has(r.questionId)),
+    students,
+  );
+}
 
 /**
  * Per-standard class breakdown for one assessment, computed from the
@@ -53,11 +114,16 @@ export function classAnalysis(
         (average >= MASTERY_THRESHOLD ? strong : weak).push(student);
       }
       const assessed = strong.length + weak.length;
+      const qIds = new Set(qs.map((q) => q.id));
       return {
         standard,
         strong,
         weak,
         notGraded,
+        errorTypes: tallyErrorTypes(
+          a.responses.filter((r) => qIds.has(r.questionId)),
+          students,
+        ),
         percentMastered: assessed
           ? Math.round((strong.length / assessed) * 100)
           : null,
@@ -110,6 +176,14 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
         ];
         if (row.notGraded.length)
           lines.push(row.notGraded.length + " student(s) not yet graded on this standard");
+        for (const e of row.errorTypes)
+          lines.push(
+            e.errorType +
+              " (" +
+              e.count +
+              "): " +
+              e.students.map((s) => s.name).join(", "),
+          );
         lines.push("Suggested next step: " + row.instruction);
         return lines.join("\n");
       })

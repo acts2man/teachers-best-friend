@@ -43,6 +43,7 @@ import {
   confirmResponses,
   creditLabel,
   CREDIT_LEVELS,
+  setGroupErrorType,
   assignmentNextStep,
   forgetUploads,
   groupAnswers,
@@ -59,6 +60,7 @@ import {
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
 import { compareByLastName } from "@/lib/teacher-classes";
+import { errorTypesFor } from "@/lib/error-types";
 import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { responseMatch } from "@/lib/teacher-metrics";
@@ -267,6 +269,18 @@ function GradeByQuestion({
     }
   }
 
+  /** Tag (or clear) the error type on a decided group. Optional and changeable:
+   * it never touches the score, only the diagnosis the teacher chose. */
+  async function tagError(group: AnswerGroup, errorType: string) {
+    const count = group.responseIds.length;
+    await onSave(
+      setGroupErrorType(a, group.responseIds, errorType),
+      errorType
+        ? count + (count === 1 ? " answer" : " answers") + " tagged as " + errorType
+        : "Error type cleared",
+    );
+  }
+
   /** Apply the typed percent (0–100), if it is a real number. */
   async function applyPercent(group: AnswerGroup) {
     const value = Number(custom[group.key]);
@@ -369,6 +383,28 @@ function GradeByQuestion({
                 {g.answer.trim() ? "Matches your key" : "Blank — scored zero"}
               </Pill>
             )}
+            {/* Once a group is decided below full credit, the teacher can
+                optionally tag what kind of error it was. One tag per group,
+                changeable any time; full-credit and blank groups show none.
+                The list is per-subject (lib/error-types.ts), so a subject with
+                no list — ELA, for now — shows no picker. */}
+            {!showButtons &&
+              g.verified &&
+              Math.round(g.match) < 100 &&
+              errorTypesFor(a.subject).length > 0 && (
+                <label className="grade-error-type">
+                  <span className="cell-meta">Error type</span>
+                  <Pick
+                    label="Error type (optional)"
+                    value={g.errorType}
+                    onChange={(v) => tagError(g, v)}
+                    options={[
+                      { value: "", label: "No error type" },
+                      ...errorTypesFor(a.subject),
+                    ]}
+                  />
+                </label>
+              )}
             <GroupWorkSample assessment={a} group={g} />
             {showButtons && (
               <div className="review-heading-actions">

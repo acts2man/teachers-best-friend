@@ -148,7 +148,7 @@ export function applyAnswerKey(
     ),
     responses: a.responses.map((r) =>
       changed.has(r.questionId)
-        ? { ...r, verified: false, confidence: 0, match: 0 }
+        ? { ...r, verified: false, confidence: 0, match: 0, errorType: "" }
         : r,
     ),
   };
@@ -405,6 +405,10 @@ export type AnswerGroup = {
   /** True when the teacher has confirmed every response here (at any score). */
   verified: boolean;
   needsDecision: boolean;
+  /** The error type the teacher tagged this group with, or "" when untagged or
+   * when the responses here disagree (which normal use never produces, since a
+   * tag is applied to the whole group at once). */
+  errorType: string;
 };
 
 /** The short label for a credit score, matching the Grade-by-question buttons. */
@@ -457,6 +461,9 @@ export function groupAnswers(
       existing.correct = existing.correct && r.correct;
       existing.verified = existing.verified && r.verified;
       existing.match = Math.min(existing.match, responseMatch(r));
+      // The group's tag is the one its responses share; a disagreement (which
+      // tagging the whole group at once never creates) collapses to untagged.
+      if (existing.errorType !== (r.errorType || "")) existing.errorType = "";
       continue;
     }
     groups.set(key, {
@@ -468,6 +475,7 @@ export function groupAnswers(
       verified: r.verified,
       match: responseMatch(r),
       needsDecision: false,
+      errorType: r.errorType || "",
     });
   }
   return [...groups.values()]
@@ -515,6 +523,7 @@ export function applyGroupScore(
   a: Assessment,
   responseIds: string[],
   match: number,
+  errorType?: string,
 ): Assessment {
   const ids = new Set(responseIds);
   const score = Math.max(0, Math.min(100, Math.round(match)));
@@ -522,8 +531,38 @@ export function applyGroupScore(
     ...a,
     responses: a.responses.map((r) =>
       ids.has(r.id)
-        ? { ...r, match: score, correct: score >= 100, verified: true }
+        ? {
+            ...r,
+            match: score,
+            correct: score >= 100,
+            verified: true,
+            // Full credit is never an error, so it carries no error type.
+            // Otherwise keep whatever tag the caller passed, or the group's
+            // existing one when the caller passed none (a re-score at the same
+            // credit should not silently drop the tag).
+            errorType: score >= 100 ? "" : errorType ?? r.errorType,
+          }
         : r,
+    ),
+  };
+}
+
+/**
+ * Tags every response in a group with an error type (or clears it with ""),
+ * without touching the score or the confirmation. This is the "changeable"
+ * half of the feature: a teacher can add, change, or remove the tag on an
+ * already-decided group at any time.
+ */
+export function setGroupErrorType(
+  a: Assessment,
+  responseIds: string[],
+  errorType: string,
+): Assessment {
+  const ids = new Set(responseIds);
+  return {
+    ...a,
+    responses: a.responses.map((r) =>
+      ids.has(r.id) ? { ...r, errorType } : r,
     ),
   };
 }
