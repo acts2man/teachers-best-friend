@@ -69,7 +69,12 @@ import {
   TextLink,
   Avatar,
 } from "./teacher-shared";
-import { classAnalysis, classAnalysisReport } from "@/lib/teacher-class-analysis";
+import {
+  classAnalysis,
+  classAnalysisReport,
+  assessmentErrorTypes,
+  type ErrorTypeTally,
+} from "@/lib/teacher-class-analysis";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { gradeLabel } from "@/lib/grade-labels";
 import {
@@ -1728,6 +1733,37 @@ function PassagePanel({
   );
 }
 
+/** Renders one list of error types, each with the students who made it. Shared
+ * by the assessment-wide summary and the per-standard cards. */
+function ErrorTypeList({
+  tallies,
+  go,
+}: {
+  tallies: ErrorTypeTally[];
+  go: (url: string) => void;
+}) {
+  if (!tallies.length) return null;
+  return (
+    <div className="error-type-list">
+      {tallies.map((t) => (
+        <div className="error-type-row" key={t.errorType}>
+          <span className="cell-meta">
+            {t.errorType} ({t.count})
+          </span>
+          <div className="group-members">
+            {t.students.map((member) => (
+              <button key={member.id} onClick={() => go("/students?id=" + member.id)}>
+                <Avatar student={member} size="small" />
+                <span>{member.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ClassAnalysisPanel({
   assessment: a,
   students,
@@ -1756,6 +1792,7 @@ function ClassAnalysisPanel({
       />
     );
   const report = classAnalysisReport(a, analysis);
+  const errorTypes = assessmentErrorTypes(a, students);
   const fileName =
     a.title.trim().replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60) ||
     "assessment";
@@ -1789,6 +1826,14 @@ function ClassAnalysisPanel({
           </Action>
         </div>
       </SectionTitle>
+      {errorTypes.length > 0 && (
+        <div className="panel error-type-summary">
+          <span className="cell-meta">
+            Most common error types across this assessment
+          </span>
+          <ErrorTypeList tallies={errorTypes} go={go} />
+        </div>
+      )}
       <div className="student-groups-grid skill-gap-groups">
         {analysis.map((row) => (
           <section className="panel student-group-card skill" key={row.standard.code}>
@@ -1878,6 +1923,12 @@ function ClassAnalysisPanel({
                 {row.notGraded.length} student{row.notGraded.length === 1 ? "" : "s"} not
                 yet graded on this standard
               </span>
+            )}
+            {row.errorTypes.length > 0 && (
+              <>
+                <span className="cell-meta">Error types</span>
+                <ErrorTypeList tallies={row.errorTypes} go={go} />
+              </>
             )}
             {row.weak.length > 0 && (
               <div className="review-heading-actions">

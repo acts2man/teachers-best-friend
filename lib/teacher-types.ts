@@ -64,6 +64,10 @@ export type StudentResponse = {
   misconception: string;
   confidence: number;
   verified: boolean;
+  /** An optional teacher-chosen error type for a wrong-or-partial answer, set in
+   * Grade by question. One per answer group; empty/absent means untagged. See
+   * lib/error-types.ts for the list. */
+  errorType?: string;
 };
 export type Assessment = {
   id: string;
