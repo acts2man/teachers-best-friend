@@ -85,6 +85,7 @@ import {
   responseMatch,
 } from "@/lib/teacher-metrics";
 import {
+  activeQuestions,
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
@@ -835,24 +836,28 @@ export function AssessmentView() {
                       <Action
                         variant="secondary small"
                         disabled={busy}
-                        onClick={() => {
+                        onClick={async () => {
                           const ids = new Set(clearQuestions.map((q) => q.id));
                           const questions = a.questions.map((q) =>
                             ids.has(q.id) ? { ...q, verified: true } : q,
                           );
-                          saveAssessment(
+                          const allReviewed = questions.every(
+                            (q) => q.verified || q.excluded,
+                          );
+                          const saved = await saveAssessment(
                             {
                               ...a,
                               questions,
-                              status: questions.every(
-                                (q) => q.verified || q.excluded,
-                              )
-                                ? "Ready"
-                                : "Needs review",
+                              status: allReviewed ? "Ready" : "Needs review",
                             },
                             clearQuestions.length +
                               " aligned questions confirmed",
                           );
+                          // Ricky asked not to be left on a finished step hunting
+                          // for the next tab. Once every question is reviewed, the
+                          // answer key is the next thing to do, so go straight
+                          // there.
+                          if (saved && allReviewed) setTab("key");
                         }}
                       >
                         <CheckCheck size={16} />
@@ -989,6 +994,28 @@ export function AssessmentView() {
                   </EmptyState>
                 )}
               </div>
+              {(() => {
+                // Every question reviewed and tagged, standards chosen: the
+                // questions step is finished and the answer key is next. Offer
+                // the move explicitly for a teacher who verified questions one
+                // at a time rather than with "Confirm clear matches".
+                const active = activeQuestions(a);
+                const questionsReviewed =
+                  active.length > 0 &&
+                  a.targetStandards.length > 0 &&
+                  active.every((q) => q.verified && q.standard);
+                if (!questionsReviewed || preparationGaps(a).keyConfirmed)
+                  return null;
+                return (
+                  <div className="setup-footer">
+                    <span>Questions reviewed. Next, confirm your answer key.</span>
+                    <Action onClick={() => setTab("key")}>
+                      Continue to answer key
+                      <ArrowRight size={17} />
+                    </Action>
+                  </div>
+                );
+              })()}
             </TabsContent>
             <TabsContent value="coverage">
               <div className="coverage-layout">
@@ -1187,7 +1214,11 @@ export function AssessmentView() {
               </div>
             </TabsContent>
             <TabsContent value="key">
-              <AnswerKeyReview assessment={a} onSave={saveAssessment} />
+              <AnswerKeyReview
+                assessment={a}
+                onSave={saveAssessment}
+                onConfirmed={() => setTab("responses")}
+              />
             </TabsContent>
             <TabsContent value="responses">
               <StudentResponseReview
