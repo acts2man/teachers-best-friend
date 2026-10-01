@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { Camera, Check, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
 import {
   cameraSupported,
@@ -18,6 +18,46 @@ const AUTO_KEY = "tbf.scan.autoSnap";
 const DETECT_W = 320; // downscaled working width for live detection
 const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
 const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
+
+/**
+ * Ask the live camera track for continuous autofocus. Best-effort: focusMode
+ * isn't in the TS DOM lib and many cameras (or iOS Safari) don't support it, so
+ * every failure is swallowed -- a fixed-focus camera just stays as it is.
+ */
+async function applyContinuousFocus(stream: MediaStream) {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    await track.applyConstraints({
+      advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
+    });
+  } catch {
+    /* unsupported — continuous focus is a nice-to-have, not required */
+  }
+}
+
+/**
+ * Tap-to-focus where the camera supports it: point the lens at the spot the
+ * teacher tapped. Normalised 0..1 point of interest, single-shot focus. Support
+ * is thin (mostly Chromium on Android), so this is wrapped and silent — a tap on
+ * a camera that can't do it simply does nothing.
+ */
+async function focusAt(stream: MediaStream | null, xNorm: number, yNorm: number) {
+  const track = stream?.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    await track.applyConstraints({
+      advanced: [
+        {
+          focusMode: "single-shot",
+          pointsOfInterest: [{ x: xNorm, y: yNorm }],
+        } as unknown as MediaTrackConstraintSet,
+      ],
+    });
+  } catch {
+    /* unsupported — tap-to-focus is best-effort */
+  }
+}
 
 function readAuto(): boolean {
   try {
@@ -277,7 +317,13 @@ export function ScanCamera({
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(videoConstraints());
+        // Upright phone -> ask for a portrait frame so a portrait page fills it.
+        const portrait =
+          typeof window !== "undefined" &&
+          window.innerHeight >= window.innerWidth;
+        const stream = await navigator.mediaDevices.getUserMedia(
+          videoConstraints("environment", portrait),
+        );
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -287,6 +333,11 @@ export function ScanCamera({
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
         }
+        // Many browsers only apply focus through the live track, not the initial
+        // getUserMedia constraints, so ask again here. Best-effort: a camera that
+        // doesn't support focusMode throws, and a fixed-focus camera is fine as
+        // is -- neither should stop the scan.
+        void applyContinuousFocus(stream);
         setStarting(false);
       } catch (e) {
         if (!cancelled) {
@@ -302,6 +353,15 @@ export function ScanCamera({
       shotsRef.current.forEach((s) => URL.revokeObjectURL(s.url));
     };
   }, [stop]);
+
+  function tapToFocus(e: MouseEvent<HTMLVideoElement>) {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    void focusAt(streamRef.current, x, y);
+  }
 
   function toggleAuto() {
     setAuto((a) => {
@@ -391,7 +451,15 @@ export function ScanCamera({
 
   return (
     <div className="scan-camera" role="dialog" aria-modal="true" aria-label="Scan student work">
-      <video ref={videoRef} className="scan-camera-video" muted playsInline autoPlay />
+      <video
+        ref={videoRef}
+        className="scan-camera-video"
+        muted
+        playsInline
+        autoPlay
+        onClick={tapToFocus}
+        aria-label="Camera preview — tap to focus"
+      />
       <canvas ref={overlayCanvasRef} className="scan-camera-overlay" aria-hidden="true" />
       <canvas ref={detectCanvasRef} className="sr-only" aria-hidden="true" />
       {flash && <div className="scan-camera-flash" aria-hidden="true" />}

@@ -18,15 +18,25 @@ export type FacingMode = "environment" | "user";
  */
 export function videoConstraints(
   facingMode: FacingMode = "environment",
+  portrait = false,
 ): MediaStreamConstraints {
-  return {
-    audio: false,
-    video: {
-      facingMode: { ideal: facingMode },
-      width: { ideal: 4096 },
-      height: { ideal: 4096 },
-    },
+  // When the phone is upright, ask for a portrait frame (taller than wide) so a
+  // page held in portrait fills it, instead of a landscape sensor frame that
+  // leaves the page small and letterboxed. `ideal` only -- a camera that can't
+  // deliver a portrait frame still starts, and the preview is `object-fit:
+  // contain` so it stays what-you-see-is-what-you-get either way. continuous
+  // autofocus is requested here and, because many browsers only honour focus
+  // through applyConstraints, again on the live track once the stream starts.
+  const video: MediaTrackConstraints = {
+    facingMode: { ideal: facingMode },
+    width: { ideal: portrait ? 2160 : 4096 },
+    height: { ideal: portrait ? 3840 : 4096 },
+    aspectRatio: { ideal: portrait ? 3 / 4 : 4 / 3 },
+    // focusMode is not in the TS DOM lib yet, but it is honoured by
+    // Chromium-family browsers; cast through unknown so the hint still ships.
+    advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
   };
+  return { audio: false, video };
 }
 
 /** Whether this browser/context can open a camera at all (needs HTTPS). */
