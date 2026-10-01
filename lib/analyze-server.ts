@@ -7,12 +7,13 @@ import { pipelineStage } from "@/lib/pipeline-config";
 import { stateFor } from "@/lib/states";
 import type { Standard } from "@/lib/teacher-types";
 import type {
+  AnalyzeParams,
   Mode,
   ModelSettings,
   ResponsesResult,
   ResponsesUsage,
 } from "@/lib/analyze-shared";
-import { providerEffort } from "@/lib/analyze-shared";
+import { READ_PROMPT_VERSION, providerEffort } from "@/lib/analyze-shared";
 import {
   AiCallError,
   MIN_ATTEMPT_MS,
@@ -203,54 +204,87 @@ export function reusableReadMode(mode: Mode): boolean {
 }
 
 /**
- * A stored result for the exact same pages, read the same way, for this teacher.
+ * The fingerprint a read is reused by, or null when it cannot be computed.
  *
- * When a teacher re-reads pages the app has already read for them -- the "Read
- * again" button, or a re-uploaded PDF -- this hands back the result the model
- * gave the first time, so the second read is instant, free, and identical
- * instead of a fresh model call that can disagree with the first.
+ * A read's output is a function of more than the page bytes: the mode, the
+ * subject, grade and framework, the intended standards, and the prompt itself
+ * all change what comes back. The fingerprint folds all of them in, plus
+ * READ_PROMPT_VERSION, so a stored read is only ever reused for a request that
+ * would ask the model for exactly the same thing. A prompt change bumps the
+ * version, which changes every fingerprint, so nothing from the old prompt is
+ * served again.
  *
- * The match is on the set of content hashes, computed exactly as create_scan
- * builds charge_keys (distinct content_sha256, or `upload:<id>` when a hash is
- * missing), so byte-identical pages match even across different upload rows.
+ * The page hashes are the distinct content_sha256 values (or `upload:<id>` when
+ * a hash is missing), exactly as create_scan builds charge_keys, so
+ * byte-identical pages match even across different upload rows. Returns null
+ * when any upload can't be resolved to a hash -- without every page's bytes we
+ * cannot prove the pages are identical, so there is nothing safe to reuse.
+ */
+export async function readReuseFingerprint(
+  svc: ServiceClient,
+  teacher: string,
+  p: AnalyzeParams,
+): Promise<string | null> {
+  if (!reusableReadMode(p.mode) || p.uploadIds.length === 0) return null;
+  const { data: rows, error } = await svc
+    .from("teacher_uploads")
+    .select("id, content_sha256")
+    .eq("owner_id", teacher)
+    .in("id", p.uploadIds);
+  if (error) {
+    console.error("Reuse hash lookup failed", error.message);
+    return null;
+  }
+  if (!rows || rows.length !== p.uploadIds.length) return null;
+  const hashes = Array.from(
+    new Set(rows.map((r) => r.content_sha256 || "upload:" + r.id)),
+  ).sort();
+  if (!hashes.length) return null;
+  const targets = [...p.targetStandards].sort();
+  return [
+    "v" + READ_PROMPT_VERSION,
+    p.mode,
+    p.subject,
+    p.grade,
+    p.framework,
+    targets.join(","),
+    hashes.join(","),
+  ].join("|");
+}
+
+/**
+ * A stored result for an identical read -- same pages, same mode, subject,
+ * grade, framework, intended standards, and prompt version -- for this teacher.
+ *
+ * When the same pages come back in without the teacher asking for a re-read
+ * (a re-uploaded PDF, the app re-submitting), this hands back the result the
+ * model gave the first time, so the read is instant, free, and identical rather
+ * than a fresh call that can disagree. The caller must pass `freshRead: true`
+ * when the teacher pressed "Read again" -- that always does a fresh read and
+ * never lands here.
+ *
  * Only complete, billable scans that still carry a result are reused: a result
- * cleared by the 48h retention window is a miss and a fresh read runs. An
- * assignment scan that found no questions was marked non-billable, so it is
- * never reused as an empty answer.
+ * cleared by the 48h retention window is a miss and a fresh read runs. Two
+ * assignment results are never reused: one with no questions (that scan is
+ * marked non-billable) and -- the Ricky 2026-09-30 17:42:07 case -- one whose
+ * questions came back without a standard, which is exactly the broken read the
+ * teacher must not be handed a second time.
  */
 export async function reusablePriorResult(
   svc: ServiceClient,
   teacher: string,
-  mode: Mode,
-  uploadIds: string[],
+  p: AnalyzeParams,
+  fingerprint: string,
 ): Promise<Record<string, unknown> | null> {
-  if (!reusableReadMode(mode) || uploadIds.length === 0) return null;
-  const { data: rows, error: hashError } = await svc
-    .from("teacher_uploads")
-    .select("id, content_sha256")
-    .eq("owner_id", teacher)
-    .in("id", uploadIds);
-  if (hashError) {
-    console.error("Reuse hash lookup failed", hashError.message);
-    return null;
-  }
-  if (!rows || rows.length !== uploadIds.length) return null;
-  const keys = Array.from(
-    new Set(rows.map((r) => r.content_sha256 || "upload:" + r.id)),
-  ).sort();
-  if (!keys.length) return null;
-  // contains + containedBy is set equality: both this scan's charge_keys and
-  // ours are distinct sets, so each containing the other means they are equal.
+  if (p.freshRead) return null;
   const { data, error } = await svc
     .from("scans")
     .select("result, created_at")
     .eq("teacher_id", teacher)
-    .eq("stage", mode)
     .eq("status", "complete")
     .eq("billable", true)
     .not("result", "is", null)
-    .contains("charge_keys", keys)
-    .containedBy("charge_keys", keys)
+    .eq("reuse_fingerprint", fingerprint)
     .order("created_at", { ascending: false })
     .limit(1);
   if (error) {
@@ -258,7 +292,23 @@ export async function reusablePriorResult(
     return null;
   }
   const result = data?.[0]?.result as Record<string, unknown> | null | undefined;
-  return result ?? null;
+  if (!result) return null;
+  // Never reuse a broken assignment read: an empty question list, or any active
+  // question left without a standard (which locks the student-work step). That
+  // is the exact read the fix for Ricky must not serve again from cache.
+  if (p.mode === "assignment") {
+    const questions = (result as { questions?: unknown }).questions;
+    if (!Array.isArray(questions) || questions.length === 0) return null;
+    const anyUntagged = questions.some((q) => {
+      const row = q as { excluded?: boolean; standard?: unknown };
+      return (
+        !row.excluded &&
+        !(typeof row.standard === "string" && row.standard.trim())
+      );
+    });
+    if (anyUntagged) return null;
+  }
+  return result;
 }
 
 /**

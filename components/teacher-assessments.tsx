@@ -193,7 +193,7 @@ export function AssessmentView() {
       message,
     );
   }
-  async function readDocument(target = a) {
+  async function readDocument(target = a, fresh = false) {
     if (!target || reading || !documents.length) return;
     setReadNotice("");
     if (!target.targetStandards.length) {
@@ -213,6 +213,7 @@ export function AssessmentView() {
           subject: target.subject,
           framework: target.framework,
           targetStandards: target.targetStandards,
+          freshRead: fresh,
         });
         const questions = d.result.questions as Question[];
         if (!questions.length)
@@ -863,7 +864,7 @@ export function AssessmentView() {
                       <Action
                         variant="secondary small"
                         disabled={reading || busy}
-                        onClick={() => readDocument()}
+                        onClick={() => readDocument(a, a.questions.length > 0)}
                       >
                         {reading ? (
                           <LoaderCircle className="spin" size={15} />

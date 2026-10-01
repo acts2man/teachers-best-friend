@@ -39,12 +39,15 @@ function bundle(entry) {
   return m.exports;
 }
 
-const { reusableReadMode, reusablePriorResult } = bundle("lib/analyze-server.ts");
+const { reusableReadMode, reusablePriorResult, readReuseFingerprint } = bundle(
+  "lib/analyze-server.ts",
+);
+const { READ_PROMPT_VERSION } = bundle("lib/analyze-shared.ts");
 
 // A chainable Supabase query stub. from(table) hands back a builder whose
-// filter methods all return itself and that resolves to the response queued
-// for that table. contains/containedBy record the keys so a test can assert
-// the set equality the real query relies on.
+// filter methods all return itself and that resolves to the response queued for
+// that table. eq() records its column/value so a test can assert the scan
+// lookup filtered on the fingerprint it was given.
 function fakeSvc(responses) {
   const calls = [];
   return {
@@ -52,12 +55,12 @@ function fakeSvc(responses) {
     from(table) {
       const q = {
         table,
-        containsKeys: null,
-        containedByKeys: null,
+        filters: {},
         select() {
           return q;
         },
-        eq() {
+        eq(col, val) {
+          q.filters[col] = val;
           return q;
         },
         in(_col, vals) {
@@ -65,14 +68,6 @@ function fakeSvc(responses) {
           return q;
         },
         not() {
-          return q;
-        },
-        contains(_col, keys) {
-          q.containsKeys = keys;
-          return q;
-        },
-        containedBy(_col, keys) {
-          q.containedByKeys = keys;
           return q;
         },
         order() {
@@ -91,6 +86,17 @@ function fakeSvc(responses) {
   };
 }
 
+const params = (over = {}) => ({
+  mode: "assignment",
+  uploadIds: ["u1", "u2"],
+  subject: "Math",
+  grade: 7,
+  framework: "California",
+  targetStandards: ["7.RP.3"],
+  freshRead: false,
+  ...over,
+});
+
 // ---------------------------------------------------------------
 // Which stages may reuse a stored read
 // ---------------------------------------------------------------
@@ -105,27 +111,11 @@ test("reading modes are reusable, grading modes are not", () => {
 });
 
 // ---------------------------------------------------------------
-// Reusing a stored result
+// The reuse fingerprint: more than the page bytes
 // ---------------------------------------------------------------
 
-test("no uploads means nothing to match, so no reuse", async () => {
-  const svc = fakeSvc({});
-  assert.equal(await reusablePriorResult(svc, "t1", "assignment", []), null);
-  assert.equal(svc.calls.length, 0);
-});
-
-test("a grading mode is never reused even with matching pages", async () => {
-  const svc = fakeSvc({});
-  assert.equal(
-    await reusablePriorResult(svc, "t1", "responses", ["u1"]),
-    null,
-  );
-  assert.equal(svc.calls.length, 0);
-});
-
-test("the same pages read again hand back the stored result", async () => {
-  const stored = { questions: [{ id: "q1", standard: "7.RP.3", alignment: 92 }] };
-  const svc = fakeSvc({
+const hashSvc = () =>
+  fakeSvc({
     teacher_uploads: {
       data: [
         { id: "u1", content_sha256: "hashB" },
@@ -133,42 +123,98 @@ test("the same pages read again hand back the stored result", async () => {
       ],
       error: null,
     },
-    scans: { data: [{ result: stored, created_at: "2026-09-30" }], error: null },
   });
-  const out = await reusablePriorResult(svc, "t1", "assignment", ["u1", "u2"]);
-  assert.deepEqual(out, stored);
-  // The scan lookup must ask for set equality on the sorted, de-duplicated
-  // content hashes -- both directions -- or a superset would match.
-  const scanQ = svc.calls.find((c) => c.table === "scans");
-  assert.deepEqual(scanQ.containsKeys, ["hashA", "hashB"]);
-  assert.deepEqual(scanQ.containedByKeys, ["hashA", "hashB"]);
-});
 
-test("a missing upload row means a fresh read, not a wrong reuse", async () => {
-  // One id could not be resolved to a hash, so we cannot prove the pages are
-  // identical -- fall through to a real read.
-  const svc = fakeSvc({
-    teacher_uploads: { data: [{ id: "u1", content_sha256: "hashA" }], error: null },
-  });
+test("the fingerprint folds in prompt version, mode, scope, targets, and sorted hashes", async () => {
+  const fp = await readReuseFingerprint(hashSvc(), "t1", params());
   assert.equal(
-    await reusablePriorResult(svc, "t1", "assignment", ["u1", "u2"]),
-    null,
+    fp,
+    ["v" + READ_PROMPT_VERSION, "assignment", "Math", 7, "California", "7.RP.3", "hashA,hashB"].join("|"),
   );
 });
 
-test("no stored scan for these pages means no reuse", async () => {
-  const svc = fakeSvc({
-    teacher_uploads: { data: [{ id: "u1", content_sha256: "hashA" }], error: null },
-    scans: { data: [], error: null },
-  });
-  assert.equal(
-    await reusablePriorResult(svc, "t1", "assignment", ["u1"]),
-    null,
+test("a different grade, framework, or target set is a different fingerprint", async () => {
+  const base = await readReuseFingerprint(hashSvc(), "t1", params());
+  assert.notEqual(base, await readReuseFingerprint(hashSvc(), "t1", params({ grade: 8 })));
+  assert.notEqual(
+    base,
+    await readReuseFingerprint(hashSvc(), "t1", params({ framework: "Texas" })),
   );
+  assert.notEqual(
+    base,
+    await readReuseFingerprint(hashSvc(), "t1", params({ targetStandards: ["7.RP.1"] })),
+  );
+});
+
+test("no fingerprint for a non-read mode, no uploads, or an unresolved page", async () => {
+  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ mode: "responses" })), null);
+  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ uploadIds: [] })), null);
+  // Only one of two uploads resolves to a hash -> cannot prove identical pages.
+  const short = fakeSvc({
+    teacher_uploads: { data: [{ id: "u1", content_sha256: "hashA" }], error: null },
+  });
+  assert.equal(await readReuseFingerprint(short, "t1", params()), null);
 });
 
 // ---------------------------------------------------------------
-// The route wires reuse in before it spends anything
+// Reusing a stored result, keyed on the fingerprint
+// ---------------------------------------------------------------
+
+test("a stored result with the same fingerprint is handed back", async () => {
+  const stored = { questions: [{ id: "q1", standard: "7.RP.3", alignment: 92 }] };
+  const svc = fakeSvc({ scans: { data: [{ result: stored }], error: null } });
+  const out = await reusablePriorResult(svc, "t1", params(), "FP");
+  assert.deepEqual(out, stored);
+  // The scan lookup must filter on exactly the fingerprint it was given.
+  const scanQ = svc.calls.find((c) => c.table === "scans");
+  assert.equal(scanQ.filters.reuse_fingerprint, "FP");
+  assert.equal(scanQ.filters.status, "complete");
+  assert.equal(scanQ.filters.billable, true);
+});
+
+test("an explicit Read again never reuses, and never even queries", async () => {
+  const svc = fakeSvc({ scans: { data: [{ result: { questions: [] } }], error: null } });
+  assert.equal(await reusablePriorResult(svc, "t1", params({ freshRead: true }), "FP"), null);
+  assert.equal(svc.calls.length, 0);
+});
+
+test("no stored scan for this fingerprint means a fresh read", async () => {
+  const svc = fakeSvc({ scans: { data: [], error: null } });
+  assert.equal(await reusablePriorResult(svc, "t1", params(), "FP"), null);
+});
+
+test("a broken assignment read -- a question with no standard -- is never reused", async () => {
+  // Ricky's 2026-09-30 17:42:07 read: questions came back, but one had no
+  // standard, which locks the student-work step. Serving it from cache would
+  // reproduce the exact bug, so it must be a miss and re-read.
+  const broken = {
+    questions: [
+      { id: "q1", standard: "7.RP.3" },
+      { id: "q2", standard: "" },
+    ],
+  };
+  const svc = fakeSvc({ scans: { data: [{ result: broken }], error: null } });
+  assert.equal(await reusablePriorResult(svc, "t1", params(), "FP"), null);
+});
+
+test("an excluded question with no standard does not block reuse", async () => {
+  const ok = {
+    questions: [
+      { id: "q1", standard: "7.RP.3" },
+      { id: "q2", standard: "", excluded: true },
+    ],
+  };
+  const svc = fakeSvc({ scans: { data: [{ result: ok }], error: null } });
+  assert.deepEqual(await reusablePriorResult(svc, "t1", params(), "FP"), ok);
+});
+
+test("an assignment read with no questions is never reused", async () => {
+  const svc = fakeSvc({ scans: { data: [{ result: { questions: [] } }], error: null } });
+  assert.equal(await reusablePriorResult(svc, "t1", params(), "FP"), null);
+});
+
+// ---------------------------------------------------------------
+// The route wires reuse in before it spends anything, and stamps the scan
 // ---------------------------------------------------------------
 
 test("the analyze route checks for a reusable read before charging", () => {
@@ -182,6 +228,53 @@ test("the analyze route checks for a reusable read before charging", () => {
     reuseAt < gateAt && reuseAt < startAt,
     "reuse must be decided before the spend gate and before a scan is opened",
   );
+  // Reuse is gated on the explicit-reread flag and stamps the scan for later.
+  assert.match(route, /readFingerprint && !p\.freshRead/);
+  assert.match(route, /reuse_fingerprint: readFingerprint/);
+});
+
+// ---------------------------------------------------------------
+// The prompt version is bumped (the read prompt changed)
+// ---------------------------------------------------------------
+
+test("READ_PROMPT_VERSION has been bumped past 1", () => {
+  assert.ok(READ_PROMPT_VERSION >= 2, "prompt changed, so the version must bump");
+});
+
+// ---------------------------------------------------------------
+// A new column needs its migration
+// ---------------------------------------------------------------
+
+test("a migration adds the reuse_fingerprint column", () => {
+  const sql = readFileSync(
+    "supabase/migrations/20260930260000_scan_reuse_fingerprint.sql",
+    "utf8",
+  );
+  assert.match(sql, /add column if not exists reuse_fingerprint text/i);
+});
+
+// ---------------------------------------------------------------
+// Explicit "Read again" buttons force a fresh read; auto-reads don't
+// ---------------------------------------------------------------
+
+test("the assessment scan's Read-it-again button forces a fresh read", () => {
+  const scan = readFileSync("components/teacher-scan.tsx", "utf8");
+  assert.match(scan, /analyze\(undefined, false, true\)/);
+  // The read fired automatically on upload must NOT force fresh (reuse allowed).
+  assert.match(scan, /await analyze\(\[\.\.\.files\.map/);
+  assert.match(scan, /freshRead: fresh/);
+});
+
+test("the assessment's Read-document-again button forces a fresh read", () => {
+  const a = readFileSync("components/teacher-assessments.tsx", "utf8");
+  assert.match(a, /readDocument\(a, a\.questions\.length > 0\)/);
+  assert.match(a, /freshRead: fresh/);
+});
+
+test("the answer key's Read-again button forces a fresh read", () => {
+  const k = readFileSync("components/teacher-answer-key.tsx", "utf8");
+  assert.match(k, /readKey\(undefined, true\)/);
+  assert.match(k, /freshRead: fresh/);
 });
 
 // ---------------------------------------------------------------

@@ -406,7 +406,7 @@ export function ScanView() {
    * inside upload(), where the files it just stored are not in React state
    * yet, so reading `files` there would analyse the previous batch.
    */
-  async function analyze(ids?: string[], navigate = false) {
+  async function analyze(ids?: string[], navigate = false, fresh = false) {
     // These used to be bare returns. When one of them fired -- on upload, or on
     // the teacher pressing "Read it again" -- the reading simply did not happen
     // and nothing on screen changed: no spinner, no error, no explanation. A
@@ -448,6 +448,7 @@ export function ScanView() {
         targetStandards: standardsForReading,
         assessmentId,
         studentId,
+        freshRead: fresh,
       });
       if (mode === "assignment") {
         // A read that found nothing is not an assessment. Saving an empty one
@@ -1131,7 +1132,7 @@ export function ScanView() {
                       !contentReady ||
                       (mode === "responses" && (!prepared || !studentId))
                     }
-                    onClick={() => analyze()}
+                    onClick={() => analyze(undefined, false, true)}
                   >
                     {analyzing ? (
                       <LoaderCircle size={17} className="spin" />

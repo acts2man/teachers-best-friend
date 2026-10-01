@@ -138,7 +138,7 @@ test("the scan flow re-reads the whole set into one assessment instead of one pe
   assert.ok(/setCreatedId\(a\.id\)/.test(s), "the created assessment id is remembered");
   // Auto-read stays on the page (navigate is gated); it does not leave after page 1.
   assert.ok(/if \(navigate\) go\("\/assessments\?id=" \+ a\.id\)/.test(s), "assignment navigation is gated behind navigate");
-  assert.ok(/async function analyze\(ids\?: string\[\], navigate = false\)/.test(s), "analyze defaults to staying");
+  assert.ok(/async function analyze\(ids\?: string\[\], navigate = false, fresh = false\)/.test(s), "analyze defaults to staying");
   // The read covers every uploaded page, not just the latest.
   assert.ok(/analyze\(\[\.\.\.files\.map\(\(f\) => f\.id\), \.\.\.uploadedIds\]\)/.test(s), "auto-read passes the whole set");
   // makeAssessment replaces questions (no duplication) and records the read pages.

@@ -33,6 +33,21 @@ export type Mode =
   | "catalog"
   | "roster";
 
+/**
+ * Bumped whenever a read prompt changes, so a stored read from an older prompt
+ * is never reused in place of what the current prompt would produce. It is part
+ * of the reuse fingerprint (see readReuseFingerprint in analyze-server): a
+ * different version is a different fingerprint, which is a reuse miss and a
+ * fresh read. Bump this on ANY change to the assignment/passage/answer_key/
+ * roster prompt text.
+ *
+ * v2: #89 reworded the assignment prompt to classify every question
+ * independently and stop leaving longer tests untagged; this PR added the fixed
+ * alignment bands. Both change what a read returns, so nothing from before may
+ * be reused.
+ */
+export const READ_PROMPT_VERSION = 2;
+
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type ModelSettings = {
@@ -118,6 +133,10 @@ export const analyzeInput = z.object({
   targetStandards: z.array(z.string()).max(100).default([]),
   // Admin-only: re-run a standards lookup even when the shared library already has it.
   refresh: z.boolean().optional(),
+  // The teacher pressed an explicit "Read again" / "Read document again": always
+  // do a fresh model read and never serve a stored result. Reuse is only for the
+  // same pages arriving again without the teacher asking for a re-read.
+  freshRead: z.boolean().optional(),
   assessmentId: z.string().optional(),
   studentId: z.string().optional(),
   standard: z.string().optional(),
