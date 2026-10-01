@@ -210,9 +210,13 @@ this request: the pages come from a published text, not from a child.
 
 **Why it exists, and what it changes downstream.** The transcribed text is kept
 on the assessment (`Assessment.passage`) and travels with every student's
-grading from then on (`passageForGrading()` in `lib/prompt-payload.ts`). That is
-new content in the grading request, so it is named here: it is the story, not
-the student. A comprehension answer cannot be marked honestly without the text
+grading from then on (`passageForGrading()` in `lib/prompt-payload.ts`). From
+1 Oct 2026 it is also attached to the `assignment` question read for a reading-
+comprehension assessment (the `passage` request field, included in the prompt by
+`buildPrompt`), so each question is classified against the text it refers to.
+That is new content in those requests, so it is named here: it is the story, not
+the student -- the same published-text payload already described for grading, now
+sent on the read as well. No identifier is added. A comprehension answer cannot be marked honestly without the text
 it is about, and the alternative -- attaching the photographed pages to each
 student -- would pay to read the same story once per child and send a stack of
 images 150 times over instead of once.

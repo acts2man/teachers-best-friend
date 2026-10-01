@@ -245,6 +245,10 @@ export async function readReuseFingerprint(
   ).sort();
   if (!hashes.length) return null;
   const targets = [...p.targetStandards].sort();
+  // The passage changes what an assignment read returns, so a read done with a
+  // passage must not be served a cached read done without one. Its length is a
+  // cheap discriminator between no passage, this passage, and a different one.
+  const passageKey = p.passage?.trim() ? "p" + p.passage.trim().length : "p0";
   return [
     "v" + READ_PROMPT_VERSION,
     p.mode,
@@ -252,6 +256,7 @@ export async function readReuseFingerprint(
     p.grade,
     p.framework,
     targets.join(","),
+    passageKey,
     hashes.join(","),
   ].join("|");
 }

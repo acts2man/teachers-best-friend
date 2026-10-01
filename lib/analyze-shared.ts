@@ -43,11 +43,13 @@ export type Mode =
  * roster prompt text.
  *
  * v2: #89 reworded the assignment prompt to classify every question
- * independently and stop leaving longer tests untagged; this PR added the fixed
- * alignment bands. Both change what a read returns, so nothing from before may
- * be reused.
+ * independently and stop leaving longer tests untagged, and the fixed alignment
+ * bands landed. v3: the assignment read can now be given the reading passage the
+ * questions are about, so a comprehension question is classified against the
+ * text it refers to. Each change alters what a read returns, so nothing from an
+ * earlier version is reused.
  */
-export const READ_PROMPT_VERSION = 2;
+export const READ_PROMPT_VERSION = 3;
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
@@ -139,6 +141,11 @@ export const analyzeInput = z.object({
   // do a fresh model read and never serve a stored result. Reuse is only for the
   // same pages arriving again without the teacher asking for a re-read.
   freshRead: z.boolean().optional(),
+  // The transcribed reading passage these questions are about (reading
+  // comprehension). Attached to the assignment read so each question is
+  // classified against the text it refers to. It is the published story, not
+  // anything a student wrote -- see docs/student-data-flow.md section 4.
+  passage: z.string().max(60000).optional(),
   assessmentId: z.string().optional(),
   studentId: z.string().optional(),
   standard: z.string().optional(),
@@ -332,6 +339,10 @@ export function buildPrompt(
       JSON.stringify(p.targetStandards) +
       ". Identify the actual skill honestly; do not force an unrelated question onto a target standard. Explain any question outside these intended standards. Full grade and subject catalog: " +
       JSON.stringify(catalogForPrompt(catalog)) +
+      (p.passage?.trim()
+        ? ". These questions are about the following reading passage; read it first and judge each question against the text it refers to, so a comprehension question is classified by the skill it actually asks for. Do not transcribe the passage into the questions or answer it yourself. Reading passage: " +
+          p.passage.trim()
+        : "") +
       ". Teacher text: " +
       p.text;
   }
