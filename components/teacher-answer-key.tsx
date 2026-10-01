@@ -30,9 +30,13 @@ type Uploaded = { id: string; mime: string };
 export function AnswerKeyReview({
   assessment: a,
   onSave,
+  onConfirmed,
 }: {
   assessment: Assessment;
   onSave: (a: Assessment, message: string) => Promise<boolean>;
+  // Called once the key is confirmed, so the flow can move straight on to
+  // student work instead of leaving the teacher on a finished step.
+  onConfirmed?: () => void;
 }) {
   const { busy, aiReady } = useTeacher();
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -167,10 +171,12 @@ export function AnswerKeyReview({
           ? "Answer key saved. Recheck responses affected by the changes."
           : "Answer key confirmed",
       )
-    )
+    ) {
       setNotice(
         "Answer key confirmed. Add student work on the next tab once the question standards are reviewed.",
       );
+      onConfirmed?.();
+    }
   }
 
   if (!questions.length)
