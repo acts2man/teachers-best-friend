@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTeacher } from "./teacher-context";
-import { Action, EmptyState, PageTitle, Pick, Pill } from "./teacher-shared";
+import { Action, PageTitle, Pick, Pill } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
@@ -686,7 +686,7 @@ export function ScanView() {
                       <label
                         key={option.value}
                         className={
-                          "target-standard-option " +
+                          "target-standard-option genre-option " +
                           (genre === option.value ? "selected" : "")
                         }
                       >
