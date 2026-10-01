@@ -46,6 +46,9 @@ export function AnswerKeyReview({
     [notice, setNotice] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Whether the key has been read at least once, so the button reads "Read
+  // again" rather than "Read the key".
+  const [hasReadKey, setHasReadKey] = useState(false);
   useEffect(() => {
     setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, q.answer])));
   }, [a.id, a.questions]);
@@ -85,8 +88,17 @@ export function AnswerKeyReview({
       "Answer-key files saved",
     );
     if (!saved) return;
-    // Read the key automatically so the teacher never retypes it.
-    if (aiReady) await readKey(ids);
+    // Collect all the key's pages, then read once -- the same as the blank test
+    // and student work. A multi-page key photographed a page at a time used to
+    // fire a full AI read on every page; now the pages are saved and the teacher
+    // taps "Read the key" once to read them all together. The no-AI path still
+    // parses a typed PDF locally on upload, since that is instant and costs
+    // nothing.
+    if (aiReady)
+      setNotice(
+        uploaded.length + (uploaded.length === 1 ? " page" : " pages") +
+          " added. Add more if your key runs longer, then tap Read the key.",
+      );
     else await readPdfFallback(uploaded);
   }
 
@@ -145,6 +157,7 @@ export function AnswerKeyReview({
         if (entry.answer.trim() && questions.some((q) => q.id === entry.questionId))
           next[entry.questionId] = entry.answer;
       setAnswers(next);
+      setHasReadKey(true);
       const uncertain = found.filter(
         (k) => !k.answer.trim() || k.confidence < 90,
       ).length;
@@ -247,7 +260,7 @@ export function AnswerKeyReview({
         )}
         {aiReady && (a.answerKeyUploadIds?.length || paste.trim()) ? (
           <Action
-            variant="secondary"
+            variant={hasReadKey ? "secondary" : ""}
             disabled={working}
             onClick={() => readKey(undefined, true)}
           >
@@ -256,7 +269,7 @@ export function AnswerKeyReview({
             ) : (
               <ClipboardCheck size={17} />
             )}
-            Read again
+            {hasReadKey ? "Read again" : "Read the key"}
           </Action>
         ) : null}
       </div>
