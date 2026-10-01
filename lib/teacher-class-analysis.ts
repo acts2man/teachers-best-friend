@@ -5,7 +5,12 @@ import type {
   Student,
   StudentResponse,
 } from "./teacher-types";
-import { responseMatch } from "./teacher-metrics";
+import {
+  cognitiveReportLines,
+  costaBreakdown,
+  dokBreakdown,
+  responseMatch,
+} from "./teacher-metrics";
 import { activeQuestions, rubricDimensions } from "./teacher-workflow";
 
 /** One error type and the students who made it, most common first. */
@@ -73,6 +78,28 @@ export function assessmentErrorTypes(
     a.responses.filter((r) => active.has(r.questionId)),
     students,
   );
+}
+
+/**
+ * The error types tagged on one student's answers across this assessment, most
+ * common first. The per-student counterpart to assessmentErrorTypes, for the
+ * student view and the student report.
+ */
+export function studentErrorTypes(
+  a: Assessment,
+  studentId: string,
+): { errorType: string; count: number }[] {
+  const active = new Set(activeQuestions(a).map((q) => q.id));
+  const counts = new Map<string, number>();
+  for (const r of a.responses) {
+    if (r.studentId !== studentId || !active.has(r.questionId)) continue;
+    const errorType = (r.errorType || "").trim();
+    if (!errorType) continue;
+    counts.set(errorType, (counts.get(errorType) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([errorType, count]) => ({ errorType, count }))
+    .sort((a, b) => b.count - a.count || a.errorType.localeCompare(b.errorType));
 }
 
 /** One rubric dimension's class picture for a writing assessment. */
@@ -251,6 +278,42 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
         return lines.join("\n");
       })
       .join("\n\n") +
+    cognitiveReportSection(a) +
+    commonErrorSection(analysis) +
     "\n\nGenerated instantly from this assessment's graded responses — no additional AI review."
+  );
+}
+
+/** The DOK and Costa breakdowns for the class report, or "" when there's nothing graded. */
+function cognitiveReportSection(a: Assessment): string {
+  const dok = dokBreakdown(a.questions, a.responses);
+  const costa = costaBreakdown(a.questions, a.responses);
+  if (!dok.length && !costa.length) return "";
+  let out = "\n\nCOGNITIVE DEMAND";
+  if (dok.length) out += "\nBy Webb DOK\n" + cognitiveReportLines(dok);
+  if (costa.length) out += "\nBy Costa's level\n" + cognitiveReportLines(costa);
+  return out;
+}
+
+/** The most common error types across the whole assessment, most common first. */
+function commonErrorSection(analysis: StandardMastery[]): string {
+  const counts = new Map<string, { count: number; names: Set<string> }>();
+  for (const row of analysis)
+    for (const e of row.errorTypes) {
+      const entry = counts.get(e.errorType) || { count: 0, names: new Set() };
+      entry.count += e.count;
+      for (const s of e.students) entry.names.add(s.name);
+      counts.set(e.errorType, entry);
+    }
+  if (!counts.size) return "";
+  return (
+    "\n\nMOST COMMON ERROR TYPES\n" +
+    [...counts.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+      .map(
+        ([errorType, e]) =>
+          errorType + " (" + e.count + "): " + [...e.names].join(", "),
+      )
+      .join("\n")
   );
 }

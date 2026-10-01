@@ -6,7 +6,12 @@ import type {
   Student,
   StudentResponse,
 } from "./teacher-types";
-import { responseMatch } from "./teacher-metrics";
+import {
+  cognitiveReportLines,
+  costaBreakdown,
+  dokBreakdown,
+  responseMatch,
+} from "./teacher-metrics";
 
 export function activeQuestions(a: Assessment) {
   return a.questions.filter((q) => !q.excluded);
@@ -475,6 +480,35 @@ export function scoreLabel(
   return pts === null ? `${score}%` : `${score}% · ${pts}/${pointsPossible}`;
 }
 
+/** DOK and Costa breakdowns for one student's reviewed answers, or "" if none. */
+function studentCognitiveSection(a: Assessment, reviewed: StudentResponse[]): string {
+  const dok = dokBreakdown(a.questions, reviewed);
+  const costa = costaBreakdown(a.questions, reviewed);
+  if (!dok.length && !costa.length) return "";
+  let out = "\n\nCOGNITIVE DEMAND";
+  if (dok.length) out += "\nBy Webb DOK\n" + cognitiveReportLines(dok);
+  if (costa.length) out += "\nBy Costa's level\n" + cognitiveReportLines(costa);
+  return out;
+}
+
+/** The error types tagged on one student's reviewed answers, most common first. */
+function studentErrorSection(reviewed: StudentResponse[]): string {
+  const counts = new Map<string, number>();
+  for (const r of reviewed) {
+    const errorType = (r.errorType || "").trim();
+    if (!errorType) continue;
+    counts.set(errorType, (counts.get(errorType) || 0) + 1);
+  }
+  if (!counts.size) return "";
+  return (
+    "\n\nMOST COMMON ERROR TYPES\n" +
+    [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([errorType, count]) => errorType + " (" + count + ")")
+      .join("\n")
+  );
+}
+
 export function studentReport(a: Assessment, student: Student) {
   const summary = studentReview(a, student.id);
   const codes = [
@@ -518,6 +552,8 @@ export function studentReport(a: Assessment, student: Student) {
         return `${code}: ${match === null ? "no reviewed match" : match + "% average answer match"}; ${rs.filter((r) => r.correct).length} fully correct of ${rs.length} reviewed; ${qs.length} questions assigned.`;
       })
       .join("\n") +
+    studentCognitiveSection(a, summary.reviewed) +
+    studentErrorSection(summary.reviewed) +
     "\n\nQUESTION REVIEW\n" +
     summary.questions
       .map((q) => {

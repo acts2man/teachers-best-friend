@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { describeFailure, deleteUploads } from "@/lib/connection";
+import { ScanCamera } from "./scan-camera";
 import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill, downloadText } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
@@ -379,8 +380,8 @@ export function RosterScanner({
     [column, setColumn] = useState(""),
     [period, setPeriod] = useState("");
   const input = useRef<HTMLInputElement>(null),
-    camera = useRef<HTMLInputElement>(null),
     sheet = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   function clearReview() {
     setFound([]);
@@ -455,7 +456,7 @@ export function RosterScanner({
     if (!names.length) setNotice("No names were found in that text.");
   }
 
-  async function scan(list: FileList | null) {
+  async function scan(list: FileList | File[] | null) {
     if (!list?.length || working) return;
     setWorking(true);
     setNotice("");
@@ -503,7 +504,6 @@ export function RosterScanner({
         );
       setWorking(false);
       if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
     }
   }
 
@@ -541,13 +541,29 @@ export function RosterScanner({
           <Upload size={15} />
           Upload a roster
         </Action>
-        <Action variant="secondary small" disabled={working} onClick={() => camera.current?.click()}>
+        <Action variant="secondary small" disabled={working} onClick={() => setCameraOpen(true)}>
           <Camera size={15} />
           Photograph a roster
         </Action>
         <input ref={sheet} type="file" className="sr-only" accept={ROSTER_FILE_ACCEPT} aria-label="Import a class list from a spreadsheet" onChange={(e) => readSpreadsheet(e.target.files)} />
         <input ref={input} type="file" className="sr-only" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-label="Upload a class roster" onChange={(e) => scan(e.target.files)} />
-        <input ref={camera} type="file" className="sr-only" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Photograph a class roster" onChange={(e) => scan(e.target.files)} />
+        {cameraOpen && (
+          <ScanCamera
+            mode="single"
+            title="Class roster"
+            assessmentId="roster"
+            onComplete={(groups) => {
+              setCameraOpen(false);
+              const captured = groups.flat();
+              if (captured.length) scan(captured);
+            }}
+            onCancel={() => setCameraOpen(false)}
+            onFallback={() => {
+              setCameraOpen(false);
+              input.current?.click();
+            }}
+          />
+        )}
       </div>
       <p>
         {rows.length
