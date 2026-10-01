@@ -1003,6 +1003,17 @@ export function StudentResponseReview({
             <strong>{summary.flagged.length}</strong>
             <span>need a closer look</span>
           </div>
+          {summary.needsGrading > 0 && (
+            <div className="review-attention" data-tone="warn">
+              <Flag size={19} />
+              <strong>{summary.needsGrading}</strong>
+              <span>
+                {summary.needsGrading === 1
+                  ? "answer still needs grading"
+                  : "answers still need grading"}
+              </span>
+            </div>
+          )}
         </div>
       )}
       {student && summary.reviewed.length > 0 && (
