@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { describeFailure } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import { Action, EmptyState, Pill, SectionTitle } from "./teacher-shared";
+import { ScanCamera } from "./scan-camera";
 import {
   activeQuestions,
   applyAnswerKey,
@@ -29,9 +30,13 @@ type Uploaded = { id: string; mime: string };
 export function AnswerKeyReview({
   assessment: a,
   onSave,
+  onConfirmed,
 }: {
   assessment: Assessment;
   onSave: (a: Assessment, message: string) => Promise<boolean>;
+  // Called once the key is confirmed, so the flow can move straight on to
+  // student work instead of leaving the teacher on a finished step.
+  onConfirmed?: () => void;
 }) {
   const { busy, aiReady } = useTeacher();
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -39,8 +44,8 @@ export function AnswerKeyReview({
   const [uploading, setUploading] = useState(false),
     [reading, setReading] = useState(false),
     [notice, setNotice] = useState("");
-  const input = useRef<HTMLInputElement>(null),
-    camera = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   useEffect(() => {
     setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, q.answer])));
   }, [a.id, a.questions]);
@@ -50,7 +55,7 @@ export function AnswerKeyReview({
     (q) => (answers[q.id] || "").trim() !== q.answer.trim(),
   );
 
-  async function upload(files: FileList | null) {
+  async function upload(files: FileList | File[] | null) {
     if (!files?.length || uploading) return;
     if ((a.answerKeyUploadIds?.length || 0) + files.length > 6) {
       toast.error("Use up to six files for the answer key.");
@@ -72,7 +77,6 @@ export function AnswerKeyReview({
     } finally {
       setUploading(false);
       if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
     }
     if (!uploaded.length) return;
     const ids = [...(a.answerKeyUploadIds || []), ...uploaded.map((u) => u.id)];
@@ -168,10 +172,12 @@ export function AnswerKeyReview({
           ? "Answer key saved. Recheck responses affected by the changes."
           : "Answer key confirmed",
       )
-    )
+    ) {
       setNotice(
         "Answer key confirmed. Add student work on the next tab once the question standards are reviewed.",
       );
+      onConfirmed?.();
+    }
   }
 
   if (!questions.length)
@@ -208,7 +214,7 @@ export function AnswerKeyReview({
         <Action
           variant="secondary"
           disabled={working}
-          onClick={() => camera.current?.click()}
+          onClick={() => setCameraOpen(true)}
         >
           <Camera size={17} />
           Photograph key
@@ -222,15 +228,23 @@ export function AnswerKeyReview({
           aria-label="Upload the teacher answer key"
           onChange={(e) => upload(e.target.files)}
         />
-        <input
-          ref={camera}
-          className="sr-only"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          capture="environment"
-          aria-label="Photograph the teacher answer key"
-          onChange={(e) => upload(e.target.files)}
-        />
+        {cameraOpen && (
+          <ScanCamera
+            mode="single"
+            title="Answer key"
+            assessmentId={a.id}
+            onComplete={(groups) => {
+              setCameraOpen(false);
+              const captured = groups.flat();
+              if (captured.length) upload(captured);
+            }}
+            onCancel={() => setCameraOpen(false)}
+            onFallback={() => {
+              setCameraOpen(false);
+              input.current?.click();
+            }}
+          />
+        )}
         {aiReady && (a.answerKeyUploadIds?.length || paste.trim()) ? (
           <Action
             variant="secondary"

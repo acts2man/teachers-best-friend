@@ -80,11 +80,15 @@ import { gradeLabel } from "@/lib/grade-labels";
 import { elaAreaLabel, usesPassage } from "@/lib/ela";
 import {
   alignmentSuggestions,
+  costaBreakdown,
   costaFor,
   costasLevels,
+  dokBreakdown,
   responseMatch,
+  type CognitiveRow,
 } from "@/lib/teacher-metrics";
 import {
+  activeQuestions,
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
@@ -99,6 +103,7 @@ import {
 } from "@/lib/teacher-workflow";
 import { StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
+import { ScanCamera } from "./scan-camera";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
 import {
@@ -836,24 +841,28 @@ export function AssessmentView() {
                       <Action
                         variant="secondary small"
                         disabled={busy}
-                        onClick={() => {
+                        onClick={async () => {
                           const ids = new Set(clearQuestions.map((q) => q.id));
                           const questions = a.questions.map((q) =>
                             ids.has(q.id) ? { ...q, verified: true } : q,
                           );
-                          saveAssessment(
+                          const allReviewed = questions.every(
+                            (q) => q.verified || q.excluded,
+                          );
+                          const saved = await saveAssessment(
                             {
                               ...a,
                               questions,
-                              status: questions.every(
-                                (q) => q.verified || q.excluded,
-                              )
-                                ? "Ready"
-                                : "Needs review",
+                              status: allReviewed ? "Ready" : "Needs review",
                             },
                             clearQuestions.length +
                               " aligned questions confirmed",
                           );
+                          // Ricky asked not to be left on a finished step hunting
+                          // for the next tab. Once every question is reviewed, the
+                          // answer key is the next thing to do, so go straight
+                          // there.
+                          if (saved && allReviewed) setTab("key");
                         }}
                       >
                         <CheckCheck size={16} />
@@ -990,6 +999,28 @@ export function AssessmentView() {
                   </EmptyState>
                 )}
               </div>
+              {(() => {
+                // Every question reviewed and tagged, standards chosen: the
+                // questions step is finished and the answer key is next. Offer
+                // the move explicitly for a teacher who verified questions one
+                // at a time rather than with "Confirm clear matches".
+                const active = activeQuestions(a);
+                const questionsReviewed =
+                  active.length > 0 &&
+                  a.targetStandards.length > 0 &&
+                  active.every((q) => q.verified && q.standard);
+                if (!questionsReviewed || preparationGaps(a).keyConfirmed)
+                  return null;
+                return (
+                  <div className="setup-footer">
+                    <span>Questions reviewed. Next, confirm your answer key.</span>
+                    <Action onClick={() => setTab("key")}>
+                      Continue to answer key
+                      <ArrowRight size={17} />
+                    </Action>
+                  </div>
+                );
+              })()}
             </TabsContent>
             <TabsContent value="coverage">
               <div className="coverage-layout">
@@ -1188,7 +1219,11 @@ export function AssessmentView() {
               </div>
             </TabsContent>
             <TabsContent value="key">
-              <AnswerKeyReview assessment={a} onSave={saveAssessment} />
+              <AnswerKeyReview
+                assessment={a}
+                onSave={saveAssessment}
+                onConfirmed={() => setTab("responses")}
+              />
             </TabsContent>
             <TabsContent value="responses">
               <StudentResponseReview
@@ -1674,11 +1709,69 @@ function WritingRubricPanel({
   assessment: Assessment;
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
 }) {
-  const { busy } = useTeacher();
+  const { busy, aiReady } = useTeacher();
   const [draft, setDraft] = useState<RubricDimension[]>(a.rubric ?? []);
+  const [reading, setReading] = useState(false);
+  const [notice, setNotice] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const set = (id: string, patch: Partial<RubricDimension>) =>
     setDraft((rows) => rows.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   const dirty = JSON.stringify(draft) !== JSON.stringify(a.rubric ?? []);
+
+  // Read the teacher's own rubric (photo or PDF) into editable traits. The AI
+  // suggests a matching standard per trait; nothing is scored against it until
+  // the teacher reviews and saves it, so this only fills the draft below.
+  async function readRubric(list: FileList | null) {
+    if (!list?.length || reading) return;
+    const incoming = Array.from(list).slice(0, 4);
+    setReading(true);
+    setNotice("");
+    try {
+      const ids: string[] = [];
+      for (const raw of incoming) {
+        const file = await uprightPage(raw);
+        const d = await uploadFile(file);
+        ids.push(d.id);
+      }
+      const d = await analyzeRequest({
+        mode: "rubric",
+        uploadIds: ids,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+      });
+      const traits = (d.result.traits ?? []) as {
+        name: string;
+        max: number;
+        descriptor: string;
+        standard: string;
+      }[];
+      if (!traits.length) {
+        setNotice(
+          "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand.",
+        );
+        return;
+      }
+      setDraft(
+        traits.map((t) => ({
+          id: crypto.randomUUID(),
+          name: t.name,
+          max: t.max,
+          descriptor: t.descriptor,
+          standard: t.standard,
+        })),
+      );
+      setNotice(
+        traits.length +
+          " traits read from your rubric. Check each one and its standard, then Save rubric.",
+      );
+    } catch (e) {
+      setNotice(describeFailure(e, "Your rubric couldn’t be read."));
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
   return (
     <div className="panel">
       <SectionTitle
@@ -1688,6 +1781,46 @@ function WritingRubricPanel({
           (genreLabel(a.genre) ? genreLabel(a.genre) + " writing." : "")
         }
       />
+      {aiReady && (
+        <div className="key-source-actions">
+          <Action
+            variant="secondary"
+            disabled={busy || reading}
+            onClick={() => fileRef.current?.click()}
+          >
+            {reading ? (
+              <LoaderCircle className="spin" size={17} />
+            ) : (
+              <Upload size={17} />
+            )}
+            Upload or photograph your rubric
+          </Action>
+          <input
+            ref={fileRef}
+            className="sr-only"
+            type="file"
+            multiple
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            aria-label="Upload your own writing rubric"
+            onChange={(e) => readRubric(e.target.files)}
+          />
+          <span className="field-help">
+            Reads your own rubric into the traits below. The state rubric is the
+            default until you do. Uses one credit, like reading a test.
+          </span>
+        </div>
+      )}
+      {reading && (
+        <div className="read-document-status" role="status">
+          <LoaderCircle className="spin" size={18} />
+          <p>Reading your rubric…</p>
+        </div>
+      )}
+      {notice && (
+        <p className="key-notice" role="status">
+          {notice}
+        </p>
+      )}
       {isSimplifiedBand(a.grade) && (
         <div className="review-notice">
           <Target size={18} />
@@ -1733,6 +1866,16 @@ function WritingRubricPanel({
                     max: Math.max(1, Math.min(6, Math.round(Number(e.target.value) || 1))),
                   })
                 }
+              />
+            </label>
+            <label>
+              Standard
+              <input
+                className="class-scan-name-input"
+                value={d.standard}
+                placeholder="e.g. W.5.2"
+                aria-label={d.name + " standard"}
+                onChange={(e) => set(d.id, { standard: e.target.value.trim() })}
               />
             </label>
           </div>
@@ -2059,12 +2202,12 @@ function PassagePanel({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(a.passage || "");
   const input = useRef<HTMLInputElement>(null);
-  const camera = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const words = (a.passage || "").trim()
     ? (a.passage || "").trim().split(/\\s+/).length
     : 0;
 
-  async function read(list: FileList | null) {
+  async function read(list: FileList | File[] | null) {
     if (!list?.length || reading) return;
     const files = Array.from(list);
     if (files.length > 12) {
@@ -2106,7 +2249,6 @@ function PassagePanel({
       setReading(false);
       setStatus("");
       if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
     }
   }
 
@@ -2118,15 +2260,6 @@ function PassagePanel({
       >
         <div className="review-heading-actions">
           <input
-            ref={camera}
-            type="file"
-            className="sr-only"
-            accept="image/*"
-            capture="environment"
-            aria-label="Photograph a page of the passage"
-            onChange={(e) => read(e.target.files)}
-          />
-          <input
             ref={input}
             type="file"
             className="sr-only"
@@ -2135,10 +2268,27 @@ function PassagePanel({
             aria-label="Upload pages of the passage"
             onChange={(e) => read(e.target.files)}
           />
+          {cameraOpen && (
+            <ScanCamera
+              mode="single"
+              title="Reading passage"
+              assessmentId={a.id}
+              onComplete={(groups) => {
+                setCameraOpen(false);
+                const captured = groups.flat();
+                if (captured.length) read(captured);
+              }}
+              onCancel={() => setCameraOpen(false)}
+              onFallback={() => {
+                setCameraOpen(false);
+                input.current?.click();
+              }}
+            />
+          )}
           <Action
             variant="secondary small"
             disabled={reading || busy || !aiReady}
-            onClick={() => camera.current?.click()}
+            onClick={() => setCameraOpen(true)}
           >
             {reading ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
             Photograph the story
@@ -2237,6 +2387,59 @@ function ErrorTypeList({
   );
 }
 
+/**
+ * DOK (1-4) and Costa (1-3) breakdown: % correct at each level present on the
+ * assessment, with question counts. Renders nothing until something is graded at
+ * a level. Shared by the class view (all responses) and the student view (one
+ * student's).
+ */
+function CognitiveBreakdown({
+  questions,
+  responses,
+  heading,
+}: {
+  questions: Question[];
+  responses: import("@/lib/teacher-types").StudentResponse[];
+  heading: string;
+}) {
+  const dok = dokBreakdown(questions, responses);
+  const costa = costaBreakdown(questions, responses);
+  if (!dok.length && !costa.length) return null;
+  const group = (title: string, rows: CognitiveRow[]) =>
+    rows.length ? (
+      <div className="cognitive-group">
+        <span className="cell-meta">{title}</span>
+        {rows.map((r) => (
+          <div className="cognitive-row" key={r.name}>
+            <span className="cognitive-level">{r.name}</span>
+            {r.percentCorrect !== null && (
+              <Meter
+                value={r.percentCorrect}
+                tone={
+                  r.percentCorrect >= 80 ? "green" : r.percentCorrect >= 65 ? "" : "orange"
+                }
+              />
+            )}
+            <span className="cell-meta">
+              {r.percentCorrect === null
+                ? "Not yet graded"
+                : r.percentCorrect + "% correct"}{" "}
+              · {r.questions} question{r.questions === 1 ? "" : "s"} · {r.assessed}{" "}
+              graded
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+  return (
+    <div className="panel cognitive-breakdown">
+      <span className="cell-meta">{heading}</span>
+      {group("Webb DOK", dok)}
+      {group("Costa's levels", costa)}
+    </div>
+  );
+}
+
 function ClassAnalysisPanel({
   assessment: a,
   students,
@@ -2307,6 +2510,11 @@ function ClassAnalysisPanel({
           <ErrorTypeList tallies={errorTypes} go={go} />
         </div>
       )}
+      <CognitiveBreakdown
+        questions={a.questions}
+        responses={a.responses}
+        heading="Depth of knowledge across this assessment"
+      />
       <div className="student-groups-grid skill-gap-groups">
         {analysis.map((row) => (
           <section className="panel student-group-card skill" key={row.standard.code}>

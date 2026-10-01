@@ -29,6 +29,7 @@ import {
   Action,
   Avatar,
   EmptyState,
+  Meter,
   Pick,
   Pill,
   Score,
@@ -63,7 +64,11 @@ import { compareByLastName } from "@/lib/teacher-classes";
 import { errorTypesFor } from "@/lib/error-types";
 import { extractPdfText } from "@/lib/pdf-text";
 import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
-import { responseMatch } from "@/lib/teacher-metrics";
+import {
+  costaBreakdown,
+  dokBreakdown,
+  responseMatch,
+} from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
 import { ScanCamera } from "./scan-camera";
 
@@ -483,6 +488,81 @@ function GradeByQuestion({
         </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * One student's depth-of-knowledge picture: % correct at each DOK and Costa
+ * level present on the assessment, and the error types tagged on their answers.
+ * Computed live from this student's reviewed answers -- no AI step.
+ */
+function StudentDepthBreakdown({
+  assessment: a,
+  reviewed,
+}: {
+  assessment: Assessment;
+  reviewed: StudentResponse[];
+}) {
+  const dok = dokBreakdown(a.questions, reviewed);
+  const costa = costaBreakdown(a.questions, reviewed);
+  const errors = new Map<string, number>();
+  for (const r of reviewed) {
+    const t = (r.errorType || "").trim();
+    if (t) errors.set(t, (errors.get(t) || 0) + 1);
+  }
+  const errorRows = [...errors.entries()].sort(
+    (x, y) => y[1] - x[1] || x[0].localeCompare(y[0]),
+  );
+  if (!dok.length && !costa.length && !errorRows.length) return null;
+  const group = (title: string, rows: ReturnType<typeof dokBreakdown>) =>
+    rows.length ? (
+      <div className="cognitive-group">
+        <span className="cell-meta">{title}</span>
+        {rows.map((r) => (
+          <div className="cognitive-row" key={r.name}>
+            <span className="cognitive-level">{r.name}</span>
+            {r.percentCorrect !== null && (
+              <Meter
+                value={r.percentCorrect}
+                tone={
+                  r.percentCorrect >= 80
+                    ? "green"
+                    : r.percentCorrect >= 65
+                      ? ""
+                      : "orange"
+                }
+              />
+            )}
+            <span className="cell-meta">
+              {r.percentCorrect === null
+                ? "Not yet graded"
+                : r.percentCorrect + "% correct"}{" "}
+              · {r.questions} question{r.questions === 1 ? "" : "s"} · {r.assessed}{" "}
+              graded
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+  return (
+    <div className="panel cognitive-breakdown">
+      <span className="cell-meta">Depth of knowledge</span>
+      {group("Webb DOK", dok)}
+      {group("Costa's levels", costa)}
+      {errorRows.length > 0 && (
+        <div className="cognitive-group">
+          <span className="cell-meta">Most common error types</span>
+          {errorRows.map(([errorType, count]) => (
+            <div className="cognitive-row" key={errorType}>
+              <span className="cognitive-level">{errorType}</span>
+              <span className="cell-meta">
+                {count} answer{count === 1 ? "" : "s"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -920,6 +1000,9 @@ export function StudentResponseReview({
             <span>need a closer look</span>
           </div>
         </div>
+      )}
+      {student && summary.reviewed.length > 0 && (
+        <StudentDepthBreakdown assessment={a} reviewed={summary.reviewed} />
       )}
       {files.length > 0 && (
         <div className="source-documents">

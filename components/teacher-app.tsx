@@ -676,7 +676,12 @@ export default function TeacherApp({ view }: { view: string }) {
           </main>
         </div>
       </SidebarProvider>
-      <Toaster position="bottom-right" richColors closeButton />
+      {/* Top of the screen, not the bottom: the primary action buttons on
+          every form sit at the bottom, and on a phone a bottom toast dropped
+          right on top of them -- Ricky kept losing the "confirm" button under a
+          success message. A top toast clears the buttons and is the first thing
+          the eye lands on after a save. */}
+      <Toaster position="top-center" richColors closeButton />
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

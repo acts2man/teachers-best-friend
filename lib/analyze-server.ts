@@ -95,6 +95,10 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   assignment: { model: "gpt-5.6-luna", effort: "low", maxOutput: 6000 },
   lesson: { model: "gpt-5.4-mini", effort: "low", maxOutput: 6000 },
   catalog: { model: "gpt-5.6-sol", effort: "low", maxOutput: 20000 },
+  // Turning a photographed or PDF rubric into a handful of traits, each with a
+  // short descriptor and a suggested standard. A small, one-off read the teacher
+  // confirms, so the cheap model at low reasoning with room for a dozen traits.
+  rubric: { model: "gpt-5.6-luna", effort: "low", maxOutput: 4000 },
 };
 
 export async function modelSettingsFor(mode: Mode): Promise<ModelSettings> {
