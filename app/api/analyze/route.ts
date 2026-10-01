@@ -38,6 +38,8 @@ import {
   shareCatalog,
   isAdminUser,
   aiHttpError,
+  reusablePriorResult,
+  readReuseFingerprint,
 } from "@/lib/analyze-server";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
@@ -91,6 +93,27 @@ export async function POST(request: Request) {
     if (!saved) throw new HttpError(400, "Open your classroom first.");
     const w = saved.data as Workspace;
     const catalog = catalogFor(w, p.grade, p.framework, p.subject);
+
+    // Metering, reuse, and the shared library all live on the Supabase
+    // deployment. Build the service client up front so a re-read of pages we
+    // have already read can be answered before a single byte is loaded.
+    const svc = hasSupabaseConfig() ? createServiceClient() : null;
+    // The fingerprint an identical read is matched by: mode + pages + subject +
+    // grade + framework + intended standards + prompt version. Computed once,
+    // used both to look up a reusable result and (below) to stamp this scan so a
+    // later identical read can find it. Null for non-read modes or when a page's
+    // bytes can't be resolved.
+    const readFingerprint = svc ? await readReuseFingerprint(svc, user, p) : null;
+    // Reading a document twice should not give two different answers. If these
+    // exact pages were already read the same way for this teacher and the result
+    // is still stored, hand it straight back -- no upload, no model call, no
+    // charge. An explicit "Read again" (p.freshRead) always skips this.
+    if (svc && readFingerprint && !p.freshRead) {
+      const reused = await reusablePriorResult(svc, user, p, readFingerprint);
+      if (reused)
+        return Response.json({ result: reused, model: "reused-read" });
+    }
+
     const content: Record<string, unknown>[] = [];
     let total = 0;
     for (const fid of p.uploadIds) {
@@ -119,10 +142,9 @@ export async function POST(request: Request) {
     content.push({ type: "input_text", text: task });
     const settings = await modelSettingsFor(p.mode);
 
-    // Metering (Supabase deployment only). The scan is reserved before the
-    // model call so quota and account checks gate the spend, and usage is
-    // recorded afterwards whether the call succeeds or fails.
-    const svc = hasSupabaseConfig() ? createServiceClient() : null;
+    // The scan is reserved before the model call so quota and account checks
+    // gate the spend, and usage is recorded afterwards whether the call
+    // succeeds or fails.
     // A standards lookup another teacher already unlocked is served from the
     // shared library: no scan, no model call, no cost.
     // Admins unlock standards for everyone from the dashboard: those loads
@@ -174,6 +196,19 @@ export async function POST(request: Request) {
         p.uploadIds,
         process.env.COMMIT_REF || null,
       );
+      // Stamp the read fingerprint so a later identical read can reuse this
+      // result. Set at creation and carried through completion (the poll route
+      // only writes `result` onto the same row), so it is present whether the
+      // analysis runs synchronously or in the background. Best-effort: a failed
+      // stamp only means a future identical read is re-run, never a wrong reuse.
+      if (readFingerprint) {
+        const { error: fpError } = await svc
+          .from("scans")
+          .update({ reuse_fingerprint: readFingerprint })
+          .eq("id", scanId);
+        if (fpError)
+          console.error("Stamping reuse fingerprint failed", fpError.message);
+      }
     }
 
     // Whether this scan carries a live page charge to settle after the model

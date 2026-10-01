@@ -121,7 +121,7 @@ export function AnswerKeyReview({
     }
   }
 
-  async function readKey(uploadIds = a.answerKeyUploadIds || []) {
+  async function readKey(uploadIds = a.answerKeyUploadIds || [], fresh = false) {
     setReading(true);
     setNotice("");
     try {
@@ -133,6 +133,7 @@ export function AnswerKeyReview({
         grade: a.grade,
         subject: a.subject,
         framework: a.framework,
+        freshRead: fresh,
       });
       const found = d.result.answers as {
         questionId: string;
@@ -245,7 +246,11 @@ export function AnswerKeyReview({
           />
         )}
         {aiReady && (a.answerKeyUploadIds?.length || paste.trim()) ? (
-          <Action variant="secondary" disabled={working} onClick={() => readKey()}>
+          <Action
+            variant="secondary"
+            disabled={working}
+            onClick={() => readKey(undefined, true)}
+          >
             {reading ? (
               <LoaderCircle className="spin" size={17} />
             ) : (

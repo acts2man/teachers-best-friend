@@ -34,6 +34,21 @@ export type Mode =
   | "roster"
   | "rubric";
 
+/**
+ * Bumped whenever a read prompt changes, so a stored read from an older prompt
+ * is never reused in place of what the current prompt would produce. It is part
+ * of the reuse fingerprint (see readReuseFingerprint in analyze-server): a
+ * different version is a different fingerprint, which is a reuse miss and a
+ * fresh read. Bump this on ANY change to the assignment/passage/answer_key/
+ * roster prompt text.
+ *
+ * v2: #89 reworded the assignment prompt to classify every question
+ * independently and stop leaving longer tests untagged; this PR added the fixed
+ * alignment bands. Both change what a read returns, so nothing from before may
+ * be reused.
+ */
+export const READ_PROMPT_VERSION = 2;
+
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type ModelSettings = {
@@ -120,6 +135,10 @@ export const analyzeInput = z.object({
   targetStandards: z.array(z.string()).max(100).default([]),
   // Admin-only: re-run a standards lookup even when the shared library already has it.
   refresh: z.boolean().optional(),
+  // The teacher pressed an explicit "Read again" / "Read document again": always
+  // do a fresh model read and never serve a stored result. Reuse is only for the
+  // same pages arriving again without the teacher asking for a re-read.
+  freshRead: z.boolean().optional(),
   assessmentId: z.string().optional(),
   studentId: z.string().optional(),
   standard: z.string().optional(),
@@ -303,7 +322,7 @@ export function buildPrompt(
     if (!p.text.trim() && !hasContent)
       throw new HttpError(400, "Add a document or questions first.");
     task =
-      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Classify EACH question on its own, independently -- the number of questions or pages never changes how you classify, so a ten-question or two-page test is classified with the same care as a five-question one, and you never leave a whole test unclassified. The teacher built this assignment to assess the intended standards listed below, so assign each question the best-matching standard from the supplied catalog, strongly preferring one of the intended standards when the question plausibly assesses it. Leave a question's standard empty ONLY when it is genuinely unrelated to every catalog standard; being unsure is not a reason to leave it empty -- pick the closest standard and reflect your uncertainty in a lower alignment and confidence instead. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. This assignment is for " +
+      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. Classify EACH question on its own, independently -- the number of questions or pages never changes how you classify, so a ten-question or two-page test is classified with the same care as a five-question one, and you never leave a whole test unclassified. The teacher built this assignment to assess the intended standards listed below, so assign each question the best-matching standard from the supplied catalog, strongly preferring one of the intended standards when the question plausibly assesses it. Leave a question's standard empty ONLY when it is genuinely unrelated to every catalog standard; being unsure is not a reason to leave it empty -- pick the closest standard and reflect your uncertainty in a lower alignment and confidence instead. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Choose the alignment by how directly the question assesses the selected standard, using these fixed bands the same way every time regardless of how many questions or pages the assignment has: 90–100 when the question directly and fully assesses the standard's target skill at grade level; 70–89 when it assesses the standard but only partially, or with added scaffolding or an easier case; 50–69 when it is related but leans on a prerequisite or adjacent skill more than the standard itself; 25–49 when it only loosely touches the topic and not the standard's skill; 1–24 when it is barely related; 0 only when no catalog standard applies at all. Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. This assignment is for " +
       gradePromptLabel(p.grade, p.subject) +
       ", subject " +
       p.subject +
