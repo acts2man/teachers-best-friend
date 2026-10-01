@@ -114,6 +114,7 @@ import { splitNameBand } from "@/lib/image-prep";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
+  questionAlignment,
   makeManualQuestions,
   reconcileEvidence,
 } from "@/lib/teacher-data";
@@ -488,7 +489,11 @@ export function AssessmentView() {
                       {item.questions.length} questions · {item.framework}
                     </p>
                     <span className="assignment-row-detail">
-                      {item.questions.length ? alignment(item) + "% alignment" : "Awaiting questions"} ·{" "}
+                      {!item.questions.length
+                        ? "Awaiting questions"
+                        : alignment(item) === null
+                          ? "Alignment —"
+                          : alignment(item) + "% alignment"} ·{" "}
                       {preparationGaps(item).keyConfirmed ? "Key confirmed" : "Key needed"} ·{" "}
                       {new Set(item.responses.map((response) => response.studentId)).size} students
                     </span>
@@ -664,7 +669,9 @@ export function AssessmentView() {
           <div className="assignment-status-bar">
             <div>
               <span>Standards alignment</span>
-              <strong>{a.questions.length ? alignment(a) + "%" : "—"}</strong>
+              <strong title={alignment(a) === null ? "No AI alignment score yet" : undefined}>
+                {alignment(a) === null ? "—" : alignment(a) + "%"}
+              </strong>
             </div>
             <div>
               <span>Questions to review</span>
@@ -938,7 +945,10 @@ export function AssessmentView() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <Score value={q.alignment} />
+                            <Score
+                              value={questionAlignment(q)}
+                              title="Assigned by you"
+                            />
                             <span className="cell-meta">{q.level}</span>
                           </TableCell>
                           <TableCell>
@@ -2469,6 +2479,13 @@ function ClassAnalysisPanel({
     );
   const report = classAnalysisReport(a, analysis);
   const errorTypes = assessmentErrorTypes(a, students);
+  // Answers across the class that have been read but not yet decided by the
+  // teacher. They are not counted as zero anywhere; this just says the class
+  // picture is still being graded so a partial is not read as final.
+  const activeIds = new Set(activeQuestions(a).map((q) => q.id));
+  const stillGrading = a.responses.filter(
+    (r) => activeIds.has(r.questionId) && !r.verified,
+  ).length;
   const fileName =
     a.title.trim().replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60) ||
     "assessment";
@@ -2502,6 +2519,16 @@ function ClassAnalysisPanel({
           </Action>
         </div>
       </SectionTitle>
+      {stillGrading > 0 && (
+        <div className="review-notice" data-tone="warn" role="status">
+          <AlertCircle size={18} />
+          <p>
+            {stillGrading} answer{stillGrading === 1 ? "" : "s"} across the class
+            still need grading. These aren’t counted as zero — the picture below
+            is from graded answers only and will change as you finish.
+          </p>
+        </div>
+      )}
       {errorTypes.length > 0 && (
         <div className="panel error-type-summary">
           <span className="cell-meta">

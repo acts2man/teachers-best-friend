@@ -512,7 +512,7 @@ export default async function LandingPage() {
       {/* ---------------- Close ---------------- */}
       <Reveal as="section" className="mk-wrap section close">
         <h2>Try it on one assignment.</h2>
-        <p>Twenty credits free, every month, no card. If it saves you a Sunday, you’ll know.</p>
+        <p>Thirty-six credits free, every month, no card. If it saves you a Sunday, you’ll know.</p>
         <Link href="/signup" className="btn btn-mark">Start free</Link>
       </Reveal>
     </>

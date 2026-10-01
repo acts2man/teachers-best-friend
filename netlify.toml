@@ -10,3 +10,11 @@
 # Let Netlify manage the current Next.js adapter automatically.
 # Do not disable the adapter or publish dist/client: the app has server routes.
 
+# The web manifest must be served as application/manifest+json. Netlify was
+# returning application/octet-stream for the .webmanifest extension, which some
+# browsers refuse as a manifest, breaking Add to Home Screen. Pin the type.
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+

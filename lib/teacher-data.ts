@@ -599,20 +599,39 @@ export function priorities(
     .filter((p) => p.students.length)
     .sort((a, b) => b.score - a.score);
 }
-export function alignment(a: Assessment) {
-  const qs = a.questions.filter((q) => !q.excluded);
-  return qs.length
-    ? Math.round(
-        qs.reduce(
-          (sum, q) =>
-            sum +
-            (a.targetStandards.length && !a.targetStandards.includes(q.standard)
-              ? 0
-              : q.alignment),
-          0,
-        ) / qs.length,
-      )
-    : 0;
+/**
+ * A question's AI alignment score, or null when it has none. The read gives a
+ * score of 0 ONLY when it assigns no standard (see the assignment prompt), so a
+ * question that has a standard but a 0 alignment was given its standard by the
+ * teacher -- "Assign <standard> to untagged", a manually added question -- not
+ * scored by the AI. Those are shown as "—", never as 0%, and never averaged.
+ */
+export function questionAlignment(q: Question): number | null {
+  return q.alignment > 0 ? q.alignment : null;
+}
+
+/**
+ * The assessment's average alignment across AI-scored, non-excluded questions,
+ * or null when none have an AI score. Teacher-assigned questions (no AI score)
+ * are left out of the average entirely rather than counted as 0. An AI-scored
+ * question whose standard is not one of the intended standards still counts as 0
+ * -- that is a real "measures something off-target", not a missing score.
+ */
+export function alignment(a: Assessment): number | null {
+  const qs = a.questions.filter(
+    (q) => !q.excluded && questionAlignment(q) !== null,
+  );
+  if (!qs.length) return null;
+  return Math.round(
+    qs.reduce(
+      (sum, q) =>
+        sum +
+        (a.targetStandards.length && !a.targetStandards.includes(q.standard)
+          ? 0
+          : q.alignment),
+      0,
+    ) / qs.length,
+  );
 }
 export function makeManualQuestions(text: string): Question[] {
   return text

@@ -135,6 +135,11 @@ export function studentReview(a: Assessment, studentId: string) {
     reviewed,
     missing,
     complete,
+    // Answers that exist but the teacher has not decided yet -- the "other"
+    // verdicts and anything else still pending. These are not counted as zero in
+    // the score (the score averages verified answers only); they are surfaced so
+    // a partial score is never mistaken for a final one.
+    needsGrading: pending.length,
     score: reviewed.length
       ? Math.round(
           reviewed.reduce((sum, response) => sum + responseMatch(response), 0) /
@@ -859,12 +864,22 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
     "Student",
     ...questions.map((q) => "Q" + q.number),
     "Score %",
-    "Points",
     "Reviewed",
+    "Needs grading",
   ];
   const rows = students.map((student) => {
     const review = studentReview(a, student.id);
     const byQuestion = new Map(review.responses.map((r) => [r.questionId, r]));
+    // Until every answer is graded, the Score % is not a final score, so it is
+    // marked "Incomplete" rather than printing a partial as if it were the
+    // result. The per-question columns still show what has been graded, and the
+    // count of answers still waiting is its own column.
+    const scoreCell =
+      review.score === null
+        ? ""
+        : review.complete
+          ? String(review.score)
+          : "Incomplete";
     return [
       student.name,
       ...questions.map((q) => {
@@ -872,9 +887,9 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
         if (!r || !r.verified) return "";
         return String(responseMatch(r));
       }),
-      review.score === null ? "" : String(review.score),
+      scoreCell,
       review.reviewed.length + "/" + questions.length,
-      review.complete ? "Yes" : review.reviewed.length ? "Partly" : "No",
+      review.needsGrading ? String(review.needsGrading) : "",
     ];
   });
   return [header, ...rows].map((row) => row.map(csvField).join(",")).join("\n");
