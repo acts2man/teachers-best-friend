@@ -258,12 +258,13 @@ test("a migration adds the reuse_fingerprint column", () => {
 // Explicit "Read again" buttons force a fresh read; auto-reads don't
 // ---------------------------------------------------------------
 
-test("the assessment scan's Read-it-again button forces a fresh read", () => {
+test("the assessment scan's read button forces a fresh read", () => {
   const scan = readFileSync("components/teacher-scan.tsx", "utf8");
   assert.match(scan, /analyze\(undefined, false, true\)/);
-  // The read fired automatically on upload must NOT force fresh (reuse allowed).
-  assert.match(scan, /await analyze\(\[\.\.\.files\.map/);
   assert.match(scan, /freshRead: fresh/);
+  // The blank test no longer reads automatically on each upload (PR: one read
+  // after all pages are collected), so that per-batch auto-read is gone.
+  assert.doesNotMatch(scan, /if \(!failed && uploadedIds\.length && autoReads\)/);
 });
 
 test("the assessment's Read-document-again button forces a fresh read", () => {

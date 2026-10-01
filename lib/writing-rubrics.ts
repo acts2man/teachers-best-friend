@@ -23,7 +23,7 @@ import type { RubricDimension } from "./teacher-types";
  * teacher can view and edit every trait's descriptor there.
  */
 
-export type WritingGenre = "informational" | "narrative";
+export type WritingGenre = "informational" | "narrative" | "response";
 
 export type GradeBand = "K-2" | "3-5" | "6-8" | "9-12";
 
@@ -91,7 +91,58 @@ const CONVENTIONS: Record<GradeBand, string> = {
  * The default rubric for a genre at a grade. Three traits, each with a fresh id
  * so a teacher can edit or reorder them without collisions across assessments.
  */
+/**
+ * Response writing (constructed response / RACES): a student answers a question
+ * in writing, citing and explaining text evidence. Five traits, all on a 4-point
+ * scale (4 Excellent, 3 Proficient, 2 Developing, 1 Beginning). Not an SBAC
+ * rubric -- it is ours, from Michael's ask -- and grade-agnostic; a teacher who
+ * uses a different RACES variant can upload their own with the rubric upload.
+ */
+function responseRubric(grade: number): RubricDimension[] {
+  const g = ccssGrade(grade);
+  const levels =
+    " (4 Excellent, 3 Proficient, 2 Developing, 1 Beginning.)";
+  return [
+    {
+      id: crypto.randomUUID(),
+      name: "Answer",
+      max: 4,
+      descriptor: "Answers all parts of the question accurately." + levels,
+      standard: `W.${g}.1`,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Cite Evidence",
+      max: 4,
+      descriptor: "Uses strong, accurate text evidence to support the answer." + levels,
+      standard: `RI.${g}.1`,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Explain",
+      max: 4,
+      descriptor: "Explains how the evidence supports the answer." + levels,
+      standard: `W.${g}.9`,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Organization",
+      max: 4,
+      descriptor: "Logical order, complete sentences, ideas that flow." + levels,
+      standard: `W.${g}.4`,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Conventions",
+      max: 4,
+      descriptor: "Capitalization, punctuation, spelling, and grammar." + levels,
+      standard: `L.${g}.2`,
+    },
+  ];
+}
+
 export function defaultRubric(genre: WritingGenre, grade: number): RubricDimension[] {
+  if (genre === "response") return responseRubric(grade);
   const band = gradeBand(grade);
   const g = ccssGrade(grade);
   const elaboration =
@@ -133,6 +184,11 @@ export const WRITING_GENRES: { value: WritingGenre; label: string; hint: string 
     value: "narrative",
     label: "Narrative",
     hint: "Tells a real or imagined story with characters and events.",
+  },
+  {
+    value: "response",
+    label: "Response writing",
+    hint: "A written answer to a question (constructed response): answer, cite evidence, explain. RACES-style.",
   },
 ];
 

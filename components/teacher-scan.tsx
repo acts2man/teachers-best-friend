@@ -244,14 +244,14 @@ export function ScanView() {
       setUploading(false);
       if (input.current) input.current.value = "";
     }
-    // Reading the assessment was a button, with a "save without reading"
-    // escape hatch beside it. A teacher who uploads a test always wants it
-    // read -- that is the entire point -- so it now happens on upload, with no
-    // click and no way to skip past it. The manual path stays only where
-    // reading is genuinely unavailable: no AI connection, or scans used up.
-    if (!failed && uploadedIds.length && autoReads) {
-      await analyze([...files.map((f) => f.id), ...uploadedIds]);
-    }
+    // Uploading no longer reads. A blank test used to read after every upload
+    // batch, so a teacher who photographed pages one at a time -- open camera,
+    // one page, Done; open camera, one page, Done -- paid for a full read on
+    // each page, and each read re-read the pages before it. Student work never
+    // did this: it collects every page, then reads once when the teacher taps
+    // "Check student work". The blank test now works the same way -- take all
+    // the pages (any number of camera sessions or file picks), then one tap on
+    // "Read the assessment" reads the whole set together.
   }
   // Reading comprehension: transcribe the story from photos/PDF into the passage
   // text, so it can be attached to the question read and kept on the assessment.
@@ -586,6 +586,9 @@ export function ScanView() {
     }
   }
   const contentReady = !!files.length || !!text.trim();
+  // Whether this assessment has already been read once, so the button reads
+  // "Read it again" rather than "Read the assessment".
+  const hasRead = !!createdId || (editing?.questions?.length ?? 0) > 0;
   return (
     <>
       <button
@@ -738,7 +741,7 @@ export function ScanView() {
                       <label
                         key={option.value}
                         className={
-                          "target-standard-option " +
+                          "target-standard-option genre-option " +
                           (genre === option.value ? "selected" : "")
                         }
                       >
@@ -1273,7 +1276,7 @@ export function ScanView() {
                     <ArrowRight size={17} />
                   </Action>
                 )}
-                {aiReady && !(autoReads && !contentReady) && (
+                {aiReady && (
                   <Action
                     disabled={
                       busy ||
@@ -1294,7 +1297,7 @@ export function ScanView() {
                       ? "Reading the work…"
                       : mode === "responses"
                         ? "Check student work"
-                        : autoReads
+                        : hasRead
                           ? "Read it again"
                           : "Read the assessment"}
                   </Action>
