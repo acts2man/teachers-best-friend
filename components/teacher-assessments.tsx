@@ -1705,11 +1705,69 @@ function WritingRubricPanel({
   assessment: Assessment;
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
 }) {
-  const { busy } = useTeacher();
+  const { busy, aiReady } = useTeacher();
   const [draft, setDraft] = useState<RubricDimension[]>(a.rubric ?? []);
+  const [reading, setReading] = useState(false);
+  const [notice, setNotice] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const set = (id: string, patch: Partial<RubricDimension>) =>
     setDraft((rows) => rows.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   const dirty = JSON.stringify(draft) !== JSON.stringify(a.rubric ?? []);
+
+  // Read the teacher's own rubric (photo or PDF) into editable traits. The AI
+  // suggests a matching standard per trait; nothing is scored against it until
+  // the teacher reviews and saves it, so this only fills the draft below.
+  async function readRubric(list: FileList | null) {
+    if (!list?.length || reading) return;
+    const incoming = Array.from(list).slice(0, 4);
+    setReading(true);
+    setNotice("");
+    try {
+      const ids: string[] = [];
+      for (const raw of incoming) {
+        const file = await uprightPage(raw);
+        const d = await uploadFile(file);
+        ids.push(d.id);
+      }
+      const d = await analyzeRequest({
+        mode: "rubric",
+        uploadIds: ids,
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+      });
+      const traits = (d.result.traits ?? []) as {
+        name: string;
+        max: number;
+        descriptor: string;
+        standard: string;
+      }[];
+      if (!traits.length) {
+        setNotice(
+          "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand.",
+        );
+        return;
+      }
+      setDraft(
+        traits.map((t) => ({
+          id: crypto.randomUUID(),
+          name: t.name,
+          max: t.max,
+          descriptor: t.descriptor,
+          standard: t.standard,
+        })),
+      );
+      setNotice(
+        traits.length +
+          " traits read from your rubric. Check each one and its standard, then Save rubric.",
+      );
+    } catch (e) {
+      setNotice(describeFailure(e, "Your rubric couldn’t be read."));
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
   return (
     <div className="panel">
       <SectionTitle
@@ -1719,6 +1777,46 @@ function WritingRubricPanel({
           (genreLabel(a.genre) ? genreLabel(a.genre) + " writing." : "")
         }
       />
+      {aiReady && (
+        <div className="key-source-actions">
+          <Action
+            variant="secondary"
+            disabled={busy || reading}
+            onClick={() => fileRef.current?.click()}
+          >
+            {reading ? (
+              <LoaderCircle className="spin" size={17} />
+            ) : (
+              <Upload size={17} />
+            )}
+            Upload or photograph your rubric
+          </Action>
+          <input
+            ref={fileRef}
+            className="sr-only"
+            type="file"
+            multiple
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            aria-label="Upload your own writing rubric"
+            onChange={(e) => readRubric(e.target.files)}
+          />
+          <span className="field-help">
+            Reads your own rubric into the traits below. The state rubric is the
+            default until you do. Uses one credit, like reading a test.
+          </span>
+        </div>
+      )}
+      {reading && (
+        <div className="read-document-status" role="status">
+          <LoaderCircle className="spin" size={18} />
+          <p>Reading your rubric…</p>
+        </div>
+      )}
+      {notice && (
+        <p className="key-notice" role="status">
+          {notice}
+        </p>
+      )}
       {isSimplifiedBand(a.grade) && (
         <div className="review-notice">
           <Target size={18} />
@@ -1764,6 +1862,16 @@ function WritingRubricPanel({
                     max: Math.max(1, Math.min(6, Math.round(Number(e.target.value) || 1))),
                   })
                 }
+              />
+            </label>
+            <label>
+              Standard
+              <input
+                className="class-scan-name-input"
+                value={d.standard}
+                placeholder="e.g. W.5.2"
+                aria-label={d.name + " standard"}
+                onChange={(e) => set(d.id, { standard: e.target.value.trim() })}
               />
             </label>
           </div>
