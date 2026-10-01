@@ -26,7 +26,7 @@ import { Action, EmptyState, PageTitle, Pick, Pill } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
-import { extractPdfText } from "@/lib/pdf-text";
+import { safePdfText } from "@/lib/pdf-text";
 import { frameworkOptions } from "@/lib/states";
 import { StandardsLoader } from "./teacher-classes";
 import { ScanCamera } from "./scan-camera";
@@ -208,11 +208,13 @@ export function ScanView() {
       if (!title && mode === "assignment" && prepped[0])
         setTitle(prepped[0].name.replace(/\.[^.]+$/, ""));
       // Without an AI connection, a typed PDF can still fill the questions
-      // or answers automatically.
+      // or answers automatically. This read is best-effort -- safePdfText
+      // swallows a decode failure so a PDF the browser cannot read still
+      // uploads and is saved, rather than failing the whole upload.
       if (!aiReady) {
         for (const f of prepped) {
           if (f.type !== "application/pdf") continue;
-          const extracted = await extractPdfText(await f.arrayBuffer());
+          const extracted = await safePdfText(await f.arrayBuffer());
           if (extracted) {
             setText((previous) =>
               (previous.trim() ? previous.trimEnd() + "\n\n" : "") + extracted,
