@@ -120,6 +120,13 @@ input,textarea,.pick {font-size:1rem}
 .target-standard-option:hover {background:hsl(calc(96deg + var(--th)) calc(29% * var(--ts)) 96.7%)}
 .target-standard-option.selected {background:hsl(calc(98deg + var(--th)) calc(33% * var(--ts)) 93.5%)}
 .target-standard-option>[data-slot=checkbox] {flex-shrink:0;margin-top:3px}
+/* Genre cards use a native radio, which the global `input:not([type=file])`
+   rule would blow up to a full-width bordered box sitting above the text. Reset
+   it to a small control inline to the left of the title -- a standard radio card
+   -- on phone and desktop. flex-direction is pinned to row because the base
+   `label` rule sets column. */
+.genre-option {flex-direction:row;align-items:flex-start}
+.genre-option>input[type=radio] {width:auto;min-width:0;flex:0 0 auto;margin:2px 0 0;padding:0;border:0;border-radius:0;box-shadow:none;appearance:auto;-webkit-appearance:radio;height:18px;accent-color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 34%)}
 .target-standard-option>span {min-width:0}
 .target-standard-option strong {font-size:.95rem;font-weight:650;margin-right:10px}
 .target-standard-option span span {font-size:.8rem;color:hsl(calc(146deg + var(--th)) calc(14% * var(--ts)) 39.6%)}

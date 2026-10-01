@@ -109,7 +109,7 @@ export type Assessment = {
   source: "sample" | "manual" | "ai";
   passage?: string;
   /** Writing only: the genre being scored. Picks the default rubric. */
-  genre?: "informational" | "narrative";
+  genre?: "informational" | "narrative" | "response";
   /** Writing only: the rubric the AI scores against and the teacher can edit.
    * Absent on every non-writing assessment. */
   rubric?: RubricDimension[];

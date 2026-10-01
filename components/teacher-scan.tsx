@@ -689,7 +689,7 @@ export function ScanView() {
                       <label
                         key={option.value}
                         className={
-                          "target-standard-option " +
+                          "target-standard-option genre-option " +
                           (genre === option.value ? "selected" : "")
                         }
                       >
