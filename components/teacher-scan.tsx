@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { uploadFile } from "@/lib/upload-client";
 import { uprightPage } from "@/lib/image-prep";
-import { describeFailure } from "@/lib/connection";
+import { describeFailure, deleteUploads } from "@/lib/connection";
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTeacher } from "./teacher-context";
-import { Action, PageTitle, Pick, Pill } from "./teacher-shared";
+import { Action, PageTitle, Pick, Pill, SectionTitle } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
@@ -37,7 +37,7 @@ import {
   preparationGaps,
 } from "@/lib/teacher-workflow";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
-import { offeredElaAreas } from "@/lib/ela";
+import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
   defaultRubric,
   WRITING_GENRES,
@@ -75,6 +75,12 @@ export function ScanView() {
     [linked, setLinked] = useState<string[]>([]);
   const [text, setText] = useState(""),
     [files, setFiles] = useState<Uploaded[]>([]);
+  // Reading comprehension: the transcribed story/passage the questions are
+  // about, captured before the questions and attached to the read so each
+  // question is classified against the text it refers to.
+  const [passage, setPassage] = useState(""),
+    [passageOpen, setPassageOpen] = useState(false),
+    [passageReading, setPassageReading] = useState(false);
   // What the whole assessment is worth (optional). Kept as a string for the
   // input; parsed to a number in makeAssessment.
   const [points, setPoints] = useState("");
@@ -92,6 +98,7 @@ export function ScanView() {
   // one -- so a multi-page test comes out as one test. See analyze().
   const [createdId, setCreatedId] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const passageInput = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const chosen = assessments.find((a) => a.id === assessmentId);
   // Edit the assessment named in the URL, or the one this session just created
@@ -120,6 +127,9 @@ export function ScanView() {
   // Writing skips the standards picker and the document read: the rubric is the
   // whole setup, so phase 1 offers a genre and creates the assessment directly.
   const isWriting = subject === "ELA" && elaArea === "writing";
+  // Reading comprehension: the questions are about a shared story, so the story
+  // is asked for before the questions and travels with the read.
+  const isReading = mode === "assignment" && subject === "ELA" && elaArea === "reading";
   const prepared = chosen && preparationGaps(chosen).ready;
   useEffect(() => {
     const id = params.get("assessment"),
@@ -243,6 +253,42 @@ export function ScanView() {
     // the pages (any number of camera sessions or file picks), then one tap on
     // "Read the assessment" reads the whole set together.
   }
+  // Reading comprehension: transcribe the story from photos/PDF into the passage
+  // text, so it can be attached to the question read and kept on the assessment.
+  async function readPassage(list: FileList | File[] | null) {
+    if (!list) return;
+    const incoming = Array.from(list);
+    if (!incoming.length || passageReading) return;
+    setPassageReading(true);
+    setError("");
+    try {
+      const ids: string[] = [];
+      for (const raw of incoming) {
+        const page = await uprightPage(raw);
+        const d = await uploadFile(page);
+        ids.push(d.id);
+      }
+      const d = await analyzeRequest({
+        mode: "passage",
+        uploadIds: ids,
+        grade: Number(grade),
+        subject,
+        framework,
+      });
+      const read = String(d.result.text || "").trim();
+      if (!read) {
+        setError("No text could be read from those pages. Try a clearer photo, or paste the passage.");
+        return;
+      }
+      setPassage((prev) => (prev.trim() ? prev.trimEnd() + "\n\n" : "") + read);
+      // The text is out of the photos now; they have nothing left to give.
+      await deleteUploads(ids).catch(() => {});
+    } catch (e) {
+      setError(describeFailure(e, "The passage couldn’t be read."));
+    } finally {
+      setPassageReading(false);
+    }
+  }
   function makeAssessment(
     questions: Question[],
     origin: "manual" | "ai",
@@ -261,6 +307,10 @@ export function ScanView() {
       subject,
       // Only ELA carries an area; Math leaves it unset.
       elaArea: subject === "ELA" ? elaArea : undefined,
+      // Reading comprehension keeps the transcribed story on the assessment, so
+      // it travels with every student's grading (passageForGrading) just as the
+      // question read used it. Other areas keep whatever was already there.
+      passage: isReading && passage.trim() ? passage.trim() : editing?.passage,
       grade: Number(grade),
       framework,
       createdAt: editing?.createdAt || new Date().toISOString(),
@@ -451,6 +501,8 @@ export function ScanView() {
         assessmentId,
         studentId,
         freshRead: fresh,
+        // Reading comprehension: connect the questions to the story they're about.
+        passage: isReading && passage.trim() ? passage : undefined,
       });
       if (mode === "assignment") {
         // A read that found nothing is not an assessment. Saving an empty one
@@ -876,6 +928,9 @@ export function ScanView() {
                 <div>
                   <Pill>{gradeLabel(Number(grade), subject)}</Pill>
                   <Pill>{subject}</Pill>
+                  {subject === "ELA" && elaAreaLabel(elaArea) && (
+                    <Pill>{elaAreaLabel(elaArea)}</Pill>
+                  )}
                   <span>
                     {framework} · {selected.length} intended standards
                   </span>
@@ -885,7 +940,93 @@ export function ScanView() {
                 </button>
               </div>
             )}
+            {isReading && (
+              <section className="panel setup-panel">
+                <SectionTitle
+                  title="1. The reading passage"
+                  description="Add the story or passage first. The questions are read against it, so the AI knows what each one is really asking."
+                >
+                  {passage.trim() ? (
+                    <Pill tone="green">
+                      {passage.trim().split(/\s+/).length} words
+                    </Pill>
+                  ) : null}
+                </SectionTitle>
+                <div className="key-source-actions">
+                  <Action
+                    variant="secondary"
+                    disabled={passageReading || !aiReady}
+                    onClick={() => setPassageOpen(true)}
+                  >
+                    {passageReading ? (
+                      <LoaderCircle className="spin" size={17} />
+                    ) : (
+                      <Camera size={17} />
+                    )}
+                    Photograph the story
+                  </Action>
+                  <Action
+                    variant="secondary"
+                    disabled={passageReading || !aiReady}
+                    onClick={() => passageInput.current?.click()}
+                  >
+                    <Upload size={17} />
+                    Upload pages
+                  </Action>
+                  <input
+                    ref={passageInput}
+                    type="file"
+                    className="sr-only"
+                    multiple
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    aria-label="Upload pages of the reading passage"
+                    onChange={(e) => {
+                      readPassage(e.target.files);
+                      if (passageInput.current) passageInput.current.value = "";
+                    }}
+                  />
+                </div>
+                {passageReading && (
+                  <div className="read-document-status" role="status">
+                    <LoaderCircle className="spin" size={18} />
+                    <p>Reading the passage…</p>
+                  </div>
+                )}
+                <label className="block-label">
+                  Or paste the passage
+                  <textarea
+                    value={passage}
+                    onChange={(e) => setPassage(e.target.value)}
+                    placeholder="Paste the story or article the questions are about."
+                    rows={5}
+                  />
+                </label>
+                {passageOpen && (
+                  <ScanCamera
+                    mode="single"
+                    title="Reading passage"
+                    assessmentId={createdId || editing?.id || "passage-draft"}
+                    onComplete={(groups) => {
+                      setPassageOpen(false);
+                      const captured = groups.flat();
+                      if (captured.length) readPassage(captured);
+                    }}
+                    onCancel={() => setPassageOpen(false)}
+                    onFallback={() => {
+                      setPassageOpen(false);
+                      passageInput.current?.click();
+                    }}
+                  />
+                )}
+              </section>
+            )}
             <section className="panel setup-panel upload-work-panel">
+              {isReading && (
+                <p className="field-help key-step-note">
+                  2. Now add the questions. They’ll be read against the passage
+                  above.
+                </p>
+              )}
               {mode === "assignment" && (
                 <label className="block-label assignment-title-input">
                   Assessment name

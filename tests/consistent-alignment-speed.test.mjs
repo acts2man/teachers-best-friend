@@ -125,11 +125,12 @@ const hashSvc = () =>
     },
   });
 
-test("the fingerprint folds in prompt version, mode, scope, targets, and sorted hashes", async () => {
+test("the fingerprint folds in prompt version, mode, scope, targets, passage, and sorted hashes", async () => {
   const fp = await readReuseFingerprint(hashSvc(), "t1", params());
   assert.equal(
     fp,
-    ["v" + READ_PROMPT_VERSION, "assignment", "Math", 7, "California", "7.RP.3", "hashA,hashB"].join("|"),
+    // "p0" = no passage; a reading-comprehension read adds "p<length>".
+    ["v" + READ_PROMPT_VERSION, "assignment", "Math", 7, "California", "7.RP.3", "p0", "hashA,hashB"].join("|"),
   );
 });
 
