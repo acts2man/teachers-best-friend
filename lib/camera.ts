@@ -18,25 +18,83 @@ export type FacingMode = "environment" | "user";
  */
 export function videoConstraints(
   facingMode: FacingMode = "environment",
-  portrait = false,
 ): MediaStreamConstraints {
-  // When the phone is upright, ask for a portrait frame (taller than wide) so a
-  // page held in portrait fills it, instead of a landscape sensor frame that
-  // leaves the page small and letterboxed. `ideal` only -- a camera that can't
-  // deliver a portrait frame still starts, and the preview is `object-fit:
-  // contain` so it stays what-you-see-is-what-you-get either way. continuous
-  // autofocus is requested here and, because many browsers only honour focus
-  // through applyConstraints, again on the live track once the stream starts.
+  // Rear camera and a resolution hint only -- no aspectRatio and no
+  // portrait/landscape forcing. #96 asked iOS Safari for a portrait frame
+  // (width<height, aspectRatio 3:4); Safari ignored it and delivered a
+  // landscape frame anyway, which `object-fit: contain` then letterboxed into a
+  // thin strip. We no longer care which orientation the camera returns: the
+  // preview fills the screen with `object-fit: cover` and each capture is
+  // cropped to exactly the visible region (coverCrop), so a landscape or
+  // portrait frame both come out right. A square `ideal` keeps the request from
+  // biasing the orientation while still asking for plenty of pixels; the camera
+  // clamps to its own best mode. continuous autofocus is requested here and
+  // again on the live track (many browsers only honour focus through
+  // applyConstraints).
   const video: MediaTrackConstraints = {
     facingMode: { ideal: facingMode },
-    width: { ideal: portrait ? 2160 : 4096 },
-    height: { ideal: portrait ? 3840 : 4096 },
-    aspectRatio: { ideal: portrait ? 3 / 4 : 4 / 3 },
+    width: { ideal: 2560 },
+    height: { ideal: 2560 },
     // focusMode is not in the TS DOM lib yet, but it is honoured by
     // Chromium-family browsers; cast through unknown so the hint still ships.
     advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
   };
   return { audio: false, video };
+}
+
+/**
+ * The region of a camera frame that a full-screen `object-fit: cover` preview
+ * actually shows, in frame (video) pixels -- so a capture can crop to exactly
+ * what the teacher sees. The frame is scaled to cover the viewport and the
+ * overflow is trimmed equally on the longer axis, so the visible region has the
+ * viewport's aspect ratio, centered.
+ *
+ * Aspect-based, so `vw`/`vh` may be CSS pixels while `fw`/`fh` are video pixels;
+ * only the ratios matter. Works for a landscape frame on a portrait screen
+ * (iOS) and a portrait frame on a portrait screen (Android) alike.
+ */
+export function coverCrop(
+  fw: number,
+  fh: number,
+  vw: number,
+  vh: number,
+): { x: number; y: number; w: number; h: number } {
+  if (fw <= 0 || fh <= 0 || vw <= 0 || vh <= 0)
+    return { x: 0, y: 0, w: Math.max(0, fw), h: Math.max(0, fh) };
+  const frameAspect = fw / fh;
+  const viewAspect = vw / vh;
+  let w: number, h: number;
+  if (viewAspect > frameAspect) {
+    // Viewport is relatively wider: the full width shows, top and bottom trim.
+    w = fw;
+    h = fw / viewAspect;
+  } else {
+    // Viewport is relatively taller: the full height shows, sides trim.
+    h = fh;
+    w = fh * viewAspect;
+  }
+  return { x: (fw - w) / 2, y: (fh - h) / 2, w, h };
+}
+
+/**
+ * Where a point in frame (video) pixels lands on a full-screen `object-fit:
+ * cover` preview, in viewport pixels. Used to draw the detected-page outline in
+ * the same place the page appears on screen. The inverse pairing of coverCrop:
+ * the crop's top-left maps to (0,0) and its bottom-right to (vw,vh).
+ */
+export function coverMapPoint(
+  px: number,
+  py: number,
+  fw: number,
+  fh: number,
+  vw: number,
+  vh: number,
+): { x: number; y: number } {
+  if (fw <= 0 || fh <= 0) return { x: px, y: py };
+  const scale = Math.max(vw / fw, vh / fh);
+  const offX = (vw - fw * scale) / 2;
+  const offY = (vh - fh * scale) / 2;
+  return { x: px * scale + offX, y: py * scale + offY };
 }
 
 /** Whether this browser/context can open a camera at all (needs HTTPS). */

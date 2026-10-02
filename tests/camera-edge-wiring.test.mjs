@@ -15,16 +15,22 @@ test("detection code is loaded lazily, only when the camera opens", () => {
   assert.ok(!/^import .*from "@\/lib\/edge-detect"/m.test(src), "edge-detect not statically imported");
 });
 
-test("it outlines the detected page and crops/straightens on capture", () => {
+test("it outlines the detected page; capture crops to the visible region, not a warp", () => {
   assert.match(src, /findDocumentQuad\(/, "detects the page each frame");
   assert.match(src, /overlayCanvasRef/, "draws an on-screen outline");
-  assert.match(src, /warpPerspective\(/, "crops and straightens on capture");
+  // Capture is now exactly what the cover preview shows (coverCrop), so the saved
+  // photo matches the screen on every device. The perspective warp is gone -- it
+  // produced a different image than the preview and depended on a quad that iOS
+  // was mapping to the wrong place.
+  assert.match(src, /coverCrop\(fw, fh, vw, vh\)/, "capture crops to the visible region");
+  assert.doesNotMatch(src, /warpPerspective\(/, "no perspective warp on capture");
 });
 
-test("a missing OR low-confidence page still captures the full frame — never a wrong crop", () => {
-  // The warp is gated on confidence; anything less keeps the plain frame.
-  assert.match(src, /if \(edge && det && det\.confident\)/, "warp only when confidently a page");
-  assert.match(src, /let out(:| )/, "a full-frame result is the default");
+test("every capture crops to exactly the visible region, regardless of the detected quad", () => {
+  // No confidence branch in the capture path any more: the crop is the visible
+  // cover region, so the outline can never cause a wrong crop.
+  assert.match(src, /drawImage\(video, crop\.x, crop\.y, crop\.w, crop\.h/, "draws the cover crop");
+  assert.doesNotMatch(src, /if \(edge && det && det\.confident\)/, "capture does not branch on the quad");
 });
 
 test("only a confident page crops and auto-snaps; low confidence shows a hint", () => {

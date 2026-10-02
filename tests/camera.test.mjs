@@ -28,12 +28,14 @@ function bundle(path) {
 const { videoConstraints, cameraSupported, describeCameraError, partitionByGroup } =
   bundle("lib/camera.ts");
 
-test("it asks for the rear camera at the highest resolution, no audio", () => {
+test("it asks for the rear camera with a resolution hint, no audio", () => {
   const c = videoConstraints();
   assert.equal(c.audio, false);
   assert.equal(c.video.facingMode.ideal, "environment");
-  // ideal (not exact) so a weaker camera still starts.
-  assert.ok(c.video.width.ideal >= 3000 && c.video.height.ideal >= 3000);
+  // ideal (not exact) so a weaker camera still starts; a square hint keeps the
+  // request from biasing portrait vs landscape (iOS picks its own orientation).
+  assert.ok(c.video.width.ideal >= 2000 && c.video.height.ideal >= 2000);
+  assert.equal(c.video.width.ideal, c.video.height.ideal);
 });
 
 test("cameraSupported reflects whether getUserMedia exists", () => {
