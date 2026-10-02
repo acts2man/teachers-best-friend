@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { Camera, Check, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
+import { Camera, Check, Info, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
 import {
   cameraSupported,
+  coverCrop,
+  coverMapPoint,
   describeCameraError,
   partitionByGroup,
   videoConstraints,
@@ -18,6 +20,7 @@ const AUTO_KEY = "tbf.scan.autoSnap";
 const DETECT_W = 320; // downscaled working width for live detection
 const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
 const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
+const SETTLE_MS = 700; // let the stream focus/settle before the first capture
 
 /**
  * Ask the live camera track for continuous autofocus. Best-effort: focusMode
@@ -121,6 +124,11 @@ export function ScanCamera({
   const lastDetectRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const shootRef = useRef<() => void>(() => {});
+  // The stream's first frames on iOS are often blurry while it focuses and
+  // settles, so capture waits for this.
+  const settledRef = useRef(false);
+  // The size of the most recent capture, for the diagnostic panel.
+  const lastCaptureRef = useRef<{ w: number; h: number } | null>(null);
 
   const [shots, setShots] = useState<Shot[]>([]);
   const [group, setGroup] = useState(0);
@@ -128,10 +136,18 @@ export function ScanCamera({
   const [lowConfidence, setLowConfidence] = useState(false);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(true);
+  const [settled, setSettled] = useState(false);
   const [flash, setFlash] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [restorable, setRestorable] = useState<Shot[] | null>(null);
+  // Hidden diagnostic panel (tap the "i"), and a tick that refreshes its live
+  // numbers while it is open.
+  const [diag, setDiag] = useState(false);
+  const [diagText, setDiagText] = useState("");
+  useEffect(() => {
+    settledRef.current = settled;
+  }, [settled]);
 
   useEffect(() => {
     shotsRef.current = shots;
@@ -175,41 +191,29 @@ export function ScanCamera({
   function shoot() {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return;
+    // Don't capture the blurry first frames: wait until the stream has settled.
+    if (!settledRef.current) return;
     const fw = video.videoWidth;
     const fh = video.videoHeight;
-    const scale = Math.min(1, CAPTURE_CAP / Math.max(fw, fh));
-    const cw = Math.round(fw * scale);
-    const ch = Math.round(fh * scale);
+    // What the teacher actually sees: the preview fills the screen with
+    // object-fit: cover, so crop the capture to exactly that visible region,
+    // mapped back to frame pixels. Read the live video dimensions (iOS reports
+    // them rotated only after playback starts) and the current on-screen size,
+    // so a rotated phone or a landscape frame both come out matching the screen.
+    const vw = video.clientWidth || window.innerWidth;
+    const vh = video.clientHeight || window.innerHeight;
+    const crop = coverCrop(fw, fh, vw, vh);
+    const scale = Math.min(1, CAPTURE_CAP / Math.max(crop.w, crop.h));
+    const outW = Math.max(1, Math.round(crop.w * scale));
+    const outH = Math.max(1, Math.round(crop.h * scale));
     const cap = document.createElement("canvas");
-    cap.width = cw;
-    cap.height = ch;
+    cap.width = outW;
+    cap.height = outH;
     const cctx = cap.getContext("2d");
     if (!cctx) return;
-    cctx.drawImage(video, 0, 0, cw, ch);
-
-    // Crop + straighten only when the detection is confidently a page; anything
-    // less keeps the full frame, so a wrong crop never loses the top/name.
-    let out: HTMLCanvasElement = cap;
-    const edge = edgeRef.current;
-    const det = quadRef.current;
-    if (edge && det && det.confident) {
-      try {
-        const q = edge.scaleQuad(det.quad, cw / det.w, ch / det.h);
-        const warped = edge.warpPerspective(cctx.getImageData(0, 0, cw, ch), q);
-        const wc = document.createElement("canvas");
-        wc.width = warped.width;
-        wc.height = warped.height;
-        const wctx = wc.getContext("2d");
-        if (wctx) {
-          const id = wctx.createImageData(warped.width, warped.height);
-          id.data.set(warped.data);
-          wctx.putImageData(id, 0, 0);
-          out = wc;
-        }
-      } catch {
-        out = cap; // any warp trouble → the plain frame, never a lost shot
-      }
-    }
+    cctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
+    lastCaptureRef.current = { w: outW, h: outH };
+    const out: HTMLCanvasElement = cap;
 
     const captureGroup = groupRef.current;
     const seq = seqRef.current++;
@@ -261,13 +265,20 @@ export function ScanCamera({
 
       const fw = video.videoWidth;
       const fh = video.videoHeight;
+      // Detection runs on a small copy of the whole frame (frame aspect).
       const dw = DETECT_W;
       const dh = Math.max(1, Math.round((DETECT_W * fh) / fw));
       if (dc.width !== dw) {
         dc.width = dw;
         dc.height = dh;
-        oc.width = dw;
-        oc.height = dh;
+      }
+      // The overlay is sized to the on-screen viewport, not the frame, so the
+      // outline can be drawn where the page actually appears under cover.
+      const vw = Math.max(1, Math.round(video.clientWidth || window.innerWidth));
+      const vh = Math.max(1, Math.round(video.clientHeight || window.innerHeight));
+      if (oc.width !== vw || oc.height !== vh) {
+        oc.width = vw;
+        oc.height = vh;
       }
       const dctx = dc.getContext("2d", { willReadFrequently: true });
       const octx = oc.getContext("2d");
@@ -278,24 +289,28 @@ export function ScanCamera({
       quadRef.current = quad ? { quad, w: dw, h: dh, confident } : null;
       setLowConfidence(!!quad && !confident);
 
-      octx.clearRect(0, 0, dw, dh);
+      octx.clearRect(0, 0, vw, vh);
       if (quad) {
-        // Solid green when we'll crop; dashed/soft when only a guess.
+        // Map each corner from the detection frame into the visible cover space,
+        // so the outline sits on the page exactly as it appears on screen.
+        const pts = quad.map((p) => coverMapPoint(p.x, p.y, dw, dh, vw, vh));
+        // Solid green on a confident page; dashed/soft when only a guess.
         octx.lineWidth = confident ? 2.5 : 2;
         octx.strokeStyle = confident ? "rgba(120,230,170,0.95)" : "rgba(245,205,110,0.9)";
         octx.fillStyle = confident ? "rgba(120,230,170,0.14)" : "rgba(245,205,110,0.08)";
         octx.setLineDash(confident ? [] : [6, 5]);
         octx.beginPath();
-        octx.moveTo(quad[0].x, quad[0].y);
-        for (let i = 1; i < 4; i++) octx.lineTo(quad[i].x, quad[i].y);
+        octx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < 4; i++) octx.lineTo(pts[i].x, pts[i].y);
         octx.closePath();
         octx.fill();
         octx.stroke();
       }
 
-      // Auto-snap only on a confident page; otherwise feed null so it can't fire.
+      // Auto-snap only on a confident page, and only once the stream has
+      // settled, so it never fires on a blurry first frame; feed null otherwise.
       const snap = snapRef.current;
-      if (autoRef.current && snap && snapStateRef.current) {
+      if (autoRef.current && settledRef.current && snap && snapStateRef.current) {
         const r = snap.autoSnapStep(snapStateRef.current, { quad: confident ? quad : null, now });
         snapStateRef.current = r.state;
         if (r.fire) shootRef.current();
@@ -317,12 +332,8 @@ export function ScanCamera({
         return;
       }
       try {
-        // Upright phone -> ask for a portrait frame so a portrait page fills it.
-        const portrait =
-          typeof window !== "undefined" &&
-          window.innerHeight >= window.innerWidth;
         const stream = await navigator.mediaDevices.getUserMedia(
-          videoConstraints("environment", portrait),
+          videoConstraints("environment"),
         );
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -339,6 +350,11 @@ export function ScanCamera({
         // is -- neither should stop the scan.
         void applyContinuousFocus(stream);
         setStarting(false);
+        // Give the stream a moment to focus and settle before allowing a
+        // capture -- iOS hands back a sharp frame a beat after playback starts.
+        setTimeout(() => {
+          if (!cancelled) setSettled(true);
+        }, SETTLE_MS);
       } catch (e) {
         if (!cancelled) {
           setError(describeCameraError(e));
@@ -362,6 +378,45 @@ export function ScanCamera({
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
     void focusAt(streamRef.current, x, y);
   }
+
+  // A plain-text dump Ricky can screenshot if anything is still off: the frame
+  // the camera is delivering, the track's own settings, the screen orientation,
+  // and the size of the last capture. Read live from the video and track. Called
+  // from the interval below (never during render), so reading refs is safe.
+  function diagnostics(): string {
+    const v = videoRef.current;
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    const s = (track?.getSettings?.() ?? {}) as Record<string, unknown>;
+    const orient =
+      (typeof screen !== "undefined" && screen.orientation?.type) ||
+      (typeof window !== "undefined" && window.innerHeight >= window.innerWidth
+        ? "portrait"
+        : "landscape");
+    const cap = lastCaptureRef.current;
+    const lines = [
+      "video frame: " + (v ? v.videoWidth + " x " + v.videoHeight : "—"),
+      "screen (css): " +
+        (v ? v.clientWidth + " x " + v.clientHeight : "—") +
+        "  dpr " + (typeof window !== "undefined" ? window.devicePixelRatio : "—"),
+      "orientation: " + orient,
+      "track w x h: " + (s.width ?? "—") + " x " + (s.height ?? "—"),
+      "track aspectRatio: " + (s.aspectRatio ?? "—"),
+      "track facingMode: " + (s.facingMode ?? "—"),
+      "track focusMode: " + ((s as { focusMode?: unknown }).focusMode ?? "—"),
+      "settled: " + settledRef.current,
+      "last capture: " + (cap ? cap.w + " x " + cap.h : "—"),
+    ];
+    return lines.join("\n");
+  }
+
+  // Refresh the diagnostic numbers a few times a second while the panel is open.
+  // The refs are read inside the interval callback (not during render), and the
+  // text is held in state so the render path never touches a ref.
+  useEffect(() => {
+    if (!diag) return;
+    const id = setInterval(() => setDiagText(diagnostics()), 300);
+    return () => clearInterval(id);
+  }, [diag]);
 
   function toggleAuto() {
     setAuto((a) => {
@@ -483,6 +538,15 @@ export function ScanCamera({
           <button
             type="button"
             className="scan-camera-icon-btn"
+            aria-label="Camera diagnostics"
+            aria-pressed={diag}
+            onClick={() => setDiag((d) => !d)}
+          >
+            <Info size={18} />
+          </button>
+          <button
+            type="button"
+            className="scan-camera-icon-btn"
             aria-label="Close camera"
             onClick={requestClose}
           >
@@ -490,12 +554,22 @@ export function ScanCamera({
           </button>
         </div>
       </div>
+      {diag && (
+        <pre className="scan-camera-diag" aria-label="Camera diagnostics">
+          {diagText}
+        </pre>
+      )}
       {starting && (
         <div className="scan-camera-starting" role="status">
           <LoaderCircle className="spin" size={22} /> Starting camera…
         </div>
       )}
-      {!starting && auto && lowConfidence && (
+      {!starting && !settled && (
+        <div className="scan-camera-hint" role="status">
+          Focusing…
+        </div>
+      )}
+      {!starting && settled && auto && lowConfidence && (
         <div className="scan-camera-hint" role="status">
           Hold steady or tap the shutter
         </div>
@@ -537,7 +611,7 @@ export function ScanCamera({
             type="button"
             className="scan-camera-shutter"
             aria-label="Take a photo"
-            disabled={starting || finishing}
+            disabled={starting || finishing || !settled}
             onClick={shoot}
           />
           <div className="scan-camera-side">

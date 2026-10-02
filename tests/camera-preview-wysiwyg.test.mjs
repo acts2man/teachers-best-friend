@@ -2,15 +2,20 @@
 //
 // Michael (Android/Brave) framed a page to the preview and the saved photo had
 // the whole desk around it: the preview was `object-fit: cover` (cropped the
-// wider frame to the tall screen) while the capture kept the full frame. The fix
-// shows the full frame (`contain`) so preview == capture, requests a portrait
-// frame when the phone is upright, and asks for continuous + tap-to-focus. This
-// also re-locks that auto-snap only ever fires on a confident, steady page.
+// wider frame to the tall screen) while the capture kept the full frame. The
+// original fix showed the full frame (`contain`). But on iOS Safari (Ricky)
+// `contain` + a portrait request letterboxed the landscape frame iOS actually
+// delivered into a thin strip. The current fix (see tests/camera-ios-cover.test.mjs)
+// goes back to `cover` and crops every capture to exactly the visible region, so
+// preview == capture on both platforms without forcing an orientation.
 //
-// NOTE: the real-device behaviour (does Brave honour the portrait request? does
-// the lens actually focus?) cannot be checked here. These tests cover the code
-// that is deterministic: the constraints requested, the CSS, the wiring, and the
-// auto-snap decision logic.
+// This file keeps the parts of Michael's fix that still hold: continuous +
+// tap-to-focus, and that auto-snap only ever fires on a confident, steady page.
+// The CSS/constraints/crop geometry live in tests/camera-ios-cover.test.mjs.
+//
+// NOTE: the real-device behaviour (does Brave/Safari actually focus?) cannot be
+// checked here. These tests cover the deterministic code: the focus wiring and
+// the auto-snap decision logic.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -39,18 +44,9 @@ const { videoConstraints } = bundle("lib/camera.ts");
 const { autoSnapStep, initialAutoSnapState, AUTO_SNAP_DEFAULTS } = bundle("lib/auto-snap.ts");
 
 // ---------------------------------------------------------------
-// Stream constraints: portrait when upright, continuous focus always
+// Stream constraints: continuous focus always (orientation is NOT
+// forced any more -- see tests/camera-ios-cover.test.mjs)
 // ---------------------------------------------------------------
-
-test("an upright phone asks for a portrait frame", () => {
-  const p = videoConstraints("environment", true);
-  assert.ok(
-    p.video.height.ideal > p.video.width.ideal,
-    "portrait: taller than wide so a portrait page fills the frame",
-  );
-  const l = videoConstraints("environment", false);
-  assert.ok(l.video.width.ideal >= l.video.height.ideal, "default stays landscape-ish");
-});
 
 test("continuous autofocus is requested in the constraints", () => {
   const c = videoConstraints();
@@ -59,27 +55,11 @@ test("continuous autofocus is requested in the constraints", () => {
 });
 
 // ---------------------------------------------------------------
-// The preview shows the whole frame (contain), matching the capture
+// Component wiring: focus and tap-to-focus
 // ---------------------------------------------------------------
 
-test("the camera video and overlay are contain, not cover", () => {
-  const css = readFileSync("app/globals.css", "utf8");
-  const video = /\.scan-camera-video\{[^}]*\}/.exec(css)[0];
-  const overlay = /\.scan-camera-overlay\{[^}]*\}/.exec(css)[0];
-  assert.match(video, /object-fit:contain/);
-  assert.doesNotMatch(video, /object-fit:cover/);
-  assert.match(overlay, /object-fit:contain/);
-  assert.doesNotMatch(overlay, /object-fit:cover/);
-});
-
-// ---------------------------------------------------------------
-// Component wiring: portrait detection, focus, tap-to-focus
-// ---------------------------------------------------------------
-
-test("the camera requests portrait when upright and applies focus to the live track", () => {
+test("the camera applies continuous focus to the live track and wires tap-to-focus", () => {
   const src = readFileSync("components/scan-camera.tsx", "utf8");
-  assert.match(src, /window\.innerHeight >= window\.innerWidth/);
-  assert.match(src, /videoConstraints\("environment", portrait\)/);
   assert.match(src, /applyContinuousFocus\(stream\)/);
   // Tap-to-focus is wired to the preview and uses a point of interest.
   assert.match(src, /onClick=\{tapToFocus\}/);
