@@ -33,10 +33,11 @@ test("every capture crops to exactly the visible region, regardless of the detec
   assert.doesNotMatch(src, /if \(edge && det && det\.confident\)/, "capture does not branch on the quad");
 });
 
-test("only a confident page crops and auto-snaps; low confidence shows a hint", () => {
+test("only a confident, sharp page auto-snaps; low confidence shows a hint", () => {
   assert.match(src, /isConfidentQuad\(quad, dw, dh\)/, "confidence is computed each frame");
-  // Auto-snap is fed the quad only when confident, else null (won't fire).
-  assert.match(src, /autoSnapStep\([^;]*confident \? quad : null/, "auto-snap gated on confidence");
+  // Auto-snap is fed the quad only when confident AND sharp, else null (won't
+  // fire): a blurry or out-of-focus frame never auto-captures.
+  assert.match(src, /confident && sharp \? quad : null/, "auto-snap gated on confidence + sharpness");
   assert.match(src, /Hold steady or tap the shutter/, "low-confidence hint text");
   assert.match(src, /auto && lowConfidence/, "the hint shows only in Auto when unsure");
 });

@@ -745,7 +745,12 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* Full-screen in-app camera for rapid-fire scanning of student work
    (components/scan-camera.tsx). Dark, edge-to-edge, controls over a scrim;
    safe-area padding so the shutter and counter clear phone notches/home bars. */
-.scan-camera{position:fixed;inset:0;z-index:1100;display:flex;background:#000;color:#fff;overscroll-behavior:contain}
+/* The camera is portalled into document.body (components/scan-camera.tsx), so
+   no transformed/clipping ancestor can box it in. It fills the dynamic viewport
+   (100dvh handles the mobile browser's collapsing toolbar, with 100vh as the
+   fallback for older engines), so the shutter/Done row always clears the bottom
+   toolbar and the safe area. */
+.scan-camera{position:fixed;inset:0;height:100vh;height:100dvh;width:100vw;z-index:1100;display:flex;background:#000;color:#fff;overscroll-behavior:contain}
 /* `cover`: fill the screen like the native camera app. Each capture is cropped
    to exactly this visible region (coverCrop), so what you see is what you get,
    and a frame the camera returns in the "wrong" orientation (iOS hands back a

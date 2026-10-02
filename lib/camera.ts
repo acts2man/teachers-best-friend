@@ -97,6 +97,70 @@ export function coverMapPoint(
   return { x: px * scale + offX, y: py * scale + offY };
 }
 
+/**
+ * Convert an RGBA pixel buffer (as from canvas getImageData().data) to a
+ * single-channel grayscale array, Rec. 601 luma. Pure so the sharpness scoring
+ * can be unit-tested without a canvas.
+ */
+export function rgbaToGray(data: ArrayLike<number>): Uint8Array {
+  const n = Math.floor(data.length / 4);
+  const g = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = data[i * 4];
+    const gg = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+    g[i] = (r * 0.299 + gg * 0.587 + b * 0.114) | 0;
+  }
+  return g;
+}
+
+/**
+ * A focus/sharpness score: the variance of the Laplacian of a grayscale image.
+ * A sharp photo has strong edges, so its Laplacian (second derivative) has a
+ * high spread; a blurry one is smooth, so the variance is low. This is the
+ * standard "is it in focus?" heuristic. Higher = sharper. A flat (single-colour)
+ * image scores 0. Interior pixels only (a 4-neighbour Laplacian needs a border).
+ *
+ * The absolute number depends on the image size and content, so it is only
+ * meaningful compared against other frames of the same scene at the same
+ * downscale (which is exactly how it is used: pick the sharpest of a burst, and
+ * compare against a threshold tuned on a real device).
+ */
+export function laplacianVariance(gray: ArrayLike<number>, w: number, h: number): number {
+  if (w < 3 || h < 3) return 0;
+  let sum = 0;
+  let sumSq = 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const lap = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - w] - gray[i + w];
+      sum += lap;
+      sumSq += lap * lap;
+      n++;
+    }
+  }
+  if (n === 0) return 0;
+  const mean = sum / n;
+  return sumSq / n - mean * mean;
+}
+
+/**
+ * The index of the highest score in a list (the sharpest frame of a burst).
+ * Returns -1 for an empty list. Ties go to the first — stable and predictable.
+ */
+export function pickSharpest(scores: ArrayLike<number>): number {
+  let best = -Infinity;
+  let bestIdx = -1;
+  for (let i = 0; i < scores.length; i++) {
+    if (scores[i] > best) {
+      best = scores[i];
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
 /** Whether this browser/context can open a camera at all (needs HTTPS). */
 export function cameraSupported(): boolean {
   return (
