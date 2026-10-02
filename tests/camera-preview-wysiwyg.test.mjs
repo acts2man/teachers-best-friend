@@ -103,7 +103,7 @@ test("auto-snap fires only after a confident page is held steady, then cools dow
   assert.ok(firstFireAt >= AUTO_SNAP_DEFAULTS.holdMs, "not before the hold elapsed");
 });
 
-test("the component gates auto-snap on confidence", () => {
+test("the component gates auto-snap on confidence and sharpness", () => {
   const src = readFileSync("components/scan-camera.tsx", "utf8");
-  assert.match(src, /confident \? quad : null/);
+  assert.match(src, /confident && sharp \? quad : null/);
 });

@@ -1,12 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { Camera, Check, Info, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
 import {
   cameraSupported,
   coverCrop,
   coverMapPoint,
   describeCameraError,
+  laplacianVariance,
   partitionByGroup,
+  rgbaToGray,
   videoConstraints,
 } from "@/lib/camera";
 import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
@@ -21,6 +24,18 @@ const DETECT_W = 320; // downscaled working width for live detection
 const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
 const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
 const SETTLE_MS = 700; // let the stream focus/settle before the first capture
+// On capture, grab a short burst and keep the sharpest frame -- the first frame
+// after a tap (or an auto-snap) is often the blurriest, mid-refocus.
+const BURST_FRAMES = 5;
+const BURST_GAP_MS = 80; // ~320ms total across 5 frames
+const SCORE_W = 320; // downscale width for the sharpness score (matches DETECT_W)
+// Below this Laplacian-variance score a frame is treated as too blurry to add.
+// Absolute value depends on the downscale, so it is deliberately conservative
+// (lean toward keeping) and NEEDS tuning on a real phone -- the "i" panel shows
+// the live and last-capture scores so we can calibrate from Ricky's numbers.
+const BLUR_THRESHOLD = 55;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * Ask the live camera track for continuous autofocus. Best-effort: focusMode
@@ -129,6 +144,14 @@ export function ScanCamera({
   const settledRef = useRef(false);
   // The size of the most recent capture, for the diagnostic panel.
   const lastCaptureRef = useRef<{ w: number; h: number } | null>(null);
+  // A burst takes a few frames over ~300ms; this guards against a second tap (or
+  // an auto-snap) starting a second burst while one is already running.
+  const capturingRef = useRef(false);
+  // Sharpness scores for the diagnostic panel: the live preview frame, and the
+  // sharpest frame of the last capture burst.
+  const liveScoreRef = useRef(0);
+  const lastScoreRef = useRef<number | null>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [shots, setShots] = useState<Shot[]>([]);
   const [group, setGroup] = useState(0);
@@ -141,6 +164,12 @@ export function ScanCamera({
   const [finishing, setFinishing] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [restorable, setRestorable] = useState<Shot[] | null>(null);
+  // A manual capture that came back too blurry: held so the teacher can keep it
+  // anyway or try again. (Auto-snap just skips a blurry frame silently.)
+  const [blurryShot, setBlurryShot] = useState<{ canvas: HTMLCanvasElement; score: number } | null>(
+    null,
+  );
+  const [tooBlurry, setTooBlurry] = useState(false);
   // Hidden diagnostic panel (tap the "i"), and a tick that refreshes its live
   // numbers while it is open.
   const [diag, setDiag] = useState(false);
@@ -148,6 +177,16 @@ export function ScanCamera({
   useEffect(() => {
     settledRef.current = settled;
   }, [settled]);
+
+  // Lock page scroll while the camera is open (undone on close), so the page
+  // behind the full-screen camera can't be scrolled by a stray drag.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     shotsRef.current = shots;
@@ -188,11 +227,13 @@ export function ScanCamera({
     };
   }, [assessmentId]);
 
-  function shoot() {
+  // Take a short burst of frames, cropped to exactly what the cover preview
+  // shows, and keep the sharpest one -- the first frame after a tap/auto-snap is
+  // often mid-refocus and blurriest. Returns the best canvas and its sharpness
+  // score, or null if the video isn't ready.
+  async function captureBurst(): Promise<{ canvas: HTMLCanvasElement; score: number } | null> {
     const video = videoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-    // Don't capture the blurry first frames: wait until the stream has settled.
-    if (!settledRef.current) return;
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
     const fw = video.videoWidth;
     const fh = video.videoHeight;
     // What the teacher actually sees: the preview fills the screen with
@@ -206,18 +247,43 @@ export function ScanCamera({
     const scale = Math.min(1, CAPTURE_CAP / Math.max(crop.w, crop.h));
     const outW = Math.max(1, Math.round(crop.w * scale));
     const outH = Math.max(1, Math.round(crop.h * scale));
-    const cap = document.createElement("canvas");
-    cap.width = outW;
-    cap.height = outH;
-    const cctx = cap.getContext("2d");
-    if (!cctx) return;
-    cctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
-    lastCaptureRef.current = { w: outW, h: outH };
-    const out: HTMLCanvasElement = cap;
+    // A small grayscale copy to score each frame's sharpness on.
+    const sw = Math.max(3, Math.min(SCORE_W, outW));
+    const sh = Math.max(3, Math.round((outH * sw) / outW));
+    const scorer = document.createElement("canvas");
+    scorer.width = sw;
+    scorer.height = sh;
+    const sctx = scorer.getContext("2d", { willReadFrequently: true });
 
+    let best: HTMLCanvasElement | null = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < BURST_FRAMES; i++) {
+      const cap = document.createElement("canvas");
+      cap.width = outW;
+      cap.height = outH;
+      const cctx = cap.getContext("2d");
+      if (!cctx) break;
+      cctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
+      let score = 0;
+      if (sctx) {
+        sctx.drawImage(cap, 0, 0, sw, sh);
+        score = laplacianVariance(rgbaToGray(sctx.getImageData(0, 0, sw, sh).data), sw, sh);
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = cap;
+      }
+      if (i < BURST_FRAMES - 1) await sleep(BURST_GAP_MS);
+    }
+    return best ? { canvas: best, score: bestScore } : null;
+  }
+
+  // Buffer a captured canvas as a page (JPEG blob -> state + IndexedDB).
+  function addShot(canvas: HTMLCanvasElement) {
+    lastCaptureRef.current = { w: canvas.width, h: canvas.height };
     const captureGroup = groupRef.current;
     const seq = seqRef.current++;
-    out.toBlob(
+    canvas.toBlob(
       (blob) => {
         if (!blob) return;
         const id = crypto.randomUUID();
@@ -232,6 +298,47 @@ export function ScanCamera({
     );
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
+  }
+
+  function flashBlurryHint() {
+    setTooBlurry(true);
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(() => setTooBlurry(false), 2200);
+  }
+
+  // Capture flow: wait for the stream to settle, take a sharpest-of-burst frame,
+  // and only add it if it clears the blur threshold. A blurry manual shot is
+  // offered as keep-anyway / try-again; a blurry auto-snap is skipped with a hint
+  // (auto-snap keeps trying). `shoot` is a sync wrapper so the shutter onClick and
+  // the auto-snap caller stay plain calls.
+  async function captureNow() {
+    if (!settledRef.current) return;
+    if (capturingRef.current) return;
+    capturingRef.current = true;
+    try {
+      const res = await captureBurst();
+      if (!res) return;
+      lastScoreRef.current = res.score;
+      if (res.score < BLUR_THRESHOLD) {
+        lastCaptureRef.current = { w: res.canvas.width, h: res.canvas.height };
+        if (autoRef.current) flashBlurryHint();
+        else setBlurryShot(res);
+        return;
+      }
+      addShot(res.canvas);
+    } finally {
+      capturingRef.current = false;
+    }
+  }
+  function shoot() {
+    void captureNow();
+  }
+  function keepBlurryShot() {
+    if (blurryShot) addShot(blurryShot.canvas);
+    setBlurryShot(null);
+  }
+  function discardBlurryShot() {
+    setBlurryShot(null);
   }
   useEffect(() => {
     shootRef.current = shoot;
@@ -284,7 +391,12 @@ export function ScanCamera({
       const octx = oc.getContext("2d");
       if (!dctx || !octx) return;
       dctx.drawImage(video, 0, 0, dw, dh);
-      const quad = edge.findDocumentQuad(dctx.getImageData(0, 0, dw, dh));
+      const imgData = dctx.getImageData(0, 0, dw, dh);
+      // Score the live frame's sharpness on the same downscale the capture uses,
+      // so the auto-snap gate and the threshold are comparable.
+      liveScoreRef.current = laplacianVariance(rgbaToGray(imgData.data), dw, dh);
+      const sharp = liveScoreRef.current >= BLUR_THRESHOLD;
+      const quad = edge.findDocumentQuad(imgData);
       const confident = !!quad && edge.isConfidentQuad(quad, dw, dh);
       quadRef.current = quad ? { quad, w: dw, h: dh, confident } : null;
       setLowConfidence(!!quad && !confident);
@@ -307,11 +419,15 @@ export function ScanCamera({
         octx.stroke();
       }
 
-      // Auto-snap only on a confident page, and only once the stream has
-      // settled, so it never fires on a blurry first frame; feed null otherwise.
+      // Auto-snap only on a confident AND sharp page, and only once the stream
+      // has settled, so it never fires on a blurry or out-of-focus frame; feed
+      // null otherwise so the hold timer resets.
       const snap = snapRef.current;
       if (autoRef.current && settledRef.current && snap && snapStateRef.current) {
-        const r = snap.autoSnapStep(snapStateRef.current, { quad: confident ? quad : null, now });
+        const r = snap.autoSnapStep(snapStateRef.current, {
+          quad: confident && sharp ? quad : null,
+          now,
+        });
         snapStateRef.current = r.state;
         if (r.fire) shootRef.current();
       }
@@ -366,6 +482,7 @@ export function ScanCamera({
     return () => {
       cancelled = true;
       stop();
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
       shotsRef.current.forEach((s) => URL.revokeObjectURL(s.url));
     };
   }, [stop]);
@@ -404,7 +521,10 @@ export function ScanCamera({
       "track facingMode: " + (s.facingMode ?? "—"),
       "track focusMode: " + ((s as { focusMode?: unknown }).focusMode ?? "—"),
       "settled: " + settledRef.current,
+      "live sharpness: " + liveScoreRef.current.toFixed(0) + " (blur < " + BLUR_THRESHOLD + ")",
       "last capture: " + (cap ? cap.w + " x " + cap.h : "—"),
+      "last capture score: " +
+        (lastScoreRef.current == null ? "—" : lastScoreRef.current.toFixed(0)),
     ];
     return lines.join("\n");
   }
@@ -486,7 +606,7 @@ export function ScanCamera({
   const inCurrent = shots.filter((s) => s.group === group).length;
 
   if (error) {
-    return (
+    const errorView = (
       <div className="scan-camera" role="dialog" aria-modal="true" aria-label="Camera">
         <div className="scan-camera-error">
           <Camera size={30} />
@@ -502,9 +622,10 @@ export function ScanCamera({
         </div>
       </div>
     );
+    return typeof document === "undefined" ? null : createPortal(errorView, document.body);
   }
 
-  return (
+  const view = (
     <div className="scan-camera" role="dialog" aria-modal="true" aria-label="Scan student work">
       <video
         ref={videoRef}
@@ -569,7 +690,12 @@ export function ScanCamera({
           Focusing…
         </div>
       )}
-      {!starting && settled && auto && lowConfidence && (
+      {!starting && settled && tooBlurry && (
+        <div className="scan-camera-hint" role="status">
+          Too blurry — hold steady, a little farther from the page
+        </div>
+      )}
+      {!starting && settled && !tooBlurry && auto && lowConfidence && (
         <div className="scan-camera-hint" role="status">
           Hold steady or tap the shutter
         </div>
@@ -669,6 +795,34 @@ export function ScanCamera({
           </div>
         </div>
       )}
+
+      {blurryShot && (
+        <div className="scan-camera-sheet" role="dialog" aria-modal="true" aria-label="Blurry photo">
+          <div className="scan-camera-sheet-card">
+            <Camera size={26} />
+            <h2>Too blurry</h2>
+            <p>
+              Hold steady and move back a little from the page, then try again. You can keep this
+              one if you want.
+            </p>
+            <div className="scan-camera-sheet-actions">
+              <button type="button" className="scan-camera-btn primary" autoFocus onClick={discardBlurryShot}>
+                Try again
+              </button>
+              <button type="button" className="scan-camera-btn" onClick={keepBlurryShot}>
+                Keep anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  // Portal straight into document.body: no transformed/clipping ancestor (an
+  // animated card, an overflow wrapper) can box in the fixed, full-screen camera.
+  // On iOS that was leaving the preview inside the page with the shutter/Done
+  // off-screen. (document is always defined here -- the camera only mounts after
+  // a tap -- but the guard keeps it safe if it ever renders on the server.)
+  return typeof document === "undefined" ? null : createPortal(view, document.body);
 }
