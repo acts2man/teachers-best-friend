@@ -89,6 +89,8 @@ import {
 } from "@/lib/teacher-metrics";
 import {
   activeQuestions,
+  alignmentIsStrong,
+  confirmAllQuestions,
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
@@ -844,6 +846,32 @@ export function AssessmentView() {
                   description="Confirm the suggestions that fit. Open a question to adjust its standard or reasoning."
                 >
                   <div className="review-heading-actions">
+                    {/* The speed lane: one action confirms every question,
+                        strong or not. Red ones are a suggestion to look at,
+                        not a gate the teacher has to open one by one. */}
+                    {activeQuestions(a).some((q) => !q.verified && q.standard) && (
+                      <Action
+                        disabled={busy}
+                        onClick={async () => {
+                          const { assessment: next, confirmed, missingStandard } =
+                            confirmAllQuestions(a);
+                          const saved = await saveAssessment(
+                            next,
+                            confirmed +
+                              (confirmed === 1 ? " question" : " questions") +
+                              " confirmed" +
+                              (missingStandard
+                                ? " · " + missingStandard + " still need a standard"
+                                : ""),
+                          );
+                          if (saved && !missingStandard && next.status === "Ready")
+                            setTab("key");
+                        }}
+                      >
+                        <CheckCheck size={16} />
+                        Looks good — confirm all
+                      </Action>
+                    )}
                     {clearQuestions.length > 0 && (
                       <Action
                         variant="secondary small"
@@ -928,6 +956,21 @@ export function AssessmentView() {
                                 {String(q.number).padStart(2, "0")}
                               </span>
                               <span>{q.text}</span>
+                              {/* On a phone the alignment column is off to the
+                                  side of a scrolling table; the speed lane's
+                                  green/red shows under the question instead. */}
+                              {!q.excluded && (
+                                <span
+                                  className={
+                                    "align-inline " +
+                                    (alignmentIsStrong(q) ? "align-strong" : "align-weak-score")
+                                  }
+                                >
+                                  {questionAlignment(q) === null
+                                    ? "You chose it"
+                                    : questionAlignment(q) + "%"}
+                                </span>
+                              )}
                             </button>
                           </TableCell>
                           <TableCell>
@@ -945,10 +988,39 @@ export function AssessmentView() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <Score
-                              value={questionAlignment(q)}
-                              title="Assigned by you"
-                            />
+                            {q.excluded ? (
+                              <Score
+                                value={questionAlignment(q)}
+                                title="Assigned by you"
+                              />
+                            ) : alignmentIsStrong(q) ? (
+                              <span
+                                className="align-strong"
+                                title={
+                                  questionAlignment(q) === null
+                                    ? "Assigned by you"
+                                    : "Strong alignment"
+                                }
+                              >
+                                <Check size={13} />
+                                {questionAlignment(q) === null
+                                  ? "You chose it"
+                                  : questionAlignment(q) + "%"}
+                              </span>
+                            ) : (
+                              <span className="align-weak">
+                                <span className="align-weak-score">
+                                  {questionAlignment(q)}%
+                                </span>
+                                <button
+                                  type="button"
+                                  className="align-strengthen"
+                                  onClick={() => setEdit({ ...q })}
+                                >
+                                  Strengthen?
+                                </button>
+                              </span>
+                            )}
                             <span className="cell-meta">{q.level}</span>
                           </TableCell>
                           <TableCell>

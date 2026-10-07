@@ -828,3 +828,26 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .image-viewer-fallback{padding:18px 20px;border-radius:10px;background:#fff;color:var(--ink);font-size:15px}
 .image-viewer-fallback a{text-decoration:underline;font-weight:600}
 .source-document-button{display:inline-flex;align-items:center;gap:6px;padding:0;border:none;background:none;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px}
+/* Standards speed lane (Ricky): green at 80%+ or teacher-chosen, red under. */
+.align-strong{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;color:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 26%);background:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 90%)}
+.align-weak{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.align-weak-score{padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;color:hsl(calc(0deg + var(--th)) calc(60% * var(--ts)) 36%);background:hsl(calc(0deg + var(--th)) calc(80% * var(--ts)) 93%)}
+.align-strengthen{padding:0;border:none;background:none;font-size:12px;font-weight:600;color:hsl(calc(0deg + var(--th)) calc(55% * var(--ts)) 38%);text-decoration:underline;text-underline-offset:2px}
+/* Guided student-work page (Ricky and Michael): one path, options tucked away. */
+.guided-steps{display:flex;gap:8px;margin:4px 0 16px;padding:0;list-style:none;flex-wrap:wrap}
+.guided-steps li{display:inline-flex;align-items:center;gap:6px;padding:5px 11px 5px 6px;border-radius:999px;font-size:13px;font-weight:600;color:hsl(calc(120deg + var(--th)) calc(8% * var(--ts)) 45%);background:hsl(calc(120deg + var(--th)) calc(10% * var(--ts)) 95%)}
+.guided-steps li span{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;background:#fff}
+.guided-steps li.is-current{color:#fff;background:hsl(calc(157deg + var(--th)) calc(30% * var(--ts)) 25.7%)}
+.guided-steps li.is-current span{color:hsl(calc(157deg + var(--th)) calc(30% * var(--ts)) 25.7%)}
+.guided-steps li.is-done{color:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 26%);background:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 90%)}
+.action.guided-primary{width:100%;max-width:420px;min-height:56px;font-size:17px;gap:10px}
+.guided-hint{margin-top:2px}
+.more-options{margin-top:14px;border-top:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89%);padding-top:10px}
+.more-options>summary{cursor:pointer;font-size:14px;font-weight:600;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);padding:6px 0;list-style-position:inside}
+.more-options[open]>summary{margin-bottom:10px}
+.more-options.per-student{margin-top:6px;padding:10px 4px 0;border-top:none}
+.class-scan-capture{display:flex;flex-direction:column;gap:10px}
+.align-inline{display:none!important}
+@media(max-width:767px){.question-cell .align-inline{display:inline-flex!important;align-self:flex-start;margin-top:6px;font-size:12px}}
+@media(max-width:767px){.question-cell{flex-wrap:wrap}.question-cell .align-inline{margin-left:44px}}
+@media(max-width:767px){.question-cell .align-inline{flex:0 0 auto}}
