@@ -15,8 +15,17 @@ export type ScannedResponse = {
   verdict: "match" | "blank" | "other";
 };
 
-/** A name read off one page's cropped top band. */
-export type PageName = { page: number; name: string; confidence: number };
+/** Where on the name-area image the name was written, as fractions of its
+ * width and height. Absent when no name was read. */
+export type NameBox = { x: number; y: number; width: number; height: number };
+
+/** A name read off the top part of one page. */
+export type PageName = {
+  page: number;
+  name: string;
+  confidence: number;
+  box?: NameBox | null;
+};
 
 /** Grading for one group, keyed by the group number the app supplied. */
 export type GradedGroup = { group: number; responses: ScannedResponse[] };
@@ -31,7 +40,7 @@ export type ScannedGroup = {
 
 /**
  * Splits a scanned stack into one group per student, using only the names read
- * off the cropped top bands.
+ * off the top of each page.
  *
  * A page with a name starts a student. Pages after it with no name are that
  * student's continuation sheets -- which is what a blank name line means on a
@@ -87,6 +96,24 @@ export type ResolvedGroup = ScannedGroup & {
    * here puts a child's grades on another child.
    */
   candidateIds: string[];
+  /**
+   * How sure the app is that this paper is `studentId`'s (or, on an open
+   * question, the best guess's), 0-100. It combines how confidently the name
+   * was read with how closely it fits the roster name, so a clean read of an
+   * exact name is high and a shaky read of a nickname is low. Shown to the
+   * teacher as "match confidence".
+   */
+  matchConfidence: number;
+  /**
+   * The student the app would pick if it had to, on a row it is not sure
+   * enough to pick for the teacher. Shown as "best guess", one tap to accept,
+   * never preselected.
+   */
+  suggestedId: string | null;
+  /** The name-area upload the name was read from, and where on it the name
+   * sits, so the matching screen can show the teacher the handwriting. */
+  nameUploadId: string | null;
+  nameBox: NameBox | null;
 };
 
 /**
@@ -145,6 +172,177 @@ function surnamesFit(a: string, b: string): boolean {
 }
 
 /**
+ * Given names that are the same person. A child writes "Mike" on a test and is
+ * "Michael" on the roster; "Lupe" is "Guadalupe". Each row is one family of
+ * names; any two names in a row are treated as the same given name. Kept short
+ * and common on purpose -- a wrong entry here would make two different children
+ * look like one.
+ */
+const NICKNAMES: string[][] = [
+  ["michael", "mike", "mikey", "micheal", "miguel"],
+  ["alexander", "alex", "xander", "alejandro", "alexandra", "alexa", "alejandra", "sasha"],
+  ["christopher", "chris", "topher", "cristopher", "cristian", "christian"],
+  ["christina", "christine", "tina", "chrissy", "cristina"],
+  ["daniel", "dan", "danny"],
+  ["daniela", "daniella", "dani"],
+  ["david", "dave", "davey"],
+  ["anthony", "tony", "antonio", "tono"],
+  ["joseph", "joe", "joey", "jose", "pepe"],
+  ["joshua", "josh"],
+  ["matthew", "matt", "matty", "mateo"],
+  ["nicholas", "nick", "nicky", "nico", "nicolas"],
+  ["samuel", "sam", "sammy"],
+  ["samantha", "sam", "sammy"],
+  ["benjamin", "ben", "benny", "benji"],
+  ["william", "will", "willy", "bill", "billy", "liam", "guillermo", "memo"],
+  ["elizabeth", "liz", "lizzy", "beth", "betsy", "eliza", "lisa"],
+  ["katherine", "catherine", "kathryn", "kate", "katie", "kat", "cathy", "kathy"],
+  ["jennifer", "jen", "jenny"],
+  ["jessica", "jess", "jessie"],
+  ["abigail", "abby", "abbie"],
+  ["gabriel", "gabe", "gabi"],
+  ["gabriela", "gabriella", "gabby", "gabi"],
+  ["isabella", "isabel", "izzy", "bella", "isa"],
+  ["maximilian", "maximus", "maxwell", "max"],
+  ["zachary", "zach", "zack"],
+  ["jacob", "jake"],
+  ["andrew", "andy", "drew", "andres"],
+  ["thomas", "tom", "tommy", "tomas"],
+  ["james", "jim", "jimmy", "jamie", "diego"],
+  ["robert", "rob", "robbie", "bob", "bobby", "roberto", "beto"],
+  ["richard", "rick", "ricky", "rich", "ricardo"],
+  ["manuel", "manny", "manolo"],
+  ["guadalupe", "lupe", "lupita"],
+  ["ignacio", "nacho"],
+  ["francisco", "frank", "frankie", "paco", "pancho", "cisco"],
+  ["edward", "ed", "eddie", "eduardo", "lalo"],
+  ["jesus", "chuy"],
+  ["alberto", "beto", "al"],
+  ["jonathan", "jon", "jonny", "johnny", "john"],
+  ["steven", "stephen", "steve", "esteban"],
+  ["victoria", "vicky", "tori"],
+  ["rebecca", "becca", "becky"],
+  ["margaret", "maggie", "meg", "peggy"],
+  ["madison", "maddie", "maddy"],
+  ["madeline", "madeleine", "maddie", "maddy"],
+  ["natalie", "nat", "natalia"],
+  ["olivia", "liv", "livvy"],
+  ["sophia", "sofia", "sophie"],
+  ["emily", "em", "emmy"],
+  ["emma", "em", "emmy"],
+  ["ashley", "ash"],
+  ["jacqueline", "jackie"],
+  ["jackson", "jack", "jax"],
+  ["timothy", "tim", "timmy"],
+  ["kenneth", "ken", "kenny"],
+  ["patrick", "pat"],
+  ["patricia", "pat", "patty", "tricia"],
+  ["dominic", "dom"],
+  ["nathaniel", "nathan", "nate"],
+  ["leonardo", "leo"],
+  ["elijah", "eli"],
+  ["josephine", "josie", "jo"],
+  ["valentina", "vale", "val"],
+  ["fernando", "nando"],
+  ["alejandro", "ale"],
+];
+
+/** Whether two given names are written forms of the same name. */
+function sameGivenName(a: string, b: string): boolean {
+  if (a === b) return true;
+  return NICKNAMES.some((family) => family.includes(a) && family.includes(b));
+}
+
+/**
+ * Jaro-Winkler similarity, 0..1. The standard measure for short names: it
+ * forgives a swapped or dropped letter ("Micheal", "Jaden"/"Jayden") and rewards
+ * a shared start, which is where handwriting is usually clearest.
+ */
+export function nameSimilarity(a: string, b: string): number {
+  if (a === b) return a ? 1 : 0;
+  if (!a || !b) return 0;
+  const range = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+  const aHit = new Array(a.length).fill(false);
+  const bHit = new Array(b.length).fill(false);
+  let matches = 0;
+  for (let i = 0; i < a.length; i++) {
+    const lo = Math.max(0, i - range);
+    const hi = Math.min(b.length - 1, i + range);
+    for (let j = lo; j <= hi; j++) {
+      if (bHit[j] || a[i] !== b[j]) continue;
+      aHit[i] = bHit[j] = true;
+      matches++;
+      break;
+    }
+  }
+  if (!matches) return 0;
+  let k = 0;
+  let transpositions = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (!aHit[i]) continue;
+    while (!bHit[k]) k++;
+    if (a[i] !== b[k]) transpositions++;
+    k++;
+  }
+  const m = matches;
+  const jaro = (m / a.length + m / b.length + (m - transpositions / 2) / m) / 3;
+  let prefix = 0;
+  while (prefix < 4 && prefix < a.length && prefix < b.length && a[prefix] === b[prefix])
+    prefix++;
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+/** How well a written given name fits a roster given name, 0..1. */
+function givenFit(written: string, roster: string): number {
+  if (sameGivenName(written, roster)) return written === roster ? 1 : 0.92;
+  return nameSimilarity(written, roster);
+}
+
+/** How well a written family name fits a roster family name, 0..1. The roster
+ * often stores only an abbreviation ("Go."), so a prefix fit is a full fit. */
+function surnameFit(written: string, roster: string): number {
+  if (surnamesFit(written, roster)) return 1;
+  // Compare against no more of the written name than the roster holds, plus a
+  // letter, so "Gonzales" against a stored "Gonz" is judged on "gonza".
+  const cut = roster.length < written.length ? written.slice(0, roster.length + 1) : written;
+  return nameSimilarity(cut, roster);
+}
+
+/**
+ * How well a name read off a page fits one roster name, 0..1. 1 is the same
+ * name; a nickname, a small misspelling or a missing surname scores a little
+ * lower; a different person scores well under FUZZY_FLOOR.
+ */
+export function rosterFit(written: string, roster: string): number {
+  const w = nameParts(written);
+  const r = nameParts(roster);
+  if (!w || !r) return 0;
+  if (partsKey(w) === partsKey(r)) return 1;
+  const direct = (() => {
+    const first = givenFit(w.first, r.first);
+    // A first name on its own fits every namesake equally, a little short of
+    // a full match so a full name on the paper always wins over it.
+    if (!w.last || !r.last) return first * 0.9;
+    return first * 0.6 + surnameFit(w.last, r.last) * 0.4;
+  })();
+  // Written family name first ("Gonzalez Maria"), or a lone surname ("Gonzalez").
+  const reversed = (() => {
+    if (!r.last) return 0;
+    if (!w.last) return surnameFit(w.first, r.last) >= 0.95 && r.last.length > 2 ? 0.8 : 0;
+    return (givenFit(w.last, r.first) * 0.6 + surnameFit(w.first, r.last) * 0.4) * 0.95;
+  })();
+  return Math.max(direct, reversed);
+}
+
+/** Below this a roster name is not offered at all. Set so that a shared first
+ * name with a plainly different surname ("Maria Fernandez" against "Maria
+ * Ga.") stays unmatched. */
+const FUZZY_FLOOR = 0.8;
+/** How far ahead of the next roster name a fuzzy best guess must be before the
+ * app picks it for the teacher. Closer than this and the teacher is asked. */
+const FUZZY_LEAD = 0.06;
+
+/**
  * What the roster can tell us about a name read off a page.
  *
  * Three answers, and the middle one is the reason this exists:
@@ -162,8 +360,19 @@ function surnamesFit(a: string, b: string): boolean {
  * An ambiguous answer is not a failure of the matcher. It is the matcher
  * telling the truth about a class that contains two children it cannot tell
  * apart from what is written on the paper.
+ *
+ * When nothing fits exactly, the name is matched loosely (October, after
+ * Michael's class sets): a nickname, a first name alone, or a misspelling
+ * ("Micheal", "Gonzales") still finds the student, with a `score` below 1 that
+ * the matching screen shows as lower match confidence. Candidates come back
+ * best first.
  */
-export type RosterMatch = { student?: Student; candidates?: Student[] };
+export type RosterMatch = {
+  student?: Student;
+  candidates?: Student[];
+  /** How well the name fits `student` (or the first candidate), 0..1. */
+  score?: number;
+};
 
 export function matchRosterStudent(
   name: string,
@@ -181,8 +390,8 @@ export function matchRosterStudent(
   // picking either without asking is the bug this function was rewritten for.
   const key = partsKey(wanted);
   const exact = roster.filter((r) => partsKey(r.parts) === key);
-  if (exact.length === 1) return { student: exact[0].student };
-  if (exact.length > 1) return { candidates: exact.map((r) => r.student) };
+  if (exact.length === 1) return { student: exact[0].student, score: 1 };
+  if (exact.length > 1) return { candidates: exact.map((r) => r.student), score: 1 };
 
   const fits = roster.filter((r) => {
     if (r.parts.first !== wanted.first) return false;
@@ -191,9 +400,23 @@ export function matchRosterStudent(
     if (!wanted.last || !r.parts.last) return true;
     return surnamesFit(wanted.last, r.parts.last);
   });
-  if (fits.length === 1) return { student: fits[0].student };
-  if (fits.length > 1) return { candidates: fits.map((r) => r.student) };
-  return {};
+  // A surname that fits the stored abbreviation is as good as exact; a first
+  // name alone is a little less certain, since a namesake may be absent today.
+  const fitScore = wanted.last ? 1 : 0.9;
+  if (fits.length === 1) return { student: fits[0].student, score: fitScore };
+  if (fits.length > 1)
+    return { candidates: fits.map((r) => r.student), score: fitScore };
+
+  // Nothing fits as written: a nickname, a misspelling, a reversed name.
+  const scored = roster
+    .map((r) => ({ student: r.student, score: rosterFit(name, r.student.name) }))
+    .filter((r) => r.score >= FUZZY_FLOOR)
+    .sort((x, y) => y.score - x.score);
+  if (!scored.length) return {};
+  const best = scored[0];
+  const close = scored.filter((r) => best.score - r.score < FUZZY_LEAD);
+  if (close.length === 1) return { student: best.student, score: best.score };
+  return { candidates: close.map((r) => r.student), score: best.score };
 }
 
 /**
@@ -203,11 +426,11 @@ export function matchRosterStudent(
  * `pageUploadIds[i]` is the uploaded file id for page `i`, in the order the
  * pages were scanned.
  *
- * Joins the two halves of a split scan: `pageGroups` and `names` come from
- * reading the cropped top bands, `graded` comes from grading the pages with
- * those bands removed. Neither request saw both, and the roster is sent to
+ * Joins the two passes of a scan: `names` come from reading the top part of
+ * each page, `graded` from grading the whole pages. The roster is sent to
  * neither -- matching a transcribed name to a student happens only here. See
- * docs/student-data-flow.md section 4.
+ * docs/student-data-flow.md section 4. `nameUploadIds[i]` is page `i`'s
+ * name-area upload, so the matching screen can show the handwriting.
  *
  * A group with no grading still comes back, empty, so a student whose pages
  * the model skipped appears in the review list for the teacher to notice
@@ -219,10 +442,11 @@ export function resolveScannedGroups(
   graded: GradedGroup[],
   pageUploadIds: string[],
   students: Student[],
+  nameUploadIds: (string | null)[] = [],
 ): ResolvedGroup[] {
   const nameOf = new Map(names.map((n) => [n.page, n]));
   const gradedByGroup = new Map(graded.map((g) => [g.group, g.responses]));
-  return pageGroups.map((pages, i) => {
+  const rows = pageGroups.map((pages, i) => {
     const validPages = [
       ...new Set(
         pages.filter(
@@ -234,22 +458,75 @@ export function resolveScannedGroups(
     // the first, since that is what opened the group.
     const read = validPages.map((p) => nameOf.get(p)).find((n) => n?.name.trim());
     const detectedName = read?.name.trim() ?? "";
-    const { student, candidates } = matchRosterStudent(detectedName, students);
+    const match = matchRosterStudent(detectedName, students);
+    const readConfidence = read?.confidence ?? 0;
+    const namePage = read ? read.page : validPages[0];
     return {
-      pageIndexes: validPages,
-      detectedName,
-      confidence: read?.confidence ?? 0,
-      responses: gradedByGroup.get(i) ?? [],
-      pageUploadIds: validPages.map((p) => pageUploadIds[p]),
-      key: "group-" + i,
-      // Left unset when the roster offers several: an ambiguous paper must
-      // reach the teacher as a question, not as an answer they have to notice
-      // is wrong.
-      studentId: student?.id ?? null,
-      name: student?.name || detectedName || "Student " + (i + 1),
-      candidateIds: (candidates ?? []).map((c) => c.id),
+      row: {
+        pageIndexes: validPages,
+        detectedName,
+        confidence: readConfidence,
+        responses: gradedByGroup.get(i) ?? [],
+        pageUploadIds: validPages.map((p) => pageUploadIds[p]),
+        key: "group-" + i,
+        // Left unset when the roster offers several: an ambiguous paper must
+        // reach the teacher as a question, not as an answer they have to notice
+        // is wrong.
+        studentId: match.student?.id ?? null,
+        name: match.student?.name || detectedName || "Student " + (i + 1),
+        candidateIds: (match.candidates ?? []).map((c) => c.id),
+        matchConfidence: Math.round(readConfidence * (match.score ?? 0)),
+        suggestedId: null as string | null,
+        nameUploadId: (namePage !== undefined ? nameUploadIds[namePage] : null) ?? null,
+        nameBox: read?.box ?? null,
+      } satisfies ResolvedGroup,
+      exact: match.score === 1 && !!match.student,
     };
   });
+
+  // A best guess for every open question, using what the rest of the stack
+  // already settled: a student whose paper was matched exactly elsewhere is
+  // unlikely to be this one too. If that leaves one candidate, it is the
+  // suggestion -- shown as a guess, never chosen for the teacher.
+  const claimed = new Set(rows.filter((r) => r.exact).map((r) => r.row.studentId as string));
+  for (const { row } of rows) {
+    if (!row.candidateIds.length) continue;
+    const open = row.candidateIds.filter((id) => !claimed.has(id));
+    row.suggestedId = open.length === 1 ? open[0] : (open[0] ?? row.candidateIds[0]);
+    // A guess the rest of the stack could not narrow is a weaker one.
+    if (open.length !== 1)
+      row.matchConfidence = Math.round(row.matchConfidence / Math.max(2, open.length));
+  }
+  return rows.map((r) => r.row);
+}
+
+/**
+ * The students of a class in the order their work was scanned.
+ *
+ * Teachers grade in the order the papers sit in the pile in front of them, and
+ * Michael asked for that order everywhere: the matching screen, the review
+ * list and Grade by question. `Assessment.studentOrder` records it as each scan
+ * is saved; anyone not in it (entered by hand, or scanned before the order was
+ * kept) follows, in the order they were already in.
+ */
+export function inScanOrder<T extends { id: string }>(
+  students: T[],
+  a: Pick<Assessment, "studentOrder">,
+): T[] {
+  const order = a.studentOrder ?? [];
+  if (!order.length) return students;
+  const at = new Map(order.map((id, i) => [id, i]));
+  return students
+    .map((s, i) => ({ s, i }))
+    .sort((x, y) => {
+      const ax = at.get(x.s.id);
+      const ay = at.get(y.s.id);
+      if (ax !== undefined && ay !== undefined) return ax - ay;
+      if (ax !== undefined) return -1;
+      if (ay !== undefined) return 1;
+      return x.i - y.i;
+    })
+    .map(({ s }) => s);
 }
 
 export type ConfirmedGroup = {
@@ -289,6 +566,7 @@ export function applyScannedGroups(
   // saved as "Maria G." make every later scan of this class a coin toss over
   // whose work a page is. A created student is numbered instead.
   const usedNames = students.map((s) => s.name);
+  const scanned: string[] = [];
   for (const group of groups) {
     if (!group.pageUploadIds.length || !group.responses.length) continue;
     let studentId =
@@ -314,6 +592,7 @@ export function applyScannedGroups(
     // Same rule as the single-student path: a later batch is another page of
     // the same test unless it actually answers the question, so keep what an
     // earlier pass found where this one saw nothing.
+    scanned.push(studentId);
     responsesByStudent.set(
       studentId,
       mergeStudentResponses(
@@ -334,11 +613,16 @@ export function applyScannedGroups(
     ...[...responsesByStudent.values()].flat(),
   ];
   const pageIds = groups.flatMap((g) => g.pageUploadIds);
+  // The order the papers were scanned in. A student already placed by an
+  // earlier scan keeps their place; everyone new follows, in this scan's order.
+  const studentOrder = [...(a.studentOrder ?? [])];
+  for (const id of scanned) if (!studentOrder.includes(id)) studentOrder.push(id);
   const assessment: Assessment = {
     ...a,
     uploadIds: [...new Set([...a.uploadIds, ...pageIds])],
     studentUploadIds: { ...a.studentUploadIds, ...studentUploadIds },
     responses,
+    ...(studentOrder.length ? { studentOrder } : {}),
   };
   return {
     students: [...students, ...newStudents],
@@ -370,6 +654,14 @@ export const TOKENS_PER_ANSWER = 250;
 /** Planning budget, kept well under the stage's real ceiling so a verbose
  * batch has somewhere to go. */
 export const BATCH_OUTPUT_BUDGET = 16000;
+
+/**
+ * Pages per grading request. The analyze route refuses more than 12 MB of
+ * images in one request, and since the 28 Sep decision a class-scan page is
+ * graded whole rather than with its top 18% cut off, so each page is bigger
+ * than it was. Twelve whole phone photos sit comfortably under the limit.
+ */
+export const MAX_PAGES_PER_BATCH = 12;
 
 export function studentsPerBatch(
   questionCount: number,
@@ -403,27 +695,34 @@ export function planScanBatches(
   pageUploadIds: string[],
   questionCount: number,
   budget = BATCH_OUTPUT_BUDGET,
+  maxPages = MAX_PAGES_PER_BATCH,
 ): ScanBatch[] {
   const perBatch = studentsPerBatch(questionCount, budget);
   const batches: ScanBatch[] = [];
-  for (let start = 0; start < pageGroups.length; start += perBatch) {
-    const slice = pageGroups.slice(start, start + perBatch);
-    const uploadIds: string[] = [];
-    const groups = slice.map((pages) =>
-      pages
-        .filter((p) => p >= 0 && p < pageUploadIds.length)
-        .map((page) => {
-          uploadIds.push(pageUploadIds[page]);
-          return uploadIds.length - 1;
-        }),
+  let current: ScanBatch = { uploadIds: [], groups: [], groupIndexes: [] };
+  const flush = () => {
+    if (current.uploadIds.length) batches.push(current);
+    current = { uploadIds: [], groups: [], groupIndexes: [] };
+  };
+  pageGroups.forEach((pages, index) => {
+    const valid = pages.filter((p) => p >= 0 && p < pageUploadIds.length);
+    // A student never straddles two requests: if this one does not fit beside
+    // the students already in the batch, the batch is sent without them.
+    if (
+      current.groups.length &&
+      (current.groups.length >= perBatch ||
+        current.uploadIds.length + valid.length > maxPages)
+    )
+      flush();
+    current.groups.push(
+      valid.map((page) => {
+        current.uploadIds.push(pageUploadIds[page]);
+        return current.uploadIds.length - 1;
+      }),
     );
-    if (!uploadIds.length) continue;
-    batches.push({
-      uploadIds,
-      groups,
-      groupIndexes: slice.map((_, i) => start + i),
-    });
-  }
+    current.groupIndexes.push(index);
+  });
+  flush();
   return batches;
 }
 

@@ -187,6 +187,21 @@ const pctField = z
   .min(0)
   .max(100)
   .transform((v) => Math.round(v > 0 && v <= 1 ? v * 100 : v));
+/** Where on a name-area image the name sits, as fractions of its size. */
+export type NameBox = { x: number; y: number; width: number; height: number };
+// A box the model sends is kept only if it is a usable rectangle inside the
+// image. Anything else -- the all-zero "no name" box, or one hanging off the
+// edge -- becomes null and the matching screen shows the whole name area.
+const unit = z.number().transform((v) => Math.max(0, Math.min(1, v)));
+const nameBoxField = z
+  .object({ x: unit, y: unit, width: unit, height: unit })
+  .optional()
+  .transform((b): NameBox | null => {
+    if (!b) return null;
+    const width = Math.min(b.width, 1 - b.x);
+    const height = Math.min(b.height, 1 - b.y);
+    return width > 0.01 && height > 0.01 ? { x: b.x, y: b.y, width, height } : null;
+  });
 const questionSchema = obj({
   number: { type: "integer" },
   text: str,
@@ -239,14 +254,18 @@ const writingSchema = obj({
     }),
   ),
 });
-// Reading the name bands. One entry per strip image, and nothing else: this
-// call is shown no questions, no answer key and no student work.
+// Reading the names. One entry per name-area image (the top part of a page),
+// and nothing else: this call is shown no questions and no answer key. `box`
+// is where on the image the name was written, as fractions of its width and
+// height, so the matching screen can show the teacher a crop of just the name.
+const fraction = { type: "number", minimum: 0, maximum: 1 };
 const nameStripSchema = obj({
   pages: arr(
     obj({
       page: { type: "integer", minimum: 0 },
       name: str,
       confidence: { type: "number", minimum: 0, maximum: 100 },
+      box: obj({ x: fraction, y: fraction, width: fraction, height: fraction }),
     }),
   ),
 });
@@ -387,7 +406,7 @@ export function buildPrompt(
     if (!p.pageGroups.length)
       throw new HttpError(400, "Add scanned pages first.");
     task =
-      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. The name has already been removed from every page, so do not look for one, do not infer who any page belongs to, and do not report any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if it matches the teacher's key, \"blank\" if the page has no answer for it, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string match. Do NOT assign partial credit and do NOT guess a score -- anything that is not a clear match or a clear blank is \"other\", for the teacher to decide. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions. Report each group by its number below, not by page. Groups, as page positions: " +
+      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. A page may show the student's name near the top; ignore it. Do not infer who any page belongs to and never report or reproduce any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if it matches the teacher's key, \"blank\" if the page has no answer for it, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string match. Do NOT assign partial credit and do NOT guess a score -- anything that is not a clear match or a clear blank is \"other\", for the teacher to decide. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions. Report each group by its number below, not by page. Groups, as page positions: " +
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
       ". Questions: " +
       JSON.stringify(questionsForGrading(a)) +
@@ -435,7 +454,7 @@ export function buildPrompt(
   if (p.mode === "name_strip") {
     if (!hasContent) throw new HttpError(400, "Add scanned pages first.");
     task =
-      "Each image is a narrow strip cut from the top of one scanned worksheet page, in order: the image at position N is page N. Read the student name written or printed on each strip. Return one entry per strip, giving its page position, the name exactly as written, and an honest 0-100 confidence. Return an empty name with confidence 0 when a strip carries no name, when the name is genuinely illegible, or when it shows only a printed heading such as 'Name:' with nothing filled in -- a blank strip normally means the page continues the previous student's work. Never invent a name and never guess one from handwriting. Transcribe only what is written on the strip in front of you; you have no class list and must not produce a name that is not on the page.";
+      "Each image is the top part of one scanned or photographed worksheet page, in order: the image at position N is page N. Find the student's handwritten name on each image. Look anywhere near the top of the sheet: on the \"Name\" line, above or below it, beside it, in the top margin, in a corner, or in the side margin -- children often write their name above the line or off to one side, and the sheet may sit lower in a phone photo with table or background above it. Return one entry per image, giving its page position, the name exactly as written (a first name alone is fine if that is all there is), an honest 0-100 confidence, and a box around where the name is written as fractions of the image width and height (x and y are the top-left corner). Return an empty name, confidence 0 and a zero box when an image carries no handwritten name, or shows only a printed heading such as 'Name:' with nothing filled in -- a page with no name normally continues the previous student's work. Ignore printed text such as the worksheet title, the teacher's name, the school, the date and the questions. If a name is hard to read, give your best reading with a lower confidence rather than leaving it out. Never make up a name that is not written on the page; you have no class list.";
     schema = nameStripSchema;
   }
   if (p.mode === "answer_key") {
@@ -730,6 +749,7 @@ export function finalizeAnalysis(
               page: z.number().int(),
               name: z.string().max(80),
               confidence: pctField,
+              box: nameBoxField,
             }),
           )
           .max(24),
@@ -740,17 +760,29 @@ export function finalizeAnalysis(
     // One entry per uploaded strip, in page order, so the caller can index
     // straight into it. A page the model skipped or duplicated reads as no
     // name, which the teacher then fills in -- never as a wrong name.
-    const byPage = new Map<number, { name: string; confidence: number }>();
+    const byPage = new Map<
+      number,
+      { name: string; confidence: number; box: NameBox | null }
+    >();
     for (const row of parsed.data.pages) {
       if (row.page < 0 || row.page >= p.uploadIds.length) continue;
       if (byPage.has(row.page)) continue;
-      byPage.set(row.page, { name: row.name.trim(), confidence: row.confidence });
+      const name = row.name.trim();
+      byPage.set(row.page, {
+        name,
+        confidence: name ? row.confidence : 0,
+        box: name ? row.box : null,
+      });
     }
-    output.pages = p.uploadIds.map((_, page) => ({
-      page,
-      name: byPage.get(page)?.name ?? "",
-      confidence: byPage.get(page)?.confidence ?? 0,
-    }));
+    output.pages = p.uploadIds.map((_, page) => {
+      const hit = byPage.get(page);
+      return {
+        page,
+        name: hit?.name ?? "",
+        confidence: hit?.confidence ?? 0,
+        ...(hit?.box ? { box: hit.box } : {}),
+      };
+    });
   }
   if (p.mode === "answer_key") {
     const a = w.assessments.find((a) => a.id === p.assessmentId);

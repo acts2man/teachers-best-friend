@@ -123,6 +123,10 @@ export type Assessment = {
   // present, a whole-test score is shown both ways: the percentage and points
   // out of this total. Optional -- absent means percentage only, as before.
   pointsPossible?: number;
+  /** Student ids in the order their work was scanned, so the matching screen,
+   * the review list and Grade by question follow the pile on the teacher's
+   * desk. Absent until a class scan is saved. */
+  studentOrder?: string[];
 };
 export type Classroom = {
   id: string;

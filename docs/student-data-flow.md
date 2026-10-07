@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-09-30.
+Last verified against the running system: 2026-10-07.
 
 ---
 
@@ -143,7 +143,7 @@ This is the hop districts ask about, so it is the most specific.
 |---|---|
 | What is transmitted | The uploaded work, grade level, subject, the relevant standards, question IDs, and -- where the teacher has uploaded one -- the transcribed text of the shared reading passage |
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
-| Name read from the image | Single-student mode: no. Whole-class stack scan: a separate request reads the cropped name band alone; the request that grades the work is sent the page with that band removed, so no request holds a name and that student's answers together |
+| Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; it is told to ignore it and never report it |
 | Encrypted | Yes, TLS |
 | Stored there | Per the OpenAI API data policy for API traffic |
 | Retained | Per that policy; not used to build a profile for us |
@@ -175,7 +175,7 @@ request parameters, so a stale client cannot reintroduce it, and it no longer re
 already looking at, and matching to a student record happens locally in
 `matchRosterStudent()` (`lib/teacher-class-scan.ts`).
 
-**Split identification from grading (18 Sep 2026).** The page is cut in the browser
+**Split identification from grading (18 Sep – 7 Oct 2026, superseded below).** The page was cut in the browser
 before anything is uploaded. The top band — `NAME_BAND`, 18% of page height, in
 `lib/image-prep.ts` — goes to a `name_strip` request carrying no questions, no answer key
 and no roster. Everything below it goes to the `class_scan` request, which is shown no
@@ -189,11 +189,46 @@ Matching a transcribed name to a student happens only in the app, in
 `tests/prompt-separation.test.mjs` asserts this against the prompts the app actually
 builds, so an edit that quietly puts a name back into the grading call fails the suite.
 
-**The honest limit that remains.** A name written outside the top band — in a margin, or
-partway down the page — stays in the image sent for grading. The band is a fixed
-fraction, not a detector. The exposure is one name on one page rather than a roster, and
-it is not linked to a student record by anything in that request, but it is not zero and
-should not be described as zero.
+**The honest limit that remained.** A name written outside the top band — in a margin, or
+partway down the page — stayed in the image sent for grading. The band was a fixed
+fraction, not a detector.
+
+**The AI may read student names (28 Sep 2026 call, shipped 7 Oct 2026).** The founders
+decided on the 28 Sep call that the AI may read the name a student wrote on their page.
+The 18% split was costing more than it protected: on Michael's real class sets (6 and 7
+Oct, phone photos) the name pass read **22 names off 172 pages**, because in a phone photo
+the Name line sits below the top 18% and children write the name above the line, beside
+it or in the margin. The same cut also removed the first question from some graded pages.
+
+What each request carries now:
+
+- **`name_strip`** — the top **45%** of each page (`NAME_AREA` in `lib/image-prep.ts`),
+  reduced to 1,400 px on its long edge. Told to look for a handwritten name anywhere near
+  the top, including above or beside the Name line and in the margins, and to return the
+  name, a confidence and a box around where it is written (used only to show the teacher
+  a crop). Still shown **no questions, no answer key and no roster.** Still not billed.
+- **`class_scan`** — the **whole page**, nothing cut off (`splitForClassScan`). The image
+  may show the student's name. The prompt tells the model to ignore any name, not to infer
+  who a page belongs to and never to report or reproduce a name. Grouping is still settled
+  by the app and sent as group numbers.
+- **Still never sent:** the class roster or any student list, any name as text, the
+  teacher's or school's name. Matching a read name to a student — including the loose
+  matching added on 7 Oct (nicknames, a first name alone, misspellings, a surname written
+  first) — happens only in the app, in `matchRosterStudent()` / `resolveScannedGroups()`
+  (`lib/teacher-class-scan.ts`). `tests/prompt-separation.test.mjs` asserts the roster
+  and names stay out of both prompts.
+
+What this changes, stated plainly: a request now holds a student's handwritten name
+together with that student's answers (the graded page image). That is the trade the
+28 Sep decision made. The exposure is the name the child wrote on their own paper — not
+a roster, not a name as text, not linked to a student record by anything in the request.
+The published pages were updated in the same change (Privacy Policy "On handwriting" and
+section on the AI provider; Student Data Privacy Commitments "On student names" and "What
+is sent"). `How We Use AI` and the DPA already state that the photograph may carry a name
+the student wrote, and stay accurate.
+
+The writing path (`writing` mode, single student) still uses `splitNameBand` and cuts the
+top 18% off page 1; it was not part of this change.
 
 **Fallback.** A PDF, or a browser that cannot do the cut, sends the whole page to grading
 and reads no name from it; the teacher names that group by hand. That path trades the

@@ -807,3 +807,25 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .error-type-list{display:flex;flex-direction:column;gap:12px;margin-top:8px}
 .error-type-row{display:flex;flex-direction:column;gap:2px}
 .error-type-list .group-members{margin:4px 0 0}
+/* Full-screen picture of student work (components/image-viewer.tsx). Portaled
+   to <body> and sized by script to the visual viewport; inset:0 is the fallback. */
+.image-viewer{position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;background:rgba(12,20,16,.92);overscroll-behavior:contain}
+.image-viewer-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;flex:0 0 auto}
+.image-viewer-hint{font-size:12px;color:#f7f7ef;opacity:.85}
+.image-viewer-close{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 16px;border:none;border-radius:999px;background:#fff;color:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2%);font-size:15px;font-weight:700}
+.image-viewer-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 12px 12px;overflow:auto}
+.image-viewer-stage img{display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;background:#fff;cursor:zoom-in;touch-action:pinch-zoom}
+.image-viewer-stage.is-full{align-items:flex-start;justify-content:flex-start}
+.image-viewer-stage.is-full img{max-width:none;max-height:none;cursor:zoom-out}
+/* Name matching: the student's work beside the name picker. */
+.name-match-row{align-items:flex-start}
+.name-match-work{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;width:132px}
+.name-match-thumb{position:relative;display:block;width:132px;height:170px;padding:0;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:8px;overflow:hidden;background:#fff;cursor:zoom-in}
+.name-match-thumb img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
+.name-match-thumb .work-sample-hint{top:auto;bottom:6px;right:6px}
+.name-crop{position:relative;width:100%;overflow:hidden;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:6px;background:#fff;padding:0;cursor:zoom-in}
+.name-crop img{display:block;width:100%;height:auto;transform-origin:0 0}
+.name-match-main{flex-direction:column;align-items:stretch}
+.name-match-main .pick{width:100%;min-width:0}
+.name-match-guess{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media(max-width:520px){.name-match-work,.name-match-thumb{width:104px}.name-match-thumb{height:136px}}

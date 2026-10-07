@@ -100,17 +100,14 @@ automatically on the schedule in Section 5; and our AI instructions direct the m
 to reproduce names it encounters.
 
 How whole-class scanning handles this. When a teacher scans a whole stack of pages at
-once, the name written at the top of each page is how the pages are sorted back to the
-right student. Rather than send that name alongside the work, the app cuts the top of
-each page off in the browser, before anything is uploaded. The strip carrying the name is
-read by one request that is shown no questions, no answer key and no student work. The
-rest of the page is graded by a separate request that is shown no name. Matching a name
-to a student happens only inside our system, and neither request is ever given your class
-list.
-
-The limit we will not paper over: a name written somewhere other than the top of the page
-— in a margin, or halfway down — stays in the image that is graded. We remove a fixed
-band from the top, not every name anywhere on a page.
+once, the name the student wrote on each page is how the pages are sorted back to the
+right student. One request reads the top part of each page to find that name, and is
+shown no questions and no answer key. A separate request grades the whole page. Because
+the whole page is graded, a name the student wrote on it is in the image that request
+sees; the model is instructed to ignore it and never to reproduce it. Matching a name to
+a student happens only inside our system, and neither request is ever given your class
+list. Earlier versions cut the name off the top of the page before grading; that also cut
+off questions near the top of a photographed page, so the whole page is now graded.
 
 ### 3.3 Collected automatically
 
@@ -222,8 +219,9 @@ Submitted work is sent to OpenAI's API for analysis. Specifically:
   train their models.
 - We never send your class roster, or any list of student names, to the AI provider.
 - When a single student's responses are analyzed, no name is sent — only internal
-  identifiers. In whole-class scanning, reading the name and grading the work are two
-  separate requests, and neither one contains both; see "On handwriting" above.
+  identifiers. In whole-class scanning, the AI reads the name the student wrote on the
+  page so pages can be sorted back to the right student, and the graded page image may
+  show that name; see "On handwriting" above.
 - The AI's output is a suggestion, not a determination. Teachers review and can correct
   every standard alignment and every score before it is recorded.
 

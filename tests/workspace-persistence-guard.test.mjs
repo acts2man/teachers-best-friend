@@ -40,7 +40,7 @@ const PERSISTED = {
     "createdAt", "status", "questions", "responses", "uploadIds", "source",
     "passage", "genre", "rubric", "targetStandards", "answerKeyUploadIds",
     "assignmentUploadIds", "studentUploadIds", "answerKeyVerified", "classIds",
-    "pointsPossible",
+    "pointsPossible", "studentOrder",
   ],
 };
 
