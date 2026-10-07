@@ -14,7 +14,66 @@ import {
 } from "@/lib/camera";
 import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
 
+/**
+ * One captured page. `blob` is the full-size JPEG that is uploaded; `url` is an
+ * object URL for a SMALL thumbnail of it, never the full page.
+ *
+ * Michael's Android slowed down around student 15 of 26. Every thumbnail in the
+ * strip used to point at the full ~2000px photo, and a phone decodes an <img>
+ * at its source size however small it is drawn: about 12 MB of memory per page,
+ * held for every page in the set. By page 60 that is several hundred MB for a
+ * strip of 46px squares. A thumbnail blob is a few KB and decodes to almost
+ * nothing, so page 60 costs what page 1 did.
+ */
 type Shot = { id: string; url: string; blob: Blob; group: number; seq: number };
+
+/** Width of the thumbnail kept for the strip at the bottom of the camera. */
+export const THUMB_W = 96;
+
+/** Frees a canvas's pixel buffer now rather than whenever the garbage
+ * collector gets round to it -- on a phone that can be a long time, and a
+ * 2000px canvas is 12 MB. */
+function release(canvas: HTMLCanvasElement | null | undefined) {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/** A small JPEG thumbnail of something drawable. */
+function thumbBlob(source: CanvasImageSource, w: number, h: number): Promise<Blob | null> {
+  const tw = THUMB_W;
+  const th = Math.max(1, Math.round((h * tw) / Math.max(1, w)));
+  const c = document.createElement("canvas");
+  c.width = tw;
+  c.height = th;
+  const ctx = c.getContext("2d");
+  if (!ctx) return Promise.resolve(null);
+  ctx.drawImage(source, 0, 0, tw, th);
+  return new Promise((resolve) =>
+    c.toBlob(
+      (b) => {
+        release(c);
+        resolve(b);
+      },
+      "image/jpeg",
+      0.7,
+    ),
+  );
+}
+
+/** A thumbnail URL for a stored page, decoded at thumbnail size where the
+ * browser supports it rather than at full resolution. */
+async function thumbUrlFor(blob: Blob): Promise<string> {
+  try {
+    const bitmap = await createImageBitmap(blob, { resizeWidth: THUMB_W, resizeQuality: "low" });
+    const small = await thumbBlob(bitmap, bitmap.width, bitmap.height);
+    bitmap.close?.();
+    if (small) return URL.createObjectURL(small);
+  } catch {
+    // Fall through: an old browser without resize options still gets a picture.
+  }
+  return URL.createObjectURL(blob);
+}
 type EdgeLib = typeof import("@/lib/edge-detect");
 type SnapLib = typeof import("@/lib/auto-snap");
 type DetectedQuad = { quad: import("@/lib/edge-detect").Quad; w: number; h: number; confident: boolean };
@@ -211,15 +270,18 @@ export function ScanCamera({
     loadShots(assessmentId)
       .then((stored) => {
         if (!live || !stored.length) return;
-        setRestorable(
-          stored.map((s) => ({
+        return Promise.all(
+          stored.map(async (s) => ({
             id: s.id,
-            url: URL.createObjectURL(s.blob),
+            url: await thumbUrlFor(s.blob),
             blob: s.blob,
             group: s.group,
             seq: s.seq,
           })),
-        );
+        ).then((shots) => {
+          if (live) setRestorable(shots);
+          else shots.forEach((x) => URL.revokeObjectURL(x.url));
+        });
       })
       .catch(() => {});
     return () => {
@@ -255,10 +317,15 @@ export function ScanCamera({
     scorer.height = sh;
     const sctx = scorer.getContext("2d", { willReadFrequently: true });
 
+    // Two full-size canvases for the whole burst, swapped as a sharper frame
+    // turns up, instead of a new 12 MB canvas per frame left for the garbage
+    // collector -- five of those per page added up over a class set.
     let best: HTMLCanvasElement | null = null;
+    let spare: HTMLCanvasElement | null = null;
     let bestScore = -Infinity;
     for (let i = 0; i < BURST_FRAMES; i++) {
-      const cap = document.createElement("canvas");
+      const cap: HTMLCanvasElement = spare ?? document.createElement("canvas");
+      spare = null;
       cap.width = outW;
       cap.height = outH;
       const cctx = cap.getContext("2d");
@@ -271,10 +338,15 @@ export function ScanCamera({
       }
       if (score > bestScore) {
         bestScore = score;
+        spare = best;
         best = cap;
+      } else {
+        spare = cap;
       }
       if (i < BURST_FRAMES - 1) await sleep(BURST_GAP_MS);
     }
+    release(spare);
+    release(scorer);
     return best ? { canvas: best, score: bestScore } : null;
   }
 
@@ -283,14 +355,18 @@ export function ScanCamera({
     lastCaptureRef.current = { w: canvas.width, h: canvas.height };
     const captureGroup = groupRef.current;
     const seq = seqRef.current++;
+    // The thumbnail is cut from the canvas before it is encoded and released,
+    // so the strip never has to decode the full page again.
+    const thumb = thumbBlob(canvas, canvas.width, canvas.height);
     canvas.toBlob(
       (blob) => {
+        release(canvas);
         if (!blob) return;
         const id = crypto.randomUUID();
-        setShots((s) => [
-          ...s,
-          { id, url: URL.createObjectURL(blob), blob, group: captureGroup, seq },
-        ]);
+        void thumb.then((small) => {
+          const url = URL.createObjectURL(small ?? blob);
+          setShots((s) => [...s, { id, url, blob, group: captureGroup, seq }]);
+        });
         void saveShot({ id, assessmentId, group: captureGroup, seq, blob }).catch(() => {});
       },
       "image/jpeg",
@@ -338,6 +414,7 @@ export function ScanCamera({
     setBlurryShot(null);
   }
   function discardBlurryShot() {
+    release(blurryShot?.canvas);
     setBlurryShot(null);
   }
   useEffect(() => {

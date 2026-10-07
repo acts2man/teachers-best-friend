@@ -183,7 +183,7 @@ test("the assessment page branches to the writing tabs and components", () => {
   assert.match(ui, /<WritingRubricPanel/, "rubric view/edit");
   assert.match(ui, /<WritingReview/, "per-student rubric confirm");
   assert.match(ui, /<WritingClassPanel/, "writing class view");
-  assert.match(ui, /splitNameBand\(incoming\[i\]\)/, "the name band is cut from page 1");
+  assert.match(ui, /const file = await uprightPage\(incoming\[i\]\)/, "every page, page 1 included, is scored whole");
   assert.match(ui, /mode: "writing"/, "scores via the writing mode");
 });
 

@@ -21,14 +21,10 @@
  * take the photo can already do this.
  */
 
-/** Fraction of the page height cut off as the name band on the writing path
- * (splitNameBand). The class scan no longer cuts anything off: see NAME_AREA. */
-export const NAME_BAND = 0.18;
-
 /**
  * How much of the top of a page the class scan's name pass looks at.
  *
- * It used to be NAME_BAND, 18%, and on Michael's real class sets (6-7 Oct) the
+ * It used to be a fixed 18% band, and on Michael's real class sets (6-7 Oct) the
  * name pass read 22 names off 172 pages. In a phone photo the "Name" line sits
  * lower than 18% of the frame -- there is table and margin above the sheet --
  * and children write the name above the line, beside it, or in a corner. Since
@@ -73,19 +69,6 @@ export function fitWithin(
   };
 }
 
-/**
- * Where the name band and the body sit on a page of this height.
- * `body.top` is exactly `strip.height`, so no row of pixels appears in both:
- * a name cannot leak into the graded half by sitting on the boundary.
- */
-export function bandGeometry(height: number, band = NAME_BAND) {
-  const stripHeight = Math.max(1, Math.round(height * band));
-  return {
-    strip: { top: 0, height: stripHeight },
-    body: { top: stripHeight, height: Math.max(1, height - stripHeight) },
-  };
-}
-
 /** The rows of a page of this height that the name pass is shown. Pure. */
 export function nameAreaGeometry(height: number, area = NAME_AREA) {
   return { top: 0, height: Math.max(1, Math.round(height * area)) };
@@ -112,15 +95,20 @@ function canvasFor({ width, height }: Drawable) {
   return { canvas, ctx };
 }
 
-function toFile(canvas: HTMLCanvasElement, name: string): Promise<File> {
+function toFile(canvas: HTMLCanvasElement, name: string, quality = QUALITY): Promise<File> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
-      (blob) =>
-        blob
-          ? resolve(new File([blob], name, { type: "image/jpeg" }))
-          : reject(new Error("could not encode the page")),
+      (blob) => {
+        // Free the pixels now: a class set prepares sixty pages back to back,
+        // and on a phone a 2000px canvas left for the garbage collector is
+        // 12 MB that lingers until it gets round to it.
+        canvas.width = 0;
+        canvas.height = 0;
+        if (blob) resolve(new File([blob], name, { type: "image/jpeg" }));
+        else reject(new Error("could not encode the page"));
+      },
       "image/jpeg",
-      QUALITY,
+      quality,
     );
   });
 }
@@ -148,47 +136,6 @@ export async function uprightPage(file: File): Promise<File> {
     return await toFile(canvas, renamed(file.name, ""));
   } catch {
     return file;
-  }
-}
-
-/**
- * Splits an upright page into the name band and everything below it.
- *
- * Returns null for a non-image, or when the browser cannot do the work, so the
- * caller can fall back to the single-request path rather than silently sending
- * a page that still carries a name next to its answers.
- */
-export async function splitNameBand(
-  file: File,
-): Promise<{ strip: File; body: File } | null> {
-  if (!isImage(file)) return null;
-  try {
-    const bitmap = await decode(file);
-    const size = fitWithin(bitmap.width, bitmap.height);
-    const bands = bandGeometry(size.height);
-
-    const strip = canvasFor({ width: size.width, height: bands.strip.height });
-    strip.ctx.drawImage(
-      bitmap,
-      0, 0, bitmap.width, Math.round(bitmap.height * NAME_BAND),
-      0, 0, size.width, bands.strip.height,
-    );
-
-    const body = canvasFor({ width: size.width, height: bands.body.height });
-    const sourceTop = Math.round(bitmap.height * NAME_BAND);
-    body.ctx.drawImage(
-      bitmap,
-      0, sourceTop, bitmap.width, bitmap.height - sourceTop,
-      0, 0, size.width, bands.body.height,
-    );
-
-    bitmap.close?.();
-    return {
-      strip: await toFile(strip.canvas, renamed(file.name, "-name")),
-      body: await toFile(body.canvas, renamed(file.name, "-work")),
-    };
-  } catch {
-    return null;
   }
 }
 

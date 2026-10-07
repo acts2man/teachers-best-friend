@@ -8,7 +8,7 @@ function bundle(path) {
   new Function("module", "exports", result.outputFiles[0].text)(shim, shim.exports);
   return shim.exports;
 }
-const { fitWithin, bandGeometry, NAME_BAND } = bundle("lib/image-prep.ts");
+const { fitWithin } = bundle("lib/image-prep.ts");
 
 test("fitWithin leaves a page that is already small enough alone", () => {
   assert.deepEqual(fitWithin(1200, 1600), { width: 1200, height: 1600 });
@@ -37,31 +37,6 @@ test("fitWithin keeps at least one pixel on an extreme aspect ratio", () => {
   assert.ok(out.height >= 1);
 });
 
-// The privacy guarantee: the name band and the graded body must not share a
-// single row of pixels, or a name sitting on the boundary rides along with the
-// answers into the grading request.
-test("the name band and the body do not overlap", () => {
-  for (const height of [100, 999, 1000, 1001, 1600, 2000, 3024]) {
-    const { strip, body } = bandGeometry(height);
-    assert.equal(strip.top, 0);
-    assert.equal(body.top, strip.height, `overlap at height ${height}`);
-    assert.equal(strip.height + body.height, height, `lost rows at height ${height}`);
-  }
-});
-
-test("the name band takes the top of the page, not the bulk of it", () => {
-  const { strip } = bandGeometry(1000);
-  assert.equal(strip.height, Math.round(1000 * NAME_BAND));
-  assert.ok(strip.height < 1000 / 2);
-});
-
-test("bandGeometry still yields a usable body on a very short page", () => {
-  const { strip, body } = bandGeometry(3);
-  assert.ok(strip.height >= 1);
-  assert.ok(body.height >= 1);
-  assert.equal(strip.height + body.height, 3);
-});
-
 // Michael's class sets (6-7 Oct): the name pass read 22 names off 172 pages
 // when it was shown only the top 18%. It now sees the top 45% -- and nothing is
 // cut off the graded page, so the first question is never lost with the band.
@@ -70,4 +45,15 @@ test("the name pass sees well over the old 18% band", () => {
   assert.ok(NAME_AREA >= 0.4);
   assert.equal(nameAreaGeometry(2000).height, Math.round(2000 * NAME_AREA));
   assert.equal(nameAreaGeometry(2000).top, 0);
+});
+
+test("no page is cut before it is graded, on any path", async () => {
+  // The 18% name band cut questions off class-scan pages and the first lines
+  // off essays. It is gone everywhere; the name pass reads a copy instead.
+  const { readFileSync } = await import("node:fs");
+  const prep = readFileSync("lib/image-prep.ts", "utf8");
+  assert.ok(!/splitNameBand/.test(prep));
+  const essays = readFileSync("components/teacher-assessments.tsx", "utf8");
+  assert.ok(!/splitNameBand/.test(essays));
+  assert.match(essays, /const file = await uprightPage\(incoming\[i\]\)/);
 });
