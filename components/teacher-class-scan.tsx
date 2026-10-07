@@ -10,16 +10,19 @@ import {
   Camera,
   UserPlus,
   Undo2,
+  ZoomIn,
 } from "lucide-react";
 import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
 import { uploadFile } from "@/lib/upload-client";
 import { readJson } from "@/lib/utils";
-import { splitNameBand, uprightPage } from "@/lib/image-prep";
+import { splitForClassScan, uprightPage } from "@/lib/image-prep";
 import { describeFailure, useOnline } from "@/lib/connection";
 import { announceScanComplete, isOutOfScans, SEE_PLANS } from "@/lib/quota-client";
 import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
 import { ScanCamera } from "./scan-camera";
+import { ImageViewer } from "./image-viewer";
+import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
 import { reconcileEvidence } from "@/lib/teacher-data";
@@ -32,6 +35,7 @@ import {
   resolveScannedGroups,
   ungradedReservations,
   type GradedGroup,
+  type NameBox,
   type PageName,
   type ResolvedGroup,
 } from "@/lib/teacher-class-scan";
@@ -43,10 +47,12 @@ import type { Assessment } from "@/lib/teacher-types";
 // class they came to scan.
 const MAX_PAGES = 80;
 
-/** Strips per name-reading request. The name pass returns a few tokens per
+/** Name areas per name-reading request. The name pass returns a few tokens per
  * page, but it still has a ceiling, and it had the same shape of bug the
- * grading pass just had: every page in one request, however many there were. */
-const NAME_BATCH = 24;
+ * grading pass just had: every page in one request, however many there were.
+ * Twelve since each answer also carries where the name sits on the page, which
+ * roughly doubles what one page asks the model to write. */
+const NAME_BATCH = 12;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -146,15 +152,83 @@ function parseDraft(raw: string | null): Draft | null {
 
 const EMPTY: Page[][] = [[]];
 
-/** One uploaded page, already straightened and split into work and name band. */
+/** One uploaded page: the whole upright page for grading, and a smaller copy
+ * of its top part for reading the name. */
 type Page = {
   key: string;
   label: string;
   bodyId: string;
+  /** The name-area upload (the top of the page, reduced). Called a strip
+   * because it used to be one; drafts saved before keep working. */
   stripId: string | null;
   /** Pages in the body upload, counted server-side. A photograph is 1. */
   pages: number;
 };
+
+/**
+ * The handwritten name, cropped out of the name area the name pass read.
+ *
+ * The box is where the model said the name was; it is padded a little, since
+ * a box drawn tight around handwriting tends to clip the tails of letters.
+ * Until the picture has loaded -- or when there is no box -- the whole name area
+ * is shown, which is still the top of the page and still has the name on it.
+ */
+function NameCrop({
+  src,
+  box,
+  onOpen,
+}: {
+  src: string;
+  box: NameBox | null;
+  onOpen: () => void;
+}) {
+  // The picture's own width / height, known once it has loaded.
+  const [ratio, setRatio] = useState<number | null>(null);
+  const pad = 0.04;
+  const crop =
+    box && ratio
+      ? (() => {
+          const x = Math.max(0, box.x - pad);
+          const y = Math.max(0, box.y - pad);
+          return {
+            x,
+            y,
+            w: Math.min(1, box.x + box.width + pad) - x,
+            h: Math.min(1, box.y + box.height + pad) - y,
+          };
+        })()
+      : null;
+  return (
+    <button
+      type="button"
+      className="name-crop"
+      onClick={onOpen}
+      aria-label="Enlarge the name as written on the page"
+      style={crop && ratio ? { aspectRatio: String((crop.w * ratio) / crop.h) } : undefined}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="The name as written on the page"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth && img.naturalHeight)
+            setRatio(img.naturalWidth / img.naturalHeight);
+        }}
+        style={
+          crop
+            ? {
+                width: 100 / crop.w + "%",
+                maxWidth: "none",
+                transform:
+                  "translate(" + -crop.x * 100 + "%, " + -crop.y * 100 + "%)",
+              }
+            : undefined
+        }
+      />
+    </button>
+  );
+}
 
 /**
  * Scanning a whole class's work for one assessment.
@@ -210,6 +284,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // The picture open full screen on the matching screen, if any.
+  const [viewing, setViewing] = useState<{ src: string; alt: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const stack = useRef<HTMLInputElement>(null);
@@ -226,6 +302,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     pageGroups: number[][];
     names: PageName[];
     ids: string[];
+    nameIds: (string | null)[];
     graded: GradedGroup[];
   } | null>(null);
   useEffect(() => {
@@ -277,27 +354,28 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   /**
-   * Straighten, cut the name band off the top, and upload both halves. Two
-   * uploads per page so that no single request ever holds a student's name
-   * beside that student's answers -- see docs/student-data-flow.md section 4.
+   * Straighten the page, and upload it whole for grading plus a reduced copy
+   * of its top part for the name pass. Nothing is cut off the graded page: the
+   * old 18% name band could hold the first question on a phone photo. See
+   * docs/student-data-flow.md section 4 for what each request now carries.
    */
   async function preparePage(raw: File): Promise<Omit<Page, "key" | "label">> {
     // A phone records its rotation in EXIF instead of rotating the pixels, so a
-    // page shot in portrait arrives sideways. Straighten first: the band is cut
-    // off the top of an upright page, which is only the top once rotated.
+    // page shot in portrait arrives sideways. Straighten first: the name area is
+    // the top of an upright page, which is only the top once rotated.
     const page = await uprightPage(raw);
-    const split = await splitNameBand(page);
+    const split = await splitForClassScan(page);
     if (!split) {
-      // A PDF, or a browser that could not do the cut. Grade the whole page and
+      // A PDF, or a browser that could not do the work. Grade the whole page and
       // read no name from it; the teacher names that pile.
       const whole = await upload(page);
       return { bodyId: whole.id, stripId: null, pages: whole.pages };
     }
-    const body = await upload(split.body);
-    // The strip is uploaded too, but it is never reserved and never charged:
-    // it is the top of a page the teacher is already paying for. Charging per
-    // upload rather than per page would bill this class set twice.
-    const strip = await upload(split.strip);
+    const body = await upload(split.page);
+    // The name area is uploaded too, but it is never reserved and never
+    // charged: it is the top of a page the teacher is already paying for.
+    // Charging per upload rather than per page would bill this class set twice.
+    const strip = await upload(split.nameArea);
     return { bodyId: body.id, stripId: strip.id, pages: body.pages };
   }
 
@@ -435,6 +513,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // against the right point without waiting for a re-render.
     let banked: GradedGroup[] = resume?.graded ?? [];
     const ids = pages.map((p) => p.bodyId);
+    const nameIds = pages.map((p) => p.stripId);
     setPageUploadIds(ids);
     // The pages this run has grouped, set once the name pass yields groups. Left
     // null until then so a failure in the name pass releases the whole reserved
@@ -461,7 +540,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
       // Batched for the same reason grading is: one request holding every strip
       // in a class set is a request whose size nobody chose.
-      const found = new Map<number, { name: string; confidence: number }>();
+      const found = new Map<number, Omit<PageName, "page">>();
       for (const slice of chunk(readable, NAME_BATCH)) {
         const read = await analyzeRequest({
           mode: "name_strip",
@@ -475,12 +554,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         // them back to the page each strip was cut from.
         for (const r of (read.result.pages ?? []) as PageName[]) {
           const source = slice[r.page];
-          if (source) found.set(source.page, { name: r.name, confidence: r.confidence });
+          if (source)
+            found.set(source.page, { name: r.name, confidence: r.confidence, box: r.box ?? null });
         }
       }
       names = names.map((n) => {
         const hit = found.get(n.page);
-        return hit ? { page: n.page, name: hit.name, confidence: hit.confidence } : n;
+        return hit ? { page: n.page, ...hit } : n;
       });
 
       // Pass two: the work, with the name bands gone, grouped either by what the
@@ -495,7 +575,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // answer and came back incomplete, which cost the teacher the scan and told
       // them only to try fewer pages. The photographs are the expensive part and
       // there are exactly as many of them either way.
-      partial.current = { pageGroups, names, ids, graded: resume?.graded ?? [] };
+      partial.current = { pageGroups, names, ids, nameIds, graded: resume?.graded ?? [] };
       const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
       // Resume where an interrupted run stopped rather than grading, and paying,
       // from the top again.
@@ -559,7 +639,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         resuming?.graded ?? [],
       );
       setProgress(null);
-      showGraded(pageGroups, names, graded, ids);
+      showGraded(pageGroups, names, graded, ids, nameIds);
     } catch (e) {
       // A run that stops partway leaves the pages it reserved up front but never
       // graded still reserved. Hand exactly those back now instead of leaving a
@@ -590,11 +670,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     names: PageName[],
     graded: GradedGroup[],
     ids: string[],
+    nameIds: (string | null)[],
   ) {
     const done = new Set(graded.map((g) => g.group));
-    const resolved = resolveScannedGroups(pageGroups, names, graded, ids, students).filter(
-      (_, i) => done.has(i),
-    );
+    const resolved = resolveScannedGroups(
+      pageGroups,
+      names,
+      graded,
+      ids,
+      students,
+      nameIds,
+    ).filter((_, i) => done.has(i));
     setPageUploadIds(ids);
     if (!resolved.length)
       toast.error(
@@ -671,6 +757,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             partial.current.names,
             partial.current.graded,
             partial.current.ids,
+            partial.current.nameIds,
           )
         : 0;
       const message =
@@ -811,6 +898,21 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const sharedWith = (g: ResolvedGroup) =>
     g.studentId ? (perStudent.get(g.studentId) ?? 0) : 0;
   const nameOfStudent = (id: string) => students.find((s) => s.id === id)?.name ?? "this student";
+  const matchedIds = new Set(live.map((g) => g.studentId).filter((id): id is string => !!id));
+  /** The teacher's answer for one row: a roster student, or "new". */
+  function chooseStudent(g: ResolvedGroup, v: string) {
+    const id = v === "new" ? null : v.replace("existing:", "");
+    updateGroup(g.key, {
+      studentId: id,
+      name: id ? students.find((s) => s.id === id)?.name || g.name : g.detectedName || g.name,
+      // Answered. The row stops being a question, including when the answer
+      // is "add as a new student".
+      candidateIds: [],
+      // The teacher chose; how sure the app was no longer matters.
+      matchConfidence: 100,
+      suggestedId: null,
+    });
+  }
   const firstNameRead = (g: ResolvedGroup) =>
     g.detectedName.trim().split(/\s+/)[0] || "";
 
@@ -980,9 +1082,57 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       )}
       {groups && groups.length > 0 && (
         <div className="class-scan-groups">
-          {groups.map((g) => (
-            <div className={"class-scan-row" + (discarded.has(g.key) ? " discarded" : "")} key={g.key}>
-              <div className="class-scan-row-main">
+          <p className="cell-meta">
+            Students are listed in the order you scanned them. Check each name against the
+            paper — tap a picture to see it full size.
+          </p>
+          {groups.map((g) => {
+            const firstPage = g.pageUploadIds[0];
+            const suggested = g.suggestedId
+              ? students.find((s) => s.id === g.suggestedId)
+              : undefined;
+            const chosen = g.studentId ?? "";
+            return (
+            <div
+              className={
+                "class-scan-row name-match-row" + (discarded.has(g.key) ? " discarded" : "")
+              }
+              key={g.key}
+            >
+              <div className="name-match-work">
+                {firstPage && (
+                  <button
+                    type="button"
+                    className="name-match-thumb"
+                    onClick={() =>
+                      setViewing({
+                        src: "/api/uploads/" + firstPage,
+                        alt: "First page of this student's work",
+                      })
+                    }
+                    aria-label="Enlarge the first page of this student's work"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={"/api/uploads/" + firstPage} alt="First page of this student's work" />
+                    <span className="work-sample-hint">
+                      <ZoomIn size={12} /> Enlarge
+                    </span>
+                  </button>
+                )}
+                {g.nameUploadId && (
+                  <NameCrop
+                    src={"/api/uploads/" + g.nameUploadId}
+                    box={g.nameBox}
+                    onOpen={() =>
+                      setViewing({
+                        src: "/api/uploads/" + g.nameUploadId,
+                        alt: "The top of the page, where the name is written",
+                      })
+                    }
+                  />
+                )}
+              </div>
+              <div className="class-scan-row-main name-match-main">
                 <span className="cell-meta">
                   {g.pageUploadIds.length} page{g.pageUploadIds.length === 1 ? "" : "s"}
                   {g.detectedName ? " · read as “" + g.detectedName + "”" : " · no name read"}
@@ -1005,17 +1155,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   }
                   onChange={(v) => {
                     if (!v) return;
-                    updateGroup(g.key, {
-                      studentId: v === "new" ? null : v.replace("existing:", ""),
-                      name:
-                        v === "new"
-                          ? g.detectedName || g.name
-                          : students.find((s) => s.id === v.replace("existing:", ""))?.name ||
-                            g.name,
-                      // Answered. The row stops being a question, including
-                      // when the answer is "add as a new student".
-                      candidateIds: [],
-                    });
+                    chooseStudent(g, v);
                   }}
                   options={[
                     ...(g.candidateIds.length
@@ -1023,17 +1163,26 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                           { value: "", label: "Choose a student…" },
                           ...g.candidateIds.map((id) => ({
                             value: "existing:" + id,
-                            label: nameOfStudent(id),
+                            label: nameOfStudent(id) + (id === g.suggestedId ? " (best guess)" : ""),
                           })),
                         ]
                       : []),
                     { value: "new", label: "Add as a new student" },
-                    ...students
+                    ...[...students]
                       .filter((s) => !g.candidateIds.includes(s.id))
-                      .map((s) => ({ value: "existing:" + s.id, label: s.name })),
+                      .sort((x, y) => compareByLastName(x.name, y.name))
+                      .map((s) => ({
+                        value: "existing:" + s.id,
+                        label:
+                          s.name +
+                          // Blind matching goes faster when the names already
+                          // used are marked: the paper in hand is most likely
+                          // one of the students not yet matched.
+                          (s.id !== chosen && matchedIds.has(s.id) ? " · already matched" : ""),
+                      })),
                   ]}
                 />
-                {!g.studentId && (
+                {!g.studentId && !g.candidateIds.length && (
                   <input
                     className="class-scan-name-input"
                     aria-label="New student name"
@@ -1042,7 +1191,21 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     placeholder="Student name"
                   />
                 )}
-                <Score value={Math.round(g.confidence)} />
+                <div className="name-match-guess">
+                  <span className="cell-meta">Match confidence</span>
+                  <Score value={g.studentId || suggested ? g.matchConfidence : 0} />
+                </div>
+                {g.candidateIds.length > 0 && suggested && (
+                  <div className="name-match-guess">
+                    <span className="cell-meta">Best guess: {suggested.name}</span>
+                    <Action
+                      variant="secondary small"
+                      onClick={() => chooseStudent(g, "existing:" + suggested.id)}
+                    >
+                      <Check size={14} /> Use {suggested.name}
+                    </Action>
+                  </div>
+                )}
                 {g.candidateIds.length > 0 && (
                   <p className="key-notice" role="status">
                     “{g.detectedName}” fits {g.candidateIds.length} students in this
@@ -1065,7 +1228,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                 {discarded.has(g.key) ? <Check size={16} /> : <X size={16} />}
               </button>
             </div>
-          ))}
+            );
+          })}
           {undecided.length > 0 && (
             <p className="key-notice" role="status">
               {undecided.length} paper{undecided.length === 1 ? "" : "s"} could belong to
@@ -1082,6 +1246,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             <Pill>{pageUploadIds.length} pages scanned</Pill>
           </div>
         </div>
+      )}
+      {viewing && (
+        <ImageViewer src={viewing.src} alt={viewing.alt} onClose={() => setViewing(null)} />
       )}
     </div>
   );

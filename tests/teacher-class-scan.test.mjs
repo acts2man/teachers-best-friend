@@ -936,3 +936,142 @@ test("the class-scan component releases the ungraded reservations on failure", (
   assert.match(ui, /ungradedReservations\(/, "the component computes the stranded ids");
   assert.match(ui, /releaseStack\(\s*ungradedReservations\(/, "and releases them");
 });
+
+// ---------------------------------------------------------------
+// Michael's class sets, 6-7 Oct: names read loosely, order kept
+// ---------------------------------------------------------------
+const loose = bundle("lib/teacher-class-scan.ts");
+
+const CLASS = [
+  student("s1", "Michael Torres"),
+  student("s2", "Guadalupe Ramirez"),
+  student("s3", "Jayden Brooks"),
+  student("s4", "Sofia Nguyen"),
+  student("s5", "Maria Gonzalez"),
+];
+
+test("a nickname finds the student it is short for", () => {
+  assert.equal(matchRosterStudent("Mike", CLASS).student?.id, "s1");
+  assert.equal(matchRosterStudent("Lupe R.", CLASS).student?.id, "s2");
+  assert.equal(matchRosterStudent("Sophia", CLASS).student?.id, "s4");
+});
+
+test("a misspelled name still finds the student, with a lower score", () => {
+  const m = matchRosterStudent("Jaden Brooks", CLASS);
+  assert.equal(m.student?.id, "s3");
+  assert.ok(m.score < 1 && m.score >= 0.8, "fuzzy, not exact: " + m.score);
+  assert.equal(matchRosterStudent("Micheal Tores", CLASS).student?.id, "s1");
+  assert.equal(matchRosterStudent("Maria Gonzales", CLASS).student?.id, "s5");
+});
+
+test("a first name alone is matched, and scored below a full name", () => {
+  const first = matchRosterStudent("Jayden", CLASS);
+  const full = matchRosterStudent("Jayden Brooks", CLASS);
+  assert.equal(first.student?.id, "s3");
+  assert.ok(first.score < full.score);
+});
+
+test("surname first, as some children write it, still finds them", () => {
+  assert.equal(matchRosterStudent("Nguyen Sofia", CLASS).student?.id, "s4");
+});
+
+test("a different child is still not matched to anyone", () => {
+  assert.deepEqual(matchRosterStudent("Jamal Thompson", CLASS), {});
+  assert.deepEqual(matchRosterStudent("Kevin", CLASS), {});
+});
+
+test("nameSimilarity is 1 for the same name and low for unrelated ones", () => {
+  assert.equal(loose.nameSimilarity("maria", "maria"), 1);
+  assert.ok(loose.nameSimilarity("michael", "micheal") > 0.9);
+  assert.ok(loose.nameSimilarity("maria", "kevin") < 0.6);
+});
+
+test("each row carries a match confidence built from the read and the fit", () => {
+  const rows = resolveScannedGroups(
+    [[0], [1], [2]],
+    [name(0, "Michael Torres", 95), name(1, "Jaden Brooks", 80), name(2, "", 0)],
+    [],
+    ["u1", "u2", "u3"],
+    CLASS,
+  );
+  assert.equal(rows[0].matchConfidence, 95, "an exact name keeps the read confidence");
+  assert.ok(rows[1].matchConfidence < 80 && rows[1].matchConfidence > 60);
+  assert.equal(rows[2].matchConfidence, 0, "no name read, no confidence");
+});
+
+test("an open question offers a best guess from what the rest of the stack settled", () => {
+  // Three Marias, "Maria" on the paper. Two of them were matched exactly on
+  // other papers, so the third is the best guess -- offered, not chosen.
+  const rows = resolveScannedGroups(
+    [[0], [1], [2]],
+    [name(0, "Maria Garcia"), name(1, "Maria Gu."), name(2, "Maria")],
+    [],
+    ["u1", "u2", "u3"],
+    FIVE,
+  );
+  assert.equal(rows[2].studentId, null, "still a question");
+  assert.deepEqual(rows[2].candidateIds, ["ga", "go", "gu"]);
+  assert.equal(rows[2].suggestedId, "go", "the one not already matched");
+});
+
+test("the name crop travels with the row: which upload, and where on it", () => {
+  const box = { x: 0.1, y: 0.2, width: 0.3, height: 0.1 };
+  const rows = resolveScannedGroups(
+    [[0, 1]],
+    [{ page: 0, name: "Sofia Nguyen", confidence: 90, box }, name(1, "")],
+    [],
+    ["body1", "body2"],
+    CLASS,
+    ["name1", "name2"],
+  );
+  assert.equal(rows[0].nameUploadId, "name1");
+  assert.deepEqual(rows[0].nameBox, box);
+});
+
+test("saving a scan records the order the papers were scanned in", () => {
+  const a = { ...assessment(), studentOrder: ["s9"] };
+  const r = [{ questionId: "q1", answer: "2", verdict: "match" }];
+  const result = applyScannedGroups(a, [...CLASS, student("s9", "Earlier Kid")], "c1", [
+    { studentId: "s3", name: "Jayden Brooks", pageUploadIds: ["u1"], responses: r },
+    { studentId: "s1", name: "Michael Torres", pageUploadIds: ["u2"], responses: r },
+    { studentId: "s9", name: "Earlier", pageUploadIds: ["u3"], responses: r },
+  ]);
+  assert.deepEqual(result.assessment.studentOrder, ["s9", "s3", "s1"],
+    "an earlier scan keeps its place; this scan follows in its own order");
+});
+
+test("inScanOrder puts scanned students first, in scan order, and keeps the rest", () => {
+  const ordered = loose.inScanOrder(CLASS, { studentOrder: ["s4", "s2"] });
+  assert.deepEqual(ordered.map((s) => s.id), ["s4", "s2", "s1", "s3", "s5"]);
+  assert.deepEqual(loose.inScanOrder(CLASS, {}).map((s) => s.id), CLASS.map((s) => s.id));
+});
+
+test("a grading request holds at most twelve whole pages, students kept together", () => {
+  // Whole pages are bigger than the old 82% bodies, and the route refuses more
+  // than 12 MB of images in one request.
+  const groups = Array.from({ length: 6 }, (_, i) => [i * 3, i * 3 + 1, i * 3 + 2]);
+  const ids = Array.from({ length: 18 }, (_, i) => "u" + i);
+  const batches = loose.planScanBatches(groups, ids, 2);
+  for (const b of batches) {
+    assert.ok(b.uploadIds.length <= loose.MAX_PAGES_PER_BATCH);
+    for (const g of b.groups) assert.equal(g.length, 3, "a student was split");
+  }
+  assert.deepEqual(batches.flatMap((b) => b.groupIndexes), [0, 1, 2, 3, 4, 5]);
+});
+
+test("the matching screen shows the work, the name and the match confidence", () => {
+  const ui = readFileSync("components/teacher-class-scan.tsx", "utf8");
+  assert.match(ui, /name-match-thumb/, "the first page is shown beside the picker");
+  assert.match(ui, /<NameCrop/, "and the name as written");
+  assert.match(ui, /Match confidence/, "the percentage says what it is");
+  assert.match(ui, /<ImageViewer/, "tapping enlarges");
+  assert.match(ui, /splitForClassScan/, "the class scan grades whole pages");
+  assert.ok(!/splitNameBand/.test(ui), "nothing is cut off the graded page");
+});
+
+test("the full-size viewer is portaled to the body", () => {
+  const viewer = readFileSync("components/image-viewer.tsx", "utf8");
+  assert.match(viewer, /createPortal\([\s\S]*document\.body/);
+  assert.match(viewer, /visualViewport/);
+  assert.match(viewer, /Close/);
+});

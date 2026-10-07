@@ -70,6 +70,7 @@ import {
   responseMatch,
 } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
+import { inScanOrder } from "@/lib/teacher-class-scan";
 import { ScanCamera } from "./scan-camera";
 
 /**
@@ -81,10 +82,11 @@ import { ScanCamera } from "./scan-camera";
  * teacher assumes the others reached it the same way), and a tap cycles to a
  * different student when the first sample is unclear.
  *
- * The image is the name-removed body crop from studentUploadIds -- the same
- * page already reachable from "Original student work", never the name strip --
- * and it is shown with no student name, so the group stays about the work, not
- * whose it is. The grading pass returns no reliable per-question location, so
+ * The image is the graded page from studentUploadIds -- the same page already
+ * reachable from "Original student work", never the name-area copy -- and it is
+ * shown with no student name beside it, so the group stays about the work, not
+ * whose it is. (Since 7 Oct a class-scan page is graded whole, so a name the
+ * student wrote may be visible on it.) The grading pass returns no reliable per-question location, so
  * the whole page is shown rather than a wrong crop (cropping to the question is
  * a later decision): showing the right work matters more than a tight frame.
  *
@@ -848,7 +850,7 @@ export function StudentResponseReview({
               setLimit(12);
               setNotice("");
             }}
-            options={students.map((s) => ({
+            options={inScanOrder(students, a).map((s) => ({
               value: s.id,
               label:
                 s.name +

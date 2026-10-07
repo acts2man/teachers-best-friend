@@ -1,7 +1,9 @@
-// The promise made to pilot teachers, checked against the prompts the app
-// actually builds: no single request to the AI provider carries a student's
-// name and that student's answers together, and the class roster is sent to
-// neither. See docs/student-data-flow.md section 4.
+// What the app sends the AI provider, checked against the prompts it actually
+// builds. Since the 28 Sep decision the AI may read a name written on a page
+// (the whole page is graded, name and all, and a separate pass reads the name
+// off the top), but the class roster is never sent to either request, no name
+// is ever sent as text, and the grading pass is told to ignore any name it sees
+// and never report one. See docs/student-data-flow.md section 4.
 //
 // These assert on the built prompt text rather than on intent, so a future
 // edit that quietly puts a name back in the grading call fails here.
@@ -70,7 +72,8 @@ test("the grading pass is sent no student name and no roster", () => {
     mode: "class_scan", uploadIds: ["u1", "u2"], pageGroups: [[0], [1]],
   });
   assert.equal(mentionsAnyName(task), false, "a name reached the grading prompt");
-  assert.match(task, /name has already been removed/i);
+  assert.match(task, /ignore it/i, "grading is told to ignore a name on the page");
+  assert.match(task, /never report or reproduce any name/i);
 });
 
 test("the grading pass is told the groups, so it never needs to read a name", () => {
@@ -79,6 +82,16 @@ test("the grading pass is told the groups, so it never needs to read a name", ()
   });
   assert.match(task, /"group":0/);
   assert.match(task, /"pages":\[0,1\]/);
+});
+
+test("the name pass looks well beyond the Name line, without being given a class list", () => {
+  const task = promptFor({ mode: "name_strip", uploadIds: ["s1"] });
+  // Michael's class sets: children write above the line, beside it and in the
+  // margin, and a phone photo puts the line lower than a scanner does.
+  assert.match(task, /above or below it/i);
+  assert.match(task, /margin/i);
+  assert.match(task, /no class list/i);
+  assert.match(task, /box/i, "the name pass says where the name is, for the crop");
 });
 
 test("the name pass is sent no questions, no answer key and no roster", () => {

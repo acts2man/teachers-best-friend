@@ -693,8 +693,16 @@ export function groupAnswers(
 ): AnswerGroup[] {
   const question = a.questions.find((q) => q.id === questionId);
   const groups = new Map<string, AnswerGroup>();
-  for (const r of a.responses) {
-    if (r.questionId !== questionId) continue;
+  // Within a group, students are listed in the order their papers were
+  // scanned, which is the order of the pile on the teacher's desk.
+  const at = new Map((a.studentOrder ?? []).map((id, i) => [id, i]));
+  const rank = (id: string) => at.get(id) ?? Number.MAX_SAFE_INTEGER;
+  const inOrder = a.responses
+    .filter((r) => r.questionId === questionId)
+    .map((r, i) => ({ r, i }))
+    .sort((x, y) => rank(x.r.studentId) - rank(y.r.studentId) || x.i - y.i)
+    .map(({ r }) => r);
+  for (const r of inOrder) {
     const key = answerKey(r.answer);
     const existing = groups.get(key);
     if (existing) {

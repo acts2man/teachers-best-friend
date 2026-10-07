@@ -61,3 +61,13 @@ test("bandGeometry still yields a usable body on a very short page", () => {
   assert.ok(body.height >= 1);
   assert.equal(strip.height + body.height, 3);
 });
+
+// Michael's class sets (6-7 Oct): the name pass read 22 names off 172 pages
+// when it was shown only the top 18%. It now sees the top 45% -- and nothing is
+// cut off the graded page, so the first question is never lost with the band.
+const { nameAreaGeometry, NAME_AREA } = bundle("lib/image-prep.ts");
+test("the name pass sees well over the old 18% band", () => {
+  assert.ok(NAME_AREA >= 0.4);
+  assert.equal(nameAreaGeometry(2000).height, Math.round(2000 * NAME_AREA));
+  assert.equal(nameAreaGeometry(2000).top, 0);
+});

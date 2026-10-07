@@ -21,8 +21,26 @@
  * take the photo can already do this.
  */
 
-/** Fraction of the page height treated as the name band. */
+/** Fraction of the page height cut off as the name band on the writing path
+ * (splitNameBand). The class scan no longer cuts anything off: see NAME_AREA. */
 export const NAME_BAND = 0.18;
+
+/**
+ * How much of the top of a page the class scan's name pass looks at.
+ *
+ * It used to be NAME_BAND, 18%, and on Michael's real class sets (6-7 Oct) the
+ * name pass read 22 names off 172 pages. In a phone photo the "Name" line sits
+ * lower than 18% of the frame -- there is table and margin above the sheet --
+ * and children write the name above the line, beside it, or in a corner. Since
+ * the 28 Sep call the AI may read student names, so there is no longer a reason
+ * to crop tight: the name pass sees the top 45% of the page, at a reduced
+ * resolution, and is told to look anywhere near the top.
+ */
+export const NAME_AREA = 0.45;
+
+/** Longest edge of the name-area image. A name is a few large handwritten
+ * words; this keeps the name pass small without making them illegible. */
+const NAME_AREA_MAX_EDGE = 1400;
 
 /**
  * Longest edge kept after normalising. A page photograph carries far more
@@ -66,6 +84,11 @@ export function bandGeometry(height: number, band = NAME_BAND) {
     strip: { top: 0, height: stripHeight },
     body: { top: stripHeight, height: Math.max(1, height - stripHeight) },
   };
+}
+
+/** The rows of a page of this height that the name pass is shown. Pure. */
+export function nameAreaGeometry(height: number, area = NAME_AREA) {
+  return { top: 0, height: Math.max(1, Math.round(height * area)) };
 }
 
 type Drawable = { width: number; height: number };
@@ -163,6 +186,47 @@ export async function splitNameBand(
     return {
       strip: await toFile(strip.canvas, renamed(file.name, "-name")),
       body: await toFile(body.canvas, renamed(file.name, "-work")),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A class-scan page: the whole upright page for grading, and a reduced copy of
+ * its top part for reading the name.
+ *
+ * Nothing is cut off the graded page any more. The old split removed the top
+ * 18% so grading never saw a name, and on a phone photo that 18% could hold the
+ * first question -- grading then read it as blank. Since the 28 Sep decision the
+ * AI may see names, so the page is graded whole (the grading prompt still tells
+ * it to ignore and never report a name). See docs/student-data-flow.md section 4.
+ *
+ * Returns null for a non-image, or when the browser cannot do the work; the
+ * caller then grades the original file and reads no name from it.
+ */
+export async function splitForClassScan(
+  file: File,
+): Promise<{ nameArea: File; page: File } | null> {
+  if (!isImage(file)) return null;
+  try {
+    const bitmap = await decode(file);
+    const size = fitWithin(bitmap.width, bitmap.height);
+    const whole = canvasFor(size);
+    whole.ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+
+    const sourceArea = nameAreaGeometry(bitmap.height);
+    const areaSize = fitWithin(bitmap.width, sourceArea.height, NAME_AREA_MAX_EDGE);
+    const area = canvasFor(areaSize);
+    area.ctx.drawImage(
+      bitmap,
+      0, 0, bitmap.width, sourceArea.height,
+      0, 0, areaSize.width, areaSize.height,
+    );
+    bitmap.close?.();
+    return {
+      nameArea: await toFile(area.canvas, renamed(file.name, "-name")),
+      page: await toFile(whole.canvas, renamed(file.name, "")),
     };
   } catch {
     return null;

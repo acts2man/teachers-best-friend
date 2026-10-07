@@ -86,7 +86,7 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   writing: { model: "gpt-5.6-luna", effort: "low", maxOutput: 2000 },
   // Reading a name off a cropped strip is the cheapest thing the app does:
   // a small image, a few words out, the least reasoning the model allows.
-  name_strip: { model: "gpt-5.4-nano", effort: "low", maxOutput: 1500 },
+  name_strip: { model: "gpt-5.4-nano", effort: "low", maxOutput: 4000 },
   answer_key: { model: "gpt-5.6-luna", effort: "low", maxOutput: 3000 },
   // Transcribing a story runs once per assessment, not once per student, and a
   // ten-page story needs room for all of it to come back.
