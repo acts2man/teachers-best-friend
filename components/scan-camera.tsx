@@ -101,10 +101,10 @@ function writeAuto(on: boolean) {
  * hand asks first, and every page is saved to IndexedDB as it's taken so an
  * interruption can be restored (lib/scan-store) — storage never blocks capture.
  *
- * Page edges are detected live and outlined; on capture the page is cropped and
- * straightened, BUT only when the detection is convincingly a page (large,
- * rectangular, top near the frame top so the name band is never cut). Otherwise
- * the full frame is kept — a wrong crop is worse than no crop. Auto-snap fires
+ * Page edges are detected live and outlined, to guide framing and to decide
+ * when to auto-snap. The capture itself is NOT cropped to the detected page: it
+ * is exactly the region the full-screen preview shows (coverCrop), so whatever
+ * the teacher sees on screen is what is saved. Auto-snap fires
  * only on a confident page; low confidence shows "Hold steady or tap the
  * shutter." Detection code is dependency-free and loaded only when the camera
  * opens. If the camera can't start, the teacher is sent to Upload.

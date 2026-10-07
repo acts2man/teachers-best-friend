@@ -733,10 +733,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .work-sample-page{min-width:24px;padding:2px 6px;font-size:12px;font-weight:600;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:7px;background:white;color:var(--ink)}
 .work-sample-page.is-current{background:hsl(calc(154deg + var(--th)) calc(18% * var(--ts)) 53.3%);border-color:transparent;color:#f7f7ef}
 .work-sample-another{padding:2px 4px;font-size:12px;font-weight:600;background:none;border:none;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);text-decoration:underline;text-underline-offset:2px}
-.work-sample-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto;background:rgba(12,20,16,.86);overscroll-behavior:contain}
-.work-sample-overlay img{max-width:100%;height:auto;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:zoom-in;touch-action:pinch-zoom}
-.work-sample-overlay img.is-full{max-width:none;cursor:zoom-out}
-.work-sample-close{position:fixed;top:12px;right:12px;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border:none;border-radius:999px;background:rgba(255,255,255,.92);color:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2%)}
 /* The "Percent" credit entry in Grade by question: a compact number box that
    opens beside the No credit / Half / Full presets when tapped, rather than a
    second row of buttons. */
@@ -809,7 +805,7 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .error-type-list .group-members{margin:4px 0 0}
 /* Full-screen picture of student work (components/image-viewer.tsx). Portaled
    to <body> and sized by script to the visual viewport; inset:0 is the fallback. */
-.image-viewer{position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;background:rgba(12,20,16,.92);overscroll-behavior:contain}
+.image-viewer{position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;background:rgba(12,20,16,.96);overscroll-behavior:contain}
 .image-viewer-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;flex:0 0 auto}
 .image-viewer-hint{font-size:12px;color:#f7f7ef;opacity:.85}
 .image-viewer-close{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 16px;border:none;border-radius:999px;background:#fff;color:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2%);font-size:15px;font-weight:700}
@@ -829,3 +825,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .name-match-main .pick{width:100%;min-width:0}
 .name-match-guess{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 @media(max-width:520px){.name-match-work,.name-match-thumb{width:104px}.name-match-thumb{height:136px}}
+.image-viewer-fallback{padding:18px 20px;border-radius:10px;background:#fff;color:var(--ink);font-size:15px}
+.image-viewer-fallback a{text-decoration:underline;font-weight:600}
+.source-document-button{display:inline-flex;align-items:center;gap:6px;padding:0;border:none;background:none;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px}
