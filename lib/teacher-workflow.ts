@@ -1,4 +1,5 @@
 import type {
+  AnswerRegion,
   Assessment,
   Group,
   Question,
@@ -96,6 +97,75 @@ export function responseFlag(
   return null;
 }
 
+/**
+ * What one question is worth.
+ *
+ * Ricky: some questions are worth more than others, and teachers expect to set
+ * that. A question's own `points` wins. Without it the assessment's total (the
+ * old single "points possible" number) is split evenly, and without that each
+ * question is worth 1 -- so every assessment made before points existed scores
+ * exactly as it did.
+ */
+export function questionPoints(a: Assessment, q: Question): number {
+  if (typeof q.points === "number" && q.points > 0) return q.points;
+  // What is left of the total once questions with their own points are
+  // counted, shared by the rest -- so a question added after points were set
+  // does not quietly take a share meant for the others.
+  const active = activeQuestions(a);
+  const own = active.filter((x) => typeof x.points === "number" && x.points > 0);
+  const rest = active.length - own.length;
+  const left = (a.pointsPossible ?? 0) - own.reduce((sum, x) => sum + (x.points as number), 0);
+  if (a.pointsPossible && a.pointsPossible > 0 && rest > 0 && left > 0)
+    return Math.round((left / rest) * 100) / 100;
+  return 1;
+}
+
+/** What the whole assessment is worth: the sum of its questions. */
+export function totalPoints(a: Assessment): number {
+  return roundPoints(activeQuestions(a).reduce((sum, q) => sum + questionPoints(a, q), 0));
+}
+
+/** Points to two decimals, so 1/3 + 1/3 + 1/3 shows as 1, not 0.9999. */
+export function roundPoints(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** "3", "1.5", "0.33" -- no trailing zeros. */
+export function pointsText(n: number): string {
+  return String(roundPoints(n));
+}
+
+/** Points earned on one answer: its credit (a percentage of the question)
+ * times what the question is worth. 3 of 4 is stored as 75%, so changing a
+ * question's worth later keeps the same share of credit. */
+export function pointsEarned(a: Assessment, r: StudentResponse): number {
+  const q = a.questions.find((x) => x.id === r.questionId);
+  if (!q) return 0;
+  return roundPoints((responseMatch(r) / 100) * questionPoints(a, q));
+}
+
+/**
+ * Sets one question's worth. The first time any question is given its own
+ * points, every question gets its current worth written down, so the others do
+ * not shift when this one changes; the total becomes the sum.
+ */
+export function setQuestionPoints(a: Assessment, questionId: string, points: number): Assessment {
+  const value = roundPoints(Math.max(0, Math.min(1000, points)));
+  const questions = a.questions.map((q) => ({
+    ...q,
+    points: q.id === questionId ? value : questionPoints(a, q),
+  }));
+  const next = { ...a, questions };
+  return { ...next, pointsPossible: totalPoints(next) };
+}
+
+/** The credit, as a percentage of the question, for `earned` points of it. */
+export function creditForPoints(a: Assessment, q: Question, earned: number): number {
+  const worth = questionPoints(a, q);
+  if (worth <= 0) return 0;
+  return Math.max(0, Math.min(100, (earned / worth) * 100));
+}
+
 export function studentReview(a: Assessment, studentId: string) {
   const questions = activeQuestions(a);
   const responses = questions.flatMap((q) => {
@@ -140,13 +210,23 @@ export function studentReview(a: Assessment, studentId: string) {
     // the score (the score averages verified answers only); they are surfaced so
     // a partial score is never mistaken for a final one.
     needsGrading: pending.length,
-    score: reviewed.length
-      ? Math.round(
-          reviewed.reduce((sum, response) => sum + responseMatch(response), 0) /
-            reviewed.length,
-        )
-      : null,
+    // Weighted by what each question is worth: points earned over points
+    // possible, across the answers confirmed so far. With every question worth
+    // the same this is the plain average it always was.
+    score: reviewed.length ? Math.round((100 * earnedOf(reviewed)) / possibleOf(reviewed)) : null,
+    pointsEarned: roundPoints(earnedOf(reviewed)),
+    pointsPossible: totalPoints(a),
   };
+  function earnedOf(rs: StudentResponse[]) {
+    return rs.reduce((sum, r) => sum + pointsEarned(a, r), 0);
+  }
+  function possibleOf(rs: StudentResponse[]) {
+    const total = rs.reduce((sum, r) => {
+      const q = questions.find((x) => x.id === r.questionId);
+      return sum + (q ? questionPoints(a, q) : 0);
+    }, 0);
+    return total > 0 ? total : 1;
+  }
 }
 
 export function assignmentNextStep(a: Assessment) {
@@ -245,6 +325,10 @@ export type RecognizedResponse = {
   questionId: string;
   answer: string;
   verdict: "match" | "blank" | "other";
+  /** See StudentResponse.finalAnswer / answerRegion / suggestedErrorType. */
+  finalAnswer?: string;
+  answerRegion?: AnswerRegion | null;
+  suggestedErrorType?: string;
 };
 
 /**
@@ -289,6 +373,13 @@ export function normalizeRecognizedResponses(
       // question (100) or it did not (0). It no longer estimates a percentage.
       confidence: response ? 100 : 0,
       verified: false,
+      ...(!isBlank && response.finalAnswer?.trim()
+        ? { finalAnswer: response.finalAnswer.trim() }
+        : {}),
+      ...(!isBlank && response.answerRegion ? { answerRegion: response.answerRegion } : {}),
+      ...(!isBlank && !isMatch && response.suggestedErrorType
+        ? { suggestedErrorType: response.suggestedErrorType }
+        : {}),
     };
   });
 }
@@ -540,7 +631,12 @@ export function studentReport(a: Assessment, student: Student) {
       : "Provisional score from reviewed answers: ") +
     (summary.score === null
       ? "Not yet available"
-      : scoreLabel(summary.score, a.pointsPossible)) +
+      : summary.score +
+        "% · " +
+        pointsText(summary.pointsEarned) +
+        "/" +
+        pointsText(summary.pointsPossible) +
+        " points") +
     "\n\nSTANDARDS EVIDENCE\n" +
     codes
       .map((code) => {
@@ -651,7 +747,45 @@ export type AnswerGroup = {
    * when the responses here disagree (which normal use never produces, since a
    * tag is applied to the whole group at once). */
   errorType: string;
+  /** The error type the grading pass suggested most often in this group, or
+   * "" -- offered to the teacher to approve or change, never applied alone. */
+  suggestedErrorType: string;
+  /** How the students actually wrote it, up to three different ways, so the
+   * teacher sees "11,163 people" and "5,753 + 2,250 + 3,160 = 11,163" behind
+   * a group labelled 11163. */
+  written: string[];
 };
+
+/**
+ * One question at a glance, before opening its groups (Ricky's flow): how many
+ * answers are right, how many are blank or got no credit, how many got part
+ * credit, and how many still need the teacher. Counted in students.
+ */
+export type QuestionSummary = {
+  correct: number;
+  noCredit: number;
+  partial: number;
+  needReview: number;
+  /** Answer groups still waiting on a decision. */
+  groupsToReview: number;
+};
+
+export function questionSummary(a: Assessment, questionId: string): QuestionSummary {
+  const groups = groupAnswers(a, questionId);
+  const summary: QuestionSummary = { correct: 0, noCredit: 0, partial: 0, needReview: 0, groupsToReview: 0 };
+  for (const g of groups) {
+    if (g.needsDecision) {
+      summary.needReview += g.responseIds.length;
+      summary.groupsToReview++;
+      continue;
+    }
+    const m = Math.round(g.match);
+    if (!g.answer.trim() || m <= 0) summary.noCredit += g.responseIds.length;
+    else if (m >= 100) summary.correct += g.responseIds.length;
+    else summary.partial += g.responseIds.length;
+  }
+  return summary;
+}
 
 /** The short label for a credit score, matching the Grade-by-question buttons. */
 export function creditLabel(match: number): string {
@@ -702,10 +836,23 @@ export function groupAnswers(
     .map((r, i) => ({ r, i }))
     .sort((x, y) => rank(x.r.studentId) - rank(y.r.studentId) || x.i - y.i)
     .map(({ r }) => r);
+  const suggestions = new Map<string, Map<string, number>>();
   for (const r of inOrder) {
-    const key = answerKey(r.answer);
+    // Grouped on the final answer the grading pass normalized ("11163"), not
+    // the whole written text, so students who reached the same answer by
+    // writing it differently are one decision. Answers graded before the final
+    // answer existed fall back to their written text, as before.
+    const final = r.finalAnswer?.trim() || r.answer;
+    const key = answerKey(final);
+    if (r.suggestedErrorType) {
+      const tally = suggestions.get(key) ?? new Map<string, number>();
+      tally.set(r.suggestedErrorType, (tally.get(r.suggestedErrorType) ?? 0) + 1);
+      suggestions.set(key, tally);
+    }
     const existing = groups.get(key);
     if (existing) {
+      if (r.answer.trim() && existing.written.length < 3 && !existing.written.includes(r.answer.trim()))
+        existing.written.push(r.answer.trim());
       existing.responseIds.push(r.id);
       existing.studentIds.push(r.studentId);
       existing.correct = existing.correct && r.correct;
@@ -718,7 +865,7 @@ export function groupAnswers(
     }
     groups.set(key, {
       key,
-      answer: r.answer,
+      answer: final,
       responseIds: [r.id],
       studentIds: [r.studentId],
       correct: r.correct,
@@ -726,7 +873,13 @@ export function groupAnswers(
       match: responseMatch(r),
       needsDecision: false,
       errorType: r.errorType || "",
+      suggestedErrorType: "",
+      written: r.answer.trim() ? [r.answer.trim()] : [],
     });
+  }
+  for (const [key, tally] of suggestions) {
+    const g = groups.get(key);
+    if (g) g.suggestedErrorType = [...tally.entries()].sort((x, y) => y[1] - x[1])[0][0];
   }
   return [...groups.values()]
     .map((g) => ({
@@ -868,9 +1021,13 @@ function csvField(value: unknown) {
  */
 export function gradebookCsv(a: Assessment, students: Student[]) {
   const questions = activeQuestions(a);
+  const total = totalPoints(a);
+  // Each question column is the points earned on it, headed with what it is
+  // worth, so a district gradebook gets the numbers the teacher set.
   const header = [
     "Student",
-    ...questions.map((q) => "Q" + q.number),
+    ...questions.map((q) => "Q" + q.number + " (" + pointsText(questionPoints(a, q)) + " pts)"),
+    "Points (of " + pointsText(total) + ")",
     "Score %",
     "Reviewed",
     "Needs grading",
@@ -878,24 +1035,21 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
   const rows = students.map((student) => {
     const review = studentReview(a, student.id);
     const byQuestion = new Map(review.responses.map((r) => [r.questionId, r]));
-    // Until every answer is graded, the Score % is not a final score, so it is
-    // marked "Incomplete" rather than printing a partial as if it were the
+    // Until every answer is graded, the totals are not a final score, so they
+    // are marked "Incomplete" rather than printing a partial as if it were the
     // result. The per-question columns still show what has been graded, and the
     // count of answers still waiting is its own column.
-    const scoreCell =
-      review.score === null
-        ? ""
-        : review.complete
-          ? String(review.score)
-          : "Incomplete";
+    const final = review.score !== null && review.complete;
+    const incomplete = review.score !== null && !review.complete;
     return [
       student.name,
       ...questions.map((q) => {
         const r = byQuestion.get(q.id);
         if (!r || !r.verified) return "";
-        return String(responseMatch(r));
+        return pointsText(pointsEarned(a, r));
       }),
-      scoreCell,
+      final ? pointsText(review.pointsEarned) : incomplete ? "Incomplete" : "",
+      final ? String(review.score) : incomplete ? "Incomplete" : "",
       review.reviewed.length + "/" + questions.length,
       review.needsGrading ? String(review.needsGrading) : "",
     ];

@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-07.
+Last verified against the running system: 2026-10-08.
 
 ---
 
@@ -297,6 +297,16 @@ by anything in the request. It is not zero and is not described as zero.
 scan for retention: its `scans.params`/`scans.result` are the delivery buffer
 cleared 48 hours after the scan (step 6), and the pages follow the same Storage
 retention and per-student deletion-on-confirm as every other student upload.
+
+### Grading asks for three more things per answer (8 Oct 2026)
+
+`responses` and `class_scan` now also return, per answer: the final answer in
+normalized form (for grouping in Grade by question), an approximate box where
+the answer sits on the page (for a cropped photo), and for a wrong answer a
+suggested error type from the subject's list (for the teacher to approve). The
+request carries nothing new: the same pages, questions and key as before, plus
+the subject's list of error-type names. No identity is added. Credit is still
+not asked for; the verdict stays match / blank / other.
 
 ## 5. Results back to the teacher
 

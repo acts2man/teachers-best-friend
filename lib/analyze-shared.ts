@@ -19,7 +19,8 @@ import {
   passageForGrading,
   questionsForGrading,
 } from "@/lib/prompt-payload";
-import type { Standard, Workspace } from "@/lib/teacher-types";
+import type { AnswerRegion, Standard, Subject, Workspace } from "@/lib/teacher-types";
+import { errorTypesFor } from "@/lib/error-types";
 
 export type Mode =
   | "assignment"
@@ -165,6 +166,67 @@ export const analyzeInput = z.object({
 
 export type AnalyzeParams = z.infer<typeof analyzeInput>;
 
+/**
+ * The part of a grading prompt that asks for the final answer, where it is,
+ * and an error-type suggestion. Shared by single-student and class grading.
+ * Credit stays out of it: the verdict is still match/blank/other only.
+ */
+export function gradingExtras(subject: Subject): string {
+  const types = errorTypesFor(subject);
+  return (
+    "For every response also give: finalAnswer, the student's final answer alone in short normalized form -- the final number, choice letter, value or expression, with working, restated question, units and words removed and digit-group commas dropped (\"5,753 + 2,250 + 3,160 = 11,163 people\" becomes \"11163\"; \"x = -4\" becomes \"-4\"; keep every negative sign and keep fractions as a/b), or empty when blank; and region, the approximate box around where that answer is written: page is the position of the image it is on, and x, y, width, height are fractions of that image (all zero when blank or you cannot tell). " +
+    (types.length
+      ? "For an answer whose verdict is \"other\", set errorType to the one of these that best describes the mistake, or empty if none fits: " +
+        JSON.stringify(types) +
+        "; for \"match\" or \"blank\" leave errorType empty. This is only a suggestion for the teacher; it never changes the verdict."
+      : "Leave errorType empty.")
+  );
+}
+
+/** Validates the three extras on one graded answer. Anything malformed is
+ * dropped rather than trusted: no group key, a whole-page photo, no suggestion. */
+const gradedExtras = {
+  finalAnswer: z.string().max(200).optional(),
+  region: z
+    .object({
+      page: z.number().int(),
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+    })
+    .optional(),
+  errorType: z.string().max(80).optional(),
+};
+type RawExtras = {
+  finalAnswer?: string;
+  region?: { page: number; x: number; y: number; width: number; height: number };
+  errorType?: string;
+};
+export function readGradedExtras(
+  raw: RawExtras,
+  uploadIds: string[],
+  subject: Subject,
+): { finalAnswer?: string; answerRegion?: AnswerRegion | null; suggestedErrorType?: string } {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  let answerRegion: AnswerRegion | null = null;
+  const r = raw.region;
+  if (r && r.page >= 0 && r.page < uploadIds.length) {
+    const x = clamp(r.x);
+    const y = clamp(r.y);
+    const width = Math.min(clamp(r.width), 1 - x);
+    const height = Math.min(clamp(r.height), 1 - y);
+    if (width > 0.01 && height > 0.01)
+      answerRegion = { uploadId: uploadIds[r.page], x, y, width, height };
+  }
+  const errorType = (raw.errorType ?? "").trim();
+  return {
+    finalAnswer: (raw.finalAnswer ?? "").trim() || undefined,
+    answerRegion,
+    suggestedErrorType: errorTypesFor(subject).includes(errorType) ? errorType : undefined,
+  };
+}
+
 const str = { type: "string" };
 const obj = (properties: Record<string, unknown>) => ({
   type: "object",
@@ -228,10 +290,27 @@ const assessmentSchema = obj({ title: str, questions: arr(questionSchema) });
 // their own; "other" carries no score and is routed to the teacher to decide in
 // Grade by question. Equivalent answers ("12 cm³" vs "12 cubic cm") are "match".
 const verdict = { type: "string", enum: ["match", "blank", "other"] };
-const responseSchema = obj({
-  responses: arr(obj({ questionId: str, answer: str, verdict })),
+// Three more things per answer, for Grade by question (Ricky's flow, 8 Oct):
+//   finalAnswer -- the answer alone, normalized, so "11,163" and
+//     "5,753 + 2,250 + 3,160 = 11,163 people" land in one group. Michael's
+//     class came back as groups of one because grouping used the whole text.
+//   region -- roughly where on which page the answer is, so the teacher sees a
+//     cropped photo of that answer, not a whole page.
+//   errorType -- for a wrong answer, which of the subject's error types it looks
+//     like. A suggestion the teacher approves or changes; never credit.
+const unitBox = { type: "number", minimum: 0, maximum: 1 };
+const gradedItem = obj({
+  questionId: str,
+  answer: str,
+  verdict,
+  finalAnswer: str,
+  region: obj({ page: { type: "integer", minimum: 0 }, x: unitBox, y: unitBox, width: unitBox, height: unitBox }),
+  errorType: str,
 });
-const classScanResponseItem = obj({ questionId: str, answer: str, verdict });
+const responseSchema = obj({
+  responses: arr(gradedItem),
+});
+const classScanResponseItem = gradedItem;
 // Grading a stack. Keyed by the group number the app supplied -- no name and
 // no page segmentation, because both are settled before this call is made.
 const classScanSchema = obj({
@@ -386,7 +465,9 @@ export function buildPrompt(
     if (!hasContent && !p.text.trim())
       throw new HttpError(400, "Add student work first.");
     task =
-      "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if the answer matches the teacher's key, \"blank\" if the student left it empty, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string equality: \"12 cm³\" and \"12 cubic cm\" are a match, and so is any answer that means the same thing as the key. Do NOT assign partial credit and do NOT guess a score -- an answer that is not a clear match or a clear blank is \"other\", and the teacher decides it. Preserve written answers exactly. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions and do not reproduce student names. Questions: " +
+      "Read this single student's completed assessment against the teacher's question IDs and answer key. Return one response for every non-excluded question, using only the provided IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if the answer matches the teacher's key, \"blank\" if the student left it empty, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string equality: \"12 cm³\" and \"12 cubic cm\" are a match, and so is any answer that means the same thing as the key. Do NOT assign partial credit and do NOT guess a score -- an answer that is not a clear match or a clear blank is \"other\", and the teacher decides it. Preserve written answers exactly. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions and do not reproduce student names. " +
+      gradingExtras(a.subject) +
+      " Questions: " +
       JSON.stringify(questionsForGrading(a)) +
       "." +
       passageForGrading(a) +
@@ -408,7 +489,9 @@ export function buildPrompt(
     task =
       "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. A page may show the student's name near the top; ignore it. Do not infer who any page belongs to and never report or reproduce any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict: \"match\" if it matches the teacher's key, \"blank\" if the page has no answer for it, or \"other\" for anything else. Judge a match by mathematical or textual equivalence, not exact string match. Do NOT assign partial credit and do NOT guess a score -- anything that is not a clear match or a clear blank is \"other\", for the teacher to decide. Never invent an answer: a missing or unreadable response is \"blank\". Do not diagnose misconceptions. Report each group by its number below, not by page. Groups, as page positions: " +
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
-      ". Questions: " +
+      ". " +
+      gradingExtras(a.subject) +
+      " Questions: " +
       JSON.stringify(questionsForGrading(a)) +
       "." +
       passageForGrading(a);
@@ -663,6 +746,7 @@ export function finalizeAnalysis(
             questionId: z.string(),
             answer: z.string(),
             verdict: z.enum(["match", "blank", "other"]),
+            ...gradedExtras,
           }),
         ),
       })
@@ -672,7 +756,12 @@ export function finalizeAnalysis(
     output.responses = normalizeRecognizedResponses(
       a,
       p.studentId!,
-      checked.data.responses,
+      checked.data.responses.map((r) => ({
+        questionId: r.questionId,
+        answer: r.answer,
+        verdict: r.verdict,
+        ...readGradedExtras(r, p.uploadIds, a.subject),
+      })),
     );
   }
   if (p.mode === "writing") {
@@ -711,6 +800,7 @@ export function finalizeAnalysis(
                   questionId: z.string(),
                   answer: z.string(),
                   verdict: z.enum(["match", "blank", "other"]),
+                  ...gradedExtras,
                 }),
               ),
             }),
@@ -737,7 +827,24 @@ export function finalizeAnalysis(
       .map((g) => ({
         group: g.group,
         pageIndexes: p.pageGroups[g.group],
-        responses: g.responses.filter((r) => validQuestionIds.has(r.questionId)),
+        responses: g.responses
+          .filter((r) => validQuestionIds.has(r.questionId))
+          .map((r) => {
+            // A region must sit on one of THIS student's pages. One pointing at
+            // a page from another group would show the teacher somebody else's
+            // work under this student's answer, so it is dropped.
+            const own = p.pageGroups[g.group].includes(r.region?.page ?? -1);
+            return {
+              questionId: r.questionId,
+              answer: r.answer,
+              verdict: r.verdict,
+              ...readGradedExtras(
+                { ...r, region: own ? r.region : undefined },
+                p.uploadIds,
+                a.subject,
+              ),
+            };
+          }),
       }));
   }
   if (p.mode === "name_strip") {

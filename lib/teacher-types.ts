@@ -57,6 +57,9 @@ export type Question = {
   reasoning: string;
   verified: boolean;
   excluded: boolean;
+  /** What this question is worth, set by the teacher. Absent means the
+   * assessment's total split evenly, or 1 (see questionPoints). */
+  points?: number;
 };
 export type StudentResponse = {
   id: string;
@@ -80,6 +83,28 @@ export type StudentResponse = {
   /** Writing only: the AI's one-line reason, tied to the student's writing, for
    * the level it suggested. Shown beside the score for the teacher to weigh. */
   rubricReason?: string;
+  /**
+   * The student's final answer alone, as the grading pass read it -- the
+   * number, choice or value with working and units stripped ("11163" for
+   * "5,753 + 2,250 + 3,160 = 11,163 people"). Grade by question groups on this,
+   * so students who reached the same answer by writing it differently land in
+   * one group. Absent on answers graded before it existed.
+   */
+  finalAnswer?: string;
+  /** Roughly where on which scanned page this answer sits, as fractions of the
+   * page, so Grade by question can show a cropped photo of just this answer. */
+  answerRegion?: AnswerRegion;
+  /** The error type the grading pass suggests for a wrong answer, from the
+   * subject's list. Only a suggestion: the teacher approves or changes it, and
+   * it is not `errorType` until they do. */
+  suggestedErrorType?: string;
+};
+export type AnswerRegion = {
+  uploadId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 /** One row of a writing rubric: a trait scored 0..max with a descriptor the
  * teacher can edit, and the standard its scores count toward for mastery. */

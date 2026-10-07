@@ -1,4 +1,4 @@
-import type { Assessment, Student, StudentResponse } from "./teacher-types";
+import type { AnswerRegion, Assessment, Student, StudentResponse } from "./teacher-types";
 import {
   mergeStudentResponses,
   normalizeRecognizedResponses,
@@ -13,6 +13,9 @@ export type ScannedResponse = {
   questionId: string;
   answer: string;
   verdict: "match" | "blank" | "other";
+  finalAnswer?: string;
+  answerRegion?: AnswerRegion | null;
+  suggestedErrorType?: string;
 };
 
 /** Where on the name-area image the name was written, as fractions of its

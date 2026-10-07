@@ -185,6 +185,6 @@ test("the assessment view offers edit (name + points) and a confirmed delete", (
 
 test("the create flow and the review score carry points too", () => {
   assert.ok(/Points possible \(optional\)/.test(src("components/teacher-scan.tsx")), "points can be set when creating");
-  assert.ok(/pointsForScore\(summary\.score, a\.pointsPossible\)/.test(src("components/teacher-review.tsx")), "the review score shows points when set");
-  assert.ok(/scoreLabel\(summary\.score, a\.pointsPossible\)/.test(src("lib/teacher-workflow.ts")), "the printable report shows points when set");
+  assert.ok(/summary\.pointsEarned/.test(src("components/teacher-review.tsx")), "the review score shows points earned");
+  assert.ok(/pointsText\(summary\.pointsEarned\)/.test(src("lib/teacher-workflow.ts")), "the printable report shows points");
 });

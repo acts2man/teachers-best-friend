@@ -139,9 +139,11 @@ test("the gradebook marks an incomplete student Incomplete, not a partial score"
   };
   const csv = gradebookCsv(a, [{ id: "s1", classId: "c1", name: "Maria G.", color: "", evidence: [] }]);
   const rows = csv.split("\n").map((l) => l.match(/"([^"]|"")*"/g).map((c) => c.slice(1, -1)));
-  assert.deepEqual(rows[0], ["Student", "Q1", "Q2", "Score %", "Reviewed", "Needs grading"]);
+  assert.deepEqual(rows[0], ["Student", "Q1 (1 pts)", "Q2 (1 pts)", "Points (of 2)", "Score %", "Reviewed", "Needs grading"]);
   assert.equal(rows[1][3], "Incomplete");
-  assert.equal(rows[1][5], "1");
+  assert.equal(rows[1][4], "Incomplete");
+  assert.equal(rows[1][5], "1/2");
+  assert.equal(rows[1][6], "1");
 });
 
 // ---------------------------------------------------------------

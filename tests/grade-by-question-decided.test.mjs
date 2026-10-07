@@ -109,18 +109,18 @@ test("autoGradedToConfirm returns the blank/clean-match answers still unconfirme
 // --- component wiring ---
 const ui = readFileSync("components/teacher-review.tsx", "utf8");
 
-test("decided groups show a Graded chip with the score and a Change control", () => {
-  assert.match(ui, /Graded · \{creditLabel\(Math\.round\(g\.match\)\)\}/, "shows Graded + score");
+test("decided groups show a Graded chip with the points and a Change control", () => {
+  assert.match(ui, /Graded · \{decidedLabel\}/, "shows Graded + points");
   assert.match(ui, /Change/, "offers Change");
-  assert.match(ui, /setReopened\(\(p\) => new Set\(p\)\.add\(g\.key\)\)/, "Change reopens the buttons");
-  assert.match(ui, /showButtons = g\.needsDecision \|\| reopened\.has\(g\.key\)/, "reopened shows credit buttons");
+  assert.match(ui, /onReopen=\{\(\) => setReopened\(\(p\) => new Set\(p\)\.add\(g\.key\)\)\}/, "Change reopens the controls");
+  assert.match(ui, /open=\{g\.needsDecision \|\| reopened\.has\(g\.key\)\}/, "reopened shows the credit controls");
 });
 
-test("after a decision it advances to the next question and shows an all-graded state", () => {
-  assert.match(ui, /questionHasWork\(updated, question\.id\)/, "checks the just-saved state");
-  assert.match(ui, /setQuestionId\(next\.id\)/, "advances to the next question with work");
+test("after the last group it moves to the next question and shows an all-graded state", () => {
+  assert.match(ui, /hasWork\(updated, q\.id\)/, "checks the just-saved state");
+  assert.match(ui, /setOpenId\(next \? next\.id : null\)/, "advances to the next question with work, or back to the summary");
   assert.match(ui, /All questions graded/, "shows an all-graded state");
   // The confirm-clear step is folded in so the flow is self-contained.
   assert.match(ui, /confirmMatching/, "can confirm matching answers from here");
-  assert.match(ui, /GroupWorkSample assessment=\{a\} group=\{g\}/, "the work sample stays visible");
+  assert.match(ui, /GroupWorkSample assessment=\{a\} group=\{g\}/, "a whole-page sample remains for answers with no region");
 });

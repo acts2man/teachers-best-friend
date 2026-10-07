@@ -879,7 +879,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         (result.newStudents.length ? " (" + result.newStudents.length + " new)" : ""),
     );
     setSaving(false);
-    if (ok) reset();
+    if (ok) {
+      reset();
+      // Straight into grading by question, not the one-student-at-a-time list
+      // further down: after confirming names Michael ended up working student
+      // by student, which is the slow way through a class set.
+      requestAnimationFrame(() =>
+        document
+          .getElementById("grade-by-question")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
+    }
   }
 
   const openPile = piles[piles.length - 1];
