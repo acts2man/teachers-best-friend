@@ -53,6 +53,9 @@ export function ImageViewer({
   onClose: () => void;
 }) {
   const [full, setFull] = useState(false);
+  // A stored page can be a PDF rather than a photo; an <img> cannot show that,
+  // so it is offered in a new tab instead of leaving a blank screen.
+  const [failed, setFailed] = useState(false);
   const viewport = useSyncExternalStore(subscribeViewport, viewportSnapshot, () => "");
 
   useEffect(() => {
@@ -98,15 +101,25 @@ export function ImageViewer({
         </button>
       </div>
       <div className={"image-viewer-stage" + (full ? " is-full" : "")}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={alt}
-          onClick={(e) => {
-            e.stopPropagation();
-            setFull((f) => !f);
-          }}
-        />
+        {failed ? (
+          <p className="image-viewer-fallback" onClick={(e) => e.stopPropagation()}>
+            This page can&rsquo;t be shown here.{" "}
+            <a href={src} target="_blank" rel="noreferrer">
+              Open it in a new tab
+            </a>
+          </p>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt={alt}
+            onError={() => setFailed(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFull((f) => !f);
+            }}
+          />
+        )}
       </div>
     </div>,
     document.body,

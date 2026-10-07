@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
@@ -19,7 +19,6 @@ import {
   Printer,
   Upload,
   Users,
-  X,
   ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -70,6 +69,7 @@ import {
   responseMatch,
 } from "@/lib/teacher-metrics";
 import { ClassScanPanel } from "./teacher-class-scan";
+import { ImageViewer } from "./image-viewer";
 import { inScanOrder } from "@/lib/teacher-class-scan";
 import { ScanCamera } from "./scan-camera";
 
@@ -109,7 +109,7 @@ function GroupWorkSample({
   const [sample, setSample] = useState(0);
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(false);
-  const [full, setFull] = useState(false);
+  const closeZoom = useCallback(() => setZoom(false), []);
   if (!withWork.length) return null;
   const studentId = withWork[sample % withWork.length];
   const pages = a.studentUploadIds?.[studentId] ?? [];
@@ -121,10 +121,7 @@ function GroupWorkSample({
       <button
         type="button"
         className="work-sample-thumb"
-        onClick={() => {
-          setFull(false);
-          setZoom(true);
-        }}
+        onClick={() => setZoom(true)}
         aria-label="Enlarge a sample of student work for this question"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -162,34 +159,11 @@ function GroupWorkSample({
         )}
       </div>
       {zoom && (
-        <div
-          className="work-sample-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Student work, enlarged"
-          onClick={() => setZoom(false)}
-        >
-          <button
-            type="button"
-            className="work-sample-close"
-            aria-label="Close enlarged work"
-            onClick={() => setZoom(false)}
-          >
-            <X size={20} />
-          </button>
-          {/* Tapping the image toggles full resolution (and pans via the
-              scrolling overlay) instead of closing. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            className={full ? "is-full" : ""}
-            src={src}
-            alt="A student's work for this question, enlarged"
-            onClick={(e) => {
-              e.stopPropagation();
-              setFull((f) => !f);
-            }}
-          />
-        </div>
+        <ImageViewer
+          src={src}
+          alt="A student's work for this question, enlarged"
+          onClose={closeZoom}
+        />
       )}
     </div>
   );
@@ -586,7 +560,10 @@ export function StudentResponseReview({
   const [uploading, setUploading] = useState(false),
     [status, setStatus] = useState(""),
     [notice, setNotice] = useState(""),
-    [cameraOpen, setCameraOpen] = useState(false);
+    [cameraOpen, setCameraOpen] = useState(false),
+    // The page of original work open in the full-screen viewer, if any.
+    [viewing, setViewing] = useState<string | null>(null);
+  const closeViewing = useCallback(() => setViewing(null), []);
   const input = useRef<HTMLInputElement>(null),
     camera = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -1024,18 +1001,28 @@ export function StudentResponseReview({
       {files.length > 0 && (
         <div className="source-documents">
           <span>Original student work</span>
+          {/* Opened in the same full-screen viewer as everywhere else rather
+              than a new tab, which on a phone leaves the app. A page that is
+              a PDF, not a photo, offers a new tab from inside the viewer. */}
           {files.map((id, i) => (
-            <a
+            <button
               key={id}
-              href={"/api/uploads/" + id}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
+              className="source-document-button"
+              onClick={() => setViewing(id)}
             >
               <FileText size={14} />
               Page {i + 1}
-            </a>
+            </button>
           ))}
         </div>
+      )}
+      {viewing && (
+        <ImageViewer
+          src={"/api/uploads/" + viewing}
+          alt={(student?.name || "Student") + "'s original work"}
+          onClose={closeViewing}
+        />
       )}
       <div className="review-controls">
         <div

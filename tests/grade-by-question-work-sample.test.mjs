@@ -52,9 +52,22 @@ test("the teacher can see a different student's work from the same group", () =>
   );
 });
 
-test("the sample is zoomable", () => {
-  assert.match(ui, /work-sample-overlay/, "an enlarge overlay exists");
-  assert.match(ui, /setFull\(\(f\) => !f\)/, "tapping toggles full resolution");
+test("the sample is zoomable, in the shared full-screen viewer", () => {
+  // Michael (Android/Brave and Windows/Chrome, 7 Oct): the old in-page overlay
+  // dimmed the screen and showed the page cut off at the top and bottom with no
+  // way to scroll. Its position:fixed was boxed in by an ancestor. The shared
+  // viewer is portaled to <body>, so it is the full screen.
+  const sample = ui.slice(ui.indexOf("function GroupWorkSample"), ui.indexOf("function GradeByQuestion"));
+  assert.match(sample, /<ImageViewer/, "the sample opens the shared viewer");
+  assert.ok(!/work-sample-overlay/.test(ui), "the old in-page overlay is gone");
+  const viewer = readFileSync("components/image-viewer.tsx", "utf8");
+  assert.match(viewer, /setFull\(\(f\) => !f\)/, "tapping toggles full resolution");
+});
+
+test("every student photo in review opens in the shared viewer, not a new tab", () => {
+  const review = ui.slice(ui.indexOf("Original student work"));
+  assert.match(review, /setViewing\(id\)/);
+  assert.ok(!/href=\{"\/api\/uploads\/" \+ id\}/.test(review.slice(0, 1200)), "no new-tab link for pages");
 });
 
 test("the sample is shown large by default, not a tap-to-open thumbnail", () => {
