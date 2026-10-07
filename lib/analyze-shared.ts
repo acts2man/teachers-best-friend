@@ -32,7 +32,8 @@ export type Mode =
   | "lesson"
   | "catalog"
   | "roster"
-  | "rubric";
+  | "rubric"
+  | "key_check";
 
 /**
  * Bumped whenever a read prompt changes, so a stored read from an older prompt
@@ -115,6 +116,7 @@ export const analyzeInput = z.object({
     "catalog",
     "roster",
     "rubric",
+    "key_check",
   ]),
   text: z.string().max(60000).default(""),
   /** Which request of a split class scan this is. A class set is graded a few
@@ -273,6 +275,11 @@ const passageSchema = obj({
   title: str,
   text: str,
   confidence: { type: "number", minimum: 0, maximum: 100 },
+});
+// Checking the app's own answer key: one independent final answer per question.
+// No confidence asked for -- whether the two solves agree is the signal.
+const keyCheckSchema = obj({
+  answers: arr(obj({ questionId: str, answer: str })),
 });
 const answerKeySchema = obj({
   answers: arr(
@@ -456,6 +463,25 @@ export function buildPrompt(
     task =
       "Each image is the top part of one scanned or photographed worksheet page, in order: the image at position N is page N. Find the student's handwritten name on each image. Look anywhere near the top of the sheet: on the \"Name\" line, above or below it, beside it, in the top margin, in a corner, or in the side margin -- children often write their name above the line or off to one side, and the sheet may sit lower in a phone photo with table or background above it. Return one entry per image, giving its page position, the name exactly as written (a first name alone is fine if that is all there is), an honest 0-100 confidence, and a box around where the name is written as fractions of the image width and height (x and y are the top-left corner). Return an empty name, confidence 0 and a zero box when an image carries no handwritten name, or shows only a printed heading such as 'Name:' with nothing filled in -- a page with no name normally continues the previous student's work. Ignore printed text such as the worksheet title, the teacher's name, the school, the date and the questions. If a name is hard to read, give your best reading with a lower confidence rather than leaving it out. Never make up a name that is not written on the page; you have no class list.";
     schema = nameStripSchema;
+  }
+  if (p.mode === "key_check") {
+    const a = w.assessments.find((a) => a.id === p.assessmentId);
+    if (!a || !a.questions.length)
+      throw new HttpError(400, "Add the assignment questions before checking the key.");
+    // The questions as the worksheet read them, WITHOUT the answers the app
+    // worked out: the point is a second, independent solve. Showing it the
+    // first answer would invite it to agree. No student work and no names --
+    // this is the teacher's blank worksheet.
+    task =
+      "You are double-checking an answer key for a teacher. Solve each question below yourself, carefully and independently, working through every step before you answer; the worksheet pages are attached so you can see any figure, table or graph a question refers to. Return one entry per question, by its id, with only the final answer in its simplest exact form: keep every negative sign, write fractions as a/b, keep a variable in the answer when the answer has one (5/x is not 5), give a solved equation as x = value, and for multiple choice give the letter. Leave out working, explanations and domain restrictions. If a question cannot be answered from what is shown, return an empty answer for it rather than guessing. This is " +
+      gradePromptLabel(a.grade, a.subject) +
+      ". Questions: " +
+      JSON.stringify(
+        a.questions
+          .filter((q) => !q.excluded)
+          .map((q) => ({ id: q.id, number: q.number, text: q.text, passage: q.passage })),
+      );
+    schema = keyCheckSchema;
   }
   if (p.mode === "answer_key") {
     const a = w.assessments.find((a) => a.id === p.assessmentId);
@@ -809,6 +835,30 @@ export function finalizeAnalysis(
         return matches.length === 1
           ? matches[0]
           : { questionId: q.id, answer: "", confidence: 0 };
+      });
+  }
+  if (p.mode === "key_check") {
+    const a = w.assessments.find((a) => a.id === p.assessmentId);
+    if (!a) throw new HttpError(400, "This assessment could not be found.");
+    const parsed = z
+      .object({
+        answers: z
+          .array(z.object({ questionId: z.string(), answer: z.string().max(400) }))
+          .max(100),
+      })
+      .safeParse(output);
+    if (!parsed.success)
+      throw new HttpError(422, "The key couldn’t be double-checked this time.");
+    // One entry per active question, in order. A question the checker skipped
+    // or answered twice comes back empty: "could not check", never a guess.
+    output.answers = a.questions
+      .filter((q) => !q.excluded)
+      .map((q) => {
+        const matches = parsed.data.answers.filter((k) => k.questionId === q.id);
+        return {
+          questionId: q.id,
+          answer: matches.length === 1 ? matches[0].answer.trim() : "",
+        };
       });
   }
   if (p.mode === "catalog") {

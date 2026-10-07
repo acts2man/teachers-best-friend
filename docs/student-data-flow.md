@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-07.
+Last verified against the running system: 2026-10-08.
 
 ---
 
@@ -297,6 +297,23 @@ by anything in the request. It is not zero and is not described as zero.
 scan for retention: its `scans.params`/`scans.result` are the delivery buffer
 cleared 48 hours after the scan (step 6), and the pages follow the same Storage
 retention and per-student deletion-on-confirm as every other student upload.
+
+### Checking an answer key the app worked out (`key_check`, 8 Oct 2026)
+
+A new AI mode, checked against this section before it shipped.
+
+**What it sends.** The teacher's blank worksheet pages (`assignmentUploadIds` --
+never `uploadIds`, which also collects scanned student pages) and the question
+text as the worksheet read produced it. Not the answers the app worked out (the
+point is an independent second solve), not student work, no roster, no student
+name, no teacher or school name.
+
+**Why it exists.** When no key is uploaded the worksheet read works the key
+out, and on Ricky's Algebra 2 test it got 2-5 of 15 wrong on every read. The
+second solve's disagreements are shown to the teacher to settle before the key
+can be confirmed. Free to the teacher (`FREE_MODES` in `lib/page-ledger.ts`).
+
+**Effect on identity.** None: no student data is in the request.
 
 ## 5. Results back to the teacher
 
