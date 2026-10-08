@@ -27,13 +27,15 @@ const PERSISTED = {
   Question: [
     "id", "number", "text", "passage", "answer", "standard", "secondary",
     "skill", "dok", "costas", "alignment", "improvement", "confidence",
-    "level", "reasoning", "verified", "excluded", "keyCheck",
+    "level", "reasoning", "verified", "excluded", "points", "keyCheck",
   ],
   StudentResponse: [
     "id", "studentId", "questionId", "answer", "correct", "match",
     "misconception", "confidence", "verified", "errorType",
     // Writing only, via student_writing_scores.
     "rubricScore", "rubricReason",
+    // Grade by question (20261008190000).
+    "finalAnswer", "answerRegion", "suggestedErrorType",
   ],
   Assessment: [
     "id", "classId", "elaArea", "title", "subject", "grade", "framework",

@@ -91,14 +91,18 @@ test("work already graded at 25/75/90 keeps its score (no migration)", () => {
   }
 });
 
-test("the grade-by-question UI shows three presets plus a Percent entry", () => {
+test("grade by question gives credit in points, with No credit and Full shortcuts (Ricky)", () => {
   const { readFileSync } = require("node:fs");
   const ui = readFileSync("components/teacher-review.tsx", "utf8");
-  assert.match(ui, /CREDIT_LEVELS\.map/, "presets come from the shared constant");
-  // A Percent option that opens a number box, not another row of preset buttons.
-  assert.match(ui, /percentFor === g\.key/, "Percent toggles an inline entry");
-  assert.match(ui, /applyPercent\(g\)/, "the entry applies a typed percent");
+  // "3 of 4": a number box out of what the question is worth.
+  assert.match(ui, /of \{pointsText\(worth\)\} point/, "credit is entered as points of the question");
   assert.match(ui, /type="number"/, "the entry is a number box (numeric keyboard)");
-  // It pre-fills with the group's current score so a partial shows as itself.
-  assert.match(ui, /String\(Math\.round\(g\.match\)\)/, "Percent pre-fills the current score");
+  assert.match(ui, /onClick=\{\(\) => onGive\(0\)\}/, "No credit shortcut");
+  assert.match(ui, /onClick=\{\(\) => onGive\(worth\)\}/, "Full credit shortcut");
+  // The box starts empty and typing 25 shows 25, never 025 (Michael, 8 Oct).
+  assert.match(ui, /initial && initial > 0 \? pointsText\(initial\) : ""/);
+  assert.match(ui, /replace\(\/\^0\+\(\?=\\d\)\/, ""\)/);
+  // Stored as a share of the question, so 3 of 4 is 75% and a later change to
+  // what the question is worth keeps the same share.
+  assert.match(ui, /creditForPoints\(a, q, points\)/);
 });
