@@ -27,7 +27,7 @@ const PERSISTED = {
   Question: [
     "id", "number", "text", "passage", "answer", "standard", "secondary",
     "skill", "dok", "costas", "alignment", "improvement", "confidence",
-    "level", "reasoning", "verified", "excluded",
+    "level", "reasoning", "verified", "excluded", "keyCheck",
   ],
   StudentResponse: [
     "id", "studentId", "questionId", "answer", "correct", "match",

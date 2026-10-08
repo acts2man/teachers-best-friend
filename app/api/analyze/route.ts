@@ -178,7 +178,10 @@ export async function POST(request: Request) {
       // for our own reasons did not multiply the bill -- and it no longer
       // does: a later batch's pages are already paid for, so it charges
       // nothing without anyone having to remember that it should.
-      const billable = !adminCatalog && p.mode !== "name_strip";
+      // Our own safeguards (the name pass, the answer-key check) are not
+      // billable, so create_scan opens their row without charging a page.
+      const billable =
+        !adminCatalog && p.mode !== "name_strip" && p.mode !== "key_check";
       // The charge is performed inside create_scan now, in the same transaction
       // that opens the scan row: a billable, charging-mode request is paid for
       // before its row exists, so no caller -- not a stale copy of the app, not

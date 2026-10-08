@@ -828,3 +828,14 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .image-viewer-fallback{padding:18px 20px;border-radius:10px;background:#fff;color:var(--ink);font-size:15px}
 .image-viewer-fallback a{text-decoration:underline;font-weight:600}
 .source-document-button{display:inline-flex;align-items:center;gap:6px;padding:0;border:none;background:none;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px}
+/* Answer key: a key the app worked out, its second check, and math entry. */
+.key-generated{display:flex;flex-direction:column;gap:8px;margin:4px 0 14px;padding:14px 16px;border-radius:12px;background:hsl(calc(42deg + var(--th)) calc(80% * var(--ts)) 94%);border:1px solid hsl(calc(42deg + var(--th)) calc(60% * var(--ts)) 80%)}
+.key-generated p{font-size:13px;line-height:1.6}
+.key-generated-status{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.key-generated .action{align-self:flex-start}
+.key-check-ok{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:hsl(calc(150deg + var(--th)) calc(35% * var(--ts)) 32%)}
+.key-check-differs{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding:10px 12px;border-radius:10px;background:hsl(calc(20deg + var(--th)) calc(85% * var(--ts)) 95%);border:1px solid hsl(calc(20deg + var(--th)) calc(70% * var(--ts)) 82%)}
+.key-check-differs p{font-size:13px}
+.answer-key-list label.key-disagrees{outline:2px solid hsl(calc(20deg + var(--th)) calc(70% * var(--ts)) 70%);outline-offset:4px;border-radius:10px}
+.math-keys{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:8px 0;background:var(--background)}
+.math-key{min-width:40px;min-height:40px;padding:4px 10px;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);border-radius:8px;background:#fff;color:var(--ink);font-size:16px;font-weight:600}

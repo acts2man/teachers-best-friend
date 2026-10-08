@@ -1,0 +1,23 @@
+{
+  "about": "Worksheets for scripts/key-benchmark.mjs. Each needs the blank worksheet pages as image or PDF files and the correct key, by question number. Put real secondary-math worksheets here (Algebra 2; Geometry with tables and graphs). The files are the teacher's blank worksheet, never student work.",
+  "worksheets": [
+    {
+      "name": "Algebra 2 - Rational Expressions (Ricky, 7 Oct)",
+      "grade": 11,
+      "subject": "Math",
+      "framework": "California",
+      "files": ["bench/files/rational-expressions-p1.jpg", "bench/files/rational-expressions-p2.jpg"],
+      "standards": [
+        { "code": "A-APR.6", "title": "Rewrite rational expressions", "domain": "Arithmetic with Polynomials and Rational Expressions", "cluster": "Rewrite rational expressions", "wording": "Rewrite simple rational expressions in different forms." },
+        { "code": "A-APR.7", "title": "Add, subtract, multiply, divide rational expressions", "domain": "Arithmetic with Polynomials and Rational Expressions", "cluster": "Rewrite rational expressions", "wording": "Understand that rational expressions form a system analogous to the rational numbers; add, subtract, multiply, and divide rational expressions." },
+        { "code": "A-REI.2", "title": "Solve rational equations", "domain": "Reasoning with Equations and Inequalities", "cluster": "Understand solving equations as a process of reasoning", "wording": "Solve simple rational and radical equations in one variable, and give examples showing how extraneous solutions may arise." }
+      ],
+      "targetStandards": ["A-APR.6", "A-APR.7", "A-REI.2"],
+      "key": {
+        "1": "8/x", "2": "-5/(x + 4)", "3": "(x + 6)/(x - 3)", "4": "2(x + 2)/(x(x + 1))", "5": "2x/(x^2 - 4)",
+        "6": "(x + 3)/(x + 1)", "7": "3x/[2(x - 3)]", "8": "x - 2", "9": "5/x", "10": "(x + 3)/(x - 3)",
+        "11": "x = 2", "12": "x = -4", "13": "x = 5", "14": "x = 6", "15": "x = 15/2"
+      }
+    }
+  ]
+}

@@ -57,6 +57,19 @@ export type Question = {
   reasoning: string;
   verified: boolean;
   excluded: boolean;
+  /**
+   * A second, independent solve of an answer the APP worked out (no teacher
+   * key uploaded). "differs" means the two solves disagree and the teacher has
+   * not yet settled it -- the key cannot be confirmed until they do.
+   * "resolved" is a disagreement the teacher settled. Absent when the key came
+   * from the teacher or was never checked. See lib/key-check.ts.
+   */
+  keyCheck?: KeyCheck;
+};
+export type KeyCheck = {
+  /** The checker's own answer for this question ("" when it could not tell). */
+  answer: string;
+  status: "agrees" | "differs" | "resolved";
 };
 export type StudentResponse = {
   id: string;
