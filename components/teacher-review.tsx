@@ -213,7 +213,7 @@ function GradeByQuestion({
   const anyAnswers = questions.some((q) => groupAnswers(a, q.id).length > 0);
   const anyPending = questions.some((q) => hasWork(a, q.id));
 
-  /** Confirm the answers that need no judgement (blank or a clean match). */
+  /** Confirm the answers that need no judgement (a clean match to the key; a blank always needs a look). */
   async function confirmMatching() {
     if (!autoConfirmIds.length) return;
     await onSave(
@@ -234,26 +234,51 @@ function GradeByQuestion({
 
   /** Credit in points for the whole group, plus the error type the teacher
    * approved. Then on to the next group, or the next question. */
-  async function grade(q: Question, group: AnswerGroup, points: number, errorType: string) {
+  async function grade(
+    q: Question,
+    group: AnswerGroup,
+    points: number,
+    errorType: string,
+    // The group, less any student the teacher pulled out to grade alone.
+    ids: string[] = group.responseIds,
+  ) {
     const credit = creditForPoints(a, q, points);
     setReopened((prev) => {
       const next = new Set(prev);
       next.delete(group.key);
       return next;
     });
-    const updated = applyGroupScore(a, group.responseIds, credit, errorType);
-    const n = group.responseIds.length;
+    const updated = applyGroupScore(a, ids, credit, errorType);
+    const n = ids.length;
     const ok = await onSave(
       updated,
       n + (n === 1 ? " student" : " students") + " given " + pointsText(points) + " of " +
         pointsText(questionPoints(a, q)) + " on Q" + q.number,
     );
     if (ok === false) return;
-    if (!hasWork(updated, q.id)) {
-      const next = questions.find((x) => x.id !== q.id && hasWork(updated, x.id));
-      setOpenId(next ? next.id : null);
-      if (!next) toast.success("Every question is graded.");
-    }
+    moveOnIfDone(updated, q);
+  }
+
+  /** One student, pulled out of their group, graded on their own. */
+  async function gradeOne(q: Question, responseId: string, points: number, errorType: string) {
+    const updated = applyGroupScore(a, [responseId], creditForPoints(a, q, points), errorType);
+    const ok = await onSave(
+      updated,
+      "1 student given " + pointsText(points) + " of " + pointsText(questionPoints(a, q)) + " on Q" + q.number,
+    );
+    if (ok === false) return;
+    moveOnIfDone(updated, q);
+  }
+
+  /** After a question's last group: the next question, from the top. */
+  function moveOnIfDone(updated: Assessment, q: Question) {
+    if (hasWork(updated, q.id)) return;
+    const next = questions.find((x) => x.id !== q.id && hasWork(updated, x.id));
+    setOpenId(next ? next.id : null);
+    if (!next) toast.success("Every question is graded.");
+    requestAnimationFrame(() =>
+      document.getElementById("grade-by-question")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   }
 
   async function tagError(group: AnswerGroup, errorType: string) {
@@ -284,8 +309,8 @@ function GradeByQuestion({
               <strong>All questions graded</strong>
               {autoConfirmIds.length > 0 ? (
                 <p>
-                  {autoConfirmIds.length} matching or blank answer
-                  {autoConfirmIds.length === 1 ? "" : "s"} still need confirming to count
+                  {autoConfirmIds.length} answer
+                  {autoConfirmIds.length === 1 ? "" : "s"} matching your key still need confirming to count
                   toward scores.
                 </p>
               ) : (
@@ -321,11 +346,19 @@ function GradeByQuestion({
                     {sum.partial > 0 && <span className="gbq-count">{sum.partial} part credit</span>}
                     <span className={"gbq-count" + (sum.needReview ? " review" : "")}>
                       {sum.needReview} need review
+                      {sum.unsure ? " (" + sum.unsure + " unsure)" : ""}
                     </span>
                   </div>
                   <Action
                     variant={sum.needReview ? "" : "secondary small"}
-                    onClick={() => setOpenId(q.id)}
+                    onClick={() => {
+                      setOpenId(q.id);
+                      requestAnimationFrame(() =>
+                        document
+                          .getElementById("grade-by-question")
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                      );
+                    }}
                   >
                     {sum.needReview ? "Review" : "Look again"}
                     <ArrowRight size={15} />
@@ -377,8 +410,9 @@ function GradeByQuestion({
             current={g === current}
             open={g.needsDecision || reopened.has(g.key)}
             busy={busy}
-            names={g.studentIds.map(nameFor)}
-            onGrade={(points, errorType) => grade(question, g, points, errorType)}
+            nameFor={nameFor}
+            onGrade={(points, errorType, ids) => grade(question, g, points, errorType, ids)}
+            onGradeOne={(id, points, errorType) => gradeOne(question, id, points, errorType)}
             onReopen={() => setReopened((p) => new Set(p).add(g.key))}
             onTag={(errorType) => tagError(g, errorType)}
             onReteach={() => makeReteachGroup(question, g)}
@@ -390,8 +424,15 @@ function GradeByQuestion({
 }
 
 /**
- * One answer group: the answer, how many students wrote it, a few photos of
- * the answer itself, the AI's suggested error type, and the credit control.
+ * One answer group: the answer, the correct answer under it in green, how
+ * many students wrote it, a few photos of the answer itself, the AI's
+ * suggested error type, and the credit control.
+ *
+ * Every grade here can be changed, including a group the AI marked as
+ * matching the key (Michael could not change one that was wrong). Any student
+ * can be pulled out and graded on their own -- a right answer with extra work
+ * is not the same as the rest of the group. The Unsure group is graded
+ * student by student, since what each wrote can differ.
  */
 function AnswerGroupCard({
   assessment: a,
@@ -400,8 +441,9 @@ function AnswerGroupCard({
   current,
   open,
   busy,
-  names,
+  nameFor,
   onGrade,
+  onGradeOne,
   onReopen,
   onTag,
   onReteach,
@@ -412,51 +454,70 @@ function AnswerGroupCard({
   current: boolean;
   open: boolean;
   busy: boolean;
-  names: string[];
-  onGrade: (points: number, errorType: string) => void;
+  nameFor: (studentId: string) => string;
+  onGrade: (points: number, errorType: string, responseIds: string[]) => void;
+  onGradeOne: (responseId: string, points: number, errorType: string) => void;
   onReopen: () => void;
   onTag: (errorType: string) => void;
   onReteach: () => void;
 }) {
   const worth = questionPoints(a, q);
   const types = errorTypesFor(a.subject);
-  const [points, setPoints] = useState(
-    g.verified ? pointsText((Math.round(g.match) / 100) * worth) : "",
-  );
   const [errorType, setErrorType] = useState(g.errorType || g.suggestedErrorType);
   const [viewing, setViewing] = useState<string | null>(null);
+  // Students pulled out of the group to grade on their own.
+  const [apart, setApart] = useState<Set<string>>(new Set());
   const closeViewing = useCallback(() => setViewing(null), []);
-  const blank = !g.answer.trim();
-  // Two or three photos of this answer: cropped to where the grading pass said
-  // it is, or the whole page for answers graded before it said so.
-  const photos = g.responseIds
+  const blank = !g.unsure && !g.answer.trim();
+  const responses = g.responseIds
     .map((id) => a.responses.find((r) => r.id === id))
-    .filter((r): r is StudentResponse => !!r)
-    .map((r) => ({
-      id: r.id,
-      region: r.answerRegion,
-      uploadId: r.answerRegion?.uploadId ?? a.studentUploadIds?.[r.studentId]?.[0],
-    }))
-    .filter((p): p is { id: string; region: StudentResponse["answerRegion"]; uploadId: string } => !!p.uploadId)
+    .filter((r): r is StudentResponse => !!r);
+  // A photo of each answer: cropped to where the grading pass said the answer
+  // area is (also for a blank or unsure answer), or the whole first page for
+  // answers graded before it said so.
+  const photoOf = (r: StudentResponse) => {
+    const uploadId = r.answerRegion?.uploadId ?? a.studentUploadIds?.[r.studentId]?.[0];
+    return uploadId ? { id: r.id, region: r.answerRegion, uploadId } : null;
+  };
+  const photos = responses
+    .map(photoOf)
+    .filter((p): p is NonNullable<ReturnType<typeof photoOf>> => !!p)
     .slice(0, 3);
-  const typed = Number(points);
-  const valid = points.trim() !== "" && Number.isFinite(typed) && typed >= 0 && typed <= worth;
   const decidedLabel =
     pointsText((Math.round(g.match) / 100) * worth) + " of " + pointsText(worth) + " points";
+  const fullCredit = g.verified && Math.round(g.match) >= 100;
+  const together = responses.filter((r) => !apart.has(r.id) && !g.unsure);
 
   return (
-    <div className={"gbq-group" + (current ? " is-current" : "")}>
+    <div className={"gbq-group" + (current ? " is-current" : "") + (g.unsure ? " is-unsure" : "")}>
       <div className="gbq-group-head">
-        <span className="gbq-answer">{blank ? "(blank)" : g.answer}</span>
+        <span className="gbq-answer">
+          {g.unsure ? "Unsure — check each one" : blank ? "(blank)" : g.answer}
+        </span>
         <span className="cell-meta">
           {g.studentIds.length} {g.studentIds.length === 1 ? "student" : "students"}
         </span>
       </div>
-      {g.written.length > 0 && !(g.written.length === 1 && g.written[0] === g.answer) && (
+      {/* The key right under the answer, so nobody scrolls up to compare. */}
+      <div className="gbq-key">
+        <Check size={14} /> Correct answer: <strong>{q.answer || "not set"}</strong>
+      </div>
+      {g.unsure && (
+        <p className="cell-meta">
+          The AI couldn&rsquo;t read these or wasn&rsquo;t sure whether they match, so it
+          didn&rsquo;t grade them. Look at each photo and give credit.
+        </p>
+      )}
+      {blank && !g.verified && (
+        <p className="cell-meta">
+          Read as blank. Check the photos — if there is any work, pull that student out and
+          grade them on their own.
+        </p>
+      )}
+      {!g.unsure && g.written.length > 0 && !(g.written.length === 1 && g.written[0] === g.answer) && (
         <span className="cell-meta">Written as: {g.written.map((x) => "“" + x + "”").join(", ")}</span>
       )}
-      <span className="cell-meta">{names.join(", ")}</span>
-      {photos.length > 0 && (
+      {!g.unsure && photos.length > 0 && (
         <div className="gbq-photos">
           {photos.map((p) => (
             <CroppedPhoto
@@ -470,9 +531,7 @@ function AnswerGroupCard({
           ))}
         </div>
       )}
-      {!photos.length && (
-        <GroupWorkSample assessment={a} group={g} />
-      )}
+      {!g.unsure && !photos.length && <GroupWorkSample assessment={a} group={g} />}
       {!open && g.verified && (
         <span className="grade-decided">
           <Check size={14} /> Graded · {decidedLabel}
@@ -483,76 +542,119 @@ function AnswerGroupCard({
         </span>
       )}
       {!open && !g.verified && (
-        <Pill>{blank ? "Blank — scored zero" : "Matches your key"}</Pill>
+        // The AI matched these to the key. Still the teacher's call: one tap
+        // changes it.
+        <span className="grade-decided">
+          <Pill tone="green">Matches your key</Pill>
+          <button type="button" className="grade-change" disabled={busy} onClick={onReopen}>
+            Change
+          </button>
+        </span>
       )}
-      {!open && g.verified && Math.round(g.match) < 100 && types.length > 0 && (
+      {!open && g.verified && !fullCredit && types.length > 0 && (
         <label className="grade-error-type">
-          <span className="cell-meta">Error type</span>
+          <span className="cell-meta">Common error</span>
           <Pick
-            label="Error type (optional)"
+            label="Common error"
             value={g.errorType}
             onChange={onTag}
             options={[{ value: "", label: "No error type" }, ...types]}
           />
         </label>
       )}
-      {open && (
-        <>
-          {types.length > 0 && !blank && (
-            <label className="grade-error-type">
-              <span className="cell-meta">
-                {g.suggestedErrorType && errorType === g.suggestedErrorType
-                  ? "Error type — suggested by the AI, change it if it's wrong"
-                  : "Error type"}
-              </span>
-              <Pick
-                label="Error type"
-                value={errorType}
-                onChange={setErrorType}
-                options={[{ value: "", label: "No error type" }, ...types]}
-              />
-            </label>
-          )}
-          <form
-            className="gbq-credit"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (valid) onGrade(typed, errorType);
-            }}
-          >
-            <input
-              className="class-scan-name-input"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              max={worth}
-              step="any"
-              aria-label={"Points for the answer " + (g.answer || "blank")}
-              placeholder="0"
-              value={points}
-              onChange={(e) => setPoints(e.target.value)}
-            />
-            <span className="cell-meta">
-              of {pointsText(worth)} point{worth === 1 ? "" : "s"}
-            </span>
-            <Action type="submit" disabled={busy || !valid}>
-              <Check size={15} /> Give {valid ? pointsText(typed) : "…"} to{" "}
-              {g.studentIds.length === 1 ? "this student" : "all " + g.studentIds.length}
-            </Action>
-            <Action variant="secondary small" disabled={busy} onClick={() => onGrade(0, errorType)}>
-              No credit
-            </Action>
-            <Action variant="secondary small" disabled={busy} onClick={() => onGrade(worth, "")}>
-              Full credit
-            </Action>
-            {g.studentIds.length > 1 && (
-              <Action variant="secondary small" disabled={busy} onClick={onReteach}>
-                <Users size={15} /> Reteach these {g.studentIds.length}
-              </Action>
-            )}
-          </form>
-        </>
+      {open && types.length > 0 && (
+        <label className="grade-error-type">
+          <span className="cell-meta">
+            {g.suggestedErrorType && errorType === g.suggestedErrorType
+              ? "Common error — suggested by the AI, change it if it's wrong"
+              : "Common error"}
+          </span>
+          <Pick
+            label="Common error"
+            value={errorType}
+            onChange={setErrorType}
+            options={[{ value: "", label: "No error type" }, ...types]}
+          />
+        </label>
       )}
+      {open && !g.unsure && together.length > 0 && (
+        <CreditForm
+          worth={worth}
+          busy={busy}
+          label={g.answer || "blank"}
+          initial={g.verified ? (Math.round(g.match) / 100) * worth : null}
+          who={together.length === 1 ? "this student" : "all " + together.length}
+          onGive={(points) => onGrade(points, errorType, together.map((r) => r.id))}
+        >
+          {g.studentIds.length > 1 && (
+            <Action variant="secondary small" disabled={busy} onClick={onReteach}>
+              <Users size={15} /> Reteach these {g.studentIds.length}
+            </Action>
+          )}
+        </CreditForm>
+      )}
+      {/* Every student in the group, in scan order. Any one can be pulled out
+          and graded on their own; in the Unsure group every one is. */}
+      <ul className="gbq-students">
+        {responses.map((r) => {
+          const alone = g.unsure || apart.has(r.id);
+          const photo = photoOf(r);
+          return (
+            <li key={r.id} className={alone ? "is-apart" : ""}>
+              <div className="gbq-student-head">
+                <span>{nameFor(r.studentId)}</span>
+                {alone && r.answer.trim() && <span className="cell-meta">wrote “{r.answer}”</span>}
+                {!g.unsure && open && (
+                  <button
+                    type="button"
+                    className="grade-change"
+                    disabled={busy}
+                    onClick={() =>
+                      setApart((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(r.id)) next.delete(r.id);
+                        else next.add(r.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {apart.has(r.id) ? "Back into the group" : "Grade on their own"}
+                  </button>
+                )}
+                {!g.unsure && !open && (
+                  <button type="button" className="grade-change" disabled={busy} onClick={() => {
+                    onReopen();
+                    setApart((prev) => new Set(prev).add(r.id));
+                  }}>
+                    Grade on their own
+                  </button>
+                )}
+              </div>
+              {alone && open && (
+                <>
+                  {g.unsure && photo && (
+                    <CroppedPhoto
+                      src={"/api/uploads/" + photo.uploadId}
+                      box={photo.region}
+                      pad={0.06}
+                      alt={"This student's answer to question " + q.number}
+                      onOpen={() => setViewing(photo.uploadId)}
+                    />
+                  )}
+                  <CreditForm
+                    worth={worth}
+                    busy={busy}
+                    label={r.answer || "blank"}
+                    initial={r.verified ? (responseMatch(r) / 100) * worth : null}
+                    who="this student"
+                    onGive={(points) => onGradeOne(r.id, points, errorType)}
+                  />
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
       {viewing && (
         <ImageViewer
           src={"/api/uploads/" + viewing}
@@ -561,6 +663,69 @@ function AnswerGroupCard({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * "__ of 4 points" with No credit / Full credit. The box starts empty, never
+ * "0" -- a teacher typing 25 into a box holding 0 got "025" -- and selects its
+ * contents on focus so typing replaces them.
+ */
+function CreditForm({
+  worth,
+  busy,
+  label,
+  initial,
+  who,
+  onGive,
+  children,
+}: {
+  worth: number;
+  busy: boolean;
+  label: string;
+  initial: number | null;
+  who: string;
+  onGive: (points: number) => void;
+  children?: React.ReactNode;
+}) {
+  const [points, setPoints] = useState(initial && initial > 0 ? pointsText(initial) : "");
+  const typed = Number(points);
+  const valid = points.trim() !== "" && Number.isFinite(typed) && typed >= 0 && typed <= worth;
+  return (
+    <form
+      className="gbq-credit"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onGive(typed);
+      }}
+    >
+      <input
+        className="class-scan-name-input"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={worth}
+        step="any"
+        aria-label={"Points for the answer " + label}
+        placeholder=""
+        value={points}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setPoints(e.target.value.replace(/^0+(?=\d)/, ""))}
+      />
+      <span className="cell-meta">
+        of {pointsText(worth)} point{worth === 1 ? "" : "s"}
+      </span>
+      <Action type="submit" disabled={busy || !valid}>
+        <Check size={15} /> Give {valid ? pointsText(typed) : "…"} to {who}
+      </Action>
+      <Action variant="secondary small" disabled={busy} onClick={() => onGive(0)}>
+        No credit
+      </Action>
+      <Action variant="secondary small" disabled={busy} onClick={() => onGive(worth)}>
+        Full credit
+      </Action>
+      {children}
+    </form>
   );
 }
 

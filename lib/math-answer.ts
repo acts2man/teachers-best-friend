@@ -246,3 +246,17 @@ export function compareAnswers(a: string, b: string): Verdict {
   if (fa === fb) return "same";
   return sameValue(fa, fb) === true ? "same" : "different";
 }
+
+/**
+ * True only when both answers evaluate as numbers or expressions and their
+ * values PROVABLY differ (checked at several points). Used to catch a
+ * grading model's "match" on an answer that is not the key's value -- a sign
+ * off, 5 for 5/x -- without second-guessing answers that are words or choices,
+ * where this returns false and the model's verdict stands.
+ */
+export function provablyDifferent(a: string, b: string): boolean {
+  const fa = collapseChain(finalAnswer(a));
+  const fb = collapseChain(finalAnswer(b));
+  if (!fa || !fb || fa === fb) return false;
+  return sameValue(fa, fb) === false;
+}

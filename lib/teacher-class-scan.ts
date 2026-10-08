@@ -12,7 +12,7 @@ import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 export type ScannedResponse = {
   questionId: string;
   answer: string;
-  verdict: "match" | "blank" | "other";
+  verdict: "match" | "blank" | "other" | "unsure";
   finalAnswer?: string;
   answerRegion?: AnswerRegion | null;
   suggestedErrorType?: string;

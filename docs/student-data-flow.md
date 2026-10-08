@@ -319,7 +319,16 @@ the answer sits on the page (for a cropped photo), and for a wrong answer a
 suggested error type from the subject's list (for the teacher to approve). The
 request carries nothing new: the same pages, questions and key as before, plus
 the subject's list of error-type names. No identity is added. Credit is still
-not asked for; the verdict stays match / blank / other.
+not asked for.
+
+The verdicts are now match / blank / other / **unsure**, under stricter rules
+written into both prompts (`VERDICT_RULES` in `lib/analyze-shared.ts`): "blank"
+only when there is no writing or mark of any kind, "unsure" whenever the answer
+cannot be read or the model is not confident, and a response for every
+question. A question the model leaves out, or a "match" whose value provably
+differs from the key, is treated as unsure, and unsure answers are never
+scored; the teacher decides each one. This changes instructions only. The
+request carries no new data and no identity.
 
 ### Checking an answer key the app worked out (`key_check`, 8 Oct 2026)
 

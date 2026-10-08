@@ -862,3 +862,11 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .answer-key-list label.key-disagrees{outline:2px solid hsl(calc(20deg + var(--th)) calc(70% * var(--ts)) 70%);outline-offset:4px;border-radius:10px}
 .math-keys{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:8px 0;background:var(--background)}
 .math-key{min-width:40px;min-height:40px;padding:4px 10px;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);border-radius:8px;background:#fff;color:var(--ink);font-size:16px;font-weight:600}
+/* Grade by question, trust pass (8 Oct): key in green, unsure, pull-outs. */
+.gbq-key{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:4px 10px;border-radius:8px;font-size:14px;color:hsl(calc(150deg + var(--th)) calc(50% * var(--ts)) 24%);background:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 91%)}
+.gbq-group.is-unsure{border-color:hsl(calc(35deg + var(--th)) calc(80% * var(--ts)) 65%);background:hsl(calc(42deg + var(--th)) calc(90% * var(--ts)) 98%)}
+.gbq-students{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.gbq-students li{display:flex;flex-direction:column;gap:6px;padding:6px 0;border-top:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 92%)}
+.gbq-students li.is-apart{padding:8px 10px;border:1px solid hsl(calc(35deg + var(--th)) calc(60% * var(--ts)) 80%);border-radius:10px}
+.gbq-student-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.gbq-students .cropped-photo{max-width:340px}

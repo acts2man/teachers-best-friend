@@ -388,10 +388,10 @@ test("different answers are never merged",()=>{
   assert.notEqual(answerKey("5.2"),answerKey("52"));
   assert.notEqual(answerKey("9.2"),answerKey("5.2"));
 });
-test("blanks and clean matches need no decision; partials do",()=>{
+test("clean matches need no decision; blanks and partials do",()=>{
   const a=classSet([["s1","",false],["s2","5.2",true],["s3","9.2",false,50]]);
   const byAnswer=Object.fromEntries(groupAnswers(a,"q1").map(g=>[g.answer||"(blank)",g.needsDecision]));
-  assert.equal(byAnswer["(blank)"],false);
+  assert.equal(byAnswer["(blank)"],true,"a blank is looked at before it is zero");
   assert.equal(byAnswer["5.2"],false);
   assert.equal(byAnswer["9.2"],true);
 });

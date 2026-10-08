@@ -7,6 +7,7 @@ import type {
   Student,
   StudentResponse,
 } from "./teacher-types";
+import { provablyDifferent } from "./math-answer";
 import {
   cognitiveReportLines,
   costaBreakdown,
@@ -324,7 +325,7 @@ export function parseAnswerKey(text: string, questions: Question[]) {
 export type RecognizedResponse = {
   questionId: string;
   answer: string;
-  verdict: "match" | "blank" | "other";
+  verdict: "match" | "blank" | "other" | "unsure";
   /** See StudentResponse.finalAnswer / answerRegion / suggestedErrorType. */
   finalAnswer?: string;
   answerRegion?: AnswerRegion | null;
@@ -349,35 +350,48 @@ export function normalizeRecognizedResponses(
   return activeQuestions(a).map((q) => {
     const matches = incoming.filter((r) => r.questionId === q.id);
     const response = matches.length === 1 ? matches[0] : undefined;
-    const isMatch = response?.verdict === "match";
-    // Blank when the AI said "blank", and also when nothing usable came back at
-    // all -- a missing or duplicated question is not the teacher's to decide.
-    const isBlank = !response || response.verdict === "blank";
+    const final = response?.finalAnswer?.trim() || response?.answer || "";
+    // Ricky's rule: never marked correct when it is wrong. A "match" whose
+    // final answer provably differs from the key by value -- a sign, a missing
+    // variable -- is not trusted; it goes to the teacher as unsure.
+    const contradictsKey =
+      response?.verdict === "match" && !!final && provablyDifferent(final, q.answer);
+    // And never marked blank when the page shows work. A question the model
+    // left out, reported twice, or was not sure about is UNSURE -- for the
+    // teacher, not scored zero. (A model skipping questions in a long batch is
+    // what put Michael's students with work in a "blank" group on 8 Oct.)
+    const unsure = !response || response.verdict === "unsure" || contradictsKey;
+    const isMatch = response?.verdict === "match" && !contradictsKey;
+    const isBlank = !unsure && response?.verdict === "blank";
     return {
       id: crypto.randomUUID(),
       studentId,
       questionId: q.id,
-      answer: isBlank ? "" : response.answer || "",
+      answer: isBlank ? "" : response?.answer || "",
       correct: isMatch,
-      // match 100 for a clean match, 0 for a blank, and UNSET for "other" so no
-      // AI-guessed partial is stored -- responseMatch reads unset as 0 for the
-      // running total while groupAnswers still surfaces it for a decision.
+      // match 100 for a clean match, 0 for a blank, and UNSET for "other" and
+      // "unsure" so no score is invented -- responseMatch reads unset as 0 for
+      // the running total while groupAnswers still surfaces it for a decision.
+      // A blank is scored zero but NOT confirmed: the teacher sees the photo
+      // of an empty answer before it counts.
       match: isMatch ? 100 : isBlank ? 0 : undefined,
       misconception:
         matches.length > 1
           ? "More than one answer was recognized. Check the original work."
           : matches.length === 0
-            ? "No readable answer was recognized. Check the original work."
-            : "",
-      // Reading confidence is now binary: the AI either read an answer for this
-      // question (100) or it did not (0). It no longer estimates a percentage.
-      confidence: response ? 100 : 0,
+            ? "No answer came back for this question. Check the original work."
+            : contradictsKey
+              ? "Read as matching the key, but the value differs. Check the original work."
+              : "",
+      // Confidence is binary: 100 when the model read and judged the answer,
+      // 0 when the teacher has to look (the Unsure group in Grade by question).
+      confidence: unsure ? 0 : 100,
       verified: false,
-      ...(!isBlank && response.finalAnswer?.trim()
+      ...(!isBlank && response?.finalAnswer?.trim()
         ? { finalAnswer: response.finalAnswer.trim() }
         : {}),
-      ...(!isBlank && response.answerRegion ? { answerRegion: response.answerRegion } : {}),
-      ...(!isBlank && !isMatch && response.suggestedErrorType
+      ...(response?.answerRegion ? { answerRegion: response.answerRegion } : {}),
+      ...(!isBlank && !isMatch && response?.suggestedErrorType
         ? { suggestedErrorType: response.suggestedErrorType }
         : {}),
     };
@@ -732,8 +746,14 @@ export function forgetUploads(a: Assessment, released: string[]): Assessment {
 }
 
 /** One cluster of students who answered a question the same way. */
+/** The key of a question's Unsure group. */
+export const UNSURE_KEY = "\u0000unsure";
+
 export type AnswerGroup = {
   key: string;
+  /** The answers the model was not sure about, or skipped, for this question:
+   * one group, whatever each student wrote, graded student by student. */
+  unsure?: boolean;
   answer: string;
   responseIds: string[];
   studentIds: string[];
@@ -768,12 +788,15 @@ export type QuestionSummary = {
   needReview: number;
   /** Answer groups still waiting on a decision. */
   groupsToReview: number;
+  /** Of those needing review, how many the model was unsure about. */
+  unsure: number;
 };
 
 export function questionSummary(a: Assessment, questionId: string): QuestionSummary {
   const groups = groupAnswers(a, questionId);
-  const summary: QuestionSummary = { correct: 0, noCredit: 0, partial: 0, needReview: 0, groupsToReview: 0 };
+  const summary: QuestionSummary = { correct: 0, noCredit: 0, partial: 0, needReview: 0, groupsToReview: 0, unsure: 0 };
   for (const g of groups) {
+    if (g.unsure) summary.unsure += g.responseIds.length;
     if (g.needsDecision) {
       summary.needReview += g.responseIds.length;
       summary.groupsToReview++;
@@ -843,7 +866,15 @@ export function groupAnswers(
     // writing it differently are one decision. Answers graded before the final
     // answer existed fall back to their written text, as before.
     const final = r.finalAnswer?.trim() || r.answer;
-    const key = answerKey(final);
+    // Not yet decided and the model was unsure (or skipped it): one Unsure
+    // group per question, whatever was written, for the teacher to look at.
+    const unsure = !r.verified && r.confidence < 50;
+    // Once the teacher has graded an answer it groups with answers given the
+    // SAME credit -- so pulling one student out and grading them on their own
+    // gives them their own group rather than dragging the rest along.
+    const key = unsure
+      ? UNSURE_KEY
+      : answerKey(final) + (r.verified ? "|" + Math.round(responseMatch(r)) : "");
     if (r.suggestedErrorType) {
       const tally = suggestions.get(key) ?? new Map<string, number>();
       tally.set(r.suggestedErrorType, (tally.get(r.suggestedErrorType) ?? 0) + 1);
@@ -890,12 +921,15 @@ export function groupAnswers(
       // or No credit included) the group is decided and must stop counting.
       // The old check looked only at correct && match>=100, so a group settled
       // below full credit stayed "to decide" forever — the bug Ricky hit.
+      // Blank answers are decisions too now: the teacher sees the photo
+      // before an empty answer is scored zero.
       needsDecision:
         !!question &&
         !question.excluded &&
-        !!g.answer.trim() &&
         !g.verified &&
-        !(g.correct && g.match >= 100),
+        !(g.correct && g.match >= 100 && g.key !== UNSURE_KEY),
+      unsure: g.key === UNSURE_KEY,
+      answer: g.key === UNSURE_KEY ? "" : g.answer,
     }))
     .sort((x, y) => y.responseIds.length - x.responseIds.length);
 }
@@ -982,9 +1016,10 @@ export function autoGradedToConfirm(a: Assessment): string[] {
   return a.responses
     .filter((r) => {
       if (r.verified || !active.has(r.questionId)) return false;
-      const blank = !r.answer.trim();
-      const cleanMatch = r.correct && responseMatch(r) >= 100;
-      return blank || cleanMatch;
+      // Clean matches only. A blank is no longer confirmed in bulk: the
+      // teacher sees the photo of an empty answer first (Ricky: never marked
+      // blank when the page shows work), and an unsure answer is never a match.
+      return r.correct && responseMatch(r) >= 100 && r.confidence >= 50;
     })
     .map((r) => r.id);
 }
