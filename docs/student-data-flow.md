@@ -84,6 +84,21 @@ whose host is not `CANONICAL_HOST`, so a permalink of any build **from the guard
 is inert. It cannot reach into permalinks of older builds, so deleting old deploys and
 limiting Netlify's deploy retention remain necessary for those.
 
+### A class scan in progress (`class_scan_sessions`, 8 Oct 2026)
+
+So a scan started on the phone shows on the computer, the in-progress scan is
+saved to the teacher's account: the upload ids of the pages in scan order, where
+each student's pile ends, grading progress, the name read off each paper and the
+student it was matched to, and which device is grading. No image bytes. Written
+only through `/api/scans/session` for the signed-in teacher; RLS own-row policies
+on top.
+
+Cleared: by the app the moment the class is saved or the teacher starts over; on
+its own after **7 days** (`expires_at`; ignored once expired, deleted by the
+nightly `purge-expired-class-scan-sessions` job); and with the account (cascades
+from `auth.users`). The phone's local draft remains as a backup and is cleared
+the same way.
+
 ### Grading results held for delivery (`scans.params`, `scans.result`)
 
 A background analysis stores the request it sent and the result it got back on the
@@ -227,8 +242,8 @@ section on the AI provider; Student Data Privacy Commitments "On student names" 
 is sent"). `How We Use AI` and the DPA already state that the photograph may carry a name
 the student wrote, and stay accurate.
 
-The writing path (`writing` mode, single student) still uses `splitNameBand` and cuts the
-top 18% off page 1; it was not part of this change.
+The writing path (`writing` mode, single student) stopped cutting page 1 on 8 Oct 2026;
+see its own section below.
 
 **Fallback.** A PDF, or a browser that cannot do the cut, sends the whole page to grading
 and reads no name from it; the teacher names that group by hand. That path trades the
@@ -277,21 +292,19 @@ piece), the rubric traits with their descriptors and maximums, the genre, the
 grade, and any teacher notes. **What it does not send:** no roster, no student
 list, no teacher/school/district name, and no student name as text.
 
-**Name read from the image.** No. This is single-student, so the app already
-knows whose work it is and never needs the model to read a name. Because
-rubric scoring is judgment (a name could bias it), the app cuts the name band
-off the **first** page before upload -- the same top-band cut used by the
-class scan (`splitNameBand` / `NAME_BAND` in `lib/image-prep.ts`) -- and sends
-the band-removed page. No separate name request is made, since identity is
-already known locally. The prompt also tells the model never to report or
-reproduce a name.
+**Name read from the image.** No name is read or asked for: this is
+single-student, so the app already knows whose work it is. Until 8 Oct 2026 the
+app cut the top 18% off the **first** page before upload so the scored essay
+carried no name. That cut also removed the first lines of writing on a phone
+photo, so since 8 Oct every page is sent whole (per the 28 Sep decision that the
+AI may see a name written on the page). The image may therefore show the
+student's handwritten name. The prompt tells the model to ignore it and never to
+report, guess or reproduce a name.
 
-**The honest limit that remains.** The band is a fixed fraction of page one,
-not a detector: a name written lower down, in a margin, or on a later page
-stays in the image, as does a name in a PDF or a browser that cannot do the
-cut (that path sends the whole page, exactly as single-student `responses`
-does). The exposure is one name on one page, never linked to a student record
-by anything in the request. It is not zero and is not described as zero.
+**The trade-off, stated plainly.** Rubric scoring is the one mode where the model
+exercises judgment, and the original reason for the cut was that a name could
+bias that judgment. The teacher confirms or changes every suggested score
+before it counts, which is the safeguard that remains.
 
 **Effect on retention.** None new. A `writing` scan is a `responses`-style
 scan for retention: its `scans.params`/`scans.result` are the delivery buffer
@@ -307,6 +320,23 @@ suggested error type from the subject's list (for the teacher to approve). The
 request carries nothing new: the same pages, questions and key as before, plus
 the subject's list of error-type names. No identity is added. Credit is still
 not asked for; the verdict stays match / blank / other.
+
+### Checking an answer key the app worked out (`key_check`, 8 Oct 2026)
+
+A new AI mode, checked against this section before it shipped.
+
+**What it sends.** The teacher's blank worksheet pages (`assignmentUploadIds` --
+never `uploadIds`, which also collects scanned student pages) and the question
+text as the worksheet read produced it. Not the answers the app worked out (the
+point is an independent second solve), not student work, no roster, no student
+name, no teacher or school name.
+
+**Why it exists.** When no key is uploaded the worksheet read works the key
+out, and on Ricky's Algebra 2 test it got 2-5 of 15 wrong on every read. The
+second solve's disagreements are shown to the teacher to settle before the key
+can be confirmed. Free to the teacher (`FREE_MODES` in `lib/page-ledger.ts`).
+
+**Effect on identity.** None: no student data is in the request.
 
 ## 5. Results back to the teacher
 

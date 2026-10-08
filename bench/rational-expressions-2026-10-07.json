@@ -1,0 +1,148 @@
+{
+ "about": "Six real reads of Ricky's 'Rational Expressions' Algebra 2 worksheet (2 pages, 15 questions), 7 Oct 2026, all from the production 'assignment' stage: gpt-5.6-luna, reasoning effort 'low', no key uploaded. 'truth' is the key Ricky confirmed on assessment 08381752 after correcting it. Answer text only -- no student data. Replay with: node scripts/key-benchmark.mjs --replay bench/rational-expressions-2026-10-07.json",
+ "setting": "gpt-5.6-luna:low",
+ "truth": {
+  "1": "8/x",
+  "2": "−5/(x + 4)",
+  "3": "(x + 6)/(x − 3)",
+  "4": "2(x + 2)/(x(x + 1))",
+  "5": "2x/(x² − 4)",
+  "6": "(x + 3)/(x + 1)",
+  "7": "3x/[2(x − 3)]",
+  "8": "x − 2",
+  "9": "5/x",
+  "10": "(x + 3)/(x − 3)",
+  "11": "x = 2, x = 0 is extraneous",
+  "12": "x = -4",
+  "13": "x = 5",
+  "14": "x = 6",
+  "15": "x = 15/2"
+ },
+ "runs": [
+  {
+   "at": "2026-10-07T21:05",
+   "cost": 0.005616,
+   "keys": {
+    "1": "8/x, with x ≠ 0",
+    "2": "−5/(x+4), with x ≠ −4",
+    "3": "(x+6)/(x−3), with x ≠ 3",
+    "4": "(2x+4)/(x(x+1)), equivalently 2(x+2)/(x(x+1)), with x ≠ 0, −1",
+    "5": "2x/(x²−4), with x ≠ 2, −2",
+    "6": "(x+3)/(x+1), with x ≠ 2, −1",
+    "7": "3x/2(x−3), with x ≠ 3",
+    "8": "x−2, with x ≠ −2",
+    "9": "5/(x+2), with x ≠ 0, −2",
+    "10": "(x+3)/(x−3), with x ≠ 3",
+    "11": "x = −5/3, with x ≠ 0, −3",
+    "12": "x = −4, no extraneous solution",
+    "13": "x = 5, with x ≠ 1; no extraneous solution",
+    "14": "x = 15/2, with x ≠ −2; no extraneous solution",
+    "15": "x = 15, with x ≠ 5; no extraneous solution"
+   }
+  },
+  {
+   "at": "2026-10-07T21:10",
+   "cost": 0.005175,
+   "keys": {
+    "1": "8/x, with x ≠ 0",
+    "2": "−5/(x+4), with x ≠ −4",
+    "3": "(x+6)/(x−3), with x ≠ 3",
+    "4": "(2x+4)/(x(x+1)) = 2(x+2)/(x(x+1)), with x ≠ 0, −1",
+    "5": "2/(x−2), with x ≠ 2, −2",
+    "6": "(x+3)/(x+1), with x ≠ 2, −1",
+    "7": "3x/2(x−3), with x ≠ 3",
+    "8": "x−2, with x ≠ −2",
+    "9": "5/1 = 5, with x ≠ 0, −2",
+    "10": "(x+3)/(x−3), with x ≠ 3, −3",
+    "11": "x = −5/3; restrictions: x ≠ 0, −3",
+    "12": "x = 4; no extraneous solution",
+    "13": "x = 5; no extraneous solution",
+    "14": "x = 6; no extraneous solution",
+    "15": "x = 15/2; no extraneous solution"
+   }
+  },
+  {
+   "at": "2026-10-07T21:16",
+   "cost": 0.005656,
+   "keys": {
+    "1": "8/x, with x ≠ 0",
+    "2": "2/(x − 2), with x ≠ 2, 2",
+    "3": "(x + 6)/(x − 3), with x ≠ 3",
+    "4": "(2x + 4)/(x(x + 1)), with x ≠ 0, −1",
+    "6": "(x + 3)/(x + 1), with x ≠ 2, −1",
+    "7": "3x/2(x − 3), with x ≠ 3",
+    "8": "x − 2, with x ≠ −2",
+    "9": "5/(x + 2), with x ≠ 0, −2",
+    "10": "(x + 3)/(x − 3), with x ≠ 3, −3",
+    "11": "x = −5/3; x = 0 is excluded because the original denominator is zero",
+    "12": "x = −4",
+    "13": "x = 5",
+    "14": "x = 6",
+    "15": "x = 15/2"
+   }
+  },
+  {
+   "at": "2026-10-07T21:54",
+   "cost": 0.00566,
+   "keys": {
+    "1": "8/x, with x ≠ 0.",
+    "2": "−5/(x + 4), with x ≠ −4.",
+    "3": "(x + 6)/(x − 3), with x ≠ 3.",
+    "4": "2(x + 2)/(x(x + 1)), with x ≠ 0 and x ≠ −1.",
+    "5": "2x/(x² − 4), with x ≠ 2 and x ≠ −2.",
+    "6": "(x + 3)/(x + 1), with x ≠ 2 and x ≠ −1.",
+    "7": "3x/[2(x − 3)], with x ≠ 3 and x ≠ −3.",
+    "8": "x − 2, with x ≠ −2.",
+    "9": "5, with x ≠ 0 and x ≠ −2.",
+    "10": "(x − 3)(x + 3)/(x − 3)², or (x + 3)/(x − 3), with x ≠ 3.",
+    "11": "x = −6/5; x = 0 is extraneous because it makes the original denominator x equal to zero.",
+    "12": "x = 4.",
+    "13": "x = 5.",
+    "14": "x = 6.",
+    "15": "x = 15/4."
+   }
+  },
+  {
+   "at": "2026-10-07T22:23",
+   "cost": 0.005014,
+   "keys": {
+    "1": "8/x, x ≠ 0",
+    "2": "−5/(x + 4), x ≠ −4",
+    "3": "(x + 6)/(x − 3), x ≠ 3",
+    "4": "2(x + 2)/(x(x + 1)), x ≠ 0, −1",
+    "5": "2x/(x² − 4), x ≠ 2, −2",
+    "6": "(x + 3)/(x + 1), x ≠ 2, −1",
+    "7": "3x/2(x − 3), x ≠ −3, 3",
+    "8": "x − 2, x ≠ −2",
+    "9": "5, x ≠ 0, −2",
+    "10": "(x + 3)/(x − 3), x ≠ 3, −3",
+    "11": "x = −5/3",
+    "12": "x = 8",
+    "13": "x = 5",
+    "14": "x = 6",
+    "15": "x = 15/2"
+   }
+  },
+  {
+   "at": "2026-10-07T22:30",
+   "cost": 0.005967,
+   "keys": {
+    "1": "8/x",
+    "2": "−5/(x+4)",
+    "3": "(x+6)/(x−3)",
+    "4": "2(x+2)/[x(x+1)]",
+    "5": "2x/(x²−4)",
+    "6": "1",
+    "7": "3x/[2(x−3)]",
+    "8": "x−2",
+    "9": "5/x",
+    "10": "(x+3)/(x−3)",
+    "11": "x = 2",
+    "12": "x = −4",
+    "13": "x = 5",
+    "14": "x = 6",
+    "15": "x = 7"
+   }
+  }
+ ]
+}
