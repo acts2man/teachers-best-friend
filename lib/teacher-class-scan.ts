@@ -663,6 +663,20 @@ export const BATCH_OUTPUT_BUDGET = 16000;
  */
 export const MAX_PAGES_PER_BATCH = 12;
 
+/**
+ * Bytes of page images per grading request, under the analyze route's 12 MB
+ * refusal with room to spare. Measured 8 Oct on production uploads: whole
+ * class-scan pages averaged 383 KB (largest 456 KB); the largest page ever
+ * uploaded to a class scan, scaled up to a whole page, is about 834 KB, so
+ * twelve of those (9.8 MB) fit -- but a sharper camera or a PDF could tip a
+ * batch over, and a refused request costs the teacher the batch. So batches are
+ * also filled by size.
+ */
+export const MAX_BATCH_BYTES = 10 * 1024 * 1024;
+
+/** What a page of unknown size is assumed to weigh: above the largest seen. */
+export const ASSUMED_PAGE_BYTES = 900 * 1024;
+
 export function studentsPerBatch(
   questionCount: number,
   budget = BATCH_OUTPUT_BUDGET,
@@ -696,24 +710,35 @@ export function planScanBatches(
   questionCount: number,
   budget = BATCH_OUTPUT_BUDGET,
   maxPages = MAX_PAGES_PER_BATCH,
+  pageBytes: (number | undefined)[] = [],
+  maxBytes = MAX_BATCH_BYTES,
 ): ScanBatch[] {
   const perBatch = studentsPerBatch(questionCount, budget);
   const batches: ScanBatch[] = [];
   let current: ScanBatch = { uploadIds: [], groups: [], groupIndexes: [] };
+  let currentBytes = 0;
   const flush = () => {
     if (current.uploadIds.length) batches.push(current);
     current = { uploadIds: [], groups: [], groupIndexes: [] };
+    currentBytes = 0;
+  };
+  const weight = (page: number) => {
+    const b = pageBytes[page];
+    return typeof b === "number" && b > 0 ? b : ASSUMED_PAGE_BYTES;
   };
   pageGroups.forEach((pages, index) => {
     const valid = pages.filter((p) => p >= 0 && p < pageUploadIds.length);
+    const bytes = valid.reduce((sum, p) => sum + weight(p), 0);
     // A student never straddles two requests: if this one does not fit beside
     // the students already in the batch, the batch is sent without them.
     if (
       current.groups.length &&
       (current.groups.length >= perBatch ||
-        current.uploadIds.length + valid.length > maxPages)
+        current.uploadIds.length + valid.length > maxPages ||
+        currentBytes + bytes > maxBytes)
     )
       flush();
+    currentBytes += bytes;
     current.groups.push(
       valid.map((page) => {
         current.uploadIds.push(pageUploadIds[page]);

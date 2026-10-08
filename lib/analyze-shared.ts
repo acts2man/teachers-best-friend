@@ -445,7 +445,7 @@ export function buildPrompt(
       (a.genre === "narrative" ? "narrative" : "informational") +
       " writing against the teacher's rubric, for " +
       gradePromptLabel(a.grade, a.subject) +
-      ". Every page you are given is one continuous piece of writing by this one student -- read them together, in order, as a single essay, not as separate answers. For each rubric dimension below, return its dimensionId, an integer score from 0 up to that dimension's own max, and ONE short sentence of reasoning that points to something specific in this student's writing rather than repeating the rubric wording. Return exactly one entry per dimension and invent no others. Score honestly against the descriptor -- this is a suggestion the teacher will confirm or change, so do not inflate. The student's name has been removed from the page and is not your concern: never report, guess, or reproduce any name. Rubric: " +
+      ". Every page you are given is one continuous piece of writing by this one student -- read them together, in order, as a single essay, not as separate answers. For each rubric dimension below, return its dimensionId, an integer score from 0 up to that dimension's own max, and ONE short sentence of reasoning that points to something specific in this student's writing rather than repeating the rubric wording. Return exactly one entry per dimension and invent no others. Score honestly against the descriptor -- this is a suggestion the teacher will confirm or change, so do not inflate. The page may show the student's name; ignore it, it is not your concern: never report, guess, or reproduce any name. Rubric: " +
       JSON.stringify(rubric) +
       ". Teacher notes: " +
       p.text;
