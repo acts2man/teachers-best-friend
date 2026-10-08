@@ -22,6 +22,14 @@ import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
 import { ScanCamera } from "./scan-camera";
 import { ImageViewer } from "./image-viewer";
+import { deviceId, useScanSession } from "./use-scan-session";
+import {
+  GRADING_STALE_MS,
+  isEmptySession,
+  type ScanPage,
+  type ScanProgress,
+  type ScanSession,
+} from "@/lib/scan-session";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
@@ -73,15 +81,8 @@ function chunk<T>(items: T[], size: number): T[][] {
 const draftKey = (assessmentId: string) => "tbf.scan-draft." + assessmentId;
 
 /** A scan in progress: the pages grouped so far, and the grading job started
- * from them, if it got that far. */
-type Progress = {
-  /** Batches already graded, in whole-scan numbering. */
-  graded: GradedGroup[];
-  /** The next batch to send. */
-  nextBatch: number;
-  /** A batch already sent and still running, to pick up rather than repeat. */
-  scanId: string | null;
-};
+ * from them, if it got that far. Shared with the account copy. */
+type Progress = ScanProgress;
 type Draft = { piles: Page[][]; progress?: Progress | null; savedAt?: number };
 
 /**
@@ -153,17 +154,9 @@ function parseDraft(raw: string | null): Draft | null {
 const EMPTY: Page[][] = [[]];
 
 /** One uploaded page: the whole upright page for grading, and a smaller copy
- * of its top part for reading the name. */
-type Page = {
-  key: string;
-  label: string;
-  bodyId: string;
-  /** The name-area upload (the top of the page, reduced). Called a strip
-   * because it used to be one; drafts saved before keep working. */
-  stripId: string | null;
-  /** Pages in the body upload, counted server-side. A photograph is 1. */
-  pages: number;
-};
+ * of its top part for reading the name (`stripId`, named for the band it used
+ * to be so older drafts keep working). Shared with the account copy. */
+type Page = ScanPage;
 
 /**
  * The handwritten name, cropped out of the name area the name pass read.
@@ -296,6 +289,83 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // still running on the provider's side is waited on rather than repeated,
   // because that one has already been billed.
   const resumeRef = useRef(false);
+
+  // ---- Keeping the phone and the computer in step -------------------------
+  // The scan is saved to the teacher's account as it goes (use-scan-session),
+  // so a scan started on one device shows on the other, partway through
+  // included. The localStorage draft below stays as this device's backup.
+  //
+  // `remoteGrading` is another device's "I am grading this" note, kept so this
+  // device neither grades the same stack again nor erases the note when it
+  // saves. `gradingAt` is this device's own note, refreshed while it grades.
+  const [device] = useState(deviceId);
+  const [remoteGrading, setRemoteGrading] = useState<ScanSession["grading"]>(null);
+  const [gradingAt, setGradingAt] = useState(0);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const t = setInterval(tick, 15_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, []);
+  useEffect(() => {
+    if (!scanning) return;
+    const beat = () => setGradingAt(Date.now());
+    const first = setTimeout(beat, 0);
+    const t = setInterval(beat, 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [scanning]);
+  const session = useMemo<ScanSession | null>(() => {
+    const s: ScanSession = {
+      v: 1,
+      piles,
+      progress,
+      groups,
+      discarded: [...discarded].sort(),
+      pageUploadIds: groups ? pageUploadIds : [],
+      grading: null,
+    };
+    if (isEmptySession(s)) return null;
+    return s;
+  }, [piles, progress, groups, discarded, pageUploadIds]);
+  /** Shows what the other device saved. `null` means it saved the class or
+   * started over, so this device clears too -- without releasing the pages,
+   * which the other device already settled. */
+  function applyRemote(next: ScanSession | null) {
+    setRemoteGrading(next?.grading ?? null);
+    setEdited(next ? next.piles : EMPTY);
+    setProgress(next?.progress ?? null);
+    setGroups(next?.groups ?? null);
+    setDiscarded(new Set(next?.discarded ?? []));
+    setPageUploadIds(next?.pageUploadIds ?? []);
+    resumeRef.current = false;
+  }
+  const sync = useScanSession({
+    assessmentId: a.id,
+    session: useMemo(
+      () =>
+        session && {
+          ...session,
+          // This device's own note while it grades; otherwise keep the other
+          // device's, so saving here never erases it.
+          grading: scanning && gradingAt ? { device, at: gradingAt } : remoteGrading,
+        },
+      [session, scanning, gradingAt, remoteGrading, device],
+    ),
+    apply: applyRemote,
+    paused: adding || scanning || saving,
+  });
+  const gradingElsewhere =
+    !!remoteGrading &&
+    remoteGrading.device !== device &&
+    now > 0 &&
+    now - remoteGrading.at < GRADING_STALE_MS;
   // What the run in progress has managed so far, so a failure part-way can
   // still put it on screen rather than stranding work already paid for.
   const partial = useRef<{
@@ -306,10 +376,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     graded: GradedGroup[];
   } | null>(null);
   useEffect(() => {
-    if (!progress || scanning || groups || resumeRef.current) return;
+    // Not while the other device is grading this same stack: it would read the
+    // names and send the pages a second time. Once its note goes stale (the
+    // phone slept, the tab closed) this device picks the scan up.
+    if (!progress || scanning || groups || resumeRef.current || gradingElsewhere) return;
     resumeRef.current = true;
     void gradeCaptured();
-  }, [progress, scanning, groups]);
+  }, [progress, scanning, groups, gradingElsewhere]);
 
 
   // Keep the draft in step with the piles, including emptying it once the
@@ -350,7 +423,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   async function upload(file: File) {
     const d = await uploadFile(file);
-    return { id: d.id, pages: Number(d.pages) || 1 };
+    return { id: d.id, pages: Number(d.pages) || 1, bytes: Number(d.size) || 0 };
   }
 
   /**
@@ -369,14 +442,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // A PDF, or a browser that could not do the work. Grade the whole page and
       // read no name from it; the teacher names that pile.
       const whole = await upload(page);
-      return { bodyId: whole.id, stripId: null, pages: whole.pages };
+      return { bodyId: whole.id, stripId: null, pages: whole.pages, bytes: whole.bytes };
     }
     const body = await upload(split.page);
     // The name area is uploaded too, but it is never reserved and never
     // charged: it is the top of a page the teacher is already paying for.
     // Charging per upload rather than per page would bill this class set twice.
     const strip = await upload(split.nameArea);
-    return { bodyId: body.id, stripId: strip.id, pages: body.pages };
+    return { bodyId: body.id, stripId: strip.id, pages: body.pages, bytes: body.bytes };
   }
 
   function canAccept(count: number) {
@@ -491,6 +564,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
     void releaseStack(pageUploadIds);
+    // And clear it from the account, so the other device clears too.
+    void sync.clear();
+    setRemoteGrading(null);
     setPaidIds(new Set());
     setProgress(null);
     setEdited(EMPTY);
@@ -576,7 +652,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // them only to try fewer pages. The photographs are the expensive part and
       // there are exactly as many of them either way.
       partial.current = { pageGroups, names, ids, nameIds, graded: resume?.graded ?? [] };
-      const batches = planScanBatches(pageGroups, ids, activeQuestions(a).length);
+      const batches = planScanBatches(
+        pageGroups,
+        ids,
+        activeQuestions(a).length,
+        undefined,
+        undefined,
+        pages.map((p) => p.bytes),
+      );
       // Resume where an interrupted run stopped rather than grading, and paying,
       // from the top again.
       const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
@@ -739,6 +822,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   async function gradeCaptured() {
     if (busyScanning || !captured.length) return;
     if (!ready()) return;
+    if (gradingElsewhere) {
+      toast.error("This class is being graded on your other device. It will show here when it's done.");
+      return;
+    }
     setScanning(true);
     try {
       await gradePages(
@@ -1024,12 +1111,18 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     MAX_PAGES +
                     ")"}
               </p>
+              {restored && captured.length > 0 && (
+                <Action variant="secondary small" disabled={busyScanning || busy} onClick={reset}>
+                  <X size={15} />
+                  Start over
+                </Action>
+              )}
             </>
           )}
           {captured.length > 0 && !groups && (
             <Action
               className="guided-primary"
-              disabled={busyScanning || busy}
+              disabled={busyScanning || busy || gradingElsewhere}
               onClick={gradeCaptured}
             >
               {scanning ? <LoaderCircle className="spin" size={20} /> : <Check size={20} />}
@@ -1118,6 +1211,20 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         <p className="cell-meta" role="status">
           You&rsquo;re offline. Pages you have already scanned are safe — adding more
           needs the connection back.
+        </p>
+      )}
+      {gradingElsewhere && !scanning && (
+        <div className="read-document-status" role="status">
+          <LoaderCircle className="spin" size={18} />
+          <p>
+            This class is being graded on your other device. The students will appear here
+            when it&rsquo;s done.
+          </p>
+        </div>
+      )}
+      {sync.notice && !gradingElsewhere && (
+        <p className="cell-meta" role="status">
+          {sync.notice}
         </p>
       )}
       {status && (

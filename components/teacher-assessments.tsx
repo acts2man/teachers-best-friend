@@ -112,7 +112,6 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { splitNameBand } from "@/lib/image-prep";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -2013,17 +2012,12 @@ function WritingReview({
     const ids: string[] = [];
     try {
       for (let i = 0; i < incoming.length; i++) {
-        // The name sits at the top of the first page; cut that band off before
-        // upload so the essay the AI scores carries no name. Later pages go up
-        // whole. A browser that cannot cut falls back to the whole first page
-        // (the honest limit recorded in docs/student-data-flow.md §4).
-        let file: File;
-        if (i === 0) {
-          const split = await splitNameBand(incoming[i]);
-          file = split ? split.body : await uprightPage(incoming[i]);
-        } else {
-          file = await uprightPage(incoming[i]);
-        }
+        // Every page goes up whole. Page 1 used to lose its top 18% so the
+        // essay the AI scores carried no name, and with it the first lines of
+        // writing on a phone photo. Since the 28 Sep decision the AI may see a
+        // name written on the page; the scoring prompt says to ignore it and
+        // never report it (docs/student-data-flow.md section 4).
+        const file = await uprightPage(incoming[i]);
         const d = await uploadFile(file);
         ids.push(d.id);
       }

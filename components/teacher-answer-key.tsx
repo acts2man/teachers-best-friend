@@ -22,10 +22,37 @@ import {
   parseAnswerKey,
   preparationGaps,
 } from "@/lib/teacher-workflow";
+import {
+  applyKeyCheck,
+  keyIsGenerated,
+  questionsToCheck,
+  settleDisagreements,
+} from "@/lib/key-check";
 import { extractUploadedPdfText } from "@/lib/pdf-text";
 import type { Assessment } from "@/lib/teacher-types";
 
 type Uploaded = { id: string; mime: string };
+
+/**
+ * Symbols that are painful to type on a phone keyboard, inserted at the cursor
+ * of whichever answer box was last focused. Ricky: correcting an Algebra 2 key
+ * by hand meant hunting for minus signs, exponents and fractions.
+ */
+const MATH_KEYS: { label: string; insert: string; title: string }[] = [
+  { label: "−", insert: "−", title: "minus / negative" },
+  { label: "a/b", insert: "/", title: "fraction bar" },
+  { label: "( )", insert: "()", title: "parentheses" },
+  { label: "x", insert: "x", title: "x" },
+  { label: "x²", insert: "²", title: "squared" },
+  { label: "x³", insert: "³", title: "cubed" },
+  { label: "xⁿ", insert: "^", title: "exponent" },
+  { label: "√", insert: "√(", title: "square root" },
+  { label: "π", insert: "π", title: "pi" },
+  { label: "≠", insert: "≠", title: "not equal" },
+  { label: "≤", insert: "≤", title: "less than or equal" },
+  { label: "≥", insert: "≥", title: "greater than or equal" },
+  { label: "±", insert: "±", title: "plus or minus" },
+];
 
 export function AnswerKeyReview({
   assessment: a,
@@ -49,6 +76,15 @@ export function AnswerKeyReview({
   // Whether the key has been read at least once, so the button reads "Read
   // again" rather than "Read the key".
   const [hasReadKey, setHasReadKey] = useState(false);
+  // The second, independent solve of a key the app worked out (lib/key-check).
+  const [checking, setChecking] = useState(false);
+  const checkStarted = useRef<string | null>(null);
+  // Disagreements the teacher has settled on this screen ("Use" / "Keep" or
+  // by editing the answer), not yet saved.
+  const [settled, setSettled] = useState<Set<string>>(new Set());
+  // The answer box the math keys type into.
+  const boxes = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
     setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, q.answer])));
   }, [a.id, a.questions]);
@@ -57,6 +93,97 @@ export function AnswerKeyReview({
   const changed = questions.some(
     (q) => (answers[q.id] || "").trim() !== q.answer.trim(),
   );
+  const generated = keyIsGenerated(a);
+  const unsettled = generated
+    ? questions.filter(
+        (q) =>
+          q.keyCheck?.status === "differs" &&
+          !settled.has(q.id) &&
+          (answers[q.id] || "").trim() === q.answer.trim(),
+      )
+    : [];
+
+  /** Solve the generated key a second time and flag where the two differ. */
+  async function checkKey(fresh = false) {
+    if (checking) return;
+    setChecking(true);
+    try {
+      const d = await analyzeRequest({
+        mode: "key_check",
+        assessmentId: a.id,
+        // The blank worksheet only, so figures and tables can be seen. Never
+        // a.uploadIds, which also gathers scanned student pages.
+        uploadIds: a.assignmentUploadIds ?? [],
+        grade: a.grade,
+        subject: a.subject,
+        framework: a.framework,
+        freshRead: fresh,
+      });
+      const checked = (d.result.answers ?? []) as { questionId: string; answer: string }[];
+      const next = applyKeyCheck(a, checked);
+      const flagged = next.questions.filter(
+        (q) => q.keyCheck?.status === "differs" && !a.questions.find((x) => x.id === q.id)?.keyCheck,
+      ).length;
+      await onSave(
+        next,
+        flagged
+          ? flagged +
+              (flagged === 1 ? " answer needs" : " answers need") +
+              " your check before the key is confirmed"
+          : "Every answer checked a second time and agreed",
+      );
+    } catch (e) {
+      toast.error(
+        describeFailure(
+          e,
+          "The answers couldn’t be double-checked just now. Check them yourself, or try again.",
+        ),
+      );
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // A key the app worked out is checked once, as soon as it is on screen, so
+  // the teacher never confirms a key nobody second-guessed.
+  useEffect(() => {
+    if (!aiReady || checking || busy) return;
+    if (checkStarted.current === a.id) return;
+    if (!questionsToCheck(a).length) return;
+    const t = setTimeout(() => {
+      checkStarted.current = a.id;
+      void checkKey();
+    }, 0);
+    return () => clearTimeout(t);
+    // checkKey reads the current assessment; re-running on every change would
+    // check the same answers again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.id, aiReady, busy]);
+
+  function settle(questionId: string, answer?: string) {
+    if (answer !== undefined) setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+    setSettled((prev) => new Set(prev).add(questionId));
+  }
+
+  /** Types a math symbol into the last-focused answer box, at the cursor. */
+  function insertSymbol(text: string) {
+    const id = focused ?? questions[0]?.id;
+    if (!id) return;
+    const box = boxes.current[id];
+    const current = answers[id] || "";
+    const start = box?.selectionStart ?? current.length;
+    const end = box?.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + text + current.slice(end);
+    setAnswers((prev) => ({ ...prev, [id]: next }));
+    // Put the cursor after what was typed (inside the brackets for "()").
+    const caret = start + (text === "()" ? 1 : text.length);
+    requestAnimationFrame(() => {
+      const el = boxes.current[id];
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  }
 
   async function upload(files: FileList | File[] | null) {
     if (!files?.length || uploading) return;
@@ -177,7 +304,10 @@ export function AnswerKeyReview({
   }
 
   async function confirm() {
-    const next = applyAnswerKey(a, answers);
+    if (unsettled.length) return;
+    // Every disagreement on screen has been settled by now (the button waits
+    // for it), so they are recorded as settled along with the key.
+    const next = settleDisagreements(applyAnswerKey(a, answers));
     if (
       await onSave(
         { ...next, answerKeyVerified: true },
@@ -215,6 +345,26 @@ export function AnswerKeyReview({
             : "Needs confirmation"}
         </Pill>
       </SectionTitle>
+      {generated && (
+        <div className="key-generated" role="status">
+          <strong>The app worked out these answers from the worksheet.</strong>
+          <p>
+            They are not from your key. Each one is solved a second time to catch mistakes, and
+            any the two solves disagree on is marked below for you to settle. If you have your own
+            key, use it instead — upload or photograph it here.
+          </p>
+          {checking && (
+            <p className="key-generated-status">
+              <LoaderCircle className="spin" size={15} /> Double-checking the answers…
+            </p>
+          )}
+          {!checking && aiReady && questionsToCheck(a).length > 0 && (
+            <Action variant="secondary small" disabled={working} onClick={() => checkKey(true)}>
+              <ClipboardCheck size={15} /> Double-check the answers
+            </Action>
+          )}
+        </div>
+      )}
       <div className="key-source-actions">
         <Action disabled={working} onClick={() => input.current?.click()}>
           {uploading ? (
@@ -222,7 +372,7 @@ export function AnswerKeyReview({
           ) : (
             <Upload size={17} />
           )}
-          Upload answer key
+          {generated ? "Upload my own key" : "Upload answer key"}
         </Action>
         <Action
           variant="secondary"
@@ -230,7 +380,7 @@ export function AnswerKeyReview({
           onClick={() => setCameraOpen(true)}
         >
           <Camera size={17} />
-          Photograph key
+          {generated ? "Photograph my key" : "Photograph key"}
         </Action>
         <input
           ref={input}
@@ -326,14 +476,38 @@ export function AnswerKeyReview({
           {notice}
         </p>
       )}
+      <div className="math-keys" role="toolbar" aria-label="Math symbols">
+        <span className="cell-meta">Insert:</span>
+        {MATH_KEYS.map((k) => (
+          <button
+            key={k.label}
+            type="button"
+            className="math-key"
+            title={k.title}
+            aria-label={"Insert " + k.title}
+            // Keep the answer box focused so the symbol lands at the cursor.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertSymbol(k.insert)}
+          >
+            {k.label}
+          </button>
+        ))}
+      </div>
       <div className="answer-key-list">
-        {questions.map((q) => (
-          <label key={q.id}>
+        {questions.map((q) => {
+          const open = unsettled.some((u) => u.id === q.id);
+          const other = q.keyCheck?.answer ?? "";
+          return (
+          <label key={q.id} className={open ? "key-disagrees" : undefined}>
             <span className="question-number">Q{q.number}</span>
             <div>
               <strong>{q.text}</strong>
               <span>{q.standard || "Standard not yet assigned"}</span>
               <textarea
+                ref={(el) => {
+                  boxes.current[q.id] = el;
+                }}
+                onFocus={() => setFocused(q.id)}
                 aria-label={"Expected answer for question " + q.number}
                 value={answers[q.id] || ""}
                 onChange={(e) =>
@@ -345,17 +519,45 @@ export function AnswerKeyReview({
                 placeholder="Correct answer, acceptable reasoning, or scoring guidance"
                 rows={2}
               />
+              {generated && q.keyCheck?.status === "agrees" && (
+                <span className="key-check-ok">
+                  <Check size={13} /> Checked twice — both solves agree
+                </span>
+              )}
+              {open && (
+                <div className="key-check-differs" role="status">
+                  <p>
+                    Solved a second time, the app got <strong>{other}</strong> instead. Which is
+                    right?
+                  </p>
+                  <div className="review-heading-actions">
+                    <Action variant="secondary small" onClick={() => settle(q.id, other)}>
+                      Use {other}
+                    </Action>
+                    <Action variant="secondary small" onClick={() => settle(q.id)}>
+                      Keep {q.answer}
+                    </Action>
+                  </div>
+                </div>
+              )}
             </div>
           </label>
-        ))}
+          );
+        })}
       </div>
       <div className="key-confirm">
         <p>
-          {changed && a.responses.length
-            ? "Changing the key sends affected student answers back for review."
-            : "Confirm the answers and acceptable reasoning before comparing student work."}
+          {unsettled.length
+            ? unsettled.length +
+              (unsettled.length === 1 ? " answer was" : " answers were") +
+              " solved two different ways. Settle " +
+              (unsettled.length === 1 ? "it" : "them") +
+              " above before confirming."
+            : changed && a.responses.length
+              ? "Changing the key sends affected student answers back for review."
+              : "Confirm the answers and acceptable reasoning before comparing student work."}
         </p>
-        <Action onClick={confirm} disabled={working || !complete}>
+        <Action onClick={confirm} disabled={working || checking || !complete || unsettled.length > 0}>
           <Check size={17} />
           Confirm answer key
         </Action>

@@ -25,8 +25,10 @@ type ServiceClient = ReturnType<typeof createServiceClient>;
  * bill them for our own safeguard.
  *
  * `catalog` unlocks standards into a library shared by every teacher.
+ * `key_check` is our own second look at an answer key the app worked out: a
+ * safeguard against our mistake, on worksheet pages already paid for.
  */
-const FREE_MODES = new Set<Mode>(["name_strip", "catalog"]);
+const FREE_MODES = new Set<Mode>(["name_strip", "catalog", "key_check"]);
 
 export function chargesForMode(mode: Mode): boolean {
   return !FREE_MODES.has(mode);
