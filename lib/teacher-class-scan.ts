@@ -344,6 +344,15 @@ const FUZZY_FLOOR = 0.8;
 /** How far ahead of the next roster name a fuzzy best guess must be before the
  * app picks it for the teacher. Closer than this and the teacher is asked. */
 const FUZZY_LEAD = 0.06;
+/** A roster match is pre-filled (chosen for the teacher) only at or above this
+ * fit score: exact names (1), a confident surname fit (1) and a unique
+ * first-name (0.9) pre-fill; a looser fuzzy fit (a misspelling or nickname that
+ * scored 0.8-0.89) is only ever a suggestion. */
+const PREFILL_SCORE = 0.9;
+/** ...and only when the model read the handwriting this confidently (0-100). A
+ * name the model wasn't sure it read is never pre-filled, however well the
+ * string happens to fit the roster. */
+const PREFILL_READ = 70;
 
 /**
  * What the roster can tell us about a name read off a page.
@@ -464,6 +473,19 @@ export function resolveScannedGroups(
     const match = matchRosterStudent(detectedName, students);
     const readConfidence = read?.confidence ?? 0;
     const namePage = read ? read.page : validPages[0];
+    // Pre-fill (pick) a roster name for the teacher ONLY on a strong match:
+    // the roster fit is near-exact AND the model read the handwriting with
+    // confidence. A weak match -- a loose fuzzy fit, or a name the model wasn't
+    // sure it read -- is demoted to a SUGGESTION the teacher taps, not a chosen
+    // name they have to notice is wrong (Ricky: a pre-filled wrong name is worse
+    // than a blank, because it rides through unless spotted). The misread can
+    // come from either pass: a bad name read (low readConfidence) or a loose
+    // roster fit (low score); this gate catches both.
+    const strongMatch =
+      !!match.student && (match.score ?? 0) >= PREFILL_SCORE && readConfidence >= PREFILL_READ;
+    // A single roster student that wasn't strong enough to pre-fill still rides
+    // along as the suggestion, so the teacher confirms with one tap.
+    const weakSingle = !!match.student && !strongMatch ? [match.student.id] : [];
     return {
       row: {
         pageIndexes: validPages,
@@ -472,18 +494,22 @@ export function resolveScannedGroups(
         responses: gradedByGroup.get(i) ?? [],
         pageUploadIds: validPages.map((p) => pageUploadIds[p]),
         key: "group-" + i,
-        // Left unset when the roster offers several: an ambiguous paper must
-        // reach the teacher as a question, not as an answer they have to notice
-        // is wrong.
-        studentId: match.student?.id ?? null,
-        name: match.student?.name || detectedName || "Student " + (i + 1),
-        candidateIds: (match.candidates ?? []).map((c) => c.id),
+        // Left unset on anything but a strong match: an ambiguous or shaky paper
+        // must reach the teacher as a question, not as an answer they have to
+        // notice is wrong.
+        studentId: strongMatch ? (match.student as Student).id : null,
+        name: strongMatch
+          ? (match.student as Student).name
+          : detectedName || "Student " + (i + 1),
+        candidateIds: strongMatch
+          ? []
+          : [...weakSingle, ...(match.candidates ?? []).map((c) => c.id)],
         matchConfidence: Math.round(readConfidence * (match.score ?? 0)),
         suggestedId: null as string | null,
         nameUploadId: (namePage !== undefined ? nameUploadIds[namePage] : null) ?? null,
         nameBox: read?.box ?? null,
       } satisfies ResolvedGroup,
-      exact: match.score === 1 && !!match.student,
+      exact: strongMatch && match.score === 1,
     };
   });
 
