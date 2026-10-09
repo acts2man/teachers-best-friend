@@ -195,6 +195,9 @@ input,textarea,.pick {font-size:1rem}
 .response-comparison>div:first-child {background:#faf7f1}
 .response-comparison span {font-size:.8rem;color:hsl(calc(96deg + var(--th)) calc(8% * var(--ts)) 47.5%)}
 .response-comparison p {font-size:1rem;line-height:1.7;margin-top:7px;white-space:pre-wrap;overflow-wrap:anywhere}
+/* The cropped answer area shown inline on each one-student review card, so a
+   teacher reads the written work without tapping into every page (Ricky). */
+.response-work {margin-top:16px;max-width:320px}
 .why-answer {margin-top:18px;padding:15px 0;border-top:1px solid hsl(calc(110deg + var(--th)) calc(14% * var(--ts)) 91.8%)}
 .why-answer p {font-size:1rem;line-height:1.7;color:hsl(calc(140deg + var(--th)) calc(19% * var(--ts)) 30.6%);margin-top:13px}
 .why-answer>span {display:block;font-size:.875rem;color:#7c897b;line-height:1.6;margin-top:9px}

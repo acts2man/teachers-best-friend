@@ -136,3 +136,22 @@ test("a clean match reads as counted, not as a confirm nag", () => {
 test("the detail sheet is still reachable to change an answer", () => {
   assert.match(review, /onClick=\{\(\) => onEdit\(\{ \.\.\.r \}\)\}/, "Edit still opens the detail sheet");
 });
+
+// ---------------------------------------------------------------
+// Ricky: a cropped photo of the answer area, inline, when we know where it is
+// ---------------------------------------------------------------
+
+test("a located answer shows a cropped photo inline, with Whole page to expand", () => {
+  // The crop uses the response's answerRegion and its CroppedPhoto has the
+  // built-in "Whole page" tap (opens the full page in the viewer).
+  assert.match(review, /const region = r\.answerRegion;/);
+  assert.match(review, /className="response-work"/);
+  assert.match(review, /<CroppedPhoto\s[^>]*box=\{region\}/s);
+  assert.match(review, /onOpen=\{\(\) => setViewing\(region\.uploadId\)\}/);
+});
+
+test("older work with no region keeps 'See their work' (no inline photo)", () => {
+  // The pages button shows only when there is no inline crop, so it is never
+  // shown automatically and a two-page test is still reachable.
+  assert.match(review, /!region && files\.length > 0 &&/);
+});
