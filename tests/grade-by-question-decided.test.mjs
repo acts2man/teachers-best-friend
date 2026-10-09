@@ -124,7 +124,10 @@ test("decided groups show a Graded chip with the points and a Change control", (
 
 test("after the last group it moves to the next question and shows an all-graded state", () => {
   assert.match(ui, /hasWork\(updated, q\.id\)/, "checks the just-saved state");
-  assert.match(ui, /setOpenId\(next \? next\.id : null\)/, "advances to the next question with work, or back to the summary");
+  assert.match(ui, /setOpenId\(next\.id\)/, "advances to the next question with work");
+  // Batch 5 auto-advance: once there is no next question, the teacher is taken
+  // straight to class analysis rather than left on the finished grading screen.
+  assert.match(ui, /go\("\/assessments\?id=" \+ a\.id \+ "&tab=analysis"\)/, "all graded -> class analysis");
   assert.match(ui, /All questions graded/, "shows an all-graded state");
   // The confirm-clear step is folded in so the flow is self-contained.
   assert.match(ui, /confirmMatching/, "can confirm matching answers from here");

@@ -253,7 +253,7 @@ function GradeByQuestion({
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
   busy: boolean;
 }) {
-  const { w, classroom, save } = useTeacher();
+  const { w, classroom, save, go } = useTeacher();
   const questions = activeQuestions(a);
   // null: the summary of every question. Otherwise the question under review.
   const [openId, setOpenId] = useState<string | null>(null);
@@ -328,8 +328,15 @@ function GradeByQuestion({
   function moveOnIfDone(updated: Assessment, q: Question) {
     if (hasWork(updated, q.id)) return;
     const next = questions.find((x) => x.id !== q.id && hasWork(updated, x.id));
-    setOpenId(next ? next.id : null);
-    if (!next) toast.success("Every question is graded.");
+    if (!next) {
+      // The whole class set is graded -- move straight on to class analysis
+      // (Ricky/Michael: don't make me hunt for the next step) rather than
+      // leaving the teacher on the finished grading screen.
+      toast.success("Every question is graded.");
+      go("/assessments?id=" + a.id + "&tab=analysis");
+      return;
+    }
+    setOpenId(next.id);
     requestAnimationFrame(() =>
       document.getElementById("grade-by-question")?.scrollIntoView({ behavior: "smooth", block: "start" }),
     );
