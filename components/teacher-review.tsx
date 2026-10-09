@@ -1446,6 +1446,12 @@ export function StudentResponseReview({
           const graded = countsAsGraded(a, r);
           const cleanMatch = graded && !r.verified;
           const givenMatch = r.verified ? Math.round(responseMatch(r)) : null;
+          // When the grading pass located the answer (answerRegion), show a
+          // cropped photo of just that area inline -- Ricky grades 30+ a sitting
+          // and clicking into each page was tedious. "Whole page" opens the full
+          // page. Older work has no region: no inline photo, "See their work"
+          // one tap away (below).
+          const region = r.answerRegion;
           return (
             <article
               key={r.id}
@@ -1483,6 +1489,17 @@ export function StudentResponseReview({
                   <p>{q.answer || "Answer key needed"}</p>
                 </div>
               </div>
+              {region && (
+                <div className="response-work">
+                  <CroppedPhoto
+                    src={"/api/uploads/" + region.uploadId}
+                    box={region}
+                    pad={0.06}
+                    alt={"Q" + q.number + " — this student's answer"}
+                    onOpen={() => setViewing(region.uploadId)}
+                  />
+                </div>
+              )}
               {(!r.correct || r.confidence < 90) && (
                 <details className="why-answer">
                   <summary>Why did they miss it?</summary>
@@ -1519,7 +1536,9 @@ export function StudentResponseReview({
                   ))}
                 </div>
                 <div className="review-card-actions">
-                  {files.length > 0 && (
+                  {/* Only when there is no inline crop (older work): the pages
+                      are one tap away, never shown automatically. */}
+                  {!region && files.length > 0 && (
                     <button type="button" className="review-see-work" disabled={busy} onClick={() => setShowWork(true)}>
                       <ImageIcon size={15} /> See their work
                     </button>
