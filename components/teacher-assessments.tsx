@@ -90,6 +90,7 @@ import {
 import {
   activeQuestions,
   alignmentIsStrong,
+  assignStandardToRange,
   confirmAllQuestions,
   pointsText,
   questionPoints,
@@ -157,6 +158,10 @@ export function AssessmentView() {
     [tab, setTab] = useState("questions"),
     [edit, setEdit] = useState<Question | null>(null),
     [responseEdit, setResponseEdit] = useState<StudentResponse | null>(null),
+    // Standards by range (Ricky): tag questions [from]-[to] with one standard.
+    [rangeFrom, setRangeFrom] = useState("1"),
+    [rangeTo, setRangeTo] = useState(""),
+    [rangeStandard, setRangeStandard] = useState(""),
     [studentFilter, setStudentFilter] = useState("all"),
     [newText, setNewText] = useState(""),
     [adding, setAdding] = useState(false),
@@ -203,6 +208,30 @@ export function AssessmentView() {
       },
       message,
     );
+  }
+  /** Tag questions [from]-[to] with one standard, then set up for the next
+   * range (Ricky's "1-5 are this, 6-10 are that"). */
+  async function applyRange() {
+    const from = parseInt(rangeFrom, 10);
+    const to = parseInt(rangeTo, 10);
+    if (!a || !rangeStandard || !Number.isFinite(from) || !Number.isFinite(to)) return;
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    const n = activeQuestions(a).filter((q) => q.number >= lo && q.number <= hi).length;
+    if (!n) {
+      toast.error("No questions in that range.");
+      return;
+    }
+    const saved = await saveAssessment(
+      assignStandardToRange(a, from, to, rangeStandard),
+      "Tagged " + n + (n === 1 ? " question" : " questions") + " with " + rangeStandard,
+    );
+    if (saved) {
+      // Line up the next range to start right after this one.
+      setRangeFrom(String(hi + 1));
+      setRangeTo("");
+      setRangeStandard("");
+    }
   }
   async function readDocument(target = a, fresh = false) {
     if (!target || reading || !documents.length) return;
@@ -854,6 +883,56 @@ export function AssessmentView() {
                     </div>
                   </div>
                 )}
+              {catalog.length > 0 && activeQuestions(a).length > 1 && (
+                <div className="range-assign">
+                  <span className="range-assign-label">
+                    Tag a block of questions with one standard
+                  </span>
+                  <div className="range-assign-row">
+                    <label>
+                      From Q
+                      <input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={rangeFrom}
+                        onChange={(e) => setRangeFrom(e.target.value)}
+                        aria-label="First question in the range"
+                      />
+                    </label>
+                    <label>
+                      to Q
+                      <input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={rangeTo}
+                        onChange={(e) => setRangeTo(e.target.value)}
+                        aria-label="Last question in the range"
+                      />
+                    </label>
+                    <Pick
+                      label="Standard for this block"
+                      value={rangeStandard}
+                      onChange={setRangeStandard}
+                      options={[
+                        { value: "", label: "Choose a standard" },
+                        ...catalog.map((s) => ({ value: s.code, label: s.code + " · " + s.title })),
+                      ]}
+                    />
+                    <Action
+                      variant="secondary small"
+                      disabled={busy || !rangeStandard || !rangeFrom.trim() || !rangeTo.trim()}
+                      onClick={applyRange}
+                    >
+                      Apply
+                    </Action>
+                  </div>
+                  <span className="range-assign-hint">
+                    Do each block, then “Looks good — confirm all” to the answer key.
+                  </span>
+                </div>
+              )}
               <div className="panel report-table">
                 <SectionTitle
                   title="Check what each question measures"

@@ -46,6 +46,33 @@ export function assignStandardToUntagged(a: Assessment, code: string): Assessmen
   };
 }
 
+/**
+ * Assign one standard to every active question in a number range [from, to]
+ * inclusive (Ricky: "questions 1-5 are this standard, 6-10 are that one"), then
+ * the next range, then confirm the lot. Questions outside the range and excluded
+ * questions are untouched. The standard is the teacher's own choice, so its
+ * alignment is cleared to 0 -- the speed lane then shows it green as "you chose
+ * it", not an AI score for a standard the AI never picked.
+ */
+export function assignStandardToRange(
+  a: Assessment,
+  from: number,
+  to: number,
+  code: string,
+): Assessment {
+  if (!code) return a;
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  return {
+    ...a,
+    questions: a.questions.map((q) =>
+      !q.excluded && q.number >= lo && q.number <= hi
+        ? { ...q, standard: code, alignment: 0 }
+        : q,
+    ),
+  };
+}
+
 export function preparationGaps(a: Assessment) {
   // Writing has no questions and no answer key -- the rubric is the whole setup.
   // It is ready to grade the moment it has a rubric with every trait filled in,
