@@ -1,5 +1,6 @@
 "use client";
 import { readJson } from "@/lib/utils";
+import { withWorkspaceDefaults } from "@/lib/workspace-safety";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -203,7 +204,7 @@ export default function TeacherApp({ view }: { view: string }) {
       const d = await readJson(r);
       if (!r.ok) throw new Error(d.error);
       const nextSnapshot: WorkspaceSnapshot = {
-        workspace: d.workspace,
+        workspace: withWorkspaceDefaults(d.workspace),
         revision: d.revision,
         aiReady: Boolean(d.aiReady),
         authProvider: d.authProvider || "chatgpt",
