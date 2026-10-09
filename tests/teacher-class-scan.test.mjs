@@ -92,6 +92,32 @@ test("an unreadable name is left for the teacher rather than guessed from the ro
   assert.equal(resolved[0].studentId,null);
   assert.equal(resolved[0].name,"illegible");
 });
+// Batch 5 (Ricky): never pre-fill a roster name on a weak match. A misread can
+// come from either pass -- a name the model wasn't sure it read (low read
+// confidence) or a loose roster fit (low fuzzy score) -- and both now reach the
+// teacher as a suggestion, not a pre-selected (possibly wrong) name.
+test("a confident read of an exact roster name is pre-filled",()=>{
+  const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
+  const resolved=resolveScannedGroups([[0]],[name(0,"Maria Gonzalez",90)],[],["u1"],students);
+  assert.equal(resolved[0].studentId,"s1","a strong match is picked");
+  assert.deepEqual(resolved[0].candidateIds,[],"no need to ask");
+});
+test("a name the model was unsure it read is suggested, not pre-filled",()=>{
+  const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
+  // Exact string fit, but the model read it at only 55% confidence.
+  const resolved=resolveScannedGroups([[0]],[name(0,"Maria Gonzalez",55)],[],["u1"],students);
+  assert.equal(resolved[0].studentId,null,"not chosen for the teacher");
+  assert.equal(resolved[0].name,"Maria Gonzalez","shows what was read, not a committed roster pick");
+  assert.ok(resolved[0].candidateIds.includes("s1"),"offered as a suggestion");
+  assert.equal(resolved[0].suggestedId,"s1","and surfaced as the suggestion");
+});
+test("a loose fuzzy fit is suggested, not pre-filled, even when read confidently",()=>{
+  const students=[student("s1","Maria Gonzalez"),student("s2","Jamal Thompson")];
+  // "Mari Gz" fuzzy-fits Maria Gonzalez at ~0.886 -- below the pre-fill bar.
+  const resolved=resolveScannedGroups([[0]],[name(0,"Mari Gz",90)],[],["u1"],students);
+  assert.equal(resolved[0].studentId,null,"a loose fit is not committed");
+  assert.ok(resolved[0].candidateIds.includes("s1"),"still offered so it is one tap to confirm");
+});
 test("grading is attached to the group it was returned for, not the order it arrived in",()=>{
   const r=[{questionId:"q1",answer:"2",verdict:"match"}];
   const resolved=resolveScannedGroups(
