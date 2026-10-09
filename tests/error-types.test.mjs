@@ -142,7 +142,9 @@ test("untagged answers produce no error-type rows", () => {
 test("Grade by question offers an error-type picker for a decided, below-full group", () => {
   const ui = readFileSync("components/teacher-review.tsx", "utf8");
   assert.match(ui, /errorTypesFor\(a\.subject\)/, "reads the per-subject list");
-  assert.match(ui, /Math\.round\(g\.match\) < 100/, "only below full credit");
+  // Every group below full credit offers a common error (8 Oct: "every
+  // incorrect group must allow a common error to be chosen").
+  assert.match(ui, /!fullCredit && types\.length > 0/, "only below full credit");
   assert.match(ui, /setGroupErrorType\(a, group\.responseIds, errorType\)/, "tags the whole group");
   assert.match(ui, /value=\{g\.errorType\}/, "reflects the current tag");
 });

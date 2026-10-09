@@ -91,6 +91,10 @@ import {
   activeQuestions,
   alignmentIsStrong,
   confirmAllQuestions,
+  pointsText,
+  questionPoints,
+  setQuestionPoints,
+  totalPoints,
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
@@ -402,7 +406,17 @@ export function AssessmentView() {
       toast.error("Points possible must be a whole number above zero, or blank.");
       return;
     }
-    const next: Assessment = { ...a, title, pointsPossible: points };
+    // A new total is split evenly across the questions, replacing any
+    // per-question points; an unchanged total leaves them alone.
+    const next: Assessment =
+      points !== undefined && points !== totalPoints(a)
+        ? {
+            ...a,
+            title,
+            pointsPossible: points,
+            questions: a.questions.map((q) => ({ ...q, points: undefined })),
+          }
+        : { ...a, title, pointsPossible: points ?? a.pointsPossible };
     if (
       await save(
         { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? next : x)) },
@@ -559,7 +573,7 @@ export function AssessmentView() {
               onClick={() =>
                 setEditMeta({
                   title: a.title,
-                  points: a.pointsPossible ? String(a.pointsPossible) : "",
+                  points: String(totalPoints(a)),
                 })
               }
             >
@@ -628,8 +642,9 @@ export function AssessmentView() {
                   />
                 </label>
                 <p className="field-help">
-                  With a total set, a score shows both ways — 90% and 18/20.
-                  Leave it blank to show the percentage only.
+                  Scores show both ways — 90% and 18/20. A new total is split evenly
+                  across the questions; to make one question worth more than another,
+                  set its points in the question list.
                 </p>
                 <Action type="submit" disabled={busy || !editMeta.title.trim()}>
                   <Check size={16} />
@@ -937,6 +952,7 @@ export function AssessmentView() {
                         <TableHead>Depth</TableHead>
                         <TableHead>Alignment</TableHead>
                         <TableHead>Review</TableHead>
+                        <TableHead>Points</TableHead>
                         <TableHead />
                       </TableRow>
                     </TableHeader>
@@ -1035,6 +1051,25 @@ export function AssessmentView() {
                             )}
                           </TableCell>
                           <TableCell>
+                            {q.excluded ? (
+                              <span className="cell-meta">—</span>
+                            ) : (
+                              <QuestionPoints
+                                key={q.id + ":" + questionPoints(a, q)}
+                                value={questionPoints(a, q)}
+                                number={q.number}
+                                disabled={busy}
+                                onChange={(points) =>
+                                  saveAssessment(
+                                    setQuestionPoints(a, q.id, points),
+                                    "Q" + q.number + " is worth " + pointsText(points) +
+                                      (points === 1 ? " point" : " points"),
+                                  )
+                                }
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <button
                               className="icon-button"
                               aria-label={"Review question " + q.number}
@@ -1080,6 +1115,12 @@ export function AssessmentView() {
                   </EmptyState>
                 )}
               </div>
+              {activeQuestions(a).length > 0 && (
+                <p className="cell-meta points-total" role="status">
+                  Total: {pointsText(totalPoints(a))} point{totalPoints(a) === 1 ? "" : "s"} — the
+                  sum of the questions. Change a question&rsquo;s points in the list above.
+                </p>
+              )}
               {(() => {
                 // Every question reviewed and tagged, standards chosen: the
                 // questions step is finished and the answer key is next. Offer
@@ -2746,5 +2787,49 @@ function ClassAnalysisPanel({
         count.
       </p>
     </div>
+  );
+}
+
+/**
+ * One question's worth, editable in place. Saves when the teacher leaves the
+ * box or presses Enter, and only if the number actually changed and is sane.
+ */
+function QuestionPoints({
+  value,
+  number,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  number: number;
+  disabled: boolean;
+  onChange: (points: number) => void;
+}) {
+  const [text, setText] = useState(pointsText(value));
+  function commit() {
+    const n = Number(text);
+    if (!Number.isFinite(n) || n <= 0 || n > 1000) {
+      setText(pointsText(value));
+      if (text.trim()) toast.error("Points must be a number above zero.");
+      return;
+    }
+    if (Math.abs(n - value) > 0.001) onChange(n);
+  }
+  return (
+    <input
+      className="question-points"
+      type="number"
+      min="0.25"
+      step="0.25"
+      inputMode="decimal"
+      aria-label={"Points for question " + number}
+      value={text}
+      disabled={disabled}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
   );
 }

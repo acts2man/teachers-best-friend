@@ -851,6 +851,29 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 @media(max-width:767px){.question-cell .align-inline{display:inline-flex!important;align-self:flex-start;margin-top:6px;font-size:12px}}
 @media(max-width:767px){.question-cell{flex-wrap:wrap}.question-cell .align-inline{margin-left:44px}}
 @media(max-width:767px){.question-cell .align-inline{flex:0 0 auto}}
+.question-points{width:4.5rem;min-width:0;padding:7px 8px;text-align:center}
+.points-total{margin:8px 4px 0}
+/* Part of a photo (components/cropped-photo.tsx). */
+.cropped-photo{position:relative;display:block;width:100%;padding:0;overflow:hidden;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:8px;background:#fff;line-height:0;cursor:zoom-in}
+.cropped-photo img{display:block;width:100%;height:auto;transform-origin:0 0}
+.cropped-photo-hint{position:absolute;right:6px;bottom:6px;display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:11px;line-height:1.4;font-weight:600;color:#f7f7ef;background:hsl(calc(166deg + var(--th)) calc(27% * var(--ts)) 19.2% / .82)}
+/* Grade by question: summary first, then groups. */
+.gbq-summary{display:flex;flex-direction:column;gap:8px}
+.gbq-question{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89.0%);border-radius:12px;background:#fff}
+.gbq-question-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 220px}
+.gbq-question-text span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gbq-counts{display:flex;flex-wrap:wrap;gap:6px}
+.gbq-count{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;background:hsl(calc(120deg + var(--th)) calc(10% * var(--ts)) 94%)}
+.gbq-count.correct{background:hsl(calc(150deg + var(--th)) calc(40% * var(--ts)) 90%)}
+.gbq-count.review{background:hsl(calc(35deg + var(--th)) calc(85% * var(--ts)) 88%)}
+.gbq-group{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89.0%);border-radius:12px;background:#fff}
+.gbq-group.is-current{border-color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 45%);box-shadow:0 0 0 2px hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 45% / .25)}
+.gbq-group-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.gbq-answer{font-size:22px;font-weight:700;word-break:break-word}
+.gbq-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.gbq-credit{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gbq-credit input{width:5rem;min-width:0;text-align:center}
+@media(max-width:520px){.gbq-photos{grid-template-columns:1fr 1fr}.gbq-answer{font-size:19px}}
 /* Answer key: a key the app worked out, its second check, and math entry. */
 .key-generated{display:flex;flex-direction:column;gap:8px;margin:4px 0 14px;padding:14px 16px;border-radius:12px;background:hsl(calc(42deg + var(--th)) calc(80% * var(--ts)) 94%);border:1px solid hsl(calc(42deg + var(--th)) calc(60% * var(--ts)) 80%)}
 .key-generated p{font-size:13px;line-height:1.6}
@@ -862,3 +885,11 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .answer-key-list label.key-disagrees{outline:2px solid hsl(calc(20deg + var(--th)) calc(70% * var(--ts)) 70%);outline-offset:4px;border-radius:10px}
 .math-keys{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:8px 0;background:var(--background)}
 .math-key{min-width:40px;min-height:40px;padding:4px 10px;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);border-radius:8px;background:#fff;color:var(--ink);font-size:16px;font-weight:600}
+/* Grade by question, trust pass (8 Oct): key in green, unsure, pull-outs. */
+.gbq-key{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:4px 10px;border-radius:8px;font-size:14px;color:hsl(calc(150deg + var(--th)) calc(50% * var(--ts)) 24%);background:hsl(calc(150deg + var(--th)) calc(45% * var(--ts)) 91%)}
+.gbq-group.is-unsure{border-color:hsl(calc(35deg + var(--th)) calc(80% * var(--ts)) 65%);background:hsl(calc(42deg + var(--th)) calc(90% * var(--ts)) 98%)}
+.gbq-students{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.gbq-students li{display:flex;flex-direction:column;gap:6px;padding:6px 0;border-top:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 92%)}
+.gbq-students li.is-apart{padding:8px 10px;border:1px solid hsl(calc(35deg + var(--th)) calc(60% * var(--ts)) 80%);border-radius:10px}
+.gbq-student-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.gbq-students .cropped-photo{max-width:340px}

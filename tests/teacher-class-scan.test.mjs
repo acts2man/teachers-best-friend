@@ -388,10 +388,10 @@ test("different answers are never merged",()=>{
   assert.notEqual(answerKey("5.2"),answerKey("52"));
   assert.notEqual(answerKey("9.2"),answerKey("5.2"));
 });
-test("blanks and clean matches need no decision; partials do",()=>{
+test("clean matches need no decision; blanks and partials do",()=>{
   const a=classSet([["s1","",false],["s2","5.2",true],["s3","9.2",false,50]]);
   const byAnswer=Object.fromEntries(groupAnswers(a,"q1").map(g=>[g.answer||"(blank)",g.needsDecision]));
-  assert.equal(byAnswer["(blank)"],false);
+  assert.equal(byAnswer["(blank)"],true,"a blank is looked at before it is zero");
   assert.equal(byAnswer["5.2"],false);
   assert.equal(byAnswer["9.2"],true);
 });
@@ -536,34 +536,44 @@ function scored(rows){
 }
 const asRows=(csv)=>csv.split("\n").map(line=>line.match(/"([^"]|"")*"/g).map(c=>c.slice(1,-1).replace(/""/g,'"')));
 
-test("one row per student, one column per question, plus the score",()=>{
+test("one row per student, one column per question, plus the points and score",()=>{
   const a=scored([["s1","q1",100,true],["s1","q2",50,true]]);
   const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
-  assert.deepEqual(rows[0],["Student","Q1","Q2","Score %","Reviewed","Needs grading"]);
-  // Fully graded: a real score, 2/2 reviewed, nothing waiting.
-  assert.deepEqual(rows[1],["Maria G.","100","50","75","2/2",""]);
+  // Each question column is points earned, headed with what it is worth.
+  assert.deepEqual(rows[0],["Student","Q1 (1 pts)","Q2 (1 pts)","Points (of 2)","Score %","Reviewed","Needs grading"]);
+  // Fully graded: 1 + 0.5 points, 75%, 2/2 reviewed, nothing waiting.
+  assert.deepEqual(rows[1],["Maria G.","1","0.5","1.5","75","2/2",""]);
+});
+test("per-question points weight the score and the gradebook (Ricky)",()=>{
+  const a=scored([["s1","q1",100,true],["s1","q2",50,true]]);
+  a.questions[0].points=1; a.questions[1].points=4;
+  const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
+  assert.deepEqual(rows[0].slice(1,4),["Q1 (1 pts)","Q2 (4 pts)","Points (of 5)"]);
+  // 1 of 1 plus half of 4 = 3 of 5 = 60%, not the 75% an unweighted average gives.
+  assert.deepEqual(rows[1].slice(1,5),["1","2","3","60"]);
 });
 test("an unconfirmed answer is blank, and the score reads Incomplete, not a partial",()=>{
   const a=scored([["s1","q1",100,true],["s1","q2",0,false]]);
   const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
   assert.equal(rows[1][2],"","an unconfirmed answer was exported as a grade");
-  // Score % is not a final 100 while an answer still needs grading.
+  // Points and Score % are not final while an answer still needs grading.
   assert.equal(rows[1][3],"Incomplete");
-  assert.equal(rows[1][4],"1/2");
-  assert.equal(rows[1][5],"1","one answer still needs grading");
+  assert.equal(rows[1][4],"Incomplete");
+  assert.equal(rows[1][5],"1/2");
+  assert.equal(rows[1][6],"1","one answer still needs grading");
 });
 test("a student with nothing reviewed is obvious rather than a zero",()=>{
   const a=scored([["s1","q1",100,false]]);
   const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
-  assert.equal(rows[1][3],"","an unreviewed student was exported as a score");
-  assert.equal(rows[1][4],"0/2");
-  assert.equal(rows[1][5],"1");
+  assert.equal(rows[1][4],"","an unreviewed student was exported as a score");
+  assert.equal(rows[1][5],"0/2");
+  assert.equal(rows[1][6],"1");
 });
 test("a name containing a comma or quote does not break the columns",()=>{
   const a=scored([["s1","q1",100,true],["s1","q2",100,true]]);
   const rows=asRows(gradebookCsv(a,[student("s1",'O\'Neill, Sarah "Sadie"')]));
   assert.equal(rows[1][0],'O\'Neill, Sarah "Sadie"');
-  assert.equal(rows[1].length,6);
+  assert.equal(rows[1].length,7);
 });
 test("every student on the roster appears, graded or not",()=>{
   const a=scored([["s1","q1",100,true]]);

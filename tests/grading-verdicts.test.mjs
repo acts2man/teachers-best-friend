@@ -53,7 +53,7 @@ test("a match is full credit, automatic -- no teacher decision", () => {
   assert.equal(decides(a, "q1"), false, "a clean match settles on its own");
 });
 
-test("a blank is zero, automatic -- no teacher decision, no answer kept", () => {
+test("a blank is zero, but the teacher sees it before it counts", () => {
   const a = assessment();
   a.responses = normalizeRecognizedResponses(a, "s1", [
     { questionId: "q1", answer: "", verdict: "blank" },
@@ -62,7 +62,8 @@ test("a blank is zero, automatic -- no teacher decision, no answer kept", () => 
   assert.equal(r.answer, "");
   assert.equal(r.correct, false);
   assert.equal(r.match, 0);
-  assert.equal(decides(a, "q1"), false, "a blank scores zero on its own");
+  // Ricky's rule (8 Oct): never marked blank when the page shows work.
+  assert.equal(decides(a, "q1"), true, "a blank waits for the teacher's look");
 });
 
 test("an 'other' carries NO AI score and goes to the teacher (the circled-both case)", () => {
