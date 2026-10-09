@@ -562,12 +562,22 @@ test("an unconfirmed answer is blank, and the score reads Incomplete, not a part
   assert.equal(rows[1][5],"1/2");
   assert.equal(rows[1][6],"1","one answer still needs grading");
 });
-test("a student with nothing reviewed is obvious rather than a zero",()=>{
+test("an incomplete student is marked Incomplete, never a misleading zero",()=>{
+  // Batch 5: one clean AI match (counts without confirmation) and a second
+  // question with no answer yet. The counted answer makes this NOT "nothing
+  // reviewed", but the missing answer keeps it incomplete -- so it exports
+  // "Incomplete", not a zero and not a final score.
   const a=scored([["s1","q1",100,false]]);
   const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
-  assert.equal(rows[1][4],"","an unreviewed student was exported as a score");
+  assert.equal(rows[1][4],"Incomplete","not a final score while an answer is missing");
+  assert.equal(rows[1][5],"1/2","one answer counts (the clean match)");
+  assert.equal(rows[1][6],"","the clean match does not 'need grading'");
+});
+test("a student with no answers at all exports blank, never a zero",()=>{
+  const a=scored([]);
+  const rows=asRows(gradebookCsv(a,[student("s1","Maria G.")]));
+  assert.equal(rows[1][4],"","no score for a student with nothing scanned");
   assert.equal(rows[1][5],"0/2");
-  assert.equal(rows[1][6],"1");
 });
 test("a name containing a comma or quote does not break the columns",()=>{
   const a=scored([["s1","q1",100,true],["s1","q2",100,true]]);

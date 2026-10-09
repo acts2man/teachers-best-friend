@@ -13,6 +13,7 @@ import {
   Download,
   FileText,
   Flag,
+  Image as ImageIcon,
   LoaderCircle,
   Pencil,
   Plus,
@@ -40,6 +41,8 @@ import {
   applyGroupScore,
   autoGradedToConfirm,
   confirmResponses,
+  countsAsGraded,
+  CREDIT_LEVELS,
   creditForPoints,
   questionPoints,
   questionSummary,
@@ -888,7 +891,10 @@ export function StudentResponseReview({
     [notice, setNotice] = useState(""),
     [cameraOpen, setCameraOpen] = useState(false),
     // The page of original work open in the full-screen viewer, if any.
-    [viewing, setViewing] = useState<string | null>(null);
+    [viewing, setViewing] = useState<string | null>(null),
+    // "See their work": the student's pages open in the page-able viewer. The
+    // photo is never shown on the card automatically -- it is one tap away.
+    [showWork, setShowWork] = useState(false);
   const closeViewing = useCallback(() => setViewing(null), []);
   const input = useRef<HTMLInputElement>(null),
     camera = useRef<HTMLInputElement>(null);
@@ -940,6 +946,23 @@ export function StudentResponseReview({
       confidence: 100,
       verified: false,
     });
+  }
+  /** Give one answer credit right here -- No credit / Half / Full -- without a
+   * detour into the detail sheet (Michael). It verifies the answer at that
+   * credit; the detail sheet (Edit) is still there for exact points or fixing a
+   * misread answer. */
+  async function giveCredit(r: StudentResponse, match: number) {
+    if (!prep.ready) {
+      toast.error("Confirm the standards and answer key before grading.");
+      return;
+    }
+    await onSave(
+      applyGroupScore(a, [r.id], match, r.errorType || ""),
+      "Q" +
+        (a.questions.find((q) => q.id === r.questionId)?.number ?? "") +
+        " · " +
+        (CREDIT_LEVELS.find((l) => l.value === match)?.label ?? match + "%"),
+    );
   }
   async function approveClear() {
     if (!prep.ready) return;
@@ -1350,6 +1373,13 @@ export function StudentResponseReview({
           onClose={closeViewing}
         />
       )}
+      {showWork && files.length > 0 && (
+        <ImageViewer
+          pages={files.map((id) => "/api/uploads/" + id)}
+          alt={(student?.name || "Student") + "'s work"}
+          onClose={() => setShowWork(false)}
+        />
+      )}
       <div className="review-controls">
         <div
           className="review-filter"
@@ -1397,11 +1427,17 @@ export function StudentResponseReview({
         {visible.slice(0, limit).map((r) => {
           const q = a.questions.find((q) => q.id === r.questionId)!;
           const flag = responseFlag(r, q);
+          // A clean AI match counts without a second tap, so it reads "Matches
+          // your key" (not a "Ready to confirm" nag); the teacher can still
+          // change it with the credit buttons or Edit below.
+          const graded = countsAsGraded(a, r);
+          const cleanMatch = graded && !r.verified;
+          const givenMatch = r.verified ? Math.round(responseMatch(r)) : null;
           return (
             <article
               key={r.id}
               className={
-                "response-review-card panel " + (r.verified ? "confirmed" : "")
+                "response-review-card panel " + (graded ? "confirmed" : "")
               }
             >
               <header>
@@ -1410,8 +1446,12 @@ export function StudentResponseReview({
                   <Pill>{q.standard || "Standard not assigned"}</Pill>
                   <h3>{q.text}</h3>
                 </div>
-                <Pill tone={r.verified ? "green" : "amber"}>
-                  {r.verified ? "Confirmed" : flag || "Ready to confirm"}
+                <Pill tone={graded ? "green" : "amber"}>
+                  {r.verified
+                    ? "Confirmed"
+                    : cleanMatch
+                      ? "Matches your key"
+                      : flag || "Ready to confirm"}
                 </Pill>
               </header>
               {q.passage && (
@@ -1448,14 +1488,35 @@ export function StudentResponseReview({
                   {responseMatch(r)}% answer match · {r.confidence}% reading
                   confidence
                 </span>
-                <Action
-                  variant={r.verified ? "secondary small" : "small"}
-                  disabled={busy}
-                  onClick={() => onEdit({ ...r })}
-                >
-                  <Pencil size={15} />
-                  {r.verified ? "Review decision" : "Check & confirm"}
-                </Action>
+                {/* Credit right here -- no detour into a detail view before
+                    confirming (Michael). Tapping a level verifies the answer at
+                    that credit. */}
+                <div className="review-credit" role="group" aria-label="Give credit">
+                  {CREDIT_LEVELS.map((l) => (
+                    <button
+                      type="button"
+                      key={l.value}
+                      className={"review-credit-btn" + (givenMatch === l.value ? " is-current" : "")}
+                      aria-pressed={givenMatch === l.value}
+                      disabled={busy}
+                      onClick={() => giveCredit(r, l.value)}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="review-card-actions">
+                  {files.length > 0 && (
+                    <button type="button" className="review-see-work" disabled={busy} onClick={() => setShowWork(true)}>
+                      <ImageIcon size={15} /> See their work
+                    </button>
+                  )}
+                  {/* Edit opens the detail sheet to fix a misread answer, the
+                      standard, or set exact points -- "open them to change". */}
+                  <Action variant="secondary small" disabled={busy} onClick={() => onEdit({ ...r })}>
+                    <Pencil size={15} /> Edit
+                  </Action>
+                </div>
               </footer>
             </article>
           );
