@@ -161,8 +161,59 @@ function GroupWorkSample({
       </div>
       {zoom && (
         <ImageViewer
-          src={src}
+          pages={pages}
+          initialIndex={page % pages.length}
           alt="A student's work for this question, enlarged"
+          onClose={closeZoom}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One student's scanned pages, shown one at a time with page tabs, tap to open
+ * the full-size viewer (which also has page tabs). Used wherever an answer has
+ * no answerRegion -- work graded before #108 never recorded which page an
+ * answer sits on, so the teacher pages through the whole thing rather than
+ * being shown page 1 and nothing else (Michael, on a two-page test).
+ */
+function StudentWorkPhoto({ pages, alt }: { pages: string[]; alt: string }) {
+  const [page, setPage] = useState(0);
+  const [zoom, setZoom] = useState(false);
+  const closeZoom = useCallback(() => setZoom(false), []);
+  if (!pages.length) return null;
+  const idx = page % pages.length;
+  const src = "/api/uploads/" + pages[idx];
+  return (
+    <div className="work-sample">
+      <button type="button" className="work-sample-thumb" onClick={() => setZoom(true)} aria-label={"Enlarge: " + alt}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt} />
+        <span className="work-sample-hint">
+          <ZoomIn size={13} /> Tap for full size
+        </span>
+      </button>
+      {pages.length > 1 && (
+        <div className="work-sample-controls">
+          {pages.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={"work-sample-page" + (i === idx ? " is-current" : "")}
+              onClick={() => setPage(i)}
+              aria-label={"Show page " + (i + 1) + " of this student's work"}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
+      {zoom && (
+        <ImageViewer
+          pages={pages.map((p) => "/api/uploads/" + p)}
+          initialIndex={idx}
+          alt={alt}
           onClose={closeZoom}
         />
       )}
@@ -475,8 +526,13 @@ function AnswerGroupCard({
   // A photo of each answer: cropped to where the grading pass said the answer
   // area is (also for a blank or unsure answer), or the whole first page for
   // answers graded before it said so.
+  // A cropped photo only when the grading pass recorded WHERE the answer is
+  // (answerRegion). Without a region -- every answer graded before #108 -- a
+  // crop of page 1 would be wrong on a multi-page test (it showed page 1 for a
+  // page-2 question), so we fall through to the full, page-able view below
+  // instead of guessing a page.
   const photoOf = (r: StudentResponse) => {
-    const uploadId = r.answerRegion?.uploadId ?? a.studentUploadIds?.[r.studentId]?.[0];
+    const uploadId = r.answerRegion?.uploadId;
     return uploadId ? { id: r.id, region: r.answerRegion, uploadId } : null;
   };
   const photos = responses
@@ -632,15 +688,24 @@ function AnswerGroupCard({
               </div>
               {alone && open && (
                 <>
-                  {g.unsure && photo && (
-                    <CroppedPhoto
-                      src={"/api/uploads/" + photo.uploadId}
-                      box={photo.region}
-                      pad={0.06}
-                      alt={"This student's answer to question " + q.number}
-                      onOpen={() => setViewing(photo.uploadId)}
-                    />
-                  )}
+                  {/* The student's own work while grading them alone: the
+                      cropped answer when we know where it is, otherwise every
+                      page so a page-2 answer is reachable. */}
+                  {g.unsure &&
+                    (photo ? (
+                      <CroppedPhoto
+                        src={"/api/uploads/" + photo.uploadId}
+                        box={photo.region}
+                        pad={0.06}
+                        alt={"This student's answer to question " + q.number}
+                        onOpen={() => setViewing(photo.uploadId)}
+                      />
+                    ) : (
+                      <StudentWorkPhoto
+                        pages={a.studentUploadIds?.[r.studentId] ?? []}
+                        alt={"This student's work for question " + q.number}
+                      />
+                    ))}
                   <CreditForm
                     worth={worth}
                     busy={busy}

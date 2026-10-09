@@ -10,7 +10,8 @@ import { canonicalHosts, hostGuardEnforced } from "@/lib/canonical-host";
 export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import type { Workspace } from "@/lib/teacher-types";
+import type { Assessment, Workspace } from "@/lib/teacher-types";
+import { withAssessmentDefaults } from "@/lib/workspace-safety";
 
 type Statement = {
   bind: (...values: unknown[]) => Statement;
@@ -387,10 +388,9 @@ function normalizeWorkspace(data: Workspace): Workspace {
       grade: numeric(item.grade),
       demo: Boolean(item.demo),
     })),
-    assessments: list("assessments").map((item) => ({
-      ...item,
-      grade: numeric(item.grade),
-    })),
+    assessments: list("assessments").map((item) =>
+      withAssessmentDefaults({ ...item, grade: numeric(item.grade) } as unknown as Assessment),
+    ),
     // The relational facade returns an empty student note as null, but the
     // client and the save schema treat notes as a plain string. Coerce it so a
     // teacher can always save their classroom.
