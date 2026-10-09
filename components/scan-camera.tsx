@@ -824,7 +824,8 @@ export function ScanCamera({
               disabled={finishing}
               onClick={done}
             >
-              {finishing ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Done
+              {finishing ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{" "}
+              {mode === "class" ? "Finished" : "Done"}
             </button>
           </div>
         </div>

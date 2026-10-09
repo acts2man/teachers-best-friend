@@ -255,7 +255,8 @@ test("every group shows the key in green, can be changed, and offers a common er
   const ui = readFileSync("components/teacher-review.tsx", "utf8");
   assert.match(ui, /className="gbq-key"/);
   assert.match(ui, /Correct answer: <strong>/);
-  assert.match(ui, /Matches your key<\/Pill>\s*<button[^>]*onClick=\{onReopen\}/, "even a group the AI matched can be changed");
+  // A clean-match group is already counted (Batch 5), and still one tap to change.
+  assert.match(ui, /Matches your key — counted<\/Pill>\s*<button[^>]*onClick=\{onReopen\}/, "a matched group is marked counted and can still be changed");
   assert.match(ui, /Grade on their own/);
   assert.match(ui, /Unsure — check each one/);
   assert.match(ui, /function moveOnIfDone/);

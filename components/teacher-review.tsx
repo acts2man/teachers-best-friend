@@ -364,17 +364,17 @@ function GradeByQuestion({
               {autoConfirmIds.length > 0 ? (
                 <p>
                   {autoConfirmIds.length} answer
-                  {autoConfirmIds.length === 1 ? "" : "s"} matching your key still need confirming to count
-                  toward scores.
+                  {autoConfirmIds.length === 1 ? "" : "s"} match your key and are already counted —
+                  no need to confirm them. Confirm only to lock them in and free up the photos.
                 </p>
               ) : (
                 <p>Every answer is decided and confirmed. Results are ready below.</p>
               )}
             </div>
             {autoConfirmIds.length > 0 && (
-              <Action disabled={busy} onClick={confirmMatching}>
-                <Check size={16} /> Confirm {autoConfirmIds.length} answer
-                {autoConfirmIds.length === 1 ? "" : "s"}
+              <Action variant="secondary" disabled={busy} onClick={confirmMatching}>
+                <Check size={16} /> Lock in {autoConfirmIds.length} match
+                {autoConfirmIds.length === 1 ? "" : "es"}
               </Action>
             )}
           </div>
@@ -601,10 +601,11 @@ function AnswerGroupCard({
         </span>
       )}
       {!open && !g.verified && (
-        // The AI matched these to the key. Still the teacher's call: one tap
+        // The AI matched these to the key, so they are already counted -- no
+        // confirmation needed (Michael). Still the teacher's call: one tap
         // changes it.
         <span className="grade-decided">
-          <Pill tone="green">Matches your key</Pill>
+          <Pill tone="green">Matches your key — counted</Pill>
           <button type="button" className="grade-change" disabled={busy} onClick={onReopen}>
             Change
           </button>
@@ -884,6 +885,7 @@ export function StudentResponseReview({
   const { students, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState(params.get("student") || "");
+  const [perStudentOpen, setPerStudentOpen] = useState(!!params.get("student"));
   const [filter, setFilter] = useState("flagged");
   const [limit, setLimit] = useState(12);
   const [uploading, setUploading] = useState(false),
@@ -1164,6 +1166,17 @@ export function StudentResponseReview({
           </Action>
         </SectionTitle>
       </div>
+      {/* Grading one student at a time, uploading one student's pages, the
+          student report and the per-student breakdown: all still here, behind
+          More options, so the page leads with the guided path (Michael worked
+          student by student when that was the first thing he saw). A link
+          that names a student opens it. */}
+      <details
+        className="more-options per-student"
+        open={perStudentOpen}
+        onToggle={(e) => setPerStudentOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary>More options: one student at a time, or upload one student&rsquo;s pages</summary>
       <div className="review-student-toolbar">
         <label>
           Student
@@ -1665,6 +1678,7 @@ export function StudentResponseReview({
           })}
         </section>
       )}
+      </details>
     </div>
   );
 }

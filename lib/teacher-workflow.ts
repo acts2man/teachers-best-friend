@@ -127,6 +127,43 @@ export function countsAsGraded(a: Assessment, r: StudentResponse): boolean {
 }
 
 /**
+ * The standards "speed lane" (Ricky): a question at 80%+ alignment is strong
+ * and shows green; under 80% shows red with its percentage and a small
+ * "Strengthen?" link -- but the teacher does not have to open each one. A
+ * standard the teacher assigned themselves ("—", no AI score) counts as strong:
+ * the teacher chose it.
+ */
+export const STRONG_ALIGNMENT = 80;
+export function alignmentIsStrong(q: Question): boolean {
+  return !(q.alignment > 0) || q.alignment >= STRONG_ALIGNMENT;
+}
+
+/**
+ * "Looks good": confirms every question that has a standard in one action,
+ * which is what the readiness check asks for. A question with no standard
+ * cannot be confirmed -- readiness needs one -- and is left for the teacher.
+ */
+export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number } {
+  let confirmed = 0;
+  let missingStandard = 0;
+  const questions = a.questions.map((q) => {
+    if (q.excluded || q.verified) return q;
+    if (!q.standard) {
+      missingStandard++;
+      return q;
+    }
+    confirmed++;
+    return { ...q, verified: true };
+  });
+  const allReviewed = questions.every((q) => q.excluded || (q.verified && q.standard));
+  return {
+    assessment: { ...a, questions, status: allReviewed ? "Ready" : a.status },
+    confirmed,
+    missingStandard,
+  };
+}
+
+/**
  * What one question is worth.
  *
  * Ricky: some questions are worth more than others, and teachers expect to set
