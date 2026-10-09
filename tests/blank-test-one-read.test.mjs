@@ -35,7 +35,7 @@ test("the in-app camera collects all pages, then upload stores them for one read
 
 test("a single read button reads the whole set at once", () => {
   // The button reads with no ids, so analyze reads every uploaded page together.
-  assert.match(scan, /onClick=\{\(\) => analyze\(undefined, false, true\)\}/);
+  assert.match(scan, /onClick=\{\(\) => analyze\(undefined, true, true\)\}/);
   assert.match(scan, /const uploadIds = ids \?\? files\.map\(\(f\) => f\.id\)/);
   // Label is "Read the assessment" before the first read, "Read it again" after.
   assert.match(scan, /hasRead\s*\n?\s*\? "Read it again"\s*\n?\s*: "Read the assessment"/);

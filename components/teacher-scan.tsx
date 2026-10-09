@@ -526,14 +526,14 @@ export function ScanView() {
                 : [a, ...w.assessments],
               students: editing ? reconcileEvidence(w.students, a) : w.students,
             },
-            `${a.questions.length} question${a.questions.length === 1 ? "" : "s"} read from ${pages} page${pages === 1 ? "" : "s"} — add more pages, or continue to review`,
+            `${a.questions.length} question${a.questions.length === 1 ? "" : "s"} read from ${pages} page${pages === 1 ? "" : "s"} — reviewing now`,
           )
         ) {
-          // Stay on the scan view and remember this assessment. Adding another
-          // page re-reads the whole set INTO this same assessment (editing is
-          // now this id), so the questions come out as one test spanning every
-          // page, not one test per page. The teacher leaves with "Continue to
-          // review". Only an explicit navigate (unused today) would leave here.
+          // Move straight on to reviewing the questions once they are read
+          // (Ricky/Michael: don't make me find the next step). The assessment is
+          // remembered either way, so coming back to the scan screen to add a
+          // forgotten page still re-reads the whole set INTO this same
+          // assessment -- one test spanning every page, not one per page.
           setCreatedId(a.id);
           if (navigate) go("/assessments?id=" + a.id);
         }
@@ -1286,7 +1286,7 @@ export function ScanView() {
                       !contentReady ||
                       (mode === "responses" && (!prepared || !studentId))
                     }
-                    onClick={() => analyze(undefined, false, true)}
+                    onClick={() => analyze(undefined, true, true)}
                   >
                     {analyzing ? (
                       <LoaderCircle size={17} className="spin" />

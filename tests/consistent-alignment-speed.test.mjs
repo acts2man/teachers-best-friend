@@ -260,7 +260,8 @@ test("a migration adds the reuse_fingerprint column", () => {
 
 test("the assessment scan's read button forces a fresh read", () => {
   const scan = readFileSync("components/teacher-scan.tsx", "utf8");
-  assert.match(scan, /analyze\(undefined, false, true\)/);
+  // navigate=true (Batch 5 auto-advance): the read lands on the review.
+  assert.match(scan, /analyze\(undefined, true, true\)/);
   assert.match(scan, /freshRead: fresh/);
   // The blank test no longer reads automatically on each upload (PR: one read
   // after all pages are collected), so that per-batch auto-read is gone.
