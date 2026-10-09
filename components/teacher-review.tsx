@@ -881,6 +881,7 @@ export function StudentResponseReview({
   const { students, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState(params.get("student") || "");
+  const [perStudentOpen, setPerStudentOpen] = useState(!!params.get("student"));
   const [filter, setFilter] = useState("flagged");
   const [limit, setLimit] = useState(12);
   const [uploading, setUploading] = useState(false),
@@ -1141,6 +1142,17 @@ export function StudentResponseReview({
           </Action>
         </SectionTitle>
       </div>
+      {/* Grading one student at a time, uploading one student's pages, the
+          student report and the per-student breakdown: all still here, behind
+          More options, so the page leads with the guided path (Michael worked
+          student by student when that was the first thing he saw). A link
+          that names a student opens it. */}
+      <details
+        className="more-options per-student"
+        open={perStudentOpen}
+        onToggle={(e) => setPerStudentOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary>More options: one student at a time, or upload one student&rsquo;s pages</summary>
       <div className="review-student-toolbar">
         <label>
           Student
@@ -1604,6 +1616,7 @@ export function StudentResponseReview({
           })}
         </section>
       )}
+      </details>
     </div>
   );
 }

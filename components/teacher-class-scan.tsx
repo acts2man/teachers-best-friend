@@ -980,6 +980,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   const openPile = piles[piles.length - 1];
+  // Where the teacher is on the guided path: scanning, matching names, or
+  // (once the class is saved) grading by question further down the page.
+  const step = groups && groups.length ? 2 : captured.length || scanning ? 1 : a.responses.length ? 3 : 1;
   const finishedPiles = piles.filter((pile) => pile.length).length;
 
   const live = (groups ?? []).filter((g) => !discarded.has(g.key));
@@ -1016,29 +1019,31 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   return (
     <div className="panel class-scan-panel">
       <SectionTitle
-        title="Scan the class"
-        description="Scan one student's pages, tap “Next student”, and repeat. Every page you put under one student is graded together, so a test that runs onto a second page still comes back whole."
-      >
-        <div className="review-heading-actions">
-          <input
-            ref={stack}
-            type="file"
-            className="sr-only"
-            multiple
-            accept="application/pdf,image/jpeg,image/png,image/webp"
-            aria-label="Upload a whole stack of scanned student pages at once"
-            onChange={(e) => startStackScan(e.target.files)}
-          />
-          <Action
-            variant="secondary small"
-            disabled={busyScanning || busy || !prep.ready || captured.length > 0}
-            onClick={() => stack.current?.click()}
-          >
-            <ScanLine size={15} />
-            Upload a whole stack instead
-          </Action>
-        </div>
-      </SectionTitle>
+        title="Student work"
+        description="Scan the class, match each paper to a student, then grade by question. Every page you put under one student is graded together, so a test that runs onto a second page still comes back whole."
+      />
+      {/* One guided path (Ricky and Michael): scan, match names, grade by
+          question. Everything else is still here, under More options. */}
+      <ol className="guided-steps" aria-label="Steps">
+        <li className={step === 1 ? "is-current" : step > 1 ? "is-done" : ""}>
+          <span>1</span> Scan student work
+        </li>
+        <li className={step === 2 ? "is-current" : step > 2 ? "is-done" : ""}>
+          <span>2</span> Match names
+        </li>
+        <li className={step === 3 ? "is-current" : ""}>
+          <span>3</span> Grade by question
+        </li>
+      </ol>
+      <input
+        ref={stack}
+        type="file"
+        className="sr-only"
+        multiple
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        aria-label="Upload a whole stack of scanned student pages at once"
+        onChange={(e) => startStackScan(e.target.files)}
+      />
       {!prep.ready && (
         <p className="cell-meta">
           Confirm the intended standards and the answer key first, then scanning is enabled.
@@ -1087,82 +1092,129 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               waiting. Carry on, or start over.
             </p>
           )}
-          <p className="cell-meta">
-            {captured.length === 0
-              ? "Student 1 — add the first page."
-              : "Student " +
-                piles.length +
-                " — " +
-                openPile.length +
-                " page" +
-                (openPile.length === 1 ? "" : "s") +
-                " so far · " +
-                captured.length +
-                " of " +
-                MAX_PAGES +
-                " scanned"}
-          </p>
-          <div className="review-heading-actions">
-            <Action
-              variant="secondary small"
-              disabled={busyScanning || busy}
-              onClick={() => setCameraOpen(true)}
-            >
-              {adding ? <LoaderCircle className="spin" size={15} /> : <Camera size={15} />}
-              Scan a page
-            </Action>
-            <Action
-              variant="secondary small"
-              disabled={busyScanning || busy}
-              onClick={() => input.current?.click()}
-            >
-              <ScanLine size={15} />
-              Choose files
-            </Action>
-            <Action
-              variant="secondary small"
-              disabled={busyScanning || busy || !openPile.length}
-              onClick={nextStudent}
-            >
-              <UserPlus size={15} />
-              Next student
-            </Action>
-            {captured.length > 0 && (
+          {!groups && (
+            <>
               <Action
-                variant="secondary small"
+                className="guided-primary"
+                variant={captured.length ? "secondary" : ""}
                 disabled={busyScanning || busy}
-                onClick={undoLast}
+                onClick={() => setCameraOpen(true)}
               >
-                <Undo2 size={15} />
-                Undo last
+                {adding ? <LoaderCircle className="spin" size={20} /> : <Camera size={20} />}
+                {captured.length ? "Scan more student work" : "Scan student work"}
               </Action>
-            )}
-            {restored && captured.length > 0 && (
-              <Action
-                variant="secondary small"
-                disabled={busyScanning || busy}
-                onClick={reset}
-              >
-                <X size={15} />
-                Start over
-              </Action>
-            )}
-          </div>
-          {captured.length > 0 && (
-            <div className="review-heading-actions">
-              <Action disabled={busyScanning || busy || gradingElsewhere} onClick={gradeCaptured}>
-                {scanning ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
-                {/* What this will cost, before they commit to it. A stack
-                    already paid for -- a re-grade -- reads "uses 0 credits",
-                    which is the question a teacher actually has at that
-                    moment. */}
-                {gradeButtonLabel(cost)}
-              </Action>
-              <Pill>
-                {finishedPiles} student{finishedPiles === 1 ? "" : "s"}
-              </Pill>
-            </div>
+              <p className="cell-meta guided-hint">
+                Take a photo of each page. Tap <strong>Next student</strong> between students,
+                and <strong>Finished</strong> when the class is done.
+              </p>
+              <p className="cell-meta">
+                {captured.length === 0
+                  ? "No pages scanned yet."
+                  : finishedPiles +
+                    " student" +
+                    (finishedPiles === 1 ? "" : "s") +
+                    " · " +
+                    captured.length +
+                    " page" +
+                    (captured.length === 1 ? "" : "s") +
+                    " scanned (up to " +
+                    MAX_PAGES +
+                    ")"}
+              </p>
+              {restored && captured.length > 0 && (
+                <Action variant="secondary small" disabled={busyScanning || busy} onClick={reset}>
+                  <X size={15} />
+                  Start over
+                </Action>
+              )}
+            </>
           )}
+          {captured.length > 0 && !groups && (
+            <Action
+              className="guided-primary"
+              disabled={busyScanning || busy || gradingElsewhere}
+              onClick={gradeCaptured}
+            >
+              {scanning ? <LoaderCircle className="spin" size={20} /> : <Check size={20} />}
+              {/* What this will cost, before they commit to it. A stack
+                  already paid for -- a re-grade -- reads "uses 0 credits",
+                  which is the question a teacher actually has at that
+                  moment. */}
+              {gradeButtonLabel(cost)}
+            </Action>
+          )}
+          <details className="more-options">
+            <summary>More options</summary>
+            <p className="cell-meta">
+              {captured.length === 0
+                ? "Student 1 — add the first page."
+                : "Student " +
+                  piles.length +
+                  " — " +
+                  openPile.length +
+                  " page" +
+                  (openPile.length === 1 ? "" : "s") +
+                  " so far · " +
+                  captured.length +
+                  " of " +
+                  MAX_PAGES +
+                  " scanned"}
+            </p>
+            <div className="review-heading-actions">
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy}
+                onClick={() => setCameraOpen(true)}
+              >
+                <Camera size={15} />
+                Scan a page
+              </Action>
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy}
+                onClick={() => input.current?.click()}
+              >
+                <ScanLine size={15} />
+                Choose files
+              </Action>
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy || !openPile.length}
+                onClick={nextStudent}
+              >
+                <UserPlus size={15} />
+                Next student
+              </Action>
+              {captured.length > 0 && (
+                <Action
+                  variant="secondary small"
+                  disabled={busyScanning || busy}
+                  onClick={undoLast}
+                >
+                  <Undo2 size={15} />
+                  Undo last
+                </Action>
+              )}
+              {captured.length > 0 && (
+                <Action
+                  variant="secondary small"
+                  disabled={busyScanning || busy}
+                  onClick={reset}
+                >
+                  <X size={15} />
+                  Start over
+                </Action>
+              )}
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy || captured.length > 0}
+                onClick={() => stack.current?.click()}
+              >
+                <ScanLine size={15} />
+                Upload a whole stack instead
+              </Action>
+            </div>
+          </details>
         </div>
       )}
       {!online && (
