@@ -198,8 +198,16 @@ input,textarea,.pick {font-size:1rem}
 .why-answer {margin-top:18px;padding:15px 0;border-top:1px solid hsl(calc(110deg + var(--th)) calc(14% * var(--ts)) 91.8%)}
 .why-answer p {font-size:1rem;line-height:1.7;color:hsl(calc(140deg + var(--th)) calc(19% * var(--ts)) 30.6%);margin-top:13px}
 .why-answer>span {display:block;font-size:.875rem;color:#7c897b;line-height:1.6;margin-top:9px}
-.response-review-card>footer {display:flex;justify-content:space-between;align-items:center;gap:16px;padding-top:17px}
+.response-review-card>footer {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:17px}
 .response-review-card>footer>span {font-size:.8rem;color:#7c897b}
+/* Credit right on the card (No credit / Half / Full), so a teacher confirms
+   without opening a detail view first. */
+.review-credit {display:inline-flex;gap:6px;flex-wrap:wrap}
+.review-credit-btn {min-height:38px;padding:7px 14px;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);border-radius:999px;background:#fff;color:var(--ink);font-family:inherit;font-weight:600;font-size:.85rem}
+.review-credit-btn.is-current {background:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);border-color:transparent;color:#fff}
+.review-credit-btn:disabled {opacity:.55}
+.review-card-actions {display:inline-flex;align-items:center;gap:8px}
+.review-see-work {display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 12px;border:none;border-radius:999px;background:hsl(calc(90deg + var(--th)) calc(22% * var(--ts)) 94%);color:hsl(calc(146deg + var(--th)) calc(26% * var(--ts)) 31.4%);font-family:inherit;font-weight:600;font-size:.85rem}
 .review-more {display:flex;justify-content:center;margin:20px 0}
 .review-clear {text-align:center;padding:34px 24px;margin:18px 0}
 .review-clear>svg {color:hsl(calc(135deg + var(--th)) calc(24% * var(--ts)) 40.6%);margin:0 auto 13px}

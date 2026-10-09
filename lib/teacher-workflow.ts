@@ -99,6 +99,34 @@ export function responseFlag(
 }
 
 /**
+ * A clean AI match: correct, a full match, read confidently (>=90%), non-blank,
+ * on a question whose standard and key are confirmed. It is exactly an answer
+ * with nothing left to flag (responseFlag === null) on an active question.
+ *
+ * Michael: an answer the AI matched to the key should not need a second
+ * confirmation to count. Because this is the no-flag case, it can never be a
+ * blank (those flag "Missing answer"), an unsure/low-confidence read (those flag
+ * a check), or a wrong answer -- and #108 already demotes a "match" whose value
+ * differs from the key to correct:false/confidence:0, so a false match never
+ * reaches here. So counting these needs no second tap and still never weakens
+ * the Unsure group or the never-auto-score-blank rule.
+ */
+export function isCleanAiMatch(a: Assessment, r: StudentResponse): boolean {
+  const q = a.questions.find((x) => x.id === r.questionId);
+  return !!q && !q.excluded && responseFlag(r, q) === null;
+}
+
+/**
+ * Whether an answer counts toward the score and completion right now: the
+ * teacher confirmed it, OR it is a clean AI match that needs no confirmation.
+ * Opening a clean match to change it (giving it other credit) verifies it at the
+ * teacher's chosen credit, which still counts.
+ */
+export function countsAsGraded(a: Assessment, r: StudentResponse): boolean {
+  return r.verified || isCleanAiMatch(a, r);
+}
+
+/**
  * The standards "speed lane" (Ricky): a question at 80%+ alignment is strong
  * and shows green; under 80% shows red with its percentage and a small
  * "Strengthen?" link -- but the teacher does not have to open each one. A
@@ -227,10 +255,24 @@ export function studentReview(a: Assessment, studentId: string) {
       ),
   );
   const reviewed = responses.filter((r) => r.verified);
+  // Answers that count toward the score now: confirmed by the teacher, or a
+  // clean AI match that needs no confirmation (Michael). `reviewed` stays the
+  // teacher-confirmed set (the depth breakdown reflects what they actually
+  // reviewed); `counted` drives the score, completion and the gradebook.
+  const counted = responses.filter((r) => countsAsGraded(a, r));
   const missing = questions.filter(
     (q) => !responses.some((r) => r.questionId === q.id),
   );
   const complete =
+    questions.length > 0 &&
+    missing.length === 0 &&
+    counted.length === questions.length;
+  // Every answer the teacher has actually CONFIRMED (not just a clean AI match).
+  // Deleting a student's scanned pages keys off this, never off the auto-count:
+  // a page is released only once the teacher has explicitly signed off on all of
+  // that student's answers, so nothing a clean match "counts" is thrown away
+  // before they have looked.
+  const allConfirmed =
     questions.length > 0 &&
     missing.length === 0 &&
     reviewed.length === questions.length;
@@ -241,18 +283,20 @@ export function studentReview(a: Assessment, studentId: string) {
     flagged,
     clear,
     reviewed,
+    counted,
     missing,
     complete,
-    // Answers that exist but the teacher has not decided yet -- the "other"
-    // verdicts and anything else still pending. These are not counted as zero in
-    // the score (the score averages verified answers only); they are surfaced so
-    // a partial score is never mistaken for a final one.
-    needsGrading: pending.length,
+    allConfirmed,
+    // Answers that still need the teacher: pending AND not a clean AI match.
+    // A clean match counts on its own, so it is not "waiting"; a blank, an
+    // unsure read or a wrong answer still is. Not counted as zero in the score
+    // -- surfaced so a partial score is never mistaken for a final one.
+    needsGrading: pending.filter((r) => !isCleanAiMatch(a, r)).length,
     // Weighted by what each question is worth: points earned over points
-    // possible, across the answers confirmed so far. With every question worth
-    // the same this is the plain average it always was.
-    score: reviewed.length ? Math.round((100 * earnedOf(reviewed)) / possibleOf(reviewed)) : null,
-    pointsEarned: roundPoints(earnedOf(reviewed)),
+    // possible, across the answers that count so far (confirmed or clean match).
+    // With every question worth the same this is the plain average it always was.
+    score: counted.length ? Math.round((100 * earnedOf(counted)) / possibleOf(counted)) : null,
+    pointsEarned: roundPoints(earnedOf(counted)),
     pointsPossible: totalPoints(a),
   };
   function earnedOf(rs: StudentResponse[]) {
@@ -756,7 +800,7 @@ export function releasedStudentUploads(a: Assessment): string[] {
   const done = new Set<string>();
   const held = new Set<string>();
   for (const [studentId, ids] of Object.entries(byStudent)) {
-    const target = studentReview(a, studentId).complete ? done : held;
+    const target = studentReview(a, studentId).allConfirmed ? done : held;
     for (const id of ids || []) target.add(id);
   }
   return [...done].filter((id) => !held.has(id));
@@ -1117,12 +1161,14 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
       student.name,
       ...questions.map((q) => {
         const r = byQuestion.get(q.id);
-        if (!r || !r.verified) return "";
+        // A clean AI match counts without a confirmation (Michael), so it prints
+        // its points here too -- consistent with the on-screen score.
+        if (!r || !countsAsGraded(a, r)) return "";
         return pointsText(pointsEarned(a, r));
       }),
       final ? pointsText(review.pointsEarned) : incomplete ? "Incomplete" : "",
       final ? String(review.score) : incomplete ? "Incomplete" : "",
-      review.reviewed.length + "/" + questions.length,
+      review.counted.length + "/" + questions.length,
       review.needsGrading ? String(review.needsGrading) : "",
     ];
   });
