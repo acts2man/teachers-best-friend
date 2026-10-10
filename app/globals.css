@@ -161,6 +161,23 @@ input,textarea,.pick {font-size:1rem}
 .review-heading-actions {display:flex;flex-wrap:wrap;gap:9px}
 .report-table .cell-title {font-size:.9rem}
 .report-table td,.report-table th {font-size:.875rem}
+/* The shared Table cell is whitespace-nowrap (components/ui/table.tsx). On a
+   phone the whole table scrolls sideways so that is fine, but on a desktop the
+   table fits and nowrap text had nowhere to go, so a long question ran into the
+   Skill & standard column and a long standard code overlapped the question
+   (Windows desktop, reported by Michael). Only on desktop: let the cells wrap
+   inside themselves and break long unbroken codes, and cap the two text columns
+   so neither can crowd the other. The phone's scrolling layout is left as is. */
+@media(min-width:768px){
+  .report-table td,.report-table th{white-space:normal;vertical-align:top}
+  /* overflow-wrap inherits, so the question text (an unclassed span) and the
+     skill/standard both break long unbroken codes, not just at spaces. */
+  .report-table .question-cell,
+  .report-table .cell-title,
+  .report-table .cell-meta{overflow-wrap:anywhere;word-break:break-word}
+  .report-table td:first-child{max-width:360px}
+  .report-table td:nth-child(2){max-width:240px}
+}
 .source-documents {flex-wrap:wrap;line-height:1.8}
 .source-documents>a {font-size:.8rem}
 .review-student-toolbar {display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:21px}
