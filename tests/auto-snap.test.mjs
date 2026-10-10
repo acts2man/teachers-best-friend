@@ -44,6 +44,18 @@ test("a page held steady for ~1s fires exactly once", () => {
   assert.ok(fireTimes[0] >= AUTO_SNAP_DEFAULTS.holdMs, "not before the hold elapses");
 });
 
+test("the hold is the short ~450ms one (Ricky's camera-speed ask), not the old 900", () => {
+  // The hold was the biggest fixed per-page cost; it was trimmed to about half
+  // a second so a steady page is captured quickly without waiting out a full
+  // second. A blurry frame is still caught downstream, so a shorter hold never
+  // saves a bad page.
+  assert.equal(AUTO_SNAP_DEFAULTS.holdMs, 450, "hold trimmed to ~450ms");
+  // A page steady for ~500ms now fires; under the old 900ms hold it would not.
+  const frames = [];
+  for (let t = 0; t <= 600; t += 100) frames.push({ quad: Q(), now: t });
+  assert.equal(run(frames).fires, 1, "a half-second hold is enough to fire");
+});
+
 test("it does not snap the same page twice; a new page re-arms it", () => {
   const frames = [];
   for (let t = 0; t <= 2000; t += 100) frames.push({ quad: Q(0), now: t }); // page A
