@@ -66,7 +66,9 @@ test("with no passage, no passage clause is added", () => {
 });
 
 test("the read prompt version was bumped for the passage change", () => {
-  assert.equal(READ_PROMPT_VERSION, 3);
+  // The passage change took it to 3; later read-prompt changes bump it further
+  // (v4: graphic organizers), so this guards that it never falls back below 3.
+  assert.ok(READ_PROMPT_VERSION >= 3);
 });
 
 // ---------------------------------------------------------------
