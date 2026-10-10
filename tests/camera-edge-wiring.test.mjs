@@ -56,8 +56,9 @@ test("the manual shutter works in both modes and auto-snap is gated on Auto", ()
     !/scan-camera-shutter[\s\S]*disabled=\{[^}]*\bauto\b/.test(src),
     "the shutter is not disabled in manual mode",
   );
-  // Auto-snap only fires when Auto is on.
-  assert.match(src, /if \(autoRef\.current &&[\s\S]*r\.fire\) shootRef\.current\(\)/);
+  // Auto-snap only fires when Auto is on, and never past the batch page cap.
+  assert.match(src, /if \(autoRef\.current && settledRef\.current/);
+  assert.match(src, /if \(r\.fire && !atCapRef\.current\) shootRef\.current\(\)/);
 });
 
 test("detection runs on a downscaled buffer and is throttled to stay light", () => {
