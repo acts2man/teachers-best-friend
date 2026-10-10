@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { createPortal } from "react-dom";
 import { Camera, Check, Info, LoaderCircle, RotateCcw, Upload, UserPlus, X, Zap, ZapOff } from "lucide-react";
 import {
+  burstFrames,
   cameraSupported,
   coverCrop,
   coverMapPoint,
@@ -83,10 +84,12 @@ const DETECT_W = 320; // downscaled working width for live detection
 const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
 const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
 const SETTLE_MS = 700; // let the stream focus/settle before the first capture
-// On capture, grab a short burst and keep the sharpest frame -- the first frame
-// after a tap (or an auto-snap) is often the blurriest, mid-refocus.
-const BURST_FRAMES = 5;
-const BURST_GAP_MS = 80; // ~320ms total across 5 frames
+// On a borderline capture, grab a short burst and keep the sharpest frame -- the
+// first frame after a tap (or an auto-snap) can be mid-refocus. When the live
+// frame is already sharp, burstFrames() takes a single frame and skips the wait,
+// so a good shot is instant (Ricky's speed ask). The fallback burst is 3 frames.
+const BURST_FRAMES = 3;
+const BURST_GAP_MS = 60; // ~120ms total across 3 frames, only when borderline
 const SCORE_W = 320; // downscale width for the sharpness score (matches DETECT_W)
 // Below this Laplacian-variance score a frame is treated as too blurry to add.
 // Absolute value depends on the downscale, so it is deliberately conservative
@@ -323,7 +326,10 @@ export function ScanCamera({
     let best: HTMLCanvasElement | null = null;
     let spare: HTMLCanvasElement | null = null;
     let bestScore = -Infinity;
-    for (let i = 0; i < BURST_FRAMES; i++) {
+    // Already-sharp live frame -> a single frame, no burst wait; borderline -> a
+    // short burst and keep the sharpest.
+    const frames = burstFrames(liveScoreRef.current, BLUR_THRESHOLD, BURST_FRAMES);
+    for (let i = 0; i < frames; i++) {
       const cap: HTMLCanvasElement = spare ?? document.createElement("canvas");
       spare = null;
       cap.width = outW;
@@ -343,7 +349,7 @@ export function ScanCamera({
       } else {
         spare = cap;
       }
-      if (i < BURST_FRAMES - 1) await sleep(BURST_GAP_MS);
+      if (i < frames - 1) await sleep(BURST_GAP_MS);
     }
     release(spare);
     release(scorer);

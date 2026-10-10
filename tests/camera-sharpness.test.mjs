@@ -34,7 +34,30 @@ function bundle(entry) {
   return m.exports;
 }
 
-const { rgbaToGray, laplacianVariance, pickSharpest } = bundle("lib/camera.ts");
+const { rgbaToGray, laplacianVariance, pickSharpest, burstFrames } = bundle("lib/camera.ts");
+
+// ---------------------------------------------------------------
+// burstFrames: an already-sharp live frame is taken on its own (fast);
+// a borderline frame takes the short burst (Ricky's camera-speed ask)
+// ---------------------------------------------------------------
+
+test("a live frame at or above the blur threshold captures a single frame", () => {
+  // At/above threshold there is nothing to improve on, so one frame, no wait.
+  assert.equal(burstFrames(100, 50), 1, "well above -> 1");
+  assert.equal(burstFrames(50, 50), 1, "exactly at the threshold -> 1");
+});
+
+test("a borderline (below-threshold) live frame takes the fallback burst", () => {
+  assert.equal(burstFrames(49, 50), 3, "just below -> the default 3-frame burst");
+  assert.equal(burstFrames(0, 50), 3, "flat/blurry -> the burst");
+  // The burst size is configurable; the fallback is 3.
+  assert.equal(burstFrames(10, 50, 5), 5, "honours a custom burst size");
+});
+
+test("burstFrames never returns less than one frame", () => {
+  assert.equal(burstFrames(0, 50, 0), 1, "a zero burst still takes one frame");
+  assert.equal(burstFrames(0, 50, -3), 1, "a negative burst still takes one frame");
+});
 
 // ---------------------------------------------------------------
 // rgbaToGray
@@ -126,6 +149,13 @@ test("the camera renders through a portal into document.body and locks scroll", 
 test("capture takes a sharpest-of-burst frame", () => {
   assert.match(src, /BURST_FRAMES/, "a burst of frames");
   assert.match(src, /async function captureBurst\(/, "burst capture is its own function");
+  // Adaptive: a sharp live frame is taken on its own, only a borderline one
+  // bursts (Ricky's camera-speed ask).
+  assert.match(
+    src,
+    /burstFrames\(liveScoreRef\.current, BLUR_THRESHOLD, BURST_FRAMES\)/,
+    "the frame count comes from burstFrames on the live score",
+  );
   assert.match(src, /laplacianVariance\(rgbaToGray\(/, "each frame is scored for sharpness");
   // Still cropped to exactly the visible cover region (#102).
   assert.match(src, /coverCrop\(fw, fh, vw, vh\)/, "capture still crops to the visible region");

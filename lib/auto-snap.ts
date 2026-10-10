@@ -25,7 +25,13 @@ export type AutoSnapConfig = {
   driftTol: number;
 };
 
-export const AUTO_SNAP_DEFAULTS: AutoSnapConfig = { holdMs: 900, driftTol: 14 };
+// holdMs was 900 and was the biggest fixed cost on every page (Ricky was at
+// ~6s/2-page student against ~3s on the native camera). A page the detector
+// already reports steady is steady; half a second of hold is enough to rule out
+// a hand still settling without making the teacher wait. Manual tap is
+// unaffected, and a frame that comes out blurry is still caught downstream, so
+// a shorter hold never saves a bad page.
+export const AUTO_SNAP_DEFAULTS: AutoSnapConfig = { holdMs: 450, driftTol: 14 };
 
 export const initialAutoSnapState: AutoSnapState = {
   steadySince: null,

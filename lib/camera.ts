@@ -161,6 +161,21 @@ export function pickSharpest(scores: ArrayLike<number>): number {
   return bestIdx;
 }
 
+/**
+ * How many frames a capture should take, from the live preview's sharpness.
+ *
+ * Ricky was at ~6s per 2-page student against ~3s on the native camera, and a
+ * big slice of ours was the fixed sharpest-of-burst wait on every shot. When the
+ * live frame is already sharp (score at/above the blur threshold) there is
+ * nothing to improve on, so take it on its own -- one frame, no wait. Only a
+ * borderline frame takes the short burst, where keeping the sharpest of a few is
+ * worth the few hundred milliseconds. Either way a frame below the threshold is
+ * still caught downstream, so this never saves a blurry page.
+ */
+export function burstFrames(liveScore: number, threshold: number, burst = 3): number {
+  return liveScore >= threshold ? 1 : Math.max(1, Math.round(burst));
+}
+
 /** Whether this browser/context can open a camera at all (needs HTTPS). */
 export function cameraSupported(): boolean {
   return (
