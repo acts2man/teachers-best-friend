@@ -870,6 +870,27 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .more-options[open]>summary{margin-bottom:10px}
 .more-options.per-student{margin-top:6px;padding:10px 4px 0;border-top:none}
 .class-scan-capture{display:flex;flex-direction:column;gap:10px}
+/* Import from Photos: a full-screen, scrollable "fix the split" sheet. */
+.photo-import{position:fixed;inset:0;z-index:1100;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--surface,#fbfbf4);color:var(--ink);overflow-y:auto;overscroll-behavior:contain}
+.photo-import-head{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:-16px;padding:8px 0;background:inherit;z-index:1}
+.photo-import-title{display:flex;align-items:center;gap:8px;font-size:17px}
+.photo-import-x{border:none;background:transparent;color:inherit;padding:6px;cursor:pointer;border-radius:999px}
+.photo-import-loading{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 0;text-align:center}
+.photo-import-note{margin:0}
+.photo-import-split-control{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 89%);border-radius:12px;background:#fff}
+.photo-import-stepper{display:inline-flex;align-items:center;gap:10px}
+.photo-import-stepper button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid hsl(calc(120deg + var(--th)) calc(14% * var(--ts)) 85%);border-radius:999px;background:#fff;color:inherit;cursor:pointer}
+.photo-import-stepper button:disabled{opacity:.4;cursor:default}
+.photo-import-stepper strong{min-width:1.2ch;text-align:center;font-size:17px}
+.photo-import-list{display:flex;flex-direction:column;gap:8px;max-width:520px;width:100%;margin:0 auto}
+.photo-import-boundary{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:6px 0;padding:6px 10px;border-radius:999px;font-size:13px;font-weight:600;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%);background:hsl(calc(120deg + var(--th)) calc(30% * var(--ts)) 94%)}
+.photo-import-boundary button,.photo-import-splithere{display:inline-flex;align-items:center;gap:5px;border:none;background:transparent;color:hsl(calc(154deg + var(--th)) calc(22% * var(--ts)) 40%);font-family:inherit;font-weight:600;font-size:12px;cursor:pointer}
+.photo-import-splithere{width:100%;justify-content:center;padding:4px 0;margin:2px 0;opacity:.6}
+.photo-import-splithere:hover{opacity:1}
+.photo-import-page{display:flex;align-items:center;gap:12px;padding:8px;border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 88.8%);border-radius:10px;background:#fff}
+.photo-import-page img{width:64px;height:64px;object-fit:cover;border-radius:6px;background:#eee}
+.photo-import-badge{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;flex:0 0 auto;border-radius:999px;font-size:13px;font-weight:700;color:#fff;background:hsl(calc(154deg + var(--th)) calc(18% * var(--ts)) 43%)}
+.photo-import-actions{position:sticky;bottom:-16px;display:flex;gap:10px;justify-content:flex-end;padding:12px 0;background:inherit}
 .align-inline{display:none!important}
 @media(max-width:767px){.question-cell .align-inline{display:inline-flex!important;align-self:flex-start;margin-top:6px;font-size:12px}}
 @media(max-width:767px){.question-cell{flex-wrap:wrap}.question-cell .align-inline{margin-left:44px}}

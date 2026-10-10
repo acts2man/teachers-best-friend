@@ -8,6 +8,7 @@ import {
   X,
   Users,
   Camera,
+  Images,
   UserPlus,
   Undo2,
   ZoomIn,
@@ -21,6 +22,7 @@ import { announceScanComplete, isOutOfScans, SEE_PLANS } from "@/lib/quota-clien
 import { gradeButtonLabel, stackCost } from "@/lib/scan-cost";
 import { useTeacher } from "./teacher-context";
 import { ScanCamera } from "./scan-camera";
+import { PhotoImport } from "./photo-import";
 import { ImageViewer } from "./image-viewer";
 import { deviceId, useScanSession } from "./use-scan-session";
 import {
@@ -277,11 +279,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const [discarded, setDiscarded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Photos the teacher picked to import, waiting on the fix-the-split screen.
+  const [importFiles, setImportFiles] = useState<File[] | null>(null);
   // The picture open full screen on the matching screen, if any.
   const [viewing, setViewing] = useState<{ src: string; alt: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const stack = useRef<HTMLInputElement>(null);
+  const photos = useRef<HTMLInputElement>(null);
   const prep = preparationGaps(a);
 
   // Grading that was already under way when the teacher left. Picked up from
@@ -1069,6 +1074,22 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             aria-label="Choose pages of this student's work"
             onChange={(e) => addPages(e.target.files)}
           />
+          <input
+            ref={photos}
+            type="file"
+            className="sr-only"
+            multiple
+            accept="image/*"
+            aria-label="Import a roll of photos of the whole class"
+            onChange={(e) => {
+              const picked = e.target.files ? Array.from(e.target.files) : [];
+              // ready()/canAccept run again when the groups land, but checking
+              // here means a teacher never orders a whole roll only to be told
+              // the scan is not set up yet.
+              if (picked.length && ready() && canAccept(picked.length)) setImportFiles(picked);
+              if (photos.current) photos.current.value = "";
+            }}
+          />
           {cameraOpen && (
             <ScanCamera
               mode="class"
@@ -1082,6 +1103,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                 setCameraOpen(false);
                 camera.current?.click();
               }}
+            />
+          )}
+          {importFiles && (
+            <PhotoImport
+              files={importFiles}
+              onComplete={(groups) => {
+                setImportFiles(null);
+                if (groups.length) addCameraGroups(groups);
+              }}
+              onCancel={() => setImportFiles(null)}
             />
           )}
           {restored && captured.length > 0 && (
@@ -1176,6 +1207,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               >
                 <ScanLine size={15} />
                 Choose files
+              </Action>
+              <Action
+                variant="secondary small"
+                disabled={busyScanning || busy}
+                onClick={() => photos.current?.click()}
+              >
+                <Images size={15} />
+                Import from Photos
               </Action>
               <Action
                 variant="secondary small"
