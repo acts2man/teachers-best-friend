@@ -137,7 +137,7 @@ test("orientation is read from the live video dimensions at capture time", () =>
 test("capture waits for the stream to settle, and auto-snap is gated on it", () => {
   assert.match(src, /if \(!settledRef\.current\) return;/);
   assert.match(src, /autoRef\.current && settledRef\.current/);
-  assert.match(src, /disabled=\{starting \|\| finishing \|\| !settled\}/);
+  assert.match(src, /disabled=\{starting \|\| finishing \|\| !settled \|\| atCap\}/);
 });
 
 test("a hidden diagnostic panel reports the frame, track settings, orientation and capture size", () => {

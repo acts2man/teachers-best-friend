@@ -800,6 +800,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* Low-confidence hint: shown in Auto mode when a page is seen but not trusted
    enough to crop/auto-snap, so the teacher knows to steady it or tap. */
 .scan-camera-hint{position:absolute;left:50%;top:64px;z-index:2;transform:translateX(-50%);padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:#fff;background:rgba(0,0,0,.55)}
+.scan-camera-hint.cap{width:min(88vw,360px);border-radius:14px;line-height:1.45;text-align:center;background:rgba(150,96,24,.94)}
+.scan-camera-hint.cap strong{font-weight:800}
 /* Grade-by-question: a settled group shows its score with a Change affordance,
    and an all-graded state gives the clear next step so nothing is hunted for. */
 .grade-decided{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 33%)}

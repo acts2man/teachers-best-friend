@@ -172,6 +172,7 @@ export function ScanCamera({
   mode,
   title,
   assessmentId,
+  budget,
   onComplete,
   onCancel,
   onFallback,
@@ -179,6 +180,9 @@ export function ScanCamera({
   mode: "single" | "class";
   title?: string;
   assessmentId: string;
+  /** How many more pages this session may add before the batch cap is reached.
+   *  Undefined means no cap (single-assessment scans). */
+  budget?: number;
   onComplete: (groups: File[][]) => void;
   onCancel: () => void;
   onFallback: () => void;
@@ -250,6 +254,15 @@ export function ScanCamera({
   useEffect(() => {
     shotsRef.current = shots;
   }, [shots]);
+  // The batch page cap. `atCap` blocks the shutter and auto-snap and shows a
+  // banner, so a teacher is told at the moment they hit the limit instead of
+  // scanning on and being turned away when they finish. atCapRef keeps the
+  // detection loop (which fires auto-snap) from reading a stale value.
+  const atCap = budget != null && shots.length >= budget;
+  const atCapRef = useRef(atCap);
+  useEffect(() => {
+    atCapRef.current = atCap;
+  }, [atCap]);
   useEffect(() => {
     groupRef.current = group;
   }, [group]);
@@ -390,6 +403,9 @@ export function ScanCamera({
   async function captureNow() {
     if (!settledRef.current) return;
     if (capturingRef.current) return;
+    // At the batch cap, take nothing more -- the banner tells the teacher to
+    // finish and grade. Guards both the shutter and auto-snap, which funnel here.
+    if (atCapRef.current) return;
     capturingRef.current = true;
     try {
       const res = await captureBurst();
@@ -506,7 +522,7 @@ export function ScanCamera({
           now,
         });
         snapStateRef.current = r.state;
-        if (r.fire) shootRef.current();
+        if (r.fire && !atCapRef.current) shootRef.current();
       }
     }
     rafRef.current = requestAnimationFrame(frame);
@@ -772,9 +788,16 @@ export function ScanCamera({
           Too blurry — hold steady, a little farther from the page
         </div>
       )}
-      {!starting && settled && !tooBlurry && auto && lowConfidence && (
+      {!starting && settled && !tooBlurry && auto && lowConfidence && !atCap && (
         <div className="scan-camera-hint" role="status">
           Hold steady or tap the shutter
+        </div>
+      )}
+      {!starting && atCap && (
+        <div className="scan-camera-hint cap" role="status">
+          That&rsquo;s the most pages you can scan in one batch. Tap{" "}
+          <strong>{mode === "class" ? "Finished" : "Done"}</strong> to grade these, then scan the
+          rest in another batch.
         </div>
       )}
       <div className="scan-camera-bottom">
@@ -813,8 +836,8 @@ export function ScanCamera({
           <button
             type="button"
             className="scan-camera-shutter"
-            aria-label="Take a photo"
-            disabled={starting || finishing || !settled}
+            aria-label={atCap ? "Page limit reached — tap Finished to grade" : "Take a photo"}
+            disabled={starting || finishing || !settled || atCap}
             onClick={shoot}
           />
           <div className="scan-camera-side">

@@ -49,11 +49,15 @@ import {
 } from "@/lib/teacher-class-scan";
 import type { Assessment } from "@/lib/teacher-types";
 
-// A class set, front and back, with room to spare. The old limit of 24 existed
-// because one request carried every page; grading is batched now, so the cap no
-// longer protects anything it used to -- it just stopped a teacher scanning the
-// class they came to scan.
-const MAX_PAGES = 80;
+// A whole class set in one batch: Ricky's class is 36 students at up to 5 pages
+// each, so 80 stopped him short. Grading and the name pass are both batched (12
+// at a time), and the in-app camera keeps only each page's JPEG bytes plus a
+// 96px thumbnail -- never a decoded full bitmap -- and mirrors them to
+// IndexedDB; the draft and scan session store upload ids, not image data. All
+// of that scales linearly, so 180 pages cost more batches, not a bigger
+// anything. The camera now says when the limit is reached instead of letting a
+// teacher overshoot and be turned away at the end.
+const MAX_PAGES = 180;
 
 /** Name areas per name-reading request. The name pass returns a few tokens per
  * page, but it still has a ceiling, and it had the same shape of bug the
@@ -1073,6 +1077,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             <ScanCamera
               mode="class"
               assessmentId={a.id}
+              budget={Math.max(0, MAX_PAGES - captured.length)}
               onComplete={(groups) => {
                 setCameraOpen(false);
                 if (groups.length) addCameraGroups(groups);
