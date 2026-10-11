@@ -139,6 +139,43 @@ test("a multi-page student takes the name from whichever page carried one",()=>{
   assert.equal(resolved[0].detectedName,"Maria Gonzalez");
   assert.deepEqual(resolved[0].pageUploadIds,["u1","u2","u3"]);
 });
+test("a name on a later page wins over a recurring motto on an earlier page",()=>{
+  // The exact failure from Ricky's 2026-10-10 "Percentages" scan: the sheet
+  // carries a printed "Hope Always" that the name pass read on two students'
+  // earlier (back) pages, ahead of their real names. First-page-wins made both
+  // groups "Hope Always" and buried Run Lowhill and Peter Parker; their answers
+  // then went to the wrong child. The real name must win because "Hope Always"
+  // recurs across groups (a student is scanned once; a motto repeats).
+  const pages=[
+    name(0,""),name(1,"Dino Sour",78),name(2,""),name(3,"Stomp Franklin",62),
+    name(4,""),name(5,"Pop Wilson",80),
+    name(6,"Hope Always",55),name(7,"Run Lowhill",45),   // group [6,7]
+    name(8,"Hope Always",35),name(9,"Peter Parker",88),   // group [8,9]
+    name(10,""),name(11,""),
+  ];
+  const groups=[[0,1],[2,3],[4,5],[6,7],[8,9],[10,11]];
+  const resolved=resolveScannedGroups(groups,pages,[],Array.from({length:12},(_,i)=>"u"+i),[]);
+  assert.deepEqual(
+    resolved.map(g=>g.detectedName),
+    ["Dino Sour","Stomp Franklin","Pop Wilson","Run Lowhill","Peter Parker",""],
+    "the recurring motto never names a group; the real student does",
+  );
+  // The hijacked groups keep their own pages -- only the label was ever wrong.
+  assert.deepEqual(resolved[3].pageIndexes,[6,7]);
+  assert.deepEqual(resolved[4].pageIndexes,[8,9]);
+});
+test("a motto that is the only name on a group is still used as a last resort",()=>{
+  // If a group has nothing but the recurring phrase, keep it (best effort) --
+  // it will not pre-fill, so the teacher still gets a question not a wrong pick.
+  const pages=[name(0,"Motto Line"),name(1,"Real Student",90),name(2,"Motto Line")];
+  const resolved=resolveScannedGroups([[0],[1],[2]],pages,[],["u0","u1","u2"],[]);
+  assert.deepEqual(resolved.map(g=>g.detectedName),["Motto Line","Real Student","Motto Line"]);
+});
+test("the most confident read wins among a group's own pages",()=>{
+  const pages=[name(0,"Scribbled",20),name(1,"Clear Name",95)];
+  const resolved=resolveScannedGroups([[0,1]],pages,[],["u0","u1"],[]);
+  assert.equal(resolved[0].detectedName,"Clear Name");
+});
 
 test("applyScannedGroups grades a matched student and creates a record for an unmatched one",()=>{
   const a=assessment();
