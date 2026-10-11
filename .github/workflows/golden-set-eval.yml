@@ -1,0 +1,47 @@
+# Golden-set AI eval — run by hand, never on a push.
+#
+# It re-runs each AI stage against the founders' confirmed production items and
+# prints accuracy + cost per class set. It is READ-ONLY on production and never
+# touches pipeline_config. The AI key and the database key are GitHub Actions
+# secrets, so they live only in GitHub's encrypted store and never in the repo.
+#
+# To run: GitHub → Actions → "Golden-set AI eval" → Run workflow.
+name: Golden-set AI eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      stages:
+        description: "Which stages to run (comma-separated: names,answerKey,grading)"
+        required: false
+        default: "names,answerKey,grading"
+
+# One at a time: never two paid runs at once.
+concurrency:
+  group: golden-set-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Run the eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOLDEN_STAGES: ${{ github.event.inputs.stages }}
+        run: node scripts/golden-set/run.mjs | tee golden-set-report.txt
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-set-report
+          path: golden-set-report.txt

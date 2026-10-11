@@ -357,6 +357,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
   const sync = useScanSession({
     assessmentId: a.id,
+    device,
     session: useMemo(
       () =>
         session && {
@@ -375,6 +376,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     remoteGrading.device !== device &&
     now > 0 &&
     now - remoteGrading.at < GRADING_STALE_MS;
+  // Leaving the screen mid-grade hands the grading note back, so the device the
+  // teacher moves to resumes at once rather than waiting out the stale window
+  // (Ricky: "leaving the grading screen stops grading"). Read through refs so
+  // the unmount-only cleanup always sees the current state and release fn.
+  const scanningRef = useRef(scanning);
+  const releaseRef = useRef(sync.releaseGrading);
+  useEffect(() => {
+    scanningRef.current = scanning;
+    releaseRef.current = sync.releaseGrading;
+  });
+  useEffect(() => () => {
+    if (scanningRef.current) releaseRef.current();
+  }, []);
   // What the run in progress has managed so far, so a failure part-way can
   // still put it on screen rather than stranding work already paid for.
   const partial = useRef<{
@@ -729,6 +743,20 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         },
         resuming?.nextBatch ?? 0,
         resuming?.graded ?? [],
+        // A full set of answers per student; a batch that returns fewer is
+        // re-asked for the missing students rather than banked with blanks.
+        activeQuestions(a).length,
+        undefined,
+        (info) => {
+          // Logged either way: a retry, or a group still short after retries so
+          // a few answers may save blank. This is the one failure that otherwise
+          // leaves no trace (Ricky's "it skipped some" with nothing on screen).
+          console.warn(
+            info.retried
+              ? `class_scan batch ${info.batch}: students ${info.missing.join(", ")} came back short; re-asking (attempt ${info.attempt})`
+              : `class_scan batch ${info.batch}: students ${info.missing.join(", ")} still short after ${info.attempt} retr${info.attempt === 1 ? "y" : "ies"}; some answers may save blank`,
+          );
+        },
       );
       setProgress(null);
       showGraded(pageGroups, names, graded, ids, nameIds);

@@ -1,0 +1,37 @@
+{
+  "comment": "Golden set for the AI-stage eval. IDs only -- no student names or work are committed; the runner fetches confirmed answers and images from production at run time (read-only). perClassStudents is the size every cost is scaled to. See README.md.",
+  "perClassStudents": 26,
+  "project": "mmzbgmquhfdfqaootrvh",
+  "bucket": "teacher-documents",
+  "names": [
+    { "assessmentId": "2400e56a-bbaa-4f79-9507-c373a729151f", "note": "Michael scan-1-1: 26 students he confirmed; the confirmed match per group is the right answer" }
+  ],
+  "answerKey": [
+    { "assessmentId": "95ec5709-53aa-4f59-bfcd-ede51e4b8dff", "note": "Ricky Rational Expressions (Algebra 2), 15 questions, teacher-confirmed key" },
+    { "assessmentId": "c468b7cb-6f95-4583-8d1b-8dd0194c6b8f", "note": "Ricky Percentages, 10 questions, teacher-confirmed key" },
+    { "assessmentId": "2400e56a-bbaa-4f79-9507-c373a729151f", "note": "Michael scan-1-1, 11 questions, teacher-confirmed key" }
+  ],
+  "grading": [
+    { "assessmentId": "2400e56a-bbaa-4f79-9507-c373a729151f", "note": "scan-1-1: 286 teacher-confirmed response verdicts" },
+    { "assessmentId": "c468b7cb-6f95-4583-8d1b-8dd0194c6b8f", "note": "Percentages: 100 teacher-confirmed response verdicts" }
+  ],
+  "experiments": {
+    "names": [
+      { "label": "nano (current)", "model": "gpt-5.4-nano", "effort": "low" },
+      { "label": "luna (same price)", "model": "gpt-5.6-luna", "effort": "low" },
+      { "label": "mini", "model": "gpt-5.4-mini", "effort": "low" }
+    ],
+    "answerKey": [
+      { "label": "current, effort low", "effort": "low" },
+      { "label": "effort medium", "effort": "medium" },
+      { "label": "effort high", "effort": "high" },
+      { "label": "stronger model (sol)", "model": "gpt-5.6-sol", "effort": "low" },
+      { "label": "key solved in its own call", "effort": "low", "splitKey": true }
+    ],
+    "grading": [
+      { "label": "effort low (current)", "effort": "low" },
+      { "label": "effort medium", "effort": "medium" },
+      { "label": "smaller batches (3 students)", "effort": "low", "studentsPerBatch": 3 }
+    ]
+  }
+}
