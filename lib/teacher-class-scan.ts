@@ -458,17 +458,58 @@ export function resolveScannedGroups(
 ): ResolvedGroup[] {
   const nameOf = new Map(names.map((n) => [n.page, n]));
   const gradedByGroup = new Map(graded.map((g) => [g.group, g.responses]));
-  const rows = pageGroups.map((pages, i) => {
-    const validPages = [
+
+  const validPagesByGroup = pageGroups.map((pages) =>
+    [
       ...new Set(
         pages.filter(
           (p) => Number.isInteger(p) && p >= 0 && p < pageUploadIds.length,
         ),
       ),
-    ].sort((a, b) => a - b);
-    // The name is whichever of this group's pages carried one -- in practice
-    // the first, since that is what opened the group.
-    const read = validPages.map((p) => nameOf.get(p)).find((n) => n?.name.trim());
+    ].sort((a, b) => a - b),
+  );
+
+  // How many distinct groups each read name turns up on. A student is scanned
+  // once, so a name that recurs across groups is almost certainly NOT a student
+  // -- it is a printed worksheet motto, header or instruction that the name pass
+  // mistook for a name. Ricky's 2026-10-10 "Percentages" scan read "Hope Always"
+  // (a phrase on the sheet) on two students' back pages; the old "first page
+  // with any text names the group" rule then let it override the real names on
+  // those groups (Run Lowhill, Peter Parker), so two groups showed "Hope Always"
+  // and those students lost their identity -- which is what sent their answers
+  // to the wrong child when the teacher matched names.
+  const groupsWithName = new Map<string, Set<number>>();
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  validPagesByGroup.forEach((pages, g) => {
+    for (const p of pages) {
+      const nm = nameOf.get(p)?.name.trim();
+      if (!nm) continue;
+      const key = norm(nm);
+      (groupsWithName.get(key) ?? groupsWithName.set(key, new Set()).get(key)!).add(g);
+    }
+  });
+  const recurs = (nm: string) => (groupsWithName.get(norm(nm))?.size ?? 0) > 1;
+
+  // The group's name is the best of its pages' reads, not simply the first with
+  // text: a name unique to this group beats one that recurs across groups (the
+  // motto above), and within that, the most confident read wins; ties keep the
+  // earliest page so the choice is stable. Falls back to a recurring name only
+  // when the group has nothing else -- best effort, and it will not pre-fill.
+  const pickRead = (validPages: number[]): PageName | undefined => {
+    const named = validPages
+      .map((p) => nameOf.get(p))
+      .filter((n): n is PageName => !!n && !!n.name.trim());
+    if (!named.length) return undefined;
+    const unique = named.filter((n) => !recurs(n.name));
+    const pool = unique.length ? unique : named;
+    return pool
+      .slice()
+      .sort((a, b) => b.confidence - a.confidence || a.page - b.page)[0];
+  };
+
+  const rows = pageGroups.map((_, i) => {
+    const validPages = validPagesByGroup[i];
+    const read = pickRead(validPages);
     const detectedName = read?.name.trim() ?? "";
     const match = matchRosterStudent(detectedName, students);
     const readConfidence = read?.confidence ?? 0;
