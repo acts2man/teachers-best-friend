@@ -3,12 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mergeSessions,
   parseSession,
+  releaseGrading,
+  scanPollMs,
   sessionFingerprint,
   type ScanSession,
 } from "@/lib/scan-session";
-
-/** How often an open class-scan panel checks for the other device's changes. */
-const POLL_MS = 15_000;
 /** How long after the last change a save waits, so a burst of edits is one save. */
 const SAVE_DELAY_MS = 800;
 
@@ -70,11 +69,14 @@ function wasSynced(assessmentId: string) {
  */
 export function useScanSession({
   assessmentId,
+  device,
   session,
   apply,
   paused,
 }: {
   assessmentId: string;
+  /** This browser's id, so it can release only its own grading note. */
+  device: string;
   session: ScanSession | null;
   apply: (next: ScanSession | null) => void;
   paused: boolean;
@@ -188,22 +190,30 @@ export function useScanSession({
     }
   }, [url, put, assessmentId]);
 
-  // First load, then whenever the tab comes back, then every 15 seconds.
+  // First load, then whenever the tab comes back or the network returns, then
+  // on a self-scheduling timer: a few seconds while a scan is being worked (so a
+  // phone scan shows on the computer on its own), the slow idle poll otherwise.
   useEffect(() => {
-    const first = setTimeout(() => void pull(), 0);
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const tick = () => {
+      if (document.visibilityState === "visible") void pull();
+      if (!stopped) timer = setTimeout(tick, scanPollMs(latest.current));
+    };
+    const first = setTimeout(tick, 0);
     const onVisible = () => {
       if (document.visibilityState === "visible") void pull();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void pull();
-    }, POLL_MS);
+    window.addEventListener("online", onVisible);
     return () => {
+      stopped = true;
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
+      window.removeEventListener("online", onVisible);
       clearTimeout(first);
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [pull]);
 
@@ -219,6 +229,30 @@ export function useScanSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fingerprint, available, put]);
 
+  /**
+   * Hand the grading note back when this device leaves mid-grade, so the device
+   * the teacher moves to can resume at once instead of waiting out the stale
+   * window. Best effort with keepalive so it still goes out as the page tears
+   * down; only this device's own note is ever cleared. The regular save on the
+   * next pull reconciles the revision.
+   */
+  const releaseGradingNote = useCallback(() => {
+    const s = latest.current;
+    if (!s || !available) return;
+    const next = releaseGrading(s, device);
+    if (next === s) return; // nothing of ours to release
+    try {
+      void fetch("/api/scans/session", {
+        method: "PUT",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assessmentId, state: next, baseRevision: revision.current }),
+      }).catch(() => {});
+    } catch {
+      // Leaving anyway; the stale window is the backstop.
+    }
+  }, [assessmentId, device, available]);
+
   /** The class was saved or the teacher started over: clear it everywhere. */
   const clear = useCallback(async () => {
     agreed.current = null;
@@ -232,5 +266,5 @@ export function useScanSession({
     }
   }, [url, available, assessmentId]);
 
-  return { clear, notice, synced: available };
+  return { clear, releaseGrading: releaseGradingNote, notice, synced: available };
 }

@@ -835,23 +835,93 @@ export function ungradedReservations(
   return [...stranded];
 }
 
+/** A short batch: one the model answered incompletely. `missing` are the
+ * whole-scan group indexes it did not return at all or returned with fewer than
+ * the expected answers; `retried` says whether another attempt followed. */
+export type ShortBatch = {
+  batch: number;
+  missing: number[];
+  attempt: number;
+  retried: boolean;
+};
+
+/** A reduced request covering only some of a batch's groups, renumbered from
+ * zero against their own pages -- used to re-ask for the groups a batch left
+ * out or cut short. */
+function subBatch(batch: ScanBatch, wantWhole: number[]): ScanBatch {
+  const sub: ScanBatch = { uploadIds: [], groups: [], groupIndexes: [] };
+  for (const whole of wantWhole) {
+    const localPos = batch.groupIndexes.indexOf(whole);
+    if (localPos < 0) continue;
+    sub.groups.push(
+      batch.groups[localPos].map((p) => {
+        sub.uploadIds.push(batch.uploadIds[p]);
+        return sub.uploadIds.length - 1;
+      }),
+    );
+    sub.groupIndexes.push(whole);
+  }
+  return sub;
+}
+
 export async function gradeInBatches(
   batches: ScanBatch[],
   grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,
   onBatch?: (graded: GradedGroup[], nextBatch: number) => void,
   startAt = 0,
   already: GradedGroup[] = [],
+  // How many answers a fully-graded group should carry (the active question
+  // count). A group that comes back with fewer than this -- or does not come
+  // back at all -- was cut short by the model, and is re-asked rather than
+  // banked with gaps that save as blanks. 0 disables the check (older callers).
+  questionCount = 0,
+  maxRetries = 2,
+  onShortBatch?: (info: ShortBatch) => void,
 ): Promise<GradedGroup[]> {
   const graded: GradedGroup[] = [...already];
+
+  const enough = (g: GradedGroup | undefined) =>
+    !!g && (g.responses?.length ?? 0) >= questionCount;
+
   for (const [index, batch] of batches.entries()) {
     if (index < startAt) continue;
-    const result = await grade(batch, index);
-    for (const g of result.groups ?? []) {
-      const at = batch.groupIndexes[g.group];
-      // A group number the batch was never told about is dropped rather than
-      // guessed at: attaching it to the wrong student is worse than losing it,
-      // because the teacher sees a grade either way.
-      if (at !== undefined) graded.push({ ...g, group: at });
+
+    // Keep the best answer seen for each of this batch's groups across attempts:
+    // a retry that still comes up short never loses a fuller earlier answer.
+    const best = new Map<number, GradedGroup>();
+    let attemptBatch = batch;
+    let attempt = 0;
+    while (true) {
+      const result = await grade(attemptBatch, index);
+      for (const g of result.groups ?? []) {
+        const at = attemptBatch.groupIndexes[g.group];
+        // A group number the batch was never told about is dropped rather than
+        // guessed at: attaching it to the wrong student is worse than losing it.
+        if (at === undefined) continue;
+        const prev = best.get(at);
+        if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0))
+          best.set(at, { ...g, group: at });
+      }
+      // Which of THIS batch's groups are still missing or short of a full set.
+      // Only judged when a question count was given; without one (older callers)
+      // there is nothing to retry against, so the old no-retry behavior stands.
+      const missing =
+        questionCount > 0
+          ? batch.groupIndexes.filter((at) => !enough(best.get(at)))
+          : [];
+      if (!missing.length || attempt >= maxRetries) {
+        if (missing.length) onShortBatch?.({ batch: index, missing, attempt, retried: false });
+        break;
+      }
+      attempt++;
+      // Log before re-asking, so a run that is watched shows the retry happening.
+      onShortBatch?.({ batch: index, missing, attempt, retried: true });
+      attemptBatch = subBatch(batch, missing);
+    }
+
+    for (const at of batch.groupIndexes) {
+      const g = best.get(at);
+      if (g) graded.push(g);
     }
     onBatch?.(graded, index + 1);
   }

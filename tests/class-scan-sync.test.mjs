@@ -69,6 +69,36 @@ test("another device's grading blocks this one until it goes quiet", () => {
     "a phone that slept mid-grade does not strand the scan");
 });
 
+test("the stale window is a tight multiple of the heartbeat, not two minutes", () => {
+  // A device grading refreshes every GRADING_HEARTBEAT_MS; the stale window must
+  // clear two missed beats so a device still grading is never judged stopped,
+  // but stay well under the old two minutes so moving to another device resumes
+  // soon (Ricky: "leaving the screen stops grading").
+  assert.ok(S.GRADING_STALE_MS >= 2 * S.GRADING_HEARTBEAT_MS, "survives two missed beats");
+  assert.ok(S.GRADING_STALE_MS <= 90_000, "but a moved-away device frees up quickly");
+});
+
+test("releaseGrading frees this device's note so the other can resume at once", () => {
+  const now = 1_000_000;
+  const s = session({ piles: [[page("a")]], grading: { device: "phone", at: now } });
+  const freed = S.releaseGrading(s, "phone");
+  assert.equal(freed.grading, null, "the phone's own note is cleared when it leaves");
+  assert.equal(S.gradingElsewhere(freed, "computer", now), false, "the computer can resume immediately");
+  // Another device's note is left alone, and nothing else about the session moves.
+  assert.equal(S.releaseGrading(s, "computer").grading.device, "phone");
+  assert.deepEqual(S.releaseGrading(s, "phone").piles, s.piles);
+});
+
+test("scanPollMs checks faster while a scan is being worked, slower when idle", () => {
+  const active = session({ piles: [[page("a")]], grading: { device: "phone", at: 1 } });
+  const scanning = session({ piles: [[page("a")]] });
+  const matching = session({ piles: [[page("a")]], groups: [{ pageIndexes: [0], name: "x", responses: [], pageUploadIds: ["a"], detectedName: "x", confidence: 0, studentId: null, candidateIds: [], matchConfidence: 0, suggestedId: null, nameUploadId: null, nameBox: null, key: "g0" }] });
+  assert.equal(S.scanPollMs(active), 4000, "grading in flight -> fast");
+  assert.equal(S.scanPollMs(scanning), 4000, "scanning in flight -> fast");
+  assert.equal(S.scanPollMs(matching), 15000, "waiting on the teacher to match -> idle");
+  assert.equal(S.scanPollMs(null), 15000, "nothing known yet -> idle");
+});
+
 test("a session read back from the server is validated, not trusted", () => {
   assert.equal(S.parseSession(null), null);
   assert.equal(S.parseSession({ piles: "nope" }), null, "nothing usable");

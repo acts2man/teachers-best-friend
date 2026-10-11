@@ -53,9 +53,41 @@ export type ScanSession = {
   grading: { device: string; at: number } | null;
 };
 
+/** How often a grading device refreshes its "I am grading this" note. The
+ * component heartbeat; kept here so the stale window below is derived from it. */
+export const GRADING_HEARTBEAT_MS = 30 * 1000;
+
 /** A grading device that has not checked in for this long has stopped (the
- * phone slept, the tab closed). Another device may then pick the scan up. */
-export const GRADING_STALE_MS = 2 * 60 * 1000;
+ * phone slept, the tab closed, the teacher moved to the computer). Another
+ * device may then pick the scan up. Two missed heartbeats plus a margin: long
+ * enough that a device still grading is never judged stopped, short enough that
+ * a teacher who moves to another device is not left watching a halted grade for
+ * two minutes (Ricky: "leaving the screen stops grading"). A device that leaves
+ * cleanly also releases its note (releaseGrading), so this is the backstop for
+ * an unclean exit like a slept phone, not the normal path. */
+export const GRADING_STALE_MS = 70 * 1000;
+
+/**
+ * Clear this device's grading note so another device can pick the scan up at
+ * once. Used when the grading device navigates away: without it the other
+ * device must wait out GRADING_STALE_MS before resuming. Leaves another
+ * device's note untouched, and returns the session unchanged when there is
+ * nothing to release. Pure.
+ */
+export function releaseGrading(s: ScanSession, device: string): ScanSession {
+  if (!s.grading || s.grading.device !== device) return s;
+  return { ...s, grading: null };
+}
+
+/** How soon the open panel should check the other device again. While a scan is
+ * being worked (either device scanning or grading) a few seconds keeps the two
+ * in step so a phone scan shows on the computer on its own; when nothing is in
+ * flight the slow idle poll is enough and costs fewer requests. */
+export function scanPollMs(s: ScanSession | null, fast = 4000, idle = 15000): number {
+  if (!s) return idle;
+  const step = sessionStep(s);
+  return step === "scanning" || step === "grading" ? fast : idle;
+}
 
 export const EMPTY_SESSION: ScanSession = {
   v: 1,

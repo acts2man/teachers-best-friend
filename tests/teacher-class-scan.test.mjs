@@ -449,7 +449,7 @@ test("a score outside 0-100 is clamped rather than saved",()=>{
 // scans: one student averages ~1,173 output tokens and peaks near 4,933 on a
 // ten-question test, against a 12,000 ceiling -- so a full class set asked for
 // more than the model would return and came back incomplete.
-const {planScanBatches,studentsPerBatch,TOKENS_PER_ANSWER,BATCH_OUTPUT_BUDGET}=bundle("lib/teacher-class-scan.ts");
+const {planScanBatches,studentsPerBatch,TOKENS_PER_ANSWER,BATCH_OUTPUT_BUDGET,gradeInBatches}=bundle("lib/teacher-class-scan.ts");
 
 test("a ten-question test fits several students per request, not twelve",()=>{
   const n=studentsPerBatch(10);
@@ -499,6 +499,57 @@ test("pages outside the uploaded list are dropped, not sent as bad indexes",()=>
   const batches=planScanBatches([[0,99]],["a"],10);
   assert.deepEqual(batches[0].uploadIds,["a"]);
   assert.deepEqual(batches[0].groups,[[0]]);
+});
+
+// --- batch-safety: a short batch is re-asked, not banked with blanks ---
+const rsp=(n)=>Array.from({length:n},(_,i)=>({questionId:"q"+i,answer:"a",verdict:"match"}));
+// Two students, two pages each, one batch; three questions expected per student.
+const twoStudentBatch=()=>planScanBatches([[0,1],[2,3]],["a","b","c","d"],3,99999)[0];
+
+test("a batch that returns fewer answers than expected is re-asked for the short student",async()=>{
+  const calls=[];
+  const batch=twoStudentBatch();
+  // First attempt: student 0 full, student 1 cut short (1 of 3). Retry: full.
+  const grade=async(b)=>{calls.push(b.groupIndexes.slice());
+    if(calls.length===1) return {groups:[{group:0,responses:rsp(3)},{group:1,responses:rsp(1)}]};
+    return {groups:b.groupIndexes.map((_,i)=>({group:i,responses:rsp(3)}))};
+  };
+  const shorts=[];
+  const graded=await gradeInBatches([batch],grade,undefined,0,[],3,2,(info)=>shorts.push(info));
+  assert.deepEqual(graded.map(g=>g.group).sort(),[0,1]);
+  assert.equal(graded.find(g=>g.group===1).responses.length,3,"the short student was filled by the retry");
+  assert.deepEqual(calls[1],[1],"retry targets only the short student");
+  assert.ok(shorts.some(s=>s.retried&&s.missing.includes(1)),"the short batch was logged");
+});
+
+test("a student still short after the retries keeps the fullest answer seen and is logged",async()=>{
+  const batch=twoStudentBatch();
+  let n=0; const partials=[1,2,1];
+  const grade=async(b)=>({groups:b.groupIndexes.map((gi,i)=>
+    ({group:i,responses:rsp(gi===1?partials[Math.min(n++,2)]:3)}))});
+  const shorts=[];
+  const graded=await gradeInBatches([batch],grade,undefined,0,[],3,2,(info)=>shorts.push(info));
+  assert.equal(graded.find(g=>g.group===1).responses.length,2,"keeps the fullest answer across attempts");
+  assert.ok(shorts.some(s=>!s.retried&&s.missing.includes(1)),"logged as still short after retries");
+});
+
+test("a complete batch is never retried",async()=>{
+  const batch=twoStudentBatch();
+  let n=0;
+  const grade=async(b)=>{n++;return {groups:b.groupIndexes.map((_,i)=>({group:i,responses:rsp(3)}))};};
+  const shorts=[];
+  await gradeInBatches([batch],grade,undefined,0,[],3,2,(info)=>shorts.push(info));
+  assert.equal(n,1,"graded once, no retry");
+  assert.equal(shorts.length,0,"nothing logged");
+});
+
+test("questionCount 0 keeps the old behavior: present groups are kept, none retried",async()=>{
+  const batch=twoStudentBatch();
+  let n=0;
+  const grade=async()=>{n++;return {groups:[{group:0,responses:rsp(1)}]};};
+  const graded=await gradeInBatches([batch],grade,undefined,0,[],0,2);
+  assert.equal(n,1,"no retry when the check is disabled");
+  assert.deepEqual(graded.map(g=>g.group),[0]);
 });
 
 // The planning budget and the stage's real ceiling have to stay in step. If a
