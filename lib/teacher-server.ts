@@ -374,7 +374,7 @@ function normalizeStandard(item: Record<string, unknown>) {
   };
 }
 
-function normalizeWorkspace(data: Workspace): Workspace {
+export function normalizeWorkspace(data: Workspace): Workspace {
   const record = data as unknown as Record<string, unknown>;
   const list = (key: string) =>
     Array.isArray(record[key])

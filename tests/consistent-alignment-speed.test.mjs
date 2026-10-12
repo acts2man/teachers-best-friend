@@ -39,7 +39,7 @@ function bundle(entry) {
   return m.exports;
 }
 
-const { reusableReadMode, reusablePriorResult, readReuseFingerprint } = bundle(
+const { reusableReadMode, reusablePriorResult, readReuseFingerprint, reuseFingerprintKey } = bundle(
   "lib/analyze-server.ts",
 );
 const { READ_PROMPT_VERSION } = bundle("lib/analyze-shared.ts");
@@ -114,6 +114,9 @@ test("reading modes are reusable, grading modes are not", () => {
 // The reuse fingerprint: more than the page bytes
 // ---------------------------------------------------------------
 
+// The model settings serving the read. Part of the fingerprint since 12 Oct.
+const SETTINGS = { model: "gpt-5.6-luna", effort: "medium", maxOutput: 12000 };
+
 const hashSvc = () =>
   fakeSvc({
     teacher_uploads: {
@@ -126,35 +129,35 @@ const hashSvc = () =>
   });
 
 test("the fingerprint folds in prompt version, mode, scope, targets, passage, and sorted hashes", async () => {
-  const fp = await readReuseFingerprint(hashSvc(), "t1", params());
+  const fp = await readReuseFingerprint(hashSvc(), "t1", params(), SETTINGS);
   assert.equal(
     fp,
     // "p0" = no passage; a reading-comprehension read adds "p<length>".
-    ["v" + READ_PROMPT_VERSION, "assignment", "Math", 7, "California", "7.RP.3", "p0", "hashA,hashB"].join("|"),
+    ["v" + READ_PROMPT_VERSION, "assignment", "Math", 7, "California", "7.RP.3", "p0", "m:gpt-5.6-luna", "e:medium", "o:12000", "hashA,hashB"].join("|"),
   );
 });
 
 test("a different grade, framework, or target set is a different fingerprint", async () => {
-  const base = await readReuseFingerprint(hashSvc(), "t1", params());
-  assert.notEqual(base, await readReuseFingerprint(hashSvc(), "t1", params({ grade: 8 })));
+  const base = await readReuseFingerprint(hashSvc(), "t1", params(), SETTINGS);
+  assert.notEqual(base, await readReuseFingerprint(hashSvc(), "t1", params({ grade: 8 }), SETTINGS));
   assert.notEqual(
     base,
-    await readReuseFingerprint(hashSvc(), "t1", params({ framework: "Texas" })),
+    await readReuseFingerprint(hashSvc(), "t1", params({ framework: "Texas" }), SETTINGS),
   );
   assert.notEqual(
     base,
-    await readReuseFingerprint(hashSvc(), "t1", params({ targetStandards: ["7.RP.1"] })),
+    await readReuseFingerprint(hashSvc(), "t1", params({ targetStandards: ["7.RP.1"] }), SETTINGS),
   );
 });
 
 test("no fingerprint for a non-read mode, no uploads, or an unresolved page", async () => {
-  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ mode: "responses" })), null);
-  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ uploadIds: [] })), null);
+  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ mode: "responses" }), SETTINGS), null);
+  assert.equal(await readReuseFingerprint(hashSvc(), "t1", params({ uploadIds: [] }), SETTINGS), null);
   // Only one of two uploads resolves to a hash -> cannot prove identical pages.
   const short = fakeSvc({
     teacher_uploads: { data: [{ id: "u1", content_sha256: "hashA" }], error: null },
   });
-  assert.equal(await readReuseFingerprint(short, "t1", params()), null);
+  assert.equal(await readReuseFingerprint(short, "t1", params(), SETTINGS), null);
 });
 
 // ---------------------------------------------------------------
@@ -313,4 +316,50 @@ test("the scan component shows reading progress", () => {
   const scan = readFileSync("components/teacher-scan.tsx", "utf8");
   assert.match(scan, /aria-live="polite"/);
   assert.match(scan, /longer tests take a little longer/);
+});
+
+// ---------------------------------------------------------------
+// Item C (12 Oct): the model settings are part of the fingerprint
+// ---------------------------------------------------------------
+// pipeline_config was raised on the morning of 12 Oct. Before this, an
+// identical re-upload within 48h was handed the read the OLD settings made.
+
+test("changing the model, the effort, or the output ceiling alone forces a fresh read", async () => {
+  const base = await readReuseFingerprint(hashSvc(), "t1", params(), SETTINGS);
+  for (const changed of [
+    { ...SETTINGS, model: "gpt-5.6-sol" },
+    { ...SETTINGS, effort: "high" },
+    { ...SETTINGS, maxOutput: 24000 },
+  ]) {
+    const fp = await readReuseFingerprint(hashSvc(), "t1", params(), changed);
+    assert.notEqual(fp, base, JSON.stringify(changed) + " must not reuse a read made under " + JSON.stringify(SETTINGS));
+    // And the reuse lookup is keyed on exactly that fingerprint, so a stored
+    // read under the old settings cannot match it.
+    const svc = fakeSvc({ scans: { data: [], error: null } });
+    await reusablePriorResult(svc, "t1", params(), fp);
+    assert.equal(svc.calls.find((c) => c.table === "scans").filters.reuse_fingerprint, fp);
+  }
+});
+
+test("a prompt version change alone forces a fresh read", () => {
+  const p = { mode: "assignment", subject: "Math", grade: 7, framework: "California", targetStandards: ["7.RP.3"], passage: "" };
+  const now = reuseFingerprintKey(p, ["hashA"], SETTINGS);
+  assert.ok(now.startsWith("v" + READ_PROMPT_VERSION + "|"), "the prompt version leads the key");
+  assert.notEqual(now.replace(/^v\d+/, "v" + (READ_PROMPT_VERSION + 1)), now);
+});
+
+test("identical settings still reuse for teachers", async () => {
+  const a = await readReuseFingerprint(hashSvc(), "t1", params(), { ...SETTINGS });
+  const b = await readReuseFingerprint(hashSvc(), "t1", params(), { ...SETTINGS });
+  assert.equal(a, b);
+  const stored = { questions: [{ id: "q1", standard: "7.RP.3" }] };
+  const svc = fakeSvc({ scans: { data: [{ result: stored }], error: null } });
+  assert.deepEqual(await reusablePriorResult(svc, "t1", params(), a), stored);
+});
+
+test("every mode that reuses gets the settings in its fingerprint", async () => {
+  for (const mode of ["assignment", "passage", "roster", "answer_key"]) {
+    const fp = await readReuseFingerprint(hashSvc(), "t1", params({ mode }), SETTINGS);
+    assert.match(fp, /\|m:gpt-5\.6-luna\|e:medium\|o:12000\|/, mode);
+  }
 });

@@ -30,6 +30,55 @@ export type PageName = {
   box?: NameBox | null;
 };
 
+/** Name areas per name-reading request. The name pass returns a few tokens per
+ * page, but it still has a ceiling, and it had the same shape of bug the
+ * grading pass just had: every page in one request, however many there were.
+ * Twelve since each answer also carries where the name sits on the page, which
+ * roughly doubles what one page asks the model to write. Shared by the class
+ * scan panel and the regression replay, so both batch the name pass the same. */
+export const NAME_BATCH = 12;
+
+/** One name-pass request: which pages its strips came from, in the order they
+ * were sent. `slice[i]` is the page the strip at request position i was cut
+ * from. */
+export type NameSlice = { id: string; page: number }[];
+
+/** Splits the pages that have a name strip into name-pass requests. */
+export function planNameBatches(stripIds: (string | null)[], size = NAME_BATCH): NameSlice[] {
+  const readable = stripIds
+    .map((id, page) => ({ id, page }))
+    .filter((s): s is { id: string; page: number } => !!s.id);
+  const out: NameSlice[] = [];
+  for (let i = 0; i < readable.length; i += size) out.push(readable.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Puts the name-pass answers back on the pages they were read from.
+ *
+ * Each request numbers its answers within the strips it was shown; the model's
+ * `page` is a position in that request, mapped back through the slice to the
+ * page the strip was cut from. A page with no answer reads as no name.
+ */
+export function mergeNameReads(
+  pageCount: number,
+  slices: NameSlice[],
+  results: { pages?: PageName[] }[],
+): PageName[] {
+  const found = new Map<number, Omit<PageName, "page">>();
+  slices.forEach((slice, i) => {
+    for (const r of results[i]?.pages ?? []) {
+      const source = slice[r.page];
+      if (source)
+        found.set(source.page, { name: r.name, confidence: r.confidence, box: r.box ?? null });
+    }
+  });
+  return Array.from({ length: pageCount }, (_, page) => {
+    const hit = found.get(page);
+    return hit ? { page, ...hit } : { page, name: "", confidence: 0 };
+  });
+}
+
 /** Grading for one group, keyed by the group number the app supplied. */
 export type GradedGroup = { group: number; responses: ScannedResponse[] };
 
@@ -943,6 +992,42 @@ function subBatch(batch: ScanBatch, wantWhole: number[]): ScanBatch {
   return sub;
 }
 
+/**
+ * Folds one grading answer into the best answer seen so far for each of the
+ * batch's groups, in whole-scan numbering. A group number the request was
+ * never told about is dropped rather than guessed at; a retry that comes back
+ * shorter never replaces a fuller earlier answer.
+ */
+export function absorbGraded(
+  best: Map<number, GradedGroup>,
+  attemptBatch: ScanBatch,
+  groups: GradedGroup[] | undefined,
+) {
+  for (const g of groups ?? []) {
+    const at = attemptBatch.groupIndexes[g.group];
+    if (at === undefined) continue;
+    const prev = best.get(at);
+    if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0))
+      best.set(at, { ...g, group: at });
+  }
+}
+
+/** The batch's groups still missing, or short of a full set of answers. Empty
+ * when no question count is given (older callers: nothing to judge against). */
+export function shortGroups(
+  batch: ScanBatch,
+  best: Map<number, GradedGroup>,
+  questionCount: number,
+): number[] {
+  if (questionCount <= 0) return [];
+  return batch.groupIndexes.filter((at) => (best.get(at)?.responses?.length ?? 0) < questionCount);
+}
+
+/** The request that re-asks a batch for just the groups it left short. */
+export function retryBatch(batch: ScanBatch, missing: number[]): ScanBatch {
+  return subBatch(batch, missing);
+}
+
 export async function gradeInBatches(
   batches: ScanBatch[],
   grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,
@@ -959,9 +1044,6 @@ export async function gradeInBatches(
 ): Promise<GradedGroup[]> {
   const graded: GradedGroup[] = [...already];
 
-  const enough = (g: GradedGroup | undefined) =>
-    !!g && (g.responses?.length ?? 0) >= questionCount;
-
   for (const [index, batch] of batches.entries()) {
     if (index < startAt) continue;
 
@@ -972,22 +1054,13 @@ export async function gradeInBatches(
     let attempt = 0;
     while (true) {
       const result = await grade(attemptBatch, index);
-      for (const g of result.groups ?? []) {
-        const at = attemptBatch.groupIndexes[g.group];
-        // A group number the batch was never told about is dropped rather than
-        // guessed at: attaching it to the wrong student is worse than losing it.
-        if (at === undefined) continue;
-        const prev = best.get(at);
-        if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0))
-          best.set(at, { ...g, group: at });
-      }
+      // A group number the batch was never told about is dropped rather than
+      // guessed at: attaching it to the wrong student is worse than losing it.
+      absorbGraded(best, attemptBatch, result.groups);
       // Which of THIS batch's groups are still missing or short of a full set.
       // Only judged when a question count was given; without one (older callers)
       // there is nothing to retry against, so the old no-retry behavior stands.
-      const missing =
-        questionCount > 0
-          ? batch.groupIndexes.filter((at) => !enough(best.get(at)))
-          : [];
+      const missing = shortGroups(batch, best, questionCount);
       if (!missing.length || attempt >= maxRetries) {
         if (missing.length) onShortBatch?.({ batch: index, missing, attempt, retried: false });
         break;
