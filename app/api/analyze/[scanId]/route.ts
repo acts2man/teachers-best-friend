@@ -107,7 +107,18 @@ export async function GET(
     try {
       remote = await getBackgroundResponse(providerId, config.key);
     } catch (e) {
-      throw aiHttpError(e);
+      const failure = aiHttpError(e);
+      await logAiFailure({
+        teacherId: user,
+        mode: p.mode,
+        kind: failure.status === 504 ? "timeout" : "error",
+        model,
+        assessmentId: p.assessmentId,
+        scanId,
+        message: "poll failed: " + failure.message,
+        status: failure.status,
+      });
+      throw failure;
     }
     const status = remote.status ?? "in_progress";
 

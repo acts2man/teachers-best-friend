@@ -43,6 +43,7 @@ import {
   documentContent,
 } from "@/lib/analyze-server";
 import { failureKind, logAiFailure } from "@/lib/app-events-server";
+import { AiCallError } from "@/lib/ai-retry";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
 // invocation. Without this the platform kills a slow analysis mid-flight and
@@ -256,7 +257,9 @@ export async function POST(request: Request) {
           throw new HttpError(500, "Couldn't start the analysis. Please try again.");
         }
       } catch (e) {
-        await logAiFailure({
+        // Only the provider refusing or failing the start is an AI failure; a
+        // scans-table write failing here is ours and is logged by the route.
+        if (e instanceof AiCallError) await logAiFailure({
           teacherId: user,
           mode: p.mode,
           kind: failureKind(e),
@@ -335,7 +338,15 @@ export async function POST(request: Request) {
       if (typeof (e as { attempts?: number }).attempts === "number")
         attempts = (e as { attempts: number }).attempts;
       errorMessage = failure.detail || failure.message;
-      await logAiFailure({
+      // An AI failure is the provider failing, or its output being unusable
+      // (unparseable, empty, cut short, or failing validation -- a 422). A 4xx
+      // about the request itself is not the model's doing and is not logged.
+      const aiCaused =
+        e instanceof AiCallError ||
+        e instanceof SyntaxError ||
+        (e instanceof HttpError && e.status === 422) ||
+        !(e instanceof HttpError);
+      if (aiCaused) await logAiFailure({
         teacherId: user,
         mode: p.mode,
         kind:

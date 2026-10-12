@@ -52,7 +52,10 @@ function flush() {
   if (!queue.length || !rawFetch) return;
   const batch = queue.slice(0, EVENTS_PER_POST);
   queue = queue.slice(EVENTS_PER_POST);
-  const body = JSON.stringify({ sessionId, userAgent: navigator.userAgent, events: batch });
+  let body = JSON.stringify({ sessionId, userAgent: navigator.userAgent, events: batch });
+  // keepalive requests share a 64 KB budget; drop stacks rather than the batch.
+  if (body.length > 24000)
+    body = JSON.stringify({ sessionId, userAgent: navigator.userAgent, events: batch.map((e) => ({ ...e, stack: undefined })) });
   rawFetch(ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -149,7 +152,10 @@ export function installAppEventLogging() {
     const watched = path.startsWith("/api/") && path !== ENDPOINT;
     try {
       const response = await original(input, init);
-      if (watched && (response.status >= 500 || (response.status === 409 && method !== "GET")))
+      // 409 from /api/scans/session is how two devices merge a scan in
+      // progress -- normal, not a failure.
+      const conflict = response.status === 409 && method !== "GET" && !path.startsWith("/api/scans/session");
+      if (watched && (response.status >= 500 || conflict))
         logAppEvent(apiEventType(path, method), {
           message: `${method} ${routeTemplate(path)} answered ${response.status}`,
           detail: { status: response.status, method, endpoint: routeTemplate(path) },

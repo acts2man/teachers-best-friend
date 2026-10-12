@@ -10,11 +10,12 @@
  * and the scan order. An assessment that throws anywhere in that is one a
  * teacher would see as a blank or crashed screen.
  *
- * "Lost pages" are upload ids the stored assessment refers to that are no
- * longer reachable after loading -- the #110 failure, where older assessments
- * opened with pages missing. Pages whose files were removed by the 30-day
- * retention purge are counted separately: that is the published policy, not a
- * bug.
+ * "Lost pages" are upload ids that get_workspace_json returned but that are no
+ * longer reachable after the app's own load step -- the #110 failure, where
+ * older assessments opened with pages missing. It does NOT see a field that
+ * sync_workspace/get_workspace_json themselves drop (it starts from their
+ * output); that path is checked against the relational columns in SQL, see the
+ * PR. Pages purged by the 30-day retention window are not counted here.
  *
  * Read-only, and reports counts and anonymised ids only.
  */
@@ -70,7 +71,8 @@ export function checkWorkspace(
   try {
     w = withWorkspaceDefaults(normalize(raw as Workspace));
   } catch (e) {
-    return { loadError: e instanceof Error ? e.name + ": " + e.message.slice(0, 120) : "load failed", assessments: [] };
+    // The error's kind only: a message can quote the data that broke it.
+    return { loadError: e instanceof Error ? e.name : "load failed", assessments: [] };
   }
   return {
     loadError: null,

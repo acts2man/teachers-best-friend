@@ -156,6 +156,11 @@ create table if not exists public.regression_fixtures (
   -- pass reads; 'worksheet' / 'answer_key' = the blank test or key pages.
   role text not null check (role in ('page', 'name_strip', 'worksheet', 'answer_key')),
   position integer not null check (position >= 0),
+  -- The student this page was saved to when it was copied. Recorded here
+  -- because confirming a student's grading can delete their photos and unlink
+  -- them from the assessment: copy right after the scan is saved, and the case
+  -- still knows whose pages these are after the teacher has confirmed them.
+  student_legacy_id text check (char_length(student_legacy_id) <= 80),
   object_path text not null unique,
   content_sha256 text,
   mime text not null,

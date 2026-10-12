@@ -148,15 +148,17 @@ async function fixtureContent(svc: Svc, c: RegressionCase, sourceIds: string[]) 
     .in("source_upload_id", sourceIds);
   if (error) throw new Error("Reading fixtures failed: " + error.message);
   const byId = new Map((rows ?? []).map((r) => [r.source_upload_id as string, r]));
-  const content: Record<string, unknown>[] = [];
-  for (const id of sourceIds) {
-    const row = byId.get(id);
-    if (!row) throw new Error("A page of this case was never copied into the fixtures. Copy the photos again.");
-    const { data: blob, error: dl } = await svc.storage.from(FIXTURE_BUCKET).download(row.object_path as string);
-    if (dl || !blob) throw new Error("A fixture photo could not be read back.");
-    content.push(documentContent({ bytes: await blob.arrayBuffer(), mime: row.mime as string, name: "page" }));
-  }
-  return content;
+  // In parallel: a start step has the same 26s as a teacher's request, and
+  // twelve photos read one after another were most of it.
+  return Promise.all(
+    sourceIds.map(async (id) => {
+      const row = byId.get(id);
+      if (!row) throw new Error("A page of this case was never copied into the fixtures. Copy the photos again.");
+      const { data: blob, error: dl } = await svc.storage.from(FIXTURE_BUCKET).download(row.object_path as string);
+      if (dl || !blob) throw new Error("A fixture photo could not be read back.");
+      return documentContent({ bytes: await blob.arrayBuffer(), mime: row.mime as string, name: "page" }) as Record<string, unknown>;
+    }),
+  );
 }
 
 async function pricing(svc: Svc) {
@@ -192,9 +194,12 @@ async function advanceJob(
   usage: Usage,
   setJob: (j: Job | null) => void,
 ): Promise<Record<string, unknown> | null> {
-  const w = await promptWorkspace(svc, c);
-  const catalog = catalogFor(w, p.grade, p.framework, p.subject);
+  const prompt = async () => {
+    const w = await promptWorkspace(svc, c);
+    return { w, catalog: catalogFor(w, p.grade, p.framework, p.subject) };
+  };
   if (!job) {
+    const { w, catalog } = await prompt();
     const settings: ModelSettings = await modelSettingsFor(p.mode);
     const content = await fixtureContent(svc, c, sourceIds);
     const { task, schema } = buildPrompt(p, w, catalog, content.length > 0);
@@ -205,7 +210,15 @@ async function advanceJob(
     usage.effort = settings.effort;
     return null;
   }
-  const remote = await getBackgroundResponse(job.providerId, key);
+  let remote: ResponsesResult;
+  try {
+    remote = await getBackgroundResponse(job.providerId, key);
+  } catch {
+    // A failed poll is not a failed job: the job is still running (and costing)
+    // at the provider. Say "still working" and poll again next step, as the
+    // teacher's client does, rather than abandoning a paid job.
+    return null;
+  }
   const status = remote.status ?? "in_progress";
   if (status !== "completed" && !TERMINAL_FAILURES.has(status)) return null;
   const price = (await pricing(svc)).get(job.model);
@@ -217,7 +230,15 @@ async function advanceJob(
   if (status !== "completed") throw new Error(`The model stopped (${status}${remote.incomplete_details?.reason ? ": " + remote.incomplete_details.reason : ""}).`);
   const text = responseText(remote);
   if (!text) throw new Error("The model returned no output.");
-  return finalizeAnalysis(p, JSON.parse(text), w, catalog);
+  const { w, catalog } = await prompt();
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // Never pass the parser's message on: it quotes the model's output.
+    throw new Error("The model's output was not valid JSON.");
+  }
+  return finalizeAnalysis(p, parsed, w, catalog);
 }
 
 function stageFor(e: Expected): RunState["stage"] {

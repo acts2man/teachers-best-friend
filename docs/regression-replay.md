@@ -24,6 +24,16 @@ A case snapshots everything its prompt needs (questions, key, roster names) when
 made, so it keeps meaning the same thing if the teacher later edits or deletes the
 assessment.
 
+**What "answer reading" can and cannot tell you.** The app keeps no field for "the
+student actually wrote X" when a read is wrong, so the confirmed final answer is the
+earlier read wherever the teacher did not change it. Answer reading therefore measures
+agreement with the read the teacher accepted. The **credit** the teacher gave is the
+independent ground truth: wrongly-correct, wrongly-blank and "full credit not
+pre-marked" are judged against it, and grouping is judged against the teacher's actual
+groups (same answer *and* same credit), so a group the teacher had to split counts as
+a miss. `answer_reading` and `grouping` on the same assessment share one grading pass
+in a run.
+
 Pass marks (`lib/regression/score.ts`): names 92% (24 of 26) with **zero** pre-filled
 wrongly; answers 95% with **zero** wrongly-correct and **zero** wrongly-blank.
 
@@ -89,13 +99,19 @@ All SQL runs in the Supabase SQL editor (project `mmzbgmquhfdfqaootrvh`).
    from public.assessments a where a.legacy_id = '<assessment id>';
    ```
 4. **Open `/regression`** in the app. Anyone not on the list sees a 404.
-5. Paste the assessment id, press **Copy photos** (it copies a few per request until
+5. **Copy the photos as soon as the scan is saved, before the teacher confirms.**
+   Confirming a student's grading can delete that student's photos (the published
+   "deleted once you confirm" rule), so a set copied afterwards may be missing exactly
+   the students the teacher finished. Each copied page records which student it was
+   saved to, so the case keeps them after their pages are unlinked.
+   Paste the assessment id, press **Copy photos** (it copies a few per request until
    none are left; photos already removed by the 30-day purge are reported, not copied),
-   then **Make cases**. A kind the teacher has not confirmed is skipped with the reason.
+   then, once the teacher has confirmed the grading, **Make cases**. A kind the teacher
+   has not confirmed is skipped with the reason.
 6. Press **Run test cases**. Each case shows its numbers as it finishes; the run is saved
    in `regression_runs` with the build, the `pipeline_config` snapshot, and per case:
    pass/fail, accuracy by stage, multi-part parts read vs expected, cost, model and effort.
-7. To withdraw a set, run the revoke action (it deletes the copied files, then the
+7. To withdraw a set, press **Revoke set** (it deletes the copied files, then the
    allow-list row, which removes its fixtures and cases).
 
 ## What a run costs

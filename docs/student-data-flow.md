@@ -411,6 +411,7 @@ agreement for that assessment.
 | Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases) or the teacher's account is deleted (`purgeTeacherDocuments` removes the files) |
 | Purge | Not touched by `purge-expired-uploads`: the copies are not `teacher_uploads` rows, and the function skips the bucket by name |
 | Sent to OpenAI | The same pages and prompts a teacher's scan sends, when an admin runs the replay |
+| Also held | `regression_cases.expected` (roster names for matching, the confirmed answers and credits, the questions and key) and `regression_run_cases.state` (what each replay read: names and answers). Same lifetime as the copies; readable by the service role and, for run results, by `regression_admins`. |
 
 Before the first assessment is allow-listed, one of these has to be true:
 1. the four published pages (Privacy Policy, Student Data Privacy Commitments, How We Use

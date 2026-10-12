@@ -42,7 +42,7 @@ export const EVENTS_PER_POST = 10;
 export function scrubEventText(text: unknown, max = 500): string {
   if (typeof text !== "string") return "";
   return text
-    .replace(/"[^"\n]{0,400}"|'[^'\n]{0,400}'|`[^`\n]{0,400}`|“[^”\n]{0,400}”|‘[^’\n]{0,400}’/g, "\"…\"")
+    .replace(/"[^"]{0,400}"|'[^']{0,400}'|`[^`]{0,400}`|“[^”]{0,400}”|‘[^’]{0,400}’/g, "\"…\"")
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "<email>")
     .replace(/\d{6,}/g, "<n>")
     .replace(/\s+/g, " ")

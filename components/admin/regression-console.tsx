@@ -20,6 +20,20 @@ type RunSummary = {
   perCase: { code: string; kind: string; status: string; metrics: Record<string, Record<string, unknown>> | null; costUsd: number }[];
 };
 
+/** One retry-on-hiccup wrapper for the step loop: a 502 from the platform or a
+ * dropped connection mid-run is retried a few times instead of stopping a run
+ * whose AI jobs are still going. A refusal (4xx) is not retried. */
+async function callWithRetry(payload: Record<string, unknown>, tries = 4) {
+  for (let i = 1; ; i++) {
+    try {
+      return await call(payload);
+    } catch (e) {
+      if (i >= tries || /\(4\d\d\)|refused|not found/i.test((e as Error).message)) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * i));
+    }
+  }
+}
+
 async function call(payload: Record<string, unknown>) {
   const r = await fetch("/api/admin/regression", {
     method: "POST",
@@ -36,11 +50,11 @@ const pct = (v: unknown) => (typeof v === "number" ? Math.round(v * 100) + "%" :
 /** The few numbers that matter for a case, in plain words. */
 function headline(m: Record<string, Record<string, unknown>> | null): string {
   if (!m) return "";
-  if (m.names) return `${m.names.correct}/${m.names.piles} names right, ${m.names.wrongConfident} filled in wrongly, ${m.names.unassigned} left to choose`;
+  if (m.names) return `${m.names.correct}/${Number(m.names.piles) - Number(m.names.noStrip ?? 0)} names right, ${m.names.wrongConfident} filled in wrongly, ${m.names.unassigned} left to choose` + (Number(m.names.noStrip) ? `, ${m.names.noStrip} with no name photo` : "");
   if (m.answers) {
     const a = m.answers;
-    return `read ${pct(a.readAccuracy)}, grouped ${pct(a.groupAccuracy)}, wrongly correct ${a.wronglyCorrect}, wrongly blank ${a.wronglyBlank}, unsure ${a.unsure}` +
-      (Number(a.partsExpected) ? `, multi-part ${a.partsRead}/${a.partsExpected} parts` : "");
+    return `grouped ${pct(a.groupAccuracy)}, same read as accepted ${pct(a.readAccuracy)}, wrongly correct ${a.wronglyCorrect}, wrongly blank ${a.wronglyBlank}, full credit not pre-marked ${a.missedCorrect}, unsure ${a.unsure}` +
+      (Number(a.partsExpected) ? `, multi-part ${a.partsReturned}/${a.partsExpected} parts returned` : "");
   }
   const k = m.answer_key ?? m.standards;
   return k ? `${k.right}/${k.items} right (${pct(k.accuracy)})` : "";
@@ -64,14 +78,17 @@ export function RegressionConsole() {
   async function runAll() {
     setBusy(true);
     setLast(null);
+    let runId = "";
     try {
-      const { runId, cases } = await call({ action: "start-run" });
+      const started = await call({ action: "start-run" });
+      runId = started.runId;
+      const cases = started.cases;
       say(`Run started with ${cases.length} case(s).`);
       for (const code of cases as string[]) {
         let status = "running";
         let guard = 0;
         while (status === "running" && guard++ < 400) {
-          const d = await call({ action: "step", runId, caseCode: code });
+          const d = await callWithRetry({ action: "step", runId, caseCode: code });
           status = d.status;
           if (status === "running") {
             say(`${code}: ${d.progress}`);
@@ -85,6 +102,21 @@ export function RegressionConsole() {
       await refresh();
     } catch (e) {
       say("Stopped: " + (e as Error).message);
+      if (runId) await call({ action: "abandon-run", runId }).catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    if (!window.confirm("Delete this set's copied photos and its test cases? This cannot be undone.")) return;
+    setBusy(true);
+    try {
+      const d = await call({ action: "revoke", assessmentId: assessmentId.trim() });
+      say(`Revoked: ${d.removed} copied photo(s) deleted, cases removed.`);
+      await refresh();
+    } catch (e) {
+      say("Revoke refused: " + (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -209,6 +241,9 @@ export function RegressionConsole() {
           </button>
           <button onClick={makeCases} disabled={busy || !assessmentId.trim()} style={btn(false)}>
             Make cases
+          </button>
+          <button onClick={revoke} disabled={busy || !assessmentId.trim()} style={btn(false)}>
+            Revoke set
           </button>
         </div>
       </section>

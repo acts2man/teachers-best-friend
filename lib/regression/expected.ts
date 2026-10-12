@@ -92,8 +92,9 @@ export function confirmedPiles(
   a: Assessment,
   uploads: UploadMeta[],
   strips: Map<string, string>,
+  pagesByStudent: Record<string, string[]> = a.studentUploadIds ?? {},
 ): ExpectedPile[] {
-  const byStudent = a.studentUploadIds ?? {};
+  const byStudent = pagesByStudent;
   const created = new Map(uploads.map((u) => [u.id, Date.parse(u.createdAt)]));
   const order = [
     ...(a.studentOrder ?? []).filter((id) => byStudent[id]),
@@ -119,6 +120,11 @@ export function buildExpected(
   w: Workspace,
   assessmentId: string,
   uploads: UploadMeta[],
+  /** Which pages are whose, as recorded when the photos were copied. Preferred
+   * over the live studentUploadIds: confirming a student can unlink (and
+   * delete) their pages, which would drop exactly the students the teacher
+   * finished checking. */
+  copiedPagesByStudent: Record<string, string[]> | null = null,
 ): Expected {
   const a = w.assessments.find((x) => x.id === assessmentId);
   if (!a) throw new CaseRefused("That assessment is not in the teacher's workspace.");
@@ -149,7 +155,8 @@ export function buildExpected(
     };
   }
 
-  const piles = confirmedPiles(a, uploads, pairStrips(uploads));
+  const pagesByStudent = { ...(a.studentUploadIds ?? {}), ...(copiedPagesByStudent ?? {}) };
+  const piles = confirmedPiles(a, uploads, pairStrips(uploads), pagesByStudent);
   if (!piles.length) throw new CaseRefused("No scanned pages are linked to students on this assessment.");
   const onRoster = new Set(w.students.map((s) => s.id));
   const missing = piles.filter((p) => !onRoster.has(p.studentId)).length;

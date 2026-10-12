@@ -87,11 +87,17 @@ async function sourceUploads(svc: Svc, teacherId: string, w: Workspace, assessme
   const meta: UploadMeta[] = [...found, ...strips].map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }));
   const pairs = pairStrips(meta);
   const role = (id: string) => (pages.includes(id) ? "page" : key.includes(id) ? "answer_key" : "worksheet");
+  const ownerOf = new Map<string, string>();
+  for (const [studentId, ids] of Object.entries(a.studentUploadIds ?? {})) for (const id of ids) ownerOf.set(id, studentId);
+  const pageOfStrip = new Map([...pairs].map(([page, strip]) => [strip, page]));
   const wanted = [
-    ...found.map((r) => ({ row: r, role: role(r.id), position: ids.indexOf(r.id) })),
+    ...found.map((r) => ({ row: r, role: role(r.id), position: ids.indexOf(r.id), student: ownerOf.get(r.id) ?? null })),
     ...strips
-      .filter((s) => [...pairs.values()].includes(s.id))
-      .map((s) => ({ row: s, role: "name_strip", position: pages.indexOf([...pairs].find(([, v]) => v === s.id)![0]) })),
+      .filter((s) => pageOfStrip.has(s.id))
+      .map((s) => {
+        const page = pageOfStrip.get(s.id)!;
+        return { row: s, role: "name_strip", position: pages.indexOf(page), student: ownerOf.get(page) ?? null };
+      }),
   ];
   return { a, wanted, meta, missing: ids.filter((id) => !found.some((r) => r.id === id)) };
 }
@@ -132,6 +138,7 @@ export async function copyFixtures(svc: Svc, assessmentLegacyId: string) {
         content_sha256: x.row.content_sha256,
         mime: x.row.mime,
         size_bytes: x.row.size,
+        student_legacy_id: x.student,
       },
       { onConflict: "teacher_id,assessment_legacy_id,source_upload_id" },
     );
@@ -148,11 +155,34 @@ export async function createCases(svc: Svc, assessmentLegacyId: string, kinds: C
   const teacherId = await allowListEntry(svc, assessmentLegacyId);
   const w = await loadWorkspace(svc, teacherId);
   const { meta } = await sourceUploads(svc, teacherId, w, assessmentLegacyId);
+  // Whose pages were copied: the record that survives the teacher confirming
+  // (and so unlinking) a student's pages. Upload metadata for those pages is
+  // added too, since unlinked pages are no longer found from the workspace.
+  const { data: copied, error: copiedError } = await svc
+    .from("regression_fixtures")
+    .select("source_upload_id, student_legacy_id, role")
+    .eq("teacher_id", teacherId)
+    .eq("assessment_legacy_id", assessmentLegacyId);
+  if (copiedError) throw copiedError;
+  const copiedPages: Record<string, string[]> = {};
+  for (const r of copied ?? [])
+    if (r.role === "page" && r.student_legacy_id)
+      (copiedPages[r.student_legacy_id] ??= []).push(r.source_upload_id);
+  const known = new Set(meta.map((m) => m.id));
+  const extra = (copied ?? []).map((r) => r.source_upload_id as string).filter((id) => !known.has(id));
+  if (extra.length) {
+    const { data: rows } = await svc
+      .from("teacher_uploads")
+      .select("id, name, created_at")
+      .eq("owner_id", teacherId)
+      .in("id", extra);
+    for (const r of rows ?? []) meta.push({ id: r.id, name: r.name, createdAt: r.created_at });
+  }
   const made: string[] = [];
   const skipped: { kind: CaseKind; reason: string }[] = [];
   for (const kind of kinds) {
     try {
-      const expected = buildExpected(kind, w, assessmentLegacyId, meta);
+      const expected = buildExpected(kind, w, assessmentLegacyId, meta, Object.keys(copiedPages).length ? copiedPages : null);
       const code = caseCode();
       const { error } = await svc.from("regression_cases").insert({
         code,

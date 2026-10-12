@@ -80,7 +80,7 @@ test("the analyze routes log every AI failure path", () => {
   const route = readFileSync("app/api/analyze/route.ts", "utf8");
   assert.equal((route.match(/logAiFailure\(/g) || []).length, 2, "background start + synchronous call");
   const poll = readFileSync("app/api/analyze/[scanId]/route.ts", "utf8");
-  assert.equal((poll.match(/logAiFailure\(/g) || []).length, 3, "stopped, empty, unparseable");
+  assert.equal((poll.match(/logAiFailure\(/g) || []).length, 4, "poll failed, stopped, empty, unparseable");
 });
 
 test("the migration lets a teacher insert their own events and read none", () => {

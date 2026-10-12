@@ -33,6 +33,8 @@ export type NamesScore = {
   unassigned: number;
   /** Of those left open, how many had the right student as the suggestion. */
   rightSuggestion: number;
+  /** Piles with no name-area copy to read (not counted in the accuracy). */
+  noStrip: number;
   accuracy: number;
   passed: boolean;
 };
@@ -45,21 +47,30 @@ export function scoreNames(
   let wrongConfident = 0;
   let unassigned = 0;
   let rightSuggestion = 0;
+  let noStrip = 0;
   piles.forEach((pile, i) => {
     const r = resolved[i];
+    // No name-area copy was kept for this pile, so nothing was asked of the
+    // model: counted apart, not blamed on the read.
+    if (pile.strips && !pile.strips.some(Boolean)) {
+      noStrip++;
+      if (r?.studentId && r.studentId !== pile.studentId) wrongConfident++;
+      return;
+    }
     if (!r || !r.studentId) {
       unassigned++;
       if (r?.suggestedId === pile.studentId) rightSuggestion++;
     } else if (r.studentId === pile.studentId) correct++;
     else wrongConfident++;
   });
-  const accuracy = ratio(correct, piles.length);
+  const accuracy = ratio(correct, piles.length - noStrip);
   return {
     piles: piles.length,
     correct,
     wrongConfident,
     unassigned,
     rightSuggestion,
+    noStrip,
     accuracy,
     passed: wrongConfident === 0 && accuracy >= PASS.names,
   };
@@ -75,24 +86,34 @@ export type AnswerMiss =
   | "unsure"
   | "wrong_final"
   | "equivalent_not_grouped"
-  | "wrongly_correct"
+  | "teacher_split_same_answer"
   | "wrongly_blank"
   | "not_returned";
 
 export type AnswersScore = {
   answers: number;
-  /** Final answer read the same as the teacher confirmed. */
+  /** Final answer read the same as the read the teacher accepted. NOT proof
+   * the read was right: the app keeps no field for "the student actually
+   * wrote X", so the accepted read is the earlier model's text wherever the
+   * teacher did not change it. The credit is the independent ground truth. */
   readRight: number;
   readAccuracy: number;
-  /** In the teacher-confirmed group (same final answer, not Unsure). */
+  /** In exactly the group the teacher ended up with: the same students share
+   * this answer's group in the replay as shared the teacher's (final answer,
+   * credit) group. A group the teacher had to split, or merge, is a miss. */
   inGroup: number;
   groupAccuracy: number;
+  /** Marked correct where the teacher gave less than full credit. */
   wronglyCorrect: number;
+  /** Marked blank where the teacher saw an answer. */
   wronglyBlank: number;
+  /** Teacher gave full credit, the replay did not pre-mark it correct. */
+  missedCorrect: number;
   unsure: number;
   misses: Record<AnswerMiss, number>;
-  /** Multi-part questions: parts read vs parts confirmed, summed. */
-  partsRead: number;
+  /** Multi-part questions: parts the read RETURNED (not parts read right),
+   * against parts in the confirmed answer, summed. */
+  partsReturned: number;
   partsExpected: number;
   passed: boolean;
 };
@@ -112,40 +133,65 @@ export function scoreAnswers(
     unsure: 0,
     wrong_final: 0,
     equivalent_not_grouped: 0,
-    wrongly_correct: 0,
+    teacher_split_same_answer: 0,
     wrongly_blank: 0,
     not_returned: 0,
   };
   let readRight = 0;
   let inGroup = 0;
   let unsure = 0;
-  let partsRead = 0;
+  let wronglyCorrect = 0;
+  let missedCorrect = 0;
+  let partsReturned = 0;
   let partsExpected = 0;
+
+  const want = (e: ExpectedAnswer) => e.finalAnswer || e.answer;
+  const find = (e: ExpectedAnswer) => replayed.find((x) => x.studentId === e.studentId && x.questionId === e.questionId);
+  const isUnsure = (r: StudentResponse) => !r.verified && r.confidence < 50;
+  const got = (r: StudentResponse) => r.finalAnswer?.trim() || r.answer;
+  // The teacher's groups: same final answer AND same credit, per question.
+  const teacherKey = (e: ExpectedAnswer) => answerKey(want(e)) + "|" + (e.match ?? "-");
+  // The replay's groups, as Grade by question would draw them before anyone decides.
+  const replayKey = (r: StudentResponse | undefined) => (!r ? "\u0000none" : isUnsure(r) ? "\u0000unsure" : answerKey(got(r)));
+  const members = (q: string, keyOf: (e: ExpectedAnswer) => string, key: string) =>
+    expected.filter((x) => x.questionId === q && keyOf(x) === key).map((x) => x.studentId).sort().join(",");
+
   for (const e of expected) {
-    const r = replayed.find((x) => x.studentId === e.studentId && x.questionId === e.questionId);
-    const want = e.finalAnswer || e.answer;
-    const wantedBlank = !want.trim();
-    const partsWanted = expectedParts[e.questionId] ?? answerParts(want);
+    const r = find(e);
+    const w = want(e);
+    const wantedBlank = !w.trim();
+    const partsWanted = expectedParts[e.questionId] ?? answerParts(w);
     if (partsWanted > 1) partsExpected += partsWanted;
     if (!r) {
       misses.not_returned++;
       continue;
     }
-    const isUnsure = !r.verified && r.confidence < 50;
-    const isBlank = !isUnsure && r.match === 0 && !r.answer.trim();
+    const unsureHere = isUnsure(r);
+    const isBlank = !unsureHere && r.match === 0 && !r.answer.trim();
     const isMatch = r.correct && (r.match ?? 0) >= 100;
-    const got = r.finalAnswer?.trim() || r.answer;
-    if (partsWanted > 1) partsRead += Math.min(answerParts(got), partsWanted);
-    const sameFinal = answerKey(got) === answerKey(want);
-    if (isMatch && (e.match ?? 0) < 100) misses.wrongly_correct++;
-    if (isBlank && !wantedBlank) misses.wrongly_blank++;
-    if (isUnsure) unsure++;
-    if (sameFinal && !isUnsure) readRight++;
-    else if (!isUnsure && !wantedBlank && compareAnswers(got, want) === "same" && got.trim()) readRight++;
-    if (!isUnsure && sameFinal) inGroup++;
-    else if (isUnsure) misses.unsure++;
-    else if (!isBlank && got.trim() && compareAnswers(got, want) === "same") misses.equivalent_not_grouped++;
-    else if (!(isBlank && !wantedBlank)) misses.wrong_final++;
+    const g = got(r);
+    if (partsWanted > 1) partsReturned += Math.min(answerParts(g), partsWanted);
+    if (isMatch && (e.match ?? 0) < 100) wronglyCorrect++;
+    if (!isMatch && (e.match ?? 0) >= 100) missedCorrect++;
+    if (unsureHere) unsure++;
+    const sameFinal = answerKey(g) === answerKey(w);
+    const equivalent = !sameFinal && !!g.trim() && !wantedBlank && compareAnswers(g, w) === "same";
+    if (!unsureHere && (sameFinal || equivalent)) readRight++;
+
+    const sameMembers =
+      members(e.questionId, teacherKey, teacherKey(e)) ===
+      members(e.questionId, (x) => replayKey(find(x)), replayKey(r));
+    // Same members AND the same (or an equivalent) answer: a student alone in
+    // a group otherwise "matches" the teacher's group of one whatever was read.
+    if (!unsureHere && sameMembers && (sameFinal || equivalent)) {
+      inGroup++;
+      continue;
+    }
+    if (unsureHere) misses.unsure++;
+    else if (isBlank && !wantedBlank) misses.wrongly_blank++;
+    else if (equivalent) misses.equivalent_not_grouped++;
+    else if (sameFinal) misses.teacher_split_same_answer++;
+    else misses.wrong_final++;
   }
   const n = expected.length;
   const readAccuracy = ratio(readRight, n);
@@ -157,13 +203,14 @@ export function scoreAnswers(
     readAccuracy,
     inGroup,
     groupAccuracy,
-    wronglyCorrect: misses.wrongly_correct,
+    wronglyCorrect,
     wronglyBlank: misses.wrongly_blank,
+    missedCorrect,
     unsure,
     misses,
-    partsRead,
+    partsReturned,
     partsExpected,
-    passed: decisive >= PASS.answers && misses.wrongly_correct === 0 && misses.wrongly_blank === 0,
+    passed: decisive >= PASS.answers && wronglyCorrect === 0 && misses.wrongly_blank === 0,
   };
 }
 

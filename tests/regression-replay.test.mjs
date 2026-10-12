@@ -166,7 +166,7 @@ test("the page lives outside /admin so a non-admin is not redirected (which woul
 const score = bundle("lib/regression/score.ts");
 
 test("names: right, wrongly pre-filled, and left open are counted apart", () => {
-  const piles = [{ studentId: "a" }, { studentId: "b" }, { studentId: "c" }, { studentId: "d" }];
+  const piles = ["a", "b", "c", "d"].map((studentId) => ({ studentId, strips: ["n"] }));
   const s = score.scoreNames(piles, [
     { studentId: "a", suggestedId: null },
     { studentId: "c", suggestedId: null }, // wrong student, pre-filled
@@ -181,7 +181,7 @@ test("names: right, wrongly pre-filled, and left open are counted apart", () => 
 });
 
 test("names: 24 of 26 right with none filled in wrongly passes; one wrong pre-fill fails", () => {
-  const piles = Array.from({ length: 26 }, (_, i) => ({ studentId: "s" + i }));
+  const piles = Array.from({ length: 26 }, (_, i) => ({ studentId: "s" + i, strips: ["n" + i] }));
   const resolved = piles.map((p, i) => ({ studentId: i < 24 ? p.studentId : null, suggestedId: null }));
   assert.equal(score.scoreNames(piles, resolved).passed, true);
   resolved[25] = { studentId: "s0", suggestedId: null };
@@ -195,7 +195,7 @@ const want = (studentId, questionId, finalAnswer, match) => ({ studentId, questi
 
 test("answers: each miss lands in its own category", () => {
   const expected = [
-    want("s1", "q1", "1/2", 100), // read as 0.5: equivalent, not grouped
+    want("s1", "q1", "1/2", 100), // read as 0.5: equivalent, still its own group
     want("s2", "q1", "2x/(x^2-4)", 0), // wrong, but marked correct
     want("s3", "q1", "7", 50), // work on the page, marked blank
     want("s4", "q1", "9", 0), // the model was unsure
@@ -211,14 +211,32 @@ test("answers: each miss lands in its own category", () => {
     resp("s6", "q1", { answer: "8", finalAnswer: "8" }),
   ];
   const s = score.scoreAnswers(expected, replayed, "grouping");
-  assert.equal(s.inGroup, 1);
-  assert.equal(s.misses.equivalent_not_grouped, 1);
+  assert.equal(s.inGroup, 2, "12, and 0.5 for 1/2");
   assert.equal(s.wronglyCorrect, 1);
   assert.equal(s.wronglyBlank, 1);
   assert.equal(s.misses.unsure, 1);
   assert.equal(s.misses.wrong_final, 2, "the sign flip and the 8");
-  assert.equal(s.readRight, 2, "12 exactly, and 0.5 for 1/2 by value");
+  assert.equal(s.missedCorrect, 1, "0.5 for 1/2 got full credit but was not pre-marked");
+  assert.equal(s.readRight, 2);
   assert.equal(s.passed, false);
+});
+
+test("grouping is judged against the teacher's groups: a same-answer group the teacher split by credit is a miss", () => {
+  // The 12 Oct "Percents" pattern: three students wrote 27, the teacher gave
+  // 25, 75, 75 -- the work differed, the final answer did not.
+  const expected = [want("a", "q6", "27", 25), want("b", "q6", "27", 75), want("c", "q6", "27", 75), want("d", "q6", "156.52", 25)];
+  const replayed = ["a", "b", "c"].map((id) => resp(id, "q6", { answer: "27", finalAnswer: "27" })).concat(resp("d", "q6", { answer: "156.52", finalAnswer: "156.52" }));
+  const s = score.scoreAnswers(expected, replayed, "grouping");
+  assert.equal(s.inGroup, 1, "only the 156.52 group matches the teacher's");
+  assert.equal(s.misses.teacher_split_same_answer, 3);
+  assert.equal(s.readRight, 4, "every read agrees -- grouping is what differs");
+});
+
+test("names: a pile with no name photo is counted apart, not blamed on the read", () => {
+  const piles = [{ studentId: "a", strips: ["n0"] }, { studentId: "b", strips: [null] }];
+  const s = score.scoreNames(piles, [{ studentId: "a", suggestedId: null }, { studentId: null, suggestedId: null }]);
+  assert.equal(s.noStrip, 1);
+  assert.equal(s.accuracy, 1);
 });
 
 test("answers: one wrongly-correct fails the case even at 100% grouping", () => {
@@ -234,7 +252,7 @@ test("answers: multi-part answers count parts read against parts confirmed", () 
   const replayed = [resp("s1", "q2", { answer: "x", finalAnswer: "y=4; (0,10/3)" })];
   const s = score.scoreAnswers(expected, replayed, "answer_reading");
   assert.equal(s.partsExpected, 6);
-  assert.equal(s.partsRead, 2);
+  assert.equal(s.partsReturned, 2);
 });
 
 test("answer key and standards compare by value and by tag", () => {
@@ -285,6 +303,15 @@ test("only answers the teacher confirmed become expected values", () => {
   const e = ex.buildExpected("grouping", workspaceFor(), "a1", uploads);
   assert.deepEqual(e.answers.map((a) => a.studentId + a.questionId), ["st1q1"], "the unconfirmed answer is left out");
   assert.deepEqual(e.piles.map((p) => [p.studentId, p.pages, p.strips]), [["st1", ["p1"], ["s1"]], ["st2", ["p2"], ["s2"]]]);
+});
+
+test("pages recorded at copy time keep a confirmed student in the case after their pages were unlinked", () => {
+  const w = workspaceFor();
+  // Confirming st1 unlinked (and deleted) their page from studentUploadIds.
+  w.assessments[0].studentUploadIds = { st2: ["p2"] };
+  const e = ex.buildExpected("grouping", w, "a1", uploads, { st1: ["p1"], st2: ["p2"] });
+  assert.deepEqual(e.piles.map((p) => p.studentId), ["st1", "st2"]);
+  assert.deepEqual(e.answers.map((a) => a.studentId), ["st1"], "st1's confirmed answer is the expected value");
 });
 
 test("the worksheet is the assessment's pages minus the student pages", () => {
