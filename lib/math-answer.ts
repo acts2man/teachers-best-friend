@@ -15,10 +15,33 @@
 
 export type Verdict = "same" | "different";
 
+/**
+ * LaTeX the model may use for a read answer, rewritten as plain math.
+ *
+ * Without this a read like "\\frac{2x}{x^2+4}" could not be evaluated, so the
+ * check that a "match" really equals the key (provablyDifferent) had nothing to
+ * compare and let the model's word stand: a sign flip written that way would
+ * be marked correct. No saved read has come back as LaTeX so far (0 of 841 on
+ * 12 Oct 2026); this closes the gap before one does. Innermost fractions first,
+ * so nested ones unwind.
+ */
+function fromLatex(raw: string): string {
+  if (!raw.includes("\\")) return raw;
+  let s = raw.replace(/\\(left|right)\b/g, "");
+  for (let i = 0; i < 6; i++)
+    s = s
+      .replace(/\^\{([^{}]*)\}/g, "^($1)")
+      .replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)")
+      .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "(($1)/($2))");
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)");
+  s = s.replace(/\\(cdot|times)\b/g, "*").replace(/\\div\b/g, "/").replace(/\\pi\b/g, "pi");
+  return s.replace(/\\[,;:! ]/g, "");
+}
+
 /** Characters people and models use that mean the same thing. */
 function canonical(raw: string): string {
   return (
-    raw
+    fromLatex(raw)
       // Superscripts first: NFKC below would turn x² into "x2".
       .replace(/\u00B2/g, "^2")
       .replace(/\u00B3/g, "^3")

@@ -49,16 +49,50 @@ export function catalogForPrompt(catalog: Standard[]) {
  * "every non-excluded question", and normalizeRecognizedResponses maps the
  * result over activeQuestions(), so sending them was pure cost.
  */
-export function questionsForGrading(a: Assessment) {
-  return activeQuestions(a).map((q) => ({
-    id: q.id,
-    number: q.number,
-    text: q.text,
-    passage: q.passage,
-    answer: q.answer,
-    standard: q.standard,
-    skill: q.skill,
-  }));
+/**
+ * How many separate answers a question asks for, from its confirmed key: the
+ * key's parts, separated by ";" ("x = 2; x = -3" is two). Ricky's idea (12 Oct
+ * 2026): tell grading how many to expect, so a read that comes back with fewer
+ * is caught instead of grouped as if it were whole. The key is the source
+ * because it is already the teacher's confirmed statement of the answer -- a
+ * teacher who wants a question read as four parts writes four parts in the key.
+ */
+export function expectedParts(answer: string): number {
+  return Math.max(1, answer.split(";").map((p) => p.trim()).filter(Boolean).length);
+}
+
+/** The parts actually read in a final answer: "?" marks a part not found. */
+export function partsRead(final: string): number {
+  return final
+    .split(";")
+    .map((p) => p.trim())
+    .filter((p) => p && p !== "?").length;
+}
+
+export function questionsForGrading(a: Assessment, only?: string[]) {
+  return activeQuestions(a)
+    .filter((q) => !only?.length || only.includes(q.id))
+    .map((q) => {
+      const parts = expectedParts(q.answer);
+      return {
+        id: q.id,
+        number: q.number,
+        text: q.text,
+        passage: q.passage,
+        answer: q.answer,
+        standard: q.standard,
+        skill: q.skill,
+        // Only on questions with more than one part, so every other prompt is
+        // exactly what it was.
+        ...(parts > 1 ? { parts } : {}),
+      };
+    });
+}
+
+/** The grading instruction for multi-part questions, or "" when there are none. */
+export function multipartRule(a: Assessment, only?: string[]): string {
+  if (!questionsForGrading(a, only).some((q) => "parts" in q)) return "";
+  return ' A question with "parts": N expects N separate answers. For it, give finalAnswer as the N parts in the order they appear, separated by "; ", and write "?" for any part you cannot find or read -- never merge two parts into one, never drop a part, and never guess one.';
 }
 
 /** How much of a transcribed passage travels with a grading request. Long

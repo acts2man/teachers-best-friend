@@ -42,6 +42,7 @@ import {
 import {
   documentContent,
   getBackgroundResponse,
+  labelledContent,
   modelSettingsFor,
   startModelBackground,
   deleteBackgroundResponse,
@@ -49,7 +50,11 @@ import {
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
   absorbGraded,
+  absorbPartsReask,
   groupPagesByCapture,
+  partsShortfall,
+  planPartsReask,
+  settleShortParts,
   mergeNameReads,
   planNameBatches,
   planScanBatches,
@@ -62,6 +67,7 @@ import {
   type ScanBatch,
 } from "@/lib/teacher-class-scan";
 import { activeQuestions, normalizeRecognizedResponses } from "@/lib/teacher-workflow";
+import { expectedParts } from "@/lib/prompt-payload";
 import type { Assessment, Student, Workspace } from "@/lib/teacher-types";
 import { scoreAnswers, scoreKey, scoreNames, scoreStandards } from "./score";
 import type { AssessmentSnapshot, Expected, ExpectedAnswers, ExpectedNames, RegressionCase } from "./types";
@@ -86,6 +92,8 @@ export type RunState =
       best: [number, GradedGroup][];
       graded: GradedGroup[];
       job: Job | null;
+      /** True while the one multi-part re-ask for this batch is out. */
+      partsPhase?: boolean;
     }
   | { stage: "assignment"; result: Record<string, unknown> | null; job: Job | null };
 
@@ -201,7 +209,7 @@ async function advanceJob(
   if (!job) {
     const { w, catalog } = await prompt();
     const settings: ModelSettings = await modelSettingsFor(p.mode);
-    const content = await fixtureContent(svc, c, sourceIds);
+    const content = labelledContent(p.mode, await fixtureContent(svc, c, sourceIds));
     const { task, schema } = buildPrompt(p, w, catalog, content.length > 0);
     content.push({ type: "input_text", text: task });
     const started = await startModelBackground(settings, content, p.mode, schema, key);
@@ -253,7 +261,7 @@ export async function planCase(svc: Svc, c: RegressionCase): Promise<RunState> {
   const piles = (e as ExpectedNames | ExpectedAnswers).piles;
   if (stage === "names") {
     const strips = piles.flatMap((p) => p.strips);
-    const slices = planNameBatches(strips);
+    const slices = planNameBatches(strips, groupPagesByCapture(piles.map((p) => p.pages.length)));
     return { stage, slices, results: slices.map(() => null), cursor: 0, job: null };
   }
   const pages = piles.flatMap((p) => p.pages);
@@ -320,18 +328,32 @@ export async function stepCase(
       const attemptBatch = s.attemptBatch ?? batch;
       const out = await advanceJob(
         svc, c, key, s.job,
-        params("class_scan", e.assessment, attemptBatch.uploadIds, { pageGroups: attemptBatch.groups, batchIndex: s.cursor }),
+        params("class_scan", e.assessment, attemptBatch.uploadIds, {
+          pageGroups: attemptBatch.groups,
+          batchIndex: s.cursor,
+          onlyQuestionIds: attemptBatch.onlyQuestionIds ?? [],
+        }),
         attemptBatch.uploadIds, usage, (j) => (s.job = j),
       );
       if (out) {
         const best = new Map(s.best);
-        absorbGraded(best, attemptBatch, (out as { groups?: GradedGroup[] }).groups);
-        const missing = shortGroups(batch, best, questionCount);
+        const groups = (out as { groups?: GradedGroup[] }).groups;
+        // The same order as gradeInBatches: missing students are re-asked
+        // first, then short multi-part answers once, then anything still short
+        // goes to Unsure.
+        const missing = s.partsPhase ? [] : (absorbGraded(best, attemptBatch, groups), shortGroups(batch, best, questionCount));
+        if (s.partsPhase) absorbPartsReask(best, attemptBatch, groups);
+        const shorts = s.partsPhase ? [] : partsShortfall(a, batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
         if (missing.length && s.attempt < MAX_RETRIES) {
           s.attempt++;
           s.attemptBatch = retryBatch(batch, missing);
           s.best = [...best];
+        } else if (shorts.length) {
+          s.partsPhase = true;
+          s.attemptBatch = planPartsReask(batch, shorts);
+          s.best = [...best];
         } else {
+          settleShortParts(best, batch.groupIndexes, a);
           for (const at of batch.groupIndexes) {
             const g = best.get(at);
             if (g) s.graded.push(g);
@@ -339,6 +361,7 @@ export async function stepCase(
           s.cursor++;
           s.attempt = 0;
           s.attemptBatch = null;
+          s.partsPhase = false;
           s.best = [];
         }
       }
@@ -348,7 +371,8 @@ export async function stepCase(
       const g = s.graded.find((x) => x.group === i);
       return normalizeRecognizedResponses(a, pile.studentId, g?.responses ?? []);
     });
-    const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping");
+    const parts = Object.fromEntries(activeQuestions(a).map((q) => [q.id, expectedParts(q.answer)]));
+    const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping", parts);
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Answers scored", metrics: { answers: score } } };
   }
 

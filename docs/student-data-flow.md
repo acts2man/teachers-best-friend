@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-08.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches; nothing in 7 or 8 is live until those merge).
 
 ---
 
@@ -222,10 +222,21 @@ What each request carries now:
   the top, including above or beside the Name line and in the margins, and to return the
   name, a confidence and a box around where it is written (used only to show the teacher
   a crop). Still shown **no questions, no answer key and no roster.** Still not billed.
+  *12 Oct 2026 (PR 2):* sent as **one request per student pile** the teacher declared
+  (one per page when none were declared) instead of twelve strips at a time, with a line
+  of text before each image saying its position ("Image at position 0:"). That text
+  carries no identity; the change only means a name can no longer be read onto another
+  child's pages. Same images, same prompt, more and smaller requests.
 - **`class_scan`** — the **whole page**, nothing cut off (`splitForClassScan`). The image
   may show the student's name. The prompt tells the model to ignore any name, not to infer
   who a page belongs to and never to report or reproduce a name. Grouping is still settled
   by the app and sent as group numbers.
+- *12 Oct 2026 (PR 2), multi-part questions:* a question whose confirmed key has several
+  "; "-separated parts is sent to grading with `"parts": N`, and the model is asked to
+  return that many parts. A student whose answer comes back short is asked about **once
+  more**: the same student's pages, only the short questions, the same prompt with a
+  "second look" line. Nothing new is sent -- no name, no roster, no other student's work.
+  Still short goes to Unsure for the teacher.
 - **Still never sent:** the class roster or any student list, any name as text, the
   teacher's or school's name. Matching a read name to a student — including the loose
   matching added on 7 Oct (nicknames, a first name alone, misspellings, a surname written

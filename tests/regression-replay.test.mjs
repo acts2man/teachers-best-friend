@@ -330,6 +330,7 @@ function runnerWith(model) {
   const analyzeServer = {
     modelSettingsFor: async () => settings,
     documentContent: (f) => ({ type: "input_image", image_url: "data:" + f.mime + ";base64,AA", detail: "high" }),
+    labelledContent: (mode, images) => (mode === "name_strip" ? images.flatMap((im, i) => [{ type: "input_text", text: `Image at position ${i}:` }, im]) : images),
     startModelBackground: async (s, content, mode) => {
       calls.start.push({ mode, images: content.filter((c) => c.type === "input_image").length, text: content.at(-1).text });
       return { value: "resp-" + calls.start.length, attempts: 1 };

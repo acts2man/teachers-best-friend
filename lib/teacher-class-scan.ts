@@ -5,6 +5,7 @@ import {
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
+import { expectedParts, partsRead } from "./prompt-payload";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -43,13 +44,56 @@ export const NAME_BATCH = 12;
  * from. */
 export type NameSlice = { id: string; page: number }[];
 
-/** Splits the pages that have a name strip into name-pass requests. */
-export function planNameBatches(stripIds: (string | null)[], size = NAME_BATCH): NameSlice[] {
-  const readable = stripIds
-    .map((id, page) => ({ id, page }))
-    .filter((s): s is { id: string; page: number } => !!s.id);
+/**
+ * Splits the pages that have a name strip into name-pass requests: one request
+ * per STUDENT when the teacher declared the piles, one per page when they did
+ * not.
+ *
+ * It used to be twelve strips per request, trusting the model to say which
+ * image each name came from. It does not reliably (12 Oct 2026, from the saved
+ * name-pass results): on a pilot teacher's 3-student set the third student's
+ * name came back on the second student's back page and the third student got
+ * none; on another set, eight strips came back with every name one position
+ * late; and a 26-student set put a classmate's name on another child's paper.
+ * Inside one student's pile a misplaced name still lands on that student, so
+ * the mistake can no longer cross from one child to another. Without declared
+ * piles the name IS what splits the stack, so each page is read on its own.
+ * A pile longer than `size` is still split, so no request grows unbounded.
+ */
+export function planNameBatches(
+  stripIds: (string | null)[],
+  piles: number[][] | null = null,
+  size = NAME_BATCH,
+): NameSlice[] {
+  const withStrip = (pages: number[]) =>
+    pages
+      .filter((page) => !!stripIds[page])
+      .map((page) => ({ id: stripIds[page] as string, page }));
+  const groups = piles ?? stripIds.map((_, page) => [page]);
   const out: NameSlice[] = [];
-  for (let i = 0; i < readable.length; i += size) out.push(readable.slice(i, i + size));
+  for (const pile of groups) {
+    const slice = withStrip(pile);
+    for (let i = 0; i < slice.length; i += size) out.push(slice.slice(i, i + size));
+  }
+  return out;
+}
+
+/** How many name-pass requests run at once. Per-student requests are small;
+ * four at a time keeps a 26-student set about as quick as the old five
+ * sequential batches of twelve. */
+export const NAME_CONCURRENCY = 4;
+
+/** Runs `fn` over `items` with at most `limit` in flight, keeping order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
 }
 
@@ -853,6 +897,8 @@ export type ScanBatch = {
   uploadIds: string[];
   groups: number[][];
   groupIndexes: number[];
+  /** Set only on a multi-part re-ask: the questions to look at again. */
+  onlyQuestionIds?: string[];
 };
 
 /**
@@ -1028,6 +1074,76 @@ export function retryBatch(batch: ScanBatch, missing: number[]): ScanBatch {
   return subBatch(batch, missing);
 }
 
+/** A graded answer with fewer parts than its key asks for. `group` is the
+ * whole-scan group index. */
+export type PartsShort = { group: number; questionId: string; expected: number; got: number };
+
+/** The answers in these groups that came back with fewer parts than their
+ * question's key has (Ricky, 12 Oct: question 2 read 4 of 8 parts). */
+export function partsShortfall(a: Assessment, groups: GradedGroup[]): PartsShort[] {
+  const wanted = new Map(
+    a.questions.filter((q) => !q.excluded).map((q) => [q.id, expectedParts(q.answer)] as const),
+  );
+  const out: PartsShort[] = [];
+  for (const g of groups)
+    for (const r of g.responses ?? []) {
+      const expected = wanted.get(r.questionId) ?? 1;
+      if (expected < 2 || r.verdict === "blank") continue;
+      const got = partsRead(r.finalAnswer?.trim() || r.answer || "");
+      if (got < expected) out.push({ group: g.group, questionId: r.questionId, expected, got });
+    }
+  return out;
+}
+
+/** The one re-ask for short multi-part answers: only the groups and the
+ * questions that came back short, on those students' pages. */
+export function planPartsReask(batch: ScanBatch, shorts: PartsShort[]): ScanBatch {
+  const groups = [...new Set(shorts.map((x) => x.group))];
+  return { ...subBatch(batch, groups), onlyQuestionIds: [...new Set(shorts.map((x) => x.questionId))] };
+}
+
+/** Takes from the re-ask any answer that now has more parts than before. */
+export function absorbPartsReask(
+  best: Map<number, GradedGroup>,
+  reask: ScanBatch,
+  groups: GradedGroup[] | undefined,
+) {
+  const only = new Set(reask.onlyQuestionIds ?? []);
+  for (const g of groups ?? []) {
+    const at = reask.groupIndexes[g.group];
+    const current = at === undefined ? undefined : best.get(at);
+    if (!current) continue;
+    for (const fresh of g.responses ?? []) {
+      if (!only.has(fresh.questionId)) continue;
+      const i = current.responses.findIndex((r) => r.questionId === fresh.questionId);
+      const before = i < 0 ? -1 : partsRead(current.responses[i].finalAnswer?.trim() || current.responses[i].answer || "");
+      if (partsRead(fresh.finalAnswer?.trim() || fresh.answer || "") > before) {
+        const responses = [...current.responses];
+        if (i < 0) responses.push(fresh);
+        else responses[i] = fresh;
+        best.set(at, { ...current, responses });
+      }
+    }
+  }
+}
+
+/**
+ * After the re-ask: any answer still short of its parts goes to Unsure for the
+ * teacher -- never blank, never wrong, never matched on the parts that were
+ * read. Returns how many were sent there.
+ */
+export function settleShortParts(best: Map<number, GradedGroup>, groupIndexes: number[], a: Assessment): number {
+  const shorts = partsShortfall(a, groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+  for (const s of shorts) {
+    const g = best.get(s.group)!;
+    best.set(s.group, {
+      ...g,
+      responses: g.responses.map((r) => (r.questionId === s.questionId ? { ...r, verdict: "unsure" as const } : r)),
+    });
+  }
+  return shorts.length;
+}
+
 export async function gradeInBatches(
   batches: ScanBatch[],
   grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,
@@ -1041,6 +1157,10 @@ export async function gradeInBatches(
   questionCount = 0,
   maxRetries = 2,
   onShortBatch?: (info: ShortBatch) => void,
+  // The assessment, to check multi-part answers against their keys: a short
+  // one is re-asked once, then sent to Unsure. Absent: no parts check.
+  partsOf?: Assessment,
+  onShortParts?: (info: { batch: number; reasked: number; unsure: number }) => void,
 ): Promise<GradedGroup[]> {
   const graded: GradedGroup[] = [...already];
 
@@ -1069,6 +1189,21 @@ export async function gradeInBatches(
       // Log before re-asking, so a run that is watched shows the retry happening.
       onShortBatch?.({ batch: index, missing, attempt, retried: true });
       attemptBatch = subBatch(batch, missing);
+    }
+
+    if (partsOf) {
+      const shorts = partsShortfall(partsOf, batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+      if (shorts.length) {
+        const reask = planPartsReask(batch, shorts);
+        try {
+          absorbPartsReask(best, reask, (await grade(reask, index)).groups);
+        } catch {
+          // A failed re-ask must not lose the batch: what is still short goes
+          // to Unsure below, which is where it was headed anyway.
+        }
+      }
+      const unsure = settleShortParts(best, batch.groupIndexes, partsOf);
+      if (shorts.length) onShortParts?.({ batch: index, reasked: shorts.length, unsure });
     }
 
     for (const at of batch.groupIndexes) {

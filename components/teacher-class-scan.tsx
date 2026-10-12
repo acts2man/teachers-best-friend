@@ -42,7 +42,9 @@ import {
   groupPagesByName,
   gradeInBatches,
   keepOtherClassStudents,
+  mapLimit,
   mergeNameReads,
+  NAME_CONCURRENCY,
   planNameBatches,
   planScanBatches,
   resolveScannedGroups,
@@ -628,9 +630,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // in a class set is a request whose size nobody chose. The batching and
       // the mapping back to pages are lib functions the regression replay runs
       // too, so what it measures is what this does.
-      const slices = planNameBatches(pages.map((p) => p.stripId));
-      const reads: { pages?: PageName[] }[] = [];
-      for (const slice of slices) {
+      // One request per student pile the teacher declared (per page when they
+      // declared none), a few at a time, so a name can never be read onto
+      // another child's pages.
+      const slices = planNameBatches(
+        pages.map((p) => p.stripId),
+        explicit ? groupPagesByCapture(explicit) : null,
+      );
+      const reads = await mapLimit(slices, NAME_CONCURRENCY, async (slice) => {
         const read = await analyzeRequest({
           mode: "name_strip",
           uploadIds: slice.map((s) => s.id),
@@ -639,8 +646,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           framework: a.framework,
           assessmentId: a.id,
         });
-        reads.push(read.result as { pages?: PageName[] });
-      }
+        return read.result as { pages?: PageName[] };
+      });
       // Each request numbered its answers within the strips it was shown; map
       // them back to the page each strip was cut from.
       const names = mergeNameReads(ids.length, slices, reads);
@@ -703,6 +710,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               mode: "class_scan",
               uploadIds: batch.uploadIds,
               pageGroups: batch.groups,
+              // Set only when re-asking short multi-part answers.
+              onlyQuestionIds: batch.onlyQuestionIds ?? [],
               // One teacher action, however many requests it takes.
               batchIndex: index,
               grade: a.grade,
@@ -747,6 +756,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               : `class_scan batch ${info.batch}: students ${info.missing.join(", ")} still short after ${info.attempt} retr${info.attempt === 1 ? "y" : "ies"}; some answers may save blank`,
           );
         },
+        a,
+        (info) =>
+          logAppEvent("ai_failure", {
+            message: "multi-part answers came back short; re-asked once",
+            assessmentId: a.id,
+            detail: { mode: "class_scan", kind: "short_parts", batch: info.batch, reasked: info.reasked, unsure: info.unsure },
+          }),
       );
       setProgress(null);
       showGraded(pageGroups, names, graded, ids, nameIds);
