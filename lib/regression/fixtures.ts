@@ -151,7 +151,7 @@ export async function copyFixtures(svc: Svc, assessmentLegacyId: string) {
 
 /** Makes one case per kind from the teacher's confirmations. A kind the
  * teacher has not confirmed is skipped with its reason, never guessed. */
-export async function createCases(svc: Svc, assessmentLegacyId: string, kinds: CaseKind[], createdBy: string) {
+export async function createCases(svc: Svc, assessmentLegacyId: string, kinds: CaseKind[], createdBy: string, pilesDeclared = true) {
   const teacherId = await allowListEntry(svc, assessmentLegacyId);
   const w = await loadWorkspace(svc, teacherId);
   const { meta } = await sourceUploads(svc, teacherId, w, assessmentLegacyId);
@@ -182,7 +182,8 @@ export async function createCases(svc: Svc, assessmentLegacyId: string, kinds: C
   const skipped: { kind: CaseKind; reason: string }[] = [];
   for (const kind of kinds) {
     try {
-      const expected = buildExpected(kind, w, assessmentLegacyId, meta, Object.keys(copiedPages).length ? copiedPages : null);
+      const built = buildExpected(kind, w, assessmentLegacyId, meta, Object.keys(copiedPages).length ? copiedPages : null);
+      const expected = built.kind === "names" ? { ...built, pilesDeclared } : built;
       const code = caseCode();
       const { error } = await svc.from("regression_cases").insert({
         code,

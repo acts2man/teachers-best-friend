@@ -52,6 +52,7 @@ import {
   absorbGraded,
   absorbPartsReask,
   groupPagesByCapture,
+  groupPagesByName,
   partsShortfall,
   planPartsReask,
   settleShortParts,
@@ -249,6 +250,32 @@ async function advanceJob(
   return finalizeAnalysis(p, parsed, w, catalog);
 }
 
+/**
+ * What the app decided for each TRUE pile, given the groups it actually drew.
+ * A pile is credited only when its pages are exactly one group; a group that
+ * swallowed part of another pile, or was split, is not a right answer even if
+ * its name matched.
+ */
+export function pilesAsResolved(
+  piles: { pages: string[] }[],
+  groups: number[][],
+  resolved: { studentId: string | null; suggestedId: string | null }[],
+) {
+  let start = 0;
+  return piles.map((pile) => {
+    const own = pile.pages.map((_, i) => start + i);
+    start += pile.pages.length;
+    const gi = groups.findIndex((g) => g.includes(own[0]));
+    const g = groups[gi] ?? [];
+    const exact = g.length === own.length && own.every((x) => g.includes(x));
+    const r = resolved[gi];
+    if (!r) return { studentId: null, suggestedId: null };
+    // Not exactly this pile: credit nothing; keep a pre-fill as the
+    // (wrong) answer it is, so a confident mistake is still counted.
+    return exact ? r : { studentId: r.studentId ? "\u0000wrong-pile" : null, suggestedId: null };
+  });
+}
+
 function stageFor(e: Expected): RunState["stage"] {
   return e.kind === "names" ? "names" : e.kind === "answer_key" || e.kind === "standards" ? "assignment" : "grade";
 }
@@ -261,7 +288,8 @@ export async function planCase(svc: Svc, c: RegressionCase): Promise<RunState> {
   const piles = (e as ExpectedNames | ExpectedAnswers).piles;
   if (stage === "names") {
     const strips = piles.flatMap((p) => p.strips);
-    const slices = planNameBatches(strips, groupPagesByCapture(piles.map((p) => p.pages.length)));
+    const declared = (e as ExpectedNames).pilesDeclared !== false;
+    const slices = planNameBatches(strips, declared ? groupPagesByCapture(piles.map((p) => p.pages.length)) : null);
     return { stage, slices, results: slices.map(() => null), cursor: 0, job: null };
   }
   const pages = piles.flatMap((p) => p.pages);
@@ -311,10 +339,11 @@ export async function stepCase(
     const strips = names.piles.flatMap((p) => p.strips);
     const pages = names.piles.flatMap((p) => p.pages);
     const read = mergeNameReads(pages.length, s.slices, s.results.map((r) => r ?? {}));
-    const groups = groupPagesByCapture(names.piles.map((p) => p.pages.length));
+    const declared = names.pilesDeclared !== false;
+    const groups = declared ? groupPagesByCapture(names.piles.map((p) => p.pages.length)) : groupPagesByName(read);
     const roster: Student[] = names.roster.map((r) => ({ id: r.id, classId: e.assessment.classId, name: r.name, color: "#000", evidence: [], notes: "" }));
     const resolved = resolveScannedGroups(groups, read, [], pages, roster, strips);
-    const score = scoreNames(names.piles, resolved);
+    const score = scoreNames(names.piles, pilesAsResolved(names.piles, groups, resolved));
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Names scored", metrics: { names: score } } };
   }
 
@@ -326,7 +355,9 @@ export async function stepCase(
     if (s.cursor < s.batches.length) {
       const batch = s.batches[s.cursor];
       const attemptBatch = s.attemptBatch ?? batch;
-      const out = await advanceJob(
+      let out: Record<string, unknown> | null;
+      try {
+        out = await advanceJob(
         svc, c, key, s.job,
         params("class_scan", e.assessment, attemptBatch.uploadIds, {
           pageGroups: attemptBatch.groups,
@@ -334,7 +365,14 @@ export async function stepCase(
           onlyQuestionIds: attemptBatch.onlyQuestionIds ?? [],
         }),
         attemptBatch.uploadIds, usage, (j) => (s.job = j),
-      );
+        );
+      } catch (err) {
+        // As in gradeInBatches: a failed multi-part re-ask does not fail the
+        // batch; what is still short is settled to Unsure below.
+        if (!s.partsPhase) throw err;
+        s.job = null;
+        out = { groups: [] };
+      }
       if (out) {
         const best = new Map(s.best);
         const groups = (out as { groups?: GradedGroup[] }).groups;
@@ -371,7 +409,7 @@ export async function stepCase(
       const g = s.graded.find((x) => x.group === i);
       return normalizeRecognizedResponses(a, pile.studentId, g?.responses ?? []);
     });
-    const parts = Object.fromEntries(activeQuestions(a).map((q) => [q.id, expectedParts(q.answer)]));
+    const parts = Object.fromEntries(activeQuestions(a).map((q) => [q.id, expectedParts(q)]));
     const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping", parts);
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Answers scored", metrics: { answers: score } } };
   }

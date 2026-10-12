@@ -231,9 +231,10 @@ What each request carries now:
   may show the student's name. The prompt tells the model to ignore any name, not to infer
   who a page belongs to and never to report or reproduce a name. Grouping is still settled
   by the app and sent as group numbers.
-- *12 Oct 2026 (PR 2), multi-part questions:* a question whose confirmed key has several
-  "; "-separated parts is sent to grading with `"parts": N`, and the model is asked to
-  return that many parts. A student whose answer comes back short is asked about **once
+- *12 Oct 2026 (PR 2), multi-part questions:* the worksheet read now also says how many
+  separate answers each question asks for (`Question.answerParts`, stored in
+  `assessment_questions.answer_parts`). A question with more than one is sent to grading
+  with `"parts": N`, and the model is asked to return that many parts. A student whose answer comes back short is asked about **once
   more**: the same student's pages, only the short questions, the same prompt with a
   "second look" line. Nothing new is sent -- no name, no roster, no other student's work.
   Still short goes to Unsure for the teacher.

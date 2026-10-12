@@ -45,6 +45,11 @@ export type ExpectedNames = Base & {
   kind: "names";
   /** id + name of every student on the class roster when the case was made. */
   roster: { id: string; name: string }[];
+  /** Whether the teacher declared the piles ("Next student") when scanning.
+   * When they did not, the replay must split the stack by the names it reads,
+   * as the app does -- giving it the true piles would score it on an easier
+   * problem than the teacher had. Absent counts as declared. */
+  pilesDeclared?: boolean;
 };
 
 /** One confirmed answer. `match` is the credit the teacher gave (0-100), or

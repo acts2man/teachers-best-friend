@@ -647,6 +647,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           assessmentId: a.id,
         });
         return read.result as { pages?: PageName[] };
+      }, (error) => {
+        // One pile's name read failing leaves that pile unnamed -- the
+        // teacher picks the student on the matching screen -- rather than
+        // stopping the whole class. All of them failing still stops it.
+        logAppEvent("ai_failure", { message: "name read failed: " + ((error as Error)?.message ?? ""), assessmentId: a.id, detail: { mode: "name_strip", kind: "error" } });
+        return {};
       });
       // Each request numbered its answers within the strips it was shown; map
       // them back to the page each strip was cut from.
@@ -721,7 +727,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             },
             // Record the job before waiting on it, so a phone that sleeps
             // mid-grade picks this exact one up instead of paying for another.
-            { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) },
+            // Only for the batch itself: a retry or multi-part re-ask is
+            // numbered against its own smaller request, and resuming it as the
+            // whole batch would put one student's answers on another.
+            batch === batches[index]
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) }
+              : undefined,
           );
           return d.result;
         },

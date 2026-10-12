@@ -24,7 +24,7 @@ function bundle(path) {
   new Function("module", "exports", r.outputFiles[0].text)(m, m.exports);
   return m.exports;
 }
-const { planNameBatches, mergeNameReads, groupPagesByCapture, resolveScannedGroups, mapLimit } = bundle("lib/teacher-class-scan.ts");
+const { planNameBatches, mergeNameReads, groupPagesByCapture, groupPagesByName, resolveScannedGroups, mapLimit } = bundle("lib/teacher-class-scan.ts");
 
 const roster = ["Avery Quinn", "Blake Rivera", "Casey Morgan"].map((name, i) => ({ id: "s" + i, classId: "c", name, color: "#000", evidence: [], notes: "" }));
 const strips = ["n0", "n1", "n2", "n3", "n4", "n5"];
@@ -107,6 +107,35 @@ test("mapLimit keeps order and never runs more than the limit at once", async ()
 
 test("the class scan and the replay both plan names per declared pile, and the route labels each image", () => {
   assert.match(readFileSync("components/teacher-class-scan.tsx", "utf8"), /planNameBatches\(\s*pages\.map\(\(p\) => p\.stripId\),\s*explicit \? groupPagesByCapture\(explicit\) : null,?\s*\)/);
-  assert.match(readFileSync("lib/regression/runner.ts", "utf8"), /planNameBatches\(strips, groupPagesByCapture\(/);
+  assert.match(readFileSync("lib/regression/runner.ts", "utf8"), /planNameBatches\(strips, declared \? groupPagesByCapture\(/);
   assert.match(readFileSync("app/api/analyze/route.ts", "utf8"), /labelledContent\(p\.mode, content\)/);
+});
+
+test("a failed name read leaves that pile unnamed instead of stopping the scan; all failing still stops it", async () => {
+  const out = await mapLimit([1, 2, 3], 2, async (v) => { if (v === 2) throw new Error("x"); return v; }, () => 0);
+  assert.deepEqual(out, [1, 0, 3]);
+  await assert.rejects(() => mapLimit([1, 2], 2, async () => { throw new Error("down"); }, () => 0), /down/);
+});
+
+test("without onError, the first failure stops new work from starting", async () => {
+  let started = 0;
+  await assert.rejects(() => mapLimit(Array.from({ length: 20 }, (_, i) => i), 4, async (v) => {
+    started++;
+    await new Promise((r) => setTimeout(r, 2));
+    if (v === 0) throw new Error("x");
+    return v;
+  }), /x/);
+  assert.ok(started < 20, `only ${started} of 20 started`);
+});
+
+test("a stack without declared piles: a motto read again after another name does not start a student", () => {
+  const read = [
+    { page: 0, name: "Avery Quinn", confidence: 95 },
+    { page: 1, name: "Hope Always", confidence: 88 }, // printed motto on a back page
+    { page: 2, name: "Blake Rivera", confidence: 95 },
+    { page: 3, name: "Hope Always", confidence: 87 },
+  ];
+  assert.deepEqual(groupPagesByName(read), [[0, 1], [2, 3]]);
+  // A student whose name is read on both of their pages, one after the other, is still one student.
+  assert.deepEqual(groupPagesByName([{ page: 0, name: "Avery Quinn", confidence: 95 }, { page: 1, name: "Avery Quinn", confidence: 90 }]), [[0, 1]]);
 });

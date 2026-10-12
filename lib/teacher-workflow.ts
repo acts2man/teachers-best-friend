@@ -8,6 +8,7 @@ import type {
   StudentResponse,
 } from "./teacher-types";
 import { provablyDifferent } from "./math-answer";
+import { expectedParts, partsRead } from "./answer-parts";
 import {
   cognitiveReportLines,
   costaBreakdown,
@@ -468,8 +469,12 @@ export function normalizeRecognizedResponses(
     // left out, reported twice, or was not sure about is UNSURE -- for the
     // teacher, not scored zero. (A model skipping questions in a long batch is
     // what put Michael's students with work in a "blank" group on 8 Oct.)
-    const unsure = !response || response.verdict === "unsure" || contradictsKey;
-    const isMatch = response?.verdict === "match" && !contradictsKey;
+    // A multi-part question read with fewer parts than it asks for (a "?" is a
+    // part not found) is for the teacher, whatever the verdict said.
+    const partsShort =
+      !!response && response.verdict !== "blank" && expectedParts(q) > 1 && partsRead(final) < expectedParts(q);
+    const unsure = !response || response.verdict === "unsure" || contradictsKey || partsShort;
+    const isMatch = response?.verdict === "match" && !contradictsKey && !partsShort;
     const isBlank = !unsure && response?.verdict === "blank";
     return {
       id: crypto.randomUUID(),

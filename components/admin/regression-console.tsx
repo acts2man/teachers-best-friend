@@ -66,6 +66,7 @@ export function RegressionConsole() {
   const [log, setLog] = useState<string[]>([]);
   const [last, setLast] = useState<RunSummary | null>(null);
   const [assessmentId, setAssessmentId] = useState("");
+  const [declared, setDeclared] = useState(true);
   const say = (line: string) => setLog((l) => [...l.slice(-60), line]);
 
   const refresh = () => call({ action: "summary" }).then(setSummary).catch((e) => say(String(e.message)));
@@ -146,6 +147,7 @@ export function RegressionConsole() {
         action: "create-cases",
         assessmentId: assessmentId.trim(),
         kinds: ["names", "answer_reading", "grouping", "answer_key", "standards"],
+        pilesDeclared: declared,
       });
       say(`Made ${d.made.length} case(s): ${d.made.join(", ") || "none"}.`);
       for (const s of d.skipped) say(`Skipped ${s.kind}: ${s.reason}`);
@@ -235,6 +237,10 @@ export function RegressionConsole() {
           aria-label="Assessment id"
           style={{ width: "100%", maxWidth: 420, padding: 8, marginBottom: 8, boxSizing: "border-box" }}
         />
+        <label style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, margin: "0 0 8px", fontWeight: 400 }}>
+          <input type="checkbox" checked={declared} onChange={(e) => setDeclared(e.target.checked)} style={{ width: "auto" }} />
+          The teacher tapped “Next student” between students when scanning this set
+        </label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button onClick={copy} disabled={busy || !assessmentId.trim()} style={btn(false)}>
             Copy photos

@@ -28,6 +28,8 @@ const PERSISTED = {
     "id", "number", "text", "passage", "answer", "standard", "secondary",
     "skill", "dok", "costas", "alignment", "improvement", "confidence",
     "level", "reasoning", "verified", "excluded", "points", "keyCheck",
+    // Multi-part questions (20261012200000).
+    "answerParts",
   ],
   StudentResponse: [
     "id", "studentId", "questionId", "answer", "correct", "match",

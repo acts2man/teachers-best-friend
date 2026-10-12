@@ -5,7 +5,7 @@ import {
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
-import { expectedParts, partsRead } from "./prompt-payload";
+import { expectedParts, partsRead } from "./answer-parts";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -83,17 +83,39 @@ export function planNameBatches(
  * sequential batches of twelve. */
 export const NAME_CONCURRENCY = 4;
 
-/** Runs `fn` over `items` with at most `limit` in flight, keeping order. */
-export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+/**
+ * Runs `fn` over `items` with at most `limit` in flight, keeping order. A
+ * failed item gives `onError(error, item)`'s value instead of stopping the
+ * others -- one of 26 name reads failing should leave that page unnamed for the
+ * teacher, not throw away the other 25 -- and when EVERY item fails the first
+ * error is thrown, as one request failing used to.
+ */
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onError?: (error: unknown, item: T) => R,
+): Promise<R[]> {
   const out = new Array<R>(items.length);
+  const errors: unknown[] = [];
   let next = 0;
   const worker = async () => {
     while (next < items.length) {
       const i = next++;
-      out[i] = await fn(items[i], i);
+      try {
+        out[i] = await fn(items[i], i);
+      } catch (e) {
+        if (!onError) {
+          next = items.length; // start nothing more
+          throw e;
+        }
+        errors.push(e);
+        out[i] = onError(e, items[i]);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (items.length && errors.length === items.length) throw errors[0];
   return out;
 }
 
@@ -148,10 +170,32 @@ export type ScannedGroup = {
  * here, from the strips, and the graded request is told the groups.
  */
 export function groupPagesByName(pages: PageName[]): number[][] {
-  const groups: number[][] = [];
+  // A name that comes back again after a DIFFERENT name is not a student
+  // starting -- a student is scanned once. It is a printed motto or heading the
+  // name pass mistook for a name ("Hope Always", 10 Oct 2026), and letting it
+  // start a group would split the next student's pages off onto nobody. Such a
+  // read is treated as no name: the page continues the student before it.
+  const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
+  const seenAt = new Map<string, number>();
+  const recurring = new Set<string>();
+  let last = "";
   for (const page of pages) {
-    if (page.name.trim() || !groups.length) groups.push([page.page]);
+    const k = key(page.name);
+    if (!k) continue;
+    if (seenAt.has(k) && last !== k) recurring.add(k);
+    if (!seenAt.has(k)) seenAt.set(k, page.page);
+    last = k;
+  }
+  const groups: number[][] = [];
+  let current = "";
+  for (const page of pages) {
+    const k = key(page.name);
+    // The same name read again on the next page is the same student's next
+    // page, not a new student.
+    const starts = !!k && !recurring.has(k) && k !== current;
+    if (starts || !groups.length) groups.push([page.page]);
     else groups[groups.length - 1].push(page.page);
+    if (starts) current = k;
   }
   return groups;
 }
@@ -1082,7 +1126,7 @@ export type PartsShort = { group: number; questionId: string; expected: number; 
  * question's key has (Ricky, 12 Oct: question 2 read 4 of 8 parts). */
 export function partsShortfall(a: Assessment, groups: GradedGroup[]): PartsShort[] {
   const wanted = new Map(
-    a.questions.filter((q) => !q.excluded).map((q) => [q.id, expectedParts(q.answer)] as const),
+    a.questions.filter((q) => !q.excluded).map((q) => [q.id, expectedParts(q)] as const),
   );
   const out: PartsShort[] = [];
   for (const g of groups)

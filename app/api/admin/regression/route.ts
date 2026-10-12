@@ -33,7 +33,7 @@ const body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("finish-run"), runId: z.string().uuid() }),
   z.object({ action: z.literal("abandon-run"), runId: z.string().uuid() }),
   z.object({ action: z.literal("copy-fixtures"), assessmentId: z.string().min(1).max(80) }),
-  z.object({ action: z.literal("create-cases"), assessmentId: z.string().min(1).max(80), kinds: z.array(z.enum(CASE_KINDS)).min(1) }),
+  z.object({ action: z.literal("create-cases"), assessmentId: z.string().min(1).max(80), kinds: z.array(z.enum(CASE_KINDS)).min(1), pilesDeclared: z.boolean().default(true) }),
   z.object({ action: z.literal("revoke"), assessmentId: z.string().min(1).max(80) }),
   z.object({ action: z.literal("old-data-check"), index: z.number().int().min(0) }),
 ]);
@@ -191,7 +191,7 @@ export async function POST(request: Request) {
     }
 
     if (b.action === "copy-fixtures") return Response.json(await copyFixtures(svc, b.assessmentId));
-    if (b.action === "create-cases") return Response.json(await createCases(svc, b.assessmentId, b.kinds, admin));
+    if (b.action === "create-cases") return Response.json(await createCases(svc, b.assessmentId, b.kinds, admin, b.pilesDeclared));
     if (b.action === "revoke") return Response.json(await revokeFixtures(svc, b.assessmentId));
 
     // old-data-check: one teacher per request, in a stable order.

@@ -28,6 +28,8 @@ export type Verdict = "same" | "different";
 function fromLatex(raw: string): string {
   if (!raw.includes("\\")) return raw;
   let s = raw.replace(/\\(left|right)\b/g, "");
+  // A mixed number, "2\\frac{1}{2}", is 2 + 1/2 -- not 2 times it.
+  s = s.replace(/(\d)\s*\\[dt]?frac\s*\{(\d+)\}\s*\{(\d+)\}/g, "($1+$2/$3)");
   for (let i = 0; i < 6; i++)
     s = s
       .replace(/\^\{([^{}]*)\}/g, "^($1)")
@@ -262,7 +264,44 @@ function sameValue(fa: string, fb: string): boolean | null {
   return compared >= 2 ? true : null;
 }
 
+/** The "; "-separated parts of a multi-part answer, or null when either side
+ * is a single answer or the two have different numbers of parts (then the
+ * whole-answer comparison below decides, as before -- a key whose second part
+ * is a note, "x = 15/2; x = 5 is excluded", stays a single answer). */
+function pairedParts(a: string, b: string): [string, string][] | null {
+  const split = (s: string) => s.split(";").map((p) => p.trim()).filter(Boolean);
+  const pa = split(a);
+  const pb = split(b);
+  if (pa.length < 2 || pa.length !== pb.length) return null;
+  return pa.map((p, i) => [p, pb[i]]);
+}
+
+/** "(0, 10/3)" -> ["0", "10/3"]: a point or pair, compared one value at a
+ * time. Null for anything else, or pairs of different lengths. */
+function pairedTuple(a: string, b: string): [string, string][] | null {
+  const tuple = (s: string) => {
+    const m = s.trim().match(/^\(([^()]*)\)$/);
+    return m && m[1].includes(",") ? m[1].split(",").map((x) => x.trim()) : null;
+  };
+  const ta = tuple(a);
+  const tb = tuple(b);
+  if (!ta || !tb || ta.length !== tb.length) return null;
+  return ta.map((x, i) => [x, tb[i]]);
+}
+
 export function compareAnswers(a: string, b: string): Verdict {
+  const parts = pairedParts(a, b);
+  if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
+  return compareOne(a, b);
+}
+
+function compareOne(a: string, b: string): Verdict {
+  const tuple = pairedTuple(a, b);
+  if (tuple) return tuple.every(([x, y]) => compareSingle(x, y) === "same") ? "same" : "different";
+  return compareSingle(a, b);
+}
+
+function compareSingle(a: string, b: string): Verdict {
   const fa = collapseChain(finalAnswer(a));
   const fb = collapseChain(finalAnswer(b));
   if (!fa || !fb) return fa === fb ? "same" : "different";
@@ -278,6 +317,21 @@ export function compareAnswers(a: string, b: string): Verdict {
  * where this returns false and the model's verdict stands.
  */
 export function provablyDifferent(a: string, b: string): boolean {
+  // Part by part when both are multi-part with the same count: a sign flip in
+  // the second part ("y=4; (0,-10/3)" for "y=4; (0,10/3)") is a difference,
+  // not hidden behind an equal first part.
+  const parts = pairedParts(a, b);
+  if (parts) return parts.some(([x, y]) => provablyDifferentOne(x, y));
+  return provablyDifferentOne(a, b);
+}
+
+function provablyDifferentOne(a: string, b: string): boolean {
+  const tuple = pairedTuple(a, b);
+  if (tuple) return tuple.some(([x, y]) => provablyDifferentSingle(x, y));
+  return provablyDifferentSingle(a, b);
+}
+
+function provablyDifferentSingle(a: string, b: string): boolean {
   const fa = collapseChain(finalAnswer(a));
   const fb = collapseChain(finalAnswer(b));
   if (!fa || !fb || fa === fb) return false;

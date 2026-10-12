@@ -40,6 +40,10 @@ export type Student = {
   notes: string;
 };
 export type Question = {
+  /** How many separate answers the question asks for (the worksheet read sets
+   * it; absent means one). Grading is told this number, and an answer read with
+   * fewer parts is re-asked once and then sent to Unsure (Ricky, 12 Oct 2026). */
+  answerParts?: number;
   id: string;
   number: number;
   text: string;

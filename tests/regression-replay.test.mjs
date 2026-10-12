@@ -413,3 +413,15 @@ test("the runner never reuses a stored read", () => {
   assert.doesNotMatch(src, /reusablePriorResult|readReuseFingerprint/);
   assert.match(src, /freshRead: true/);
 });
+
+test("undeclared piles: a pile is credited only when the app grouped exactly its pages", () => {
+  const { runner } = runnerWith(() => ({}));
+  const piles = [{ pages: ["a", "b"] }, { pages: ["c", "d"] }, { pages: ["e", "f"] }];
+  // The app merged the first two piles (a name was missed) and got the third right.
+  const groups = [[0, 1, 2, 3], [4, 5]];
+  const resolved = [{ studentId: "s0", suggestedId: null }, { studentId: "s2", suggestedId: null }];
+  const out = runner.pilesAsResolved(piles, groups, resolved);
+  assert.equal(out[0].studentId, "\u0000wrong-pile", "a merged group is not a right answer, and a pre-fill there counts as wrong");
+  assert.equal(out[1].studentId, "\u0000wrong-pile");
+  assert.equal(out[2].studentId, "s2");
+});

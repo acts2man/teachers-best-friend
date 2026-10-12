@@ -55,3 +55,16 @@ test("words and choices are untouched: a backslash-free answer reads as before",
   assert.equal(compareAnswers("B", "b"), "same");
   assert.equal(provablyDifferent("the main idea is friendship", "friendship"), false);
 });
+
+test("multi-part answers are compared part by part: a flip in a later part is caught", () => {
+  assert.equal(provablyDifferent("x=2; x=-3", "x=2; x=3"), true);
+  assert.equal(provablyDifferent("y=4; (0,-10/3)", "y=4; (0,10/3)"), true);
+  assert.equal(compareAnswers("y=4; (0,10/3)", "y = 4; (0, 10/3)"), "same");
+  // A key whose second part is a note stays a single answer, as before.
+  assert.equal(compareAnswers("15/2", "x = 15/2; x = 5 is excluded"), "same");
+});
+
+test("a mixed number is a sum, not a product", () => {
+  assert.equal(compareAnswers("2\\frac{1}{2}", "5/2"), "same");
+  assert.equal(provablyDifferent("2\\frac{1}{2}", "1"), true);
+});
