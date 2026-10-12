@@ -205,8 +205,11 @@ async function runGrading() {
     // lib/teacher-class-scan.ts gradeInBatches). Until then the runner reports
     // the confirmed set size so the harness fails loud rather than inventing a
     // grading accuracy. See README "First run".
-    console.warn(`grading: ${item.assessmentId} has ${responses.length} confirmed verdicts; wire the class_scan replay before trusting grading accuracy (README).`);
-    results.push({ stage: "grading", item: item.assessmentId, label: "confirmed set", acc: accuracy([]), usage: {}, model: "gpt-5.6-luna", pending: true });
+    // Replaced by the in-app regression replay (docs/regression-replay.md),
+    // which grades through the production class-scan path with the key that
+    // stays in the server environment. This never produced a number.
+    console.warn(`grading: ${item.assessmentId}: not measured here -- use the in-app replay (docs/regression-replay.md).`);
+    results.push({ stage: "grading", item: item.assessmentId, label: "see in-app replay", acc: accuracy([]), usage: {}, model: "", pending: true });
   }
   return results;
 }

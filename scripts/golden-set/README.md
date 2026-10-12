@@ -1,4 +1,11 @@
-# Golden-set AI eval
+# Golden-set AI eval (retired -- use the in-app replay)
+
+> **Retired 12 Oct 2026. Do not add any secret to GitHub for this, and do not run the
+> workflow.** The repository and its Action logs are public; the replay that replaced this
+> runs inside the app, on the server, with the OpenAI key that already lives in Netlify's
+> environment and nowhere else. See `docs/regression-replay.md`. The grading stage below
+> was a placeholder that never produced a number; it now exits pointing there. The text
+> below is kept as a record of what the eval was.
 
 A fixed set of real worksheets the founders have already graded and confirmed,
 used to measure how well each AI stage does — and to compare settings before

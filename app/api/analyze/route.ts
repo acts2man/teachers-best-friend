@@ -40,7 +40,9 @@ import {
   aiHttpError,
   reusablePriorResult,
   readReuseFingerprint,
+  documentContent,
 } from "@/lib/analyze-server";
+import { failureKind, logAiFailure } from "@/lib/app-events-server";
 
 // Netlify functions default to a 10s timeout and cap at 26s for a synchronous
 // invocation. Without this the platform kills a slow analysis mid-flight and
@@ -103,7 +105,10 @@ export async function POST(request: Request) {
     // used both to look up a reusable result and (below) to stamp this scan so a
     // later identical read can find it. Null for non-read modes or when a page's
     // bytes can't be resolved.
-    const readFingerprint = svc ? await readReuseFingerprint(svc, user, p) : null;
+    // The model settings are part of the fingerprint: a read made under older
+    // settings is not what these settings would return.
+    const settings = await modelSettingsFor(p.mode);
+    const readFingerprint = svc ? await readReuseFingerprint(svc, user, p, settings) : null;
     // Reading a document twice should not give two different answers. If these
     // exact pages were already read the same way for this teacher and the result
     // is still stored, hand it straight back -- no upload, no model call, no
@@ -123,24 +128,10 @@ export async function POST(request: Request) {
       total += file.size;
       if (total > 12 * 1024 * 1024)
         throw new HttpError(413, "Analyze up to 12 MB of documents at a time.");
-      const b64 = Buffer.from(file.bytes).toString("base64");
-      content.push(
-        file.mime === "application/pdf"
-          ? {
-              type: "input_file",
-              filename: file.name,
-              file_data: "data:application/pdf;base64," + b64,
-            }
-          : {
-              type: "input_image",
-              image_url: "data:" + file.mime + ";base64," + b64,
-              detail: "high",
-            },
-      );
+      content.push(documentContent(file));
     }
     const { task, schema } = buildPrompt(p, w, catalog, content.length > 0);
     content.push({ type: "input_text", text: task });
-    const settings = await modelSettingsFor(p.mode);
 
     // The scan is reserved before the model call so quota and account checks
     // gate the spend, and usage is recorded afterwards whether the call
@@ -265,6 +256,17 @@ export async function POST(request: Request) {
           throw new HttpError(500, "Couldn't start the analysis. Please try again.");
         }
       } catch (e) {
+        await logAiFailure({
+          teacherId: user,
+          mode: p.mode,
+          kind: failureKind(e),
+          model: settings.model,
+          effort: settings.effort,
+          assessmentId: p.assessmentId,
+          scanId,
+          message: "background start failed: " + (e instanceof Error ? e.message : String(e)),
+          status: (e as { status?: number }).status,
+        });
         // The job never started, so the pages go back. Confirming them is the
         // poll route's job, once there is a result to confirm.
         await settleCharge(false);
@@ -333,6 +335,25 @@ export async function POST(request: Request) {
       if (typeof (e as { attempts?: number }).attempts === "number")
         attempts = (e as { attempts: number }).attempts;
       errorMessage = failure.detail || failure.message;
+      await logAiFailure({
+        teacherId: user,
+        mode: p.mode,
+        kind:
+          e instanceof SyntaxError
+            ? "unparseable"
+            : resultData?.status === "incomplete"
+              ? "incomplete"
+              : resultData && !responseText(resultData)
+                ? "empty"
+                : failureKind(failure),
+        model: settings.model,
+        effort: settings.effort,
+        assessmentId: p.assessmentId,
+        scanId,
+        message: failure.message,
+        status: failure.status,
+        counts: { attempts, outputTokens: resultData?.usage?.output_tokens ?? 0 },
+      });
       throw e instanceof HttpError ? e : failure;
     } finally {
       await settleCharge(ok);

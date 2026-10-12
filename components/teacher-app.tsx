@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { describeFailure } from "@/lib/connection";
 import { useUpdateAvailable } from "@/lib/app-version";
+import { installAppEventLogging } from "@/lib/app-events-client";
 import {
   House,
   ScanLine,
@@ -227,6 +228,9 @@ export default function TeacherApp({ view }: { view: string }) {
       );
     }
   }
+  // What breaks on a teacher's device is recorded (app_events) with the route,
+  // viewport, browser and build, instead of reaching us only as a description.
+  useEffect(() => installAppEventLogging(), []);
   useEffect(() => {
     // reload() awaits the fetch before it touches state, so nothing is set
     // synchronously here and no cascading render results. The rule cannot see

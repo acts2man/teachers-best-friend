@@ -87,9 +87,11 @@ test("the reuse fingerprint distinguishes passage from no passage, and different
       return q;
     },
   };
-  const none = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"] }));
-  const withP = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"], passage: "hello world" }));
-  const otherP = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"], passage: "a different, longer passage here" }));
+  // The model settings serving the read are part of the fingerprint (12 Oct).
+  const settings = { model: "gpt-5.6-luna", effort: "medium", maxOutput: 12000 };
+  const none = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"] }), settings);
+  const withP = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"], passage: "hello world" }), settings);
+  const otherP = await readReuseFingerprint(svc, "t1", analyzeInput.parse({ ...base, uploadIds: ["u1"], passage: "a different, longer passage here" }), settings);
   assert.notEqual(none, withP, "no passage vs passage must differ");
   assert.notEqual(withP, otherP, "different passages must differ");
 });

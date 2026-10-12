@@ -59,6 +59,10 @@ Deno.serve(async () => {
     const purgedIds: string[] = [];
     const failures: string[] = [];
     for (const [bucket, bucketRows] of byBucket) {
+      // Never the regression fixtures: those are copies a teacher agreed to
+      // keep for testing, deleted by revoking them or with the account. No
+      // upload row points there today; this keeps it that way by construction.
+      if (bucket === "regression-fixtures") continue;
       const paths = bucketRows.map((r) => r.object_path).filter(Boolean);
       const { error: rmError } = await db.storage.from(bucket).remove(paths);
       if (rmError) {

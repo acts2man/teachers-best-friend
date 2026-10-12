@@ -378,6 +378,49 @@ actual promise. The edge function goes through the Storage API instead.
 
 ---
 
+## 7. Error and AI-failure log (`app_events`, PR 1, 12 Oct 2026; NOT YET LIVE)
+
+What goes wrong in a teacher's browser or in an AI call is written to `public.app_events`:
+event type, route template (`/assessments`, ids replaced by `:id`, no query string),
+viewport, device class, browser family, build commit, and an error message and stack with
+quoted text, emails and long numbers stripped (`scrubEventText` / `scrubStack` in
+`lib/app-events.ts`). AI failures carry the mode, model, effort, failure kind and token
+counts -- never the prompt, the pages or the output. **No student name or answer is part
+of any event**, by construction: the fields are fixed and free text is scrubbed in the
+browser and again on the server.
+
+| Item | Detail |
+|---|---|
+| Who can write | The signed-in teacher, for themselves only (RLS); the server, for AI failures |
+| Who can read | The service role only. A teacher reads none. |
+| Retained | 30 days, deleted by the `purge-app-events` cron job |
+| Rate limit | 25 events per page load in the browser; 40 per session and 200 per teacher per 10 minutes in the database |
+
+## 8. Regression fixtures (`regression-fixtures` bucket, PR 1, 12 Oct 2026; NOT YET LIVE)
+
+**This is an exception to the 30-day image window, and it must not be used until the
+four published pages say so.** Copies of an assessment's photos (whole pages and the
+name-area strips) can be kept in a private bucket, with the teacher-confirmed results in
+`regression_cases`, to replay real cases after every AI change. Copying refuses any
+assessment that is not on `regression_fixture_allowlist`, whose row records the teacher's
+agreement for that assessment.
+
+| Item | Detail |
+|---|---|
+| Who can read | The service role only (no storage policy for anyone else). Results are readable by accounts on `regression_admins`. |
+| Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases) or the teacher's account is deleted (`purgeTeacherDocuments` removes the files) |
+| Purge | Not touched by `purge-expired-uploads`: the copies are not `teacher_uploads` rows, and the function skips the bucket by name |
+| Sent to OpenAI | The same pages and prompts a teacher's scan sends, when an admin runs the replay |
+
+Before the first assessment is allow-listed, one of these has to be true:
+1. the four published pages (Privacy Policy, Student Data Privacy Commitments, How We Use
+   AI, DPA) describe this opt-in retention and who agrees to it -- a teacher's agreement
+   may not be enough for a school's students; or
+2. only synthetic sets are allow-listed (papers written by a founder for testing, with
+   invented names), which hold no student data.
+
+---
+
 ## Payment
 
 Billing is handled by the payment processor named in the Privacy Policy. Card details

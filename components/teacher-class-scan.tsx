@@ -41,6 +41,8 @@ import {
   groupPagesByCapture,
   groupPagesByName,
   gradeInBatches,
+  mergeNameReads,
+  planNameBatches,
   planScanBatches,
   resolveScannedGroups,
   ungradedReservations,
@@ -50,6 +52,7 @@ import {
   type ResolvedGroup,
 } from "@/lib/teacher-class-scan";
 import type { Assessment } from "@/lib/teacher-types";
+import { logAppEvent } from "@/lib/app-events-client";
 
 // A whole class set in one batch: Ricky's class is 36 students at up to 5 pages
 // each, so 80 stopped him short. Grading and the name pass are both batched (12
@@ -60,19 +63,6 @@ import type { Assessment } from "@/lib/teacher-types";
 // anything. The camera now says when the limit is reached instead of letting a
 // teacher overshoot and be turned away at the end.
 const MAX_PAGES = 180;
-
-/** Name areas per name-reading request. The name pass returns a few tokens per
- * page, but it still has a ceiling, and it had the same shape of bug the
- * grading pass just had: every page in one request, however many there were.
- * Twelve since each answer also carries where the name sits on the page, which
- * roughly doubles what one page asks the model to write. */
-const NAME_BATCH = 12;
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
 
 /**
  * Where an in-progress scan is kept so a phone can survive itself.
@@ -633,14 +623,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       toast.success("These pages are already paid for — this re-grade uses no credits.");
     setStatus("Reading the name on each page…");
     try {
-      const readable = pages
-        .map((p, page) => ({ id: p.stripId, page }))
-        .filter((s): s is { id: string; page: number } => !!s.id);
-      let names: PageName[] = ids.map((_, page) => ({ page, name: "", confidence: 0 }));
       // Batched for the same reason grading is: one request holding every strip
-      // in a class set is a request whose size nobody chose.
-      const found = new Map<number, Omit<PageName, "page">>();
-      for (const slice of chunk(readable, NAME_BATCH)) {
+      // in a class set is a request whose size nobody chose. The batching and
+      // the mapping back to pages are lib functions the regression replay runs
+      // too, so what it measures is what this does.
+      const slices = planNameBatches(pages.map((p) => p.stripId));
+      const reads: { pages?: PageName[] }[] = [];
+      for (const slice of slices) {
         const read = await analyzeRequest({
           mode: "name_strip",
           uploadIds: slice.map((s) => s.id),
@@ -649,18 +638,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           framework: a.framework,
           assessmentId: a.id,
         });
-        // Each request numbers its answers within the strips it was shown; map
-        // them back to the page each strip was cut from.
-        for (const r of (read.result.pages ?? []) as PageName[]) {
-          const source = slice[r.page];
-          if (source)
-            found.set(source.page, { name: r.name, confidence: r.confidence, box: r.box ?? null });
-        }
+        reads.push(read.result as { pages?: PageName[] });
       }
-      names = names.map((n) => {
-        const hit = found.get(n.page);
-        return hit ? { page: n.page, ...hit } : n;
-      });
+      // Each request numbered its answers within the strips it was shown; map
+      // them back to the page each strip was cut from.
+      const names = mergeNameReads(ids.length, slices, reads);
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
@@ -751,6 +733,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           // Logged either way: a retry, or a group still short after retries so
           // a few answers may save blank. This is the one failure that otherwise
           // leaves no trace (Ricky's "it skipped some" with nothing on screen).
+          // Short output from the model is an AI failure worth a record even
+          // when the retry recovers it: how often it happens is the number.
+          logAppEvent("ai_failure", {
+            message: info.retried ? "class_scan batch came back short; re-asking" : "class_scan batch still short after retries",
+            assessmentId: a.id,
+            detail: { mode: "class_scan", kind: "short", batch: info.batch, missing: info.missing.length, attempt: info.attempt, retried: info.retried },
+          });
           console.warn(
             info.retried
               ? `class_scan batch ${info.batch}: students ${info.missing.join(", ")} came back short; re-asking (attempt ${info.attempt})`

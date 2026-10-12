@@ -106,6 +106,26 @@ const sitesModelSettings: Record<Mode, ModelSettings> = {
   key_check: { model: "gpt-5.6-luna", effort: "medium", maxOutput: 12000 },
 };
 
+/**
+ * One stored page as the model is shown it: a PDF as a file, anything else as a
+ * high-detail image. Shared by the analyze route and the regression replay so
+ * the replay sends the model exactly what a teacher's request sends.
+ */
+export function documentContent(file: { bytes: ArrayBuffer | Uint8Array; mime: string; name: string }) {
+  const b64 = Buffer.from(file.bytes as ArrayBuffer).toString("base64");
+  return file.mime === "application/pdf"
+    ? {
+        type: "input_file",
+        filename: file.name,
+        file_data: "data:application/pdf;base64," + b64,
+      }
+    : {
+        type: "input_image",
+        image_url: "data:" + file.mime + ";base64," + b64,
+        detail: "high",
+      };
+}
+
 export async function modelSettingsFor(mode: Mode): Promise<ModelSettings> {
   if (!hasSupabaseConfig()) return sitesModelSettings[mode];
   const stage = await pipelineStage(mode);
@@ -233,6 +253,7 @@ export async function readReuseFingerprint(
   svc: ServiceClient,
   teacher: string,
   p: AnalyzeParams,
+  settings: ModelSettings,
 ): Promise<string | null> {
   if (!reusableReadMode(p.mode) || p.uploadIds.length === 0) return null;
   const { data: rows, error } = await svc
@@ -249,6 +270,25 @@ export async function readReuseFingerprint(
     new Set(rows.map((r) => r.content_sha256 || "upload:" + r.id)),
   ).sort();
   if (!hashes.length) return null;
+  return reuseFingerprintKey(p, hashes, settings);
+}
+
+/**
+ * The fingerprint string itself, from the request, the page hashes and the
+ * model settings that will serve it. Pure, so the rule is testable.
+ *
+ * The model, its reasoning effort and its output ceiling are part of it (12 Oct
+ * 2026). Without them, raising pipeline_config -- as was done that morning to
+ * get better reads -- changed nothing for 48 hours: an identical re-upload was
+ * handed the read the OLD settings produced, and the upgrade looked like it had
+ * not worked. A settings change is now a fingerprint change, so the next read
+ * after it is a fresh one.
+ */
+export function reuseFingerprintKey(
+  p: Pick<AnalyzeParams, "mode" | "subject" | "grade" | "framework" | "targetStandards" | "passage">,
+  hashes: string[],
+  settings: ModelSettings,
+): string {
   const targets = [...p.targetStandards].sort();
   // The passage changes what an assignment read returns, so a read done with a
   // passage must not be served a cached read done without one. Its length is a
@@ -262,7 +302,10 @@ export async function readReuseFingerprint(
     p.framework,
     targets.join(","),
     passageKey,
-    hashes.join(","),
+    "m:" + settings.model,
+    "e:" + settings.effort,
+    "o:" + settings.maxOutput,
+    [...hashes].sort().join(","),
   ].join("|");
 }
 

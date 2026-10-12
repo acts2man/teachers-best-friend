@@ -24,6 +24,7 @@ import {
   recordScanUsage,
   shareCatalog,
 } from "@/lib/analyze-server";
+import { logAiFailure, type AiFailureKind } from "@/lib/app-events-server";
 
 export const maxDuration = 26;
 
@@ -132,6 +133,16 @@ export async function GET(
         storedMessage,
         remote.usage,
       );
+      await logAiFailure({
+        teacherId: user,
+        mode: p.mode,
+        kind: (status === "incomplete" ? "incomplete" : "error") as AiFailureKind,
+        model,
+        assessmentId: p.assessmentId,
+        scanId,
+        message: storedMessage,
+        counts: { outputTokens: remote.usage?.output_tokens ?? 0 },
+      });
       await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: userMessage });
     }
@@ -150,6 +161,16 @@ export async function GET(
         message,
         remote.usage,
       );
+      await logAiFailure({
+        teacherId: user,
+        mode: p.mode,
+        kind: ("empty") as AiFailureKind,
+        model,
+        assessmentId: p.assessmentId,
+        scanId,
+        message: message,
+        counts: { outputTokens: remote.usage?.output_tokens ?? 0 },
+      });
       await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: message });
     }
@@ -177,6 +198,16 @@ export async function GET(
         message,
         remote.usage,
       );
+      await logAiFailure({
+        teacherId: user,
+        mode: p.mode,
+        kind: ("unparseable") as AiFailureKind,
+        model,
+        assessmentId: p.assessmentId,
+        scanId,
+        message: message,
+        counts: { outputTokens: remote.usage?.output_tokens ?? 0 },
+      });
       await settle(svc, user, p, scanId, false);
       return Response.json({ status: "failed", error: message });
     }
