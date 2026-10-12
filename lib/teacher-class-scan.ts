@@ -599,6 +599,44 @@ export function inScanOrder<T extends { id: string }>(
     .map(({ s }) => s);
 }
 
+/**
+ * The whole roster to save after a class scan: every student of the teacher's
+ * OTHER classes exactly as they were, plus this class's students as the scan
+ * left them.
+ *
+ * applyScannedGroups works on one class -- the panel hands it the active
+ * class's students -- and returns that class's roster. Saving that as
+ * `w.students` told sync_workspace that every student in every other class had
+ * been deleted, and it deleted them, responses and all (a pilot teacher with
+ * five classes, 12 Oct 2026). `before` is the class roster the scan was given;
+ * `after` is what it returned. Existing students keep their place in the
+ * roster; students the scan created follow.
+ */
+export function keepOtherClassStudents(
+  all: Student[],
+  before: Student[],
+  after: Student[],
+): Student[] {
+  const handedIn = new Set(before.map((s) => s.id));
+  const returned = new Map(after.map((s) => [s.id, s]));
+  const kept: Student[] = [];
+  const placed = new Set<string>();
+  for (const s of all) {
+    if (!handedIn.has(s.id)) {
+      kept.push(s);
+      placed.add(s.id);
+      continue;
+    }
+    const next = returned.get(s.id);
+    if (next) {
+      kept.push(next);
+      placed.add(s.id);
+    }
+  }
+  for (const s of after) if (!placed.has(s.id)) kept.push(s);
+  return kept;
+}
+
 export type ConfirmedGroup = {
   studentId: string | null;
   name: string;
