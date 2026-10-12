@@ -41,6 +41,7 @@ import {
   groupPagesByCapture,
   groupPagesByName,
   gradeInBatches,
+  keepOtherClassStudents,
   mergeNameReads,
   planNameBatches,
   planScanBatches,
@@ -982,7 +983,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     const ok = await save(
       {
         ...w,
-        students: reconcileEvidence(result.students, result.assessment),
+        // `students` is the active class only. Saving result.students alone
+        // deleted every student in the teacher's other classes, with their
+        // grades (12 Oct 2026); merge it back into the whole roster.
+        students: reconcileEvidence(
+          keepOtherClassStudents(w.students, students, result.students),
+          result.assessment,
+        ),
         assessments: w.assessments.map((x) => (x.id === a.id ? result.assessment : x)),
       },
       result.studentCount +
