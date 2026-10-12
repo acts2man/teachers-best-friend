@@ -36,6 +36,18 @@ function fixture() {
   w.classes.push({ id: "period-2", name: "Period 2", grade: w.classes[0].grade, framework: w.classes[0].framework, demo: false });
   for (const [i, name] of ["Alexandria Montgomery-Fitzgerald", "Bartholomew Okonkwo-Reyes", "Guadalupe Villanueva Castillo"].entries())
     w.students.push({ id: "p2-student-" + i, classId: "period-2", name, color: "#4f6bed", evidence: [], notes: "" });
+  // ...and graded work of its own: a copy of the math demo assessment moved to
+  // Period 2, its responses re-pointed at Period 2's students. These are the
+  // graded answers the old save took down with the students.
+  const math = w.assessments.find((x) => x.id === "math-demo");
+  const p2Ids = ["p2-student-0", "p2-student-1", "p2-student-2"];
+  const p2Responses = math.questions.flatMap((q) =>
+    p2Ids.map((studentId, k) => ({
+      id: `p2-response-${q.id}-${k}`, studentId, questionId: q.id, answer: "7", finalAnswer: "7",
+      correct: false, match: 50, misconception: "", confidence: 100, verified: true,
+    })),
+  );
+  w.assessments.push({ ...math, id: "p2-quiz", classId: "period-2", classIds: [], title: "Period 2 quiz", responses: p2Responses, studentOrder: p2Ids });
   w.activeClassId = w.classes[0].id;
   return w;
 }
@@ -142,6 +154,17 @@ for (const [width, height] of VIEWPORTS) {
     check(lost.length === 0, `${tag}: no student was dropped (lost: ${lost.length}${lost.length ? " — " + lost.join(", ") : ""})`);
     check(otherClass.every((id) => after.includes(id)), `${tag}: every student in the other class is still in the save`);
     check(after.length === before.length + 1, `${tag}: exactly one new student was created (${after.length - before.length})`);
+    const p2Before = w.assessments.find((x) => x.id === "p2-quiz");
+    const p2After = (saved.workspace?.assessments ?? []).find((x) => x.id === "p2-quiz");
+    check(
+      !!p2After && JSON.stringify(p2After.responses) === JSON.stringify(p2Before.responses),
+      `${tag}: the other class's ${p2Before.responses.length} graded answers are in the save, unchanged`,
+    );
+    const p2Students = (saved.workspace?.students ?? []).filter((s) => s.classId === "period-2");
+    check(
+      JSON.stringify(p2Students) === JSON.stringify(w.students.filter((s) => s.classId === "period-2")),
+      `${tag}: the other class's student records are byte-identical`,
+    );
     const graded = (saved.workspace?.assessments ?? []).find((x) => x.id === "ela-demo");
     check(graded && graded.responses.length > a.responses.length, `${tag}: the graded answers were saved`);
   }

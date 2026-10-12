@@ -115,6 +115,12 @@ test("the class-scan save goes through keepOtherClassStudents", () => {
   // drive end to end; this pins the one line that decides what is saved.
   const src = readFileSync("components/teacher-class-scan.tsx", "utf8");
   const save = src.slice(src.indexOf("const result = applyScannedGroups("));
-  const call = save.slice(0, save.indexOf("setSaving(false)"));
+  // Comments stripped first, so a commented-out correct line beside a live
+  // `students: result.students` cannot pass.
+  const call = save
+    .slice(0, save.indexOf("setSaving(false)"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(call, /students:\s*result\.students/);
   assert.match(call, /students:\s*reconcileEvidence\(\s*keepOtherClassStudents\(\s*w\.students,\s*students,\s*result\.students\s*\)/);
 });
