@@ -142,7 +142,14 @@ export async function copyFixtures(svc: Svc, assessmentLegacyId: string) {
       },
       { onConflict: "teacher_id,assessment_legacy_id,source_upload_id" },
     );
-    if (ins) throw new Error("Recording a copied photo failed: " + ins.message);
+    if (ins) {
+      // No row, no record of the copy: remove it now, or nothing ever would.
+      // This is also what happens if the teacher's agreement was withdrawn
+      // ("delete my data") while this request was copying -- the row's foreign
+      // key then refuses it (#128 round-3 review).
+      await svc.storage.from(FIXTURE_BUCKET).remove([path]);
+      throw new Error("Recording a copied photo failed: " + ins.message);
+    }
     copied++;
   }
   const remaining = todo.filter((t) => !t.row.purged_at).length - copied;

@@ -43,8 +43,10 @@ export async function removeTeacherFixtures(
   // The agreement goes before the files (#128 round-3 review): a fixture copy
   // being made while this runs could otherwise land after the files were
   // removed and before the agreement was, and outlive "delete my data". With
-  // the agreement gone first, no new copy can be made, and the folder listing
-  // below still finds every file whose row the revocation cascaded away.
+  // the agreement gone first, no new copy can be recorded -- a copy already in
+  // flight fails on the row's foreign key and copyFixtures removes its file --
+  // and the folder listing below still finds every file whose row the
+  // revocation cascaded away.
   if (revokeConsent) {
     const { error } = await svc.from("regression_fixture_allowlist").delete().eq("teacher_id", teacherId);
     if (error && !/does not exist|schema cache/i.test(error.message)) throw error;

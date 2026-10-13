@@ -198,6 +198,10 @@ export function scrubDetail(detail: unknown): Record<string, string | number | b
  * Firefox's "/<" nesting, Safari's "global code" -- not a sentence. */
 const FRAME_FN = /^(?:(?:async|new) )?(?:[\w$.<>[\]/]{1,100}|(?:global|module|eval) code)$/;
 
+/** Node's own code: its internals and its built-in modules, nothing else. */
+const NODE_LOCATION =
+  /^node:(?:internal(?:\/[\w/._-]{1,120})?|(?:assert|async_hooks|buffer|child_process|crypto|dns|events|fs|http|https|module|net|os|path|perf_hooks|process|querystring|readline|stream|string_decoder|timers|tls|url|util|vm|worker_threads|zlib)(?:\/[\w._-]{1,60})?)$/;
+
 /** Locations that are markers, not files. */
 const MARKER = /^(?:<anonymous>|<eval>|native|\[native code\]|index \d{1,4})$/;
 
@@ -207,7 +211,7 @@ const MARKER = /^(?:<anonymous>|<eval>|native|\[native code\]|index \d{1,4})$/;
  * a page URL like /students/maria-lopez in a frame says only /students/:seg. */
 function frameLocation(loc: string): string {
   if (MARKER.test(loc)) return loc;
-  if (/^node:(?:internal|[a-z_]{1,30})(?:\/[\w/._-]{1,120})?$/.test(loc)) return loc;
+  if (NODE_LOCATION.test(loc)) return loc;
   let path = loc;
   try {
     path = new URL(loc).pathname;
@@ -225,17 +229,19 @@ function frameLocation(loc: string): string {
 /** One stack line as [function, location, ":line:col"], or null when it is not
  * a code-location frame. Linear-time patterns only: this runs on text a
  * browser sent, before anything else is trusted. */
-function parseFrame(l: string): [string, string, string] | null {
-  if (l.length > 600) return null;
+function parseFrame(line: string): [string, string, string] | null {
+  if (line.length > 600) return null;
+  // Firefox marks where async code resumed: "async*fn@loc", "promise callback*fn@loc".
+  const l = line.replace(/^(?:async|promise callback|setTimeout handler|EventListener\.handleEvent)\*/, "");
   let m: RegExpExecArray | null;
   // V8: "at fn (loc:L:C)", "at fn [as alias] (loc:L:C)", "at fn (<anonymous>)".
-  if ((m = /^at ((?:async |new )?(?:[^\s()[\]]{1,120}|(?:global|module|eval) code))(?: \[as [\w$]{1,60}\])? \((index \d{1,4}|\[native code\]|[^()\s]+?)(:\d{1,7}:\d{1,7})?\)$/.exec(l)))
+  if ((m = /^at ((?:async |new )?(?:[^\s()[\]]{1,120}|(?:global|module|eval) code))(?: \[as [\w$]{1,60}\])? \((index \d{1,4}|\[native code\]|(?:[^()\s]|\([\w.-]{1,60}\))+?)(:\d{1,7}:\d{1,7})?\)$/.exec(l)))
     return m[3] || MARKER.test(m[2]) ? [m[1], m[2], m[3] ?? ""] : null;
   // V8 eval: "at eval (eval at f (loc:L:C), <anonymous>:L:C)" -- where it was evaluated is the useful part.
   if ((m = /^at (eval|[\w$.]{1,120}) \(eval at [\w$.<>]{1,120} \(([^()\s]+?)(:\d{1,7}:\d{1,7})\), [^()]{1,200}\)$/.exec(l)))
     return [m[1], m[2], m[3]];
   // V8, no function: "at loc:L:C".
-  if ((m = /^at ([^\s()]+?)(:\d{1,7}:\d{1,7})$/.exec(l))) return ["", m[1], m[2]];
+  if ((m = /^at ((?:[^\s()]|\([\w.-]{1,60}\))+?)(:\d{1,7}:\d{1,7})$/.exec(l))) return ["", m[1], m[2]];
   // Firefox / Safari: "fn@loc:L:C", "@loc:L:C", "global code@loc:L:C", "fn@[native code]".
   if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@(\[native code\])$/.exec(l))) return [m[1], m[2], ""];
   if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@([^@\s]+?)(?: line \d{1,7} > (?:eval|Function))?(:\d{1,7}:\d{1,7})$/.exec(l)))

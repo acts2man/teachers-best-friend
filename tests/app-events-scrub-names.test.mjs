@@ -216,3 +216,31 @@ test("review: node: locations and build paths are restricted", () => {
   assert.equal(scrubStack("at node:internal/process/task_queues:95:5"), "at node:internal/process/task_queues:95:5");
   assert.equal(scrubStack("at x (/_next/static/Maria+Lopez.js:1:2)"), "at x (/_next/static/:seg:1:2)");
 });
+
+// ---- #128 round-3 confirmation review ----------------------------------------
+test("route-group chunks -- /_next/static/chunks/app/(app)/... -- keep their frames, through both passes", () => {
+  const stack = [
+    "TypeError: x",
+    "    at onRow (https://tbf.app/_next/static/chunks/app/(app)/assessments/page-3f2a1b.js:4:20)",
+    "    at Grader.grade [as run] (https://tbf.app/_next/static/chunks/app/(marketing)/page-9c.js:1:2)",
+    "    at https://tbf.app/_next/static/chunks/app/(app)/layout-77.js:5:6",
+    "    at render (/var/task/.next/server/app/(app)/app/page.js:7:8)",
+    "async*onClick@https://tbf.app/_next/static/chunks/app/(app)/x.js:9:10",
+  ].join("\n");
+  const once = scrubStack(stack);
+  assert.deepEqual(once.split("\n"), [
+    "at onRow (/_next/static/chunks/app/(app)/assessments/page-3f2a1b.js:4:20)",
+    "at Grader.grade (/_next/static/chunks/app/(marketing)/page-9c.js:1:2)",
+    "at /_next/static/chunks/app/(app)/layout-77.js:5:6",
+    "at render (/.next/server/app/(app)/app/page.js:7:8)",
+    "at onClick (/_next/static/chunks/app/(app)/x.js:9:10)",
+  ]);
+  assert.equal(scrubStack(once), once);
+});
+
+test("node: locations are node's own modules only", () => {
+  // Anything else under node: is not kept as written: it becomes a template.
+  assert.doesNotMatch(scrubStack("at node:maria:1:2"), /maria/);
+  assert.doesNotMatch(scrubStack("at node:maria_lopez/report:1:2"), /maria|lopez|report/);
+  assert.equal(scrubStack("at node:fs:1:2"), "at node:fs:1:2");
+});

@@ -121,7 +121,7 @@ test("a teacher with over 1,000 fixture rows, and a copy whose row was never wri
 // #128 round 3, item c: the fixtures were purged AFTER the documents and the
 // upload rows were already deleted, so a failure there left a half-deleted
 // account -- documents gone, fixture copies of the same photos still kept.
-test("the fixture copies go first: if that fails, nothing else has been deleted yet", async () => {
+test("the fixture copies go first: if that fails, no document or upload row has been deleted yet", async () => {
   const log = [];
   const tables = {
     teacher_uploads: [{ owner_id: "t1", object_path: "t1/a.jpg" }],
@@ -147,4 +147,45 @@ test("the fixture copies go first: if that fails, nothing else has been deleted 
   assert.ok(fixtureSteps.length >= 2 && fixtureSteps.every((i) => i < firstDoc), "fixtures first: " + log.join(" | "));
   assert.ok(log.indexOf("delete regression_fixture_allowlist 1") < log.findIndex((l) => l.startsWith("remove regression-fixtures")), "the agreement before the files");
   assert.ok(log.includes("remove teacher-documents t1/a.jpg"));
+});
+
+// #128 round-3 confirmation review: a copy already in flight when the teacher
+// withdraws their agreement uploads its file, then fails to record it (the
+// row's foreign key refuses it). That file must not outlive "delete my data":
+// copyFixtures removes what it just uploaded when the record fails.
+test("a copy whose record fails removes the file it just uploaded", async () => {
+  const log = [];
+  const ws = { classes: [], students: [], assessments: [{ id: "a1", classId: "c", title: "t", questions: [], responses: [], studentUploadIds: { s1: ["p1"] }, uploadIds: ["p1"] }] };
+  const rows = {
+    regression_fixture_allowlist: [{ teacher_id: "t1", assessment_legacy_id: "a1" }],
+    teacher_uploads: [{ id: "p1", name: "scan-1.jpg", created_at: "2026-10-12T03:00:00Z", object_path: "t1/p1", mime: "image/jpeg", size: 10, content_sha256: "x", purged_at: null }],
+    regression_fixtures: [],
+  };
+  const svc = {
+    rpc: async () => ({ data: ws, error: null }),
+    from: (table) => {
+      let op = "select";
+      const q = {
+        select() { return q; }, eq() { return q; }, in() { return q; }, gte() { return q; }, lte() { return q; }, order() { return q; },
+        like() { op = "near"; return q; },
+        upsert() { op = "upsert"; return q; },
+        maybeSingle() { return q; },
+        then(resolve) {
+          if (op === "upsert") return resolve({ data: null, error: { message: "insert violates foreign key constraint" } });
+          return resolve({ data: op === "near" ? [] : rows[table] ?? [], error: null });
+        },
+      };
+      return q;
+    },
+    storage: {
+      from: (bucket) => ({
+        download: async () => ({ data: new Blob([new Uint8Array([1, 2, 3])]), error: null }),
+        upload: async (path) => { log.push(`upload ${bucket} ${path}`); return { error: null }; },
+        remove: async (paths) => { log.push(`remove ${bucket} ${paths.join(",")}`); return { error: null }; },
+      }),
+    },
+  };
+  const { copyFixtures } = bundle("lib/regression/fixtures.ts", {});
+  await assert.rejects(copyFixtures(svc, "a1"), /Recording a copied photo failed/);
+  assert.deepEqual(log, ["upload regression-fixtures t1/a1/p1", "remove regression-fixtures t1/a1/p1"]);
 });
