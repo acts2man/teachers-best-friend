@@ -396,7 +396,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   } | null>(null);
   // The name reads behind the rows on the matching screen, so a row can be
   // split and re-graded there (#125 follow-up a).
-  const shownRun = useRef<{ names: PageName[]; ids: string[]; nameIds: (string | null)[] } | null>(null);
+  const [shownRun, setShownRun] = useState<{ names: PageName[]; ids: string[]; nameIds: (string | null)[] } | null>(null);
   const [splitting, setSplitting] = useState<string | null>(null);
   useEffect(() => {
     // Not while the other device is grading this same stack: it would read the
@@ -844,7 +844,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       nameIds,
     ).filter((_, i) => done.has(i));
     setPageUploadIds(ids);
-    shownRun.current = { names, ids, nameIds };
+    setShownRun({ names, ids, nameIds });
     if (!resolved.length)
       toast.error(
         "No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.",
@@ -1075,7 +1075,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * teacher's to match before saving.
    */
   async function splitGroup(g: ResolvedGroup, at: number) {
-    const run = shownRun.current;
+    const run = shownRun;
     if (!run || splitting) return;
     const first = g.pageIndexes.slice(0, at);
     const second = g.pageIndexes.slice(at);
@@ -1563,12 +1563,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     Choose whose paper this is before saving.
                   </p>
                 )}
-                {sameFirstNameSplit(g.pageIndexes, shownRun.current?.names ?? []) > 0 && !discarded.has(g.key) && (
+                {sameFirstNameSplit(g.pageIndexes, shownRun?.names ?? []) > 0 && !discarded.has(g.key) && (
                   <Action
                     variant="secondary small"
                     className="name-match-split"
                     disabled={busy || saving || !!splitting}
-                    onClick={() => splitGroup(g, sameFirstNameSplit(g.pageIndexes, shownRun.current?.names ?? []))}
+                    onClick={() => splitGroup(g, sameFirstNameSplit(g.pageIndexes, shownRun?.names ?? []))}
                   >
                     {splitting === g.key ? <LoaderCircle className="spin" size={14} /> : <Users size={14} />}{" "}
                     These are 2 different students
