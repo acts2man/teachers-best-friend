@@ -169,27 +169,55 @@ for (const [W, H] of [[360, 640], [390, 844], [412, 915]]) {
       return document.activeElement === b;
     });
     check(!focusable, `${W}x${H}: tucked away, the button cannot take keyboard focus`);
-    // Move the layout twice with no scroll (a photo loading, a group growing,
-    // then shrinking back). Each time the bar must match what is really under
-    // its spot: tucked exactly when a control is there, never stale either way.
-    const states = [];
-    for (const pad of ["900px", "", "37px"]) {
-      await page.evaluate((pad) => document.querySelectorAll("#grade-by-question .gbq-key").forEach((el) => (el.style.paddingBottom = pad)), pad);
+    // Round-3 review: the layout moving WITHOUT a scroll must be followed both
+    // ways. The control under the bar's spot is pushed out of it by an empty
+    // block inserted just above it (no scroll; scroll anchoring off), so the
+    // spot is provably clear: the bar must come back. Then the block goes and
+    // the control returns: the bar must tuck again. "Under" is judged here
+    // independently of the app -- by what elementsFromPoint finds at a grid of
+    // points over the bar's spot -- not by a copy of its formula.
+    const truth = () => page.evaluate((sel) => {
+      const wrap = document.querySelector(".confirm-matches-bar");
+      const b = wrap.querySelector(".confirm-matches");
+      const bottom = innerHeight - (parseFloat(getComputedStyle(wrap).bottom) || 0);
+      const left = (innerWidth - b.offsetWidth) / 2;
+      let under = null;
+      // The button's box plus the 8px finger margin the app promises.
+      document.querySelectorAll("[data-under]").forEach((el) => el.removeAttribute("data-under"));
+      for (let y = bottom - b.offsetHeight - 8; y <= bottom + 8 && !under; y += 4)
+        for (let x = Math.max(0, left - 8); x <= Math.min(innerWidth - 1, left + b.offsetWidth + 8) && !under; x += 6) {
+          const hit = document.elementsFromPoint(x, Math.min(y, innerHeight - 1)).find((el) => !wrap.contains(el) && el.closest(sel));
+          if (hit) under = hit.closest(sel);
+        }
+      if (under) under.setAttribute("data-under", "");
+      return { under: !!under, tucked: wrap.classList.contains("is-tucked") };
+    }, TAPPABLE);
+    await page.evaluate(() => (document.documentElement.style.overflowAnchor = "none"));
+    const t0 = await truth();
+    // Push whatever is under the spot down, until nothing is (a few rounds:
+    // another control can move into the spot from above).
+    let moved = false;
+    let t1 = t0;
+    for (let round = 0; round < 6 && t1.under; round++) {
+      moved = await page.evaluate(() => {
+        const el = document.querySelector("[data-under]");
+        if (!el) return false;
+        const block = document.createElement("div");
+        block.className = "shift-block";
+        block.style.height = innerHeight + "px";
+        // Above the control's own row, so the whole row moves down.
+        const row = el.closest("li, .gbq-credit, .gbq-group-head, .grade-decided, label, .gbq-group") || el;
+        row.parentElement.insertBefore(block, row);
+        return true;
+      });
       await page.waitForTimeout(150);
-      const truth = await page.evaluate((sel) => {
-        const wrap = document.querySelector(".confirm-matches-bar");
-        const b = wrap.querySelector(".confirm-matches");
-        const bottom = innerHeight - (parseFloat(getComputedStyle(wrap).bottom) || 0);
-        const left = (innerWidth - b.offsetWidth) / 2;
-        const z = { top: bottom - b.offsetHeight - 8, bottom: bottom + 8, left: left - 8, right: left + b.offsetWidth + 8 };
-        const under = [...document.querySelectorAll(sel)]
-          .filter((el) => !wrap.contains(el) && !el.closest("[inert]"))
-          .some((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > z.top && r.top < z.bottom && r.right > z.left && r.left < z.right; });
-        return { under, tucked: wrap.classList.contains("is-tucked") };
-      }, TAPPABLE);
-      states.push(truth);
+      t1 = await truth();
     }
-    check(states.every((t) => t.under === t.tucked), `${W}x${H}: after the layout moved 3 times with no scroll, the bar followed each time (${states.map((t) => (t.tucked ? "tucked" : "showing") + (t.under === t.tucked ? "" : " WRONG")).join(", ")})`);
+    await page.evaluate(() => document.querySelectorAll(".shift-block").forEach((b) => b.remove()));
+    await page.waitForTimeout(150);
+    const t2 = await truth();
+    check(t0.tucked && t0.under && moved && !t1.under && !t1.tucked && t2.under && t2.tucked,
+      `${W}x${H}: with no scroll, the bar comes back when the layout clears its spot and tucks again when a control returns (before ${t0.tucked ? "tucked" : "showing"}/${t0.under ? "control" : "clear"}, cleared ${t1.tucked ? "tucked" : "showing"}/${t1.under ? "control" : "clear"}, restored ${t2.tucked ? "tucked" : "showing"}/${t2.under ? "control" : "clear"})`);
   }
   await ctx.close();
 }

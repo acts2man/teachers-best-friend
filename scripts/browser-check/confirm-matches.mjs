@@ -77,6 +77,24 @@ async function open(browser, opts) {
   return { ...f, ctx, page, saves };
 }
 
+/** Which of the two confirm buttons is actually on screen now: the pinned bar
+ * (showing, not tucked, inside the viewport) and/or the in-page one at the top
+ * of the question (inside the viewport). Being in the page is not enough. */
+async function stepOnScreen(page) {
+  return page.evaluate(() => {
+    const inView = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+    };
+    const wrap = document.querySelector(".confirm-matches-bar");
+    return {
+      bar: !!wrap && !wrap.classList.contains("is-tucked") && inView(wrap.querySelector(".confirm-matches")),
+      inline: inView(document.querySelector("#grade-by-question .confirm-matches-inline")),
+    };
+  });
+}
+
 /** Tap the pinned bar the way a teacher would: at the first scroll position
  * where it is showing (a tucked bar cannot be tapped). */
 async function tapBar(page) {
@@ -112,12 +130,9 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   const button = page.locator(".confirm-matches-bar .confirm-matches");
   await button.waitFor({ timeout: 10000 });
   await page.waitForTimeout(400);
-  const tucked = await page.evaluate(() => document.querySelector(".confirm-matches-bar")?.classList.contains("is-tucked"));
-  const box = await button.boundingBox();
-  const onScreen = !tucked && !!box && box.y >= 0 && box.y + box.height <= H;
-  const inline = page.locator("#grade-by-question .confirm-matches-inline");
-  check(onScreen || (await inline.count()) === 1, `right after partial credit the step is one tap away: the bar ${onScreen ? "is on screen" : "is tucked (a control is under its spot)"}${(await inline.count()) ? ", and the same button is at the top of the question" : ""}`);
-  console.log(`  INFO ${W}x${H}: right after partial credit the pinned bar is ${onScreen ? "showing" : "tucked away"}`);
+  const step = await stepOnScreen(page);
+  check(step.bar || step.inline, `right after partial credit the step is on screen, one tap away (${step.bar ? "the pinned bar" : step.inline ? "the button at the top of the question; the bar is tucked" : "neither the bar nor the in-page button is on screen"})`);
+  console.log(`  INFO ${W}x${H}: right after partial credit -- pinned bar ${step.bar ? "showing" : "tucked"}, in-page button ${step.inline ? "on screen" : "off screen"}`);
   const label = await button.innerText();
   check(new RegExp(`Confirm ${matches.length} answers? that\\s+match the key`).test(label.replace(/\s+/g, " ")), `it says "Confirm ${matches.length} answers that match the key" (got "${label.replace(/\s+/g, " ")}")`);
   await page.mouse.move(1, 1); // the colour at rest, not the hover shade
@@ -176,8 +191,10 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   check(onQ2, `after Q1, the app moves on to Q${q2.number}, where every student matched the key`);
   const bar = page.locator(".confirm-matches-bar .confirm-matches");
   const shown = await bar.waitFor({ timeout: 5000 }).then(() => true, () => false);
-  const inlineQ2 = await page.locator("#grade-by-question .confirm-matches-inline").count();
-  check(shown && inlineQ2 === 1, "there, with nothing to decide, the green button is there (no dead end): pinned, and at the top of the question");
+  // The app has just scrolled the question's top into view.
+  await page.waitForTimeout(600);
+  const q2step = await stepOnScreen(page);
+  check(shown && (q2step.bar || q2step.inline), `there, with nothing to decide, a green button is on screen (no dead end): ${q2step.bar ? "the pinned bar" : ""}${q2step.bar && q2step.inline ? " and " : ""}${q2step.inline ? "the one at the top of the question" : ""}${!q2step.bar && !q2step.inline ? "neither" : ""}`);
   await page.screenshot({ path: join(OUT, `confirm-matches-all-match-${W}x${H}.png`) });
   if (shown) {
     const before = saves.length;

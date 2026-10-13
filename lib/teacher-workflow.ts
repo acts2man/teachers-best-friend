@@ -1226,14 +1226,16 @@ export function matchesToConfirm(a: Assessment, questionId?: string): string[] {
 
 /** Pulls one answer out of its group to be graded on its own (alone=true),
  * or puts it back (false). Stored, so the separation survives a regroup, a
- * reload and the green bar. Pulled out of a group that was already graded,
- * the answer goes back to "to decide": that is why the teacher pulled it out. */
+ * reload and the green bar. Its grade, if it has one, is kept: pulled out of a
+ * graded group it shows that grade with "Change", so a stray tap loses
+ * nothing (#126 round-3 review: un-grading it, then "Back into the group",
+ * turned a teacher's credit into an unchecked "AI match" the bar confirmed). */
 export function setGradedAlone(a: Assessment, responseId: string, alone: boolean): Assessment {
   return {
     ...a,
     responses: a.responses.map((r) => {
       if (r.id !== responseId) return r;
-      if (alone) return { ...r, gradedAlone: true, verified: false };
+      if (alone) return { ...r, gradedAlone: true };
       const { gradedAlone: _dropped, ...rest } = r;
       void _dropped;
       return rest;

@@ -6,7 +6,8 @@
 --
 -- What it proves (CLAUDE.md, "Workspace persistence"): StudentResponse.gradedAlone
 -- survives a save and a reload through sync_workspace / get_workspace_json, and
--- a value other than true is dropped instead of failing the whole save.
+-- a value other than true is dropped instead of failing the whole save, and a
+-- stored true is cleared by the next save without it ("Back into the group").
 --
 -- Set the teacher below to an account whose workspace has an assessment with
 -- at least 3 student responses -- ideally your own test account, not a pilot
@@ -20,6 +21,8 @@ declare
   tid uuid := '00000000-0000-0000-0000-000000000000'; -- <-- set this
   ws jsonb;
   back jsonb;
+  cleared jsonb;
+  ri int;
   ai int;
   ids text[];
   before_counts jsonb;
@@ -49,13 +52,21 @@ begin
   execute counts into before_counts using tid;
   perform public.sync_workspace(tid, ws);
   back := public.get_workspace_json(tid);
+  -- "Back into the group" on r0: the next save no longer carries the mark.
+  select (o - 1)::int into ri
+    from jsonb_array_elements(back->'assessments'->ai->'responses') with ordinality e(x, o)
+   where x->>'id' = ids[1];
+  perform public.sync_workspace(tid, jsonb_set(back, array['assessments', ai::text, 'responses', ri::text],
+    (back->'assessments'->ai->'responses'->ri) - 'gradedAlone'));
+  cleared := public.get_workspace_json(tid);
   execute counts into after_counts using tid;
 
   -- Read back by response id, not position: the reload orders responses itself.
-  raise exception 'ROLLED_BACK expect r0=true r1=absent r2=absent and equal counts | got r0=% r1=% r2=% | counts before=% after=%',
+  raise exception 'ROLLED_BACK expect r0=true r1=absent r2=absent r0_after_back=absent and equal counts | got r0=% r1=% r2=% r0_after_back=% | counts before=% after=%',
     coalesce((select x->>'gradedAlone' from jsonb_array_elements(back->'assessments'->ai->'responses') x where x->>'id' = ids[1]), 'absent'),
     coalesce((select x->>'gradedAlone' from jsonb_array_elements(back->'assessments'->ai->'responses') x where x->>'id' = ids[2]), 'absent'),
     coalesce((select x->>'gradedAlone' from jsonb_array_elements(back->'assessments'->ai->'responses') x where x->>'id' = ids[3]), 'absent'),
+    coalesce((select x->>'gradedAlone' from jsonb_array_elements(cleared->'assessments'->ai->'responses') x where x->>'id' = ids[1]), 'absent'),
     before_counts, after_counts;
 end
 $check$;

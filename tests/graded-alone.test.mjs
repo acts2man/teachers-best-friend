@@ -129,11 +129,26 @@ test("a pulled-out answer is not counted, and not 'clear' in the student view, u
   assert.equal(countsAsGraded(a, r2()), true);
 });
 
-test("pulled out of a group that was already graded, the answer is the teacher's to decide again", () => {
+test("pulled out of a group that was already graded, the answer keeps its grade (a stray tap loses nothing)", () => {
   let a = assessment([resp("1", ""), resp("2", "")]);
   a = applyGroupScore(a, ["1", "2"], 0);
   a = setGradedAlone(a, "2", true);
-  assert.equal(groupOf(a, "2").needsDecision, true);
-  assert.equal(groupOf(a, "1").needsDecision, false, "the rest of the group keeps its grade");
-  assert.deepEqual(answersToDecide(a), ["2"]);
+  const r2 = a.responses.find((x) => x.id === "2");
+  assert.equal(r2.verified, true);
+  assert.equal(r2.match, 0);
+  assert.equal(groupOf(a, "2").needsDecision, false, "shown graded, with Change");
+  assert.deepEqual(groupOf(a, "2").responseIds, ["2"]);
+});
+
+test("review round 3: pull out of a teacher-graded group, then back -- never an unchecked 'AI match' the bar confirms", () => {
+  // The teacher gave "16" (the AI said wrong) full credit, pulled one student
+  // out, then put them back. That used to leave an unverified clean match.
+  let a = assessment([resp("1", "16", { correct: false, match: 0, confidence: 95 }), resp("2", "16", { correct: false, match: 0, confidence: 95 })]);
+  a = applyGroupScore(a, ["1", "2"], 100);
+  a = setGradedAlone(a, "2", true);
+  a = setGradedAlone(a, "2", false);
+  const r2 = a.responses.find((x) => x.id === "2");
+  assert.equal(r2.verified, true, "still the teacher's grade");
+  assert.equal(matchesToConfirm(a, "q8").length, 0, "nothing for the bar to confirm");
+  assert.equal(groupAnswers(a, "q8").length, 1, "and back in the group");
 });

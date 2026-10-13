@@ -356,10 +356,9 @@ function GradeByQuestion({
       // Straight onto the element, in this frame: waiting for React to
       // re-render left the bar over a control for up to three frames after a
       // scroll (measured). The state below keeps React's render in agreement.
+      // (aria-hidden is left to React: setting it here could undo a dialog's.)
       wrap.classList.toggle("is-tucked", under);
       wrap.inert = under;
-      if (under) wrap.setAttribute("aria-hidden", "true");
-      else wrap.removeAttribute("aria-hidden");
       setBarTucked(under);
     };
     const schedule = () => {
@@ -383,17 +382,19 @@ function GradeByQuestion({
     // The whole page, not just the panel: a control can appear anywhere (a
     // toast's button, a menu) and must not end up under the bar either.
     observer.observe(document.body, { childList: true, subtree: true });
-    if (panel) {
-      sized?.observe(panel);
-      panel.addEventListener("load", schedule, true);
-    }
+    // And the page's size and every image load, not only the panel's: a photo
+    // loading elsewhere moves controls below the panel too (measured: "More
+    // options" under the bar at 360x640, 1 sweep in 3).
+    sized?.observe(document.body);
+    if (panel) sized?.observe(panel);
+    document.addEventListener("load", schedule, true);
     return () => {
       if (frame) cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", schedule);
       observer.disconnect();
       sized?.disconnect();
-      panel?.removeEventListener("load", schedule, true);
+      document.removeEventListener("load", schedule, true);
     };
   }, [barUp]);
 
@@ -459,9 +460,8 @@ function GradeByQuestion({
 
   /** Pull one student out of their group to grade on their own, or put them
    * back. Saved at once: the separation is part of the answer, so the bar, the
-   * group's buttons and a reload all see it (#126 round 3). Pulled out of a
-   * graded group, the answer goes back to "to decide" -- that is why the
-   * teacher pulled it out. */
+   * group's buttons and a reload all see it (#126 round 3). A grade they
+   * already had is kept, shown with "Change". */
   async function separate(responseId: string, alone: boolean) {
     const ok = await onSave(setGradedAlone(a, responseId, alone), alone ? "Pulled out to grade on their own" : "Back into the group");
     // Bring that student's own credit form into view, wherever its card sorts.
@@ -634,8 +634,11 @@ function GradeByQuestion({
   const sum = questionSummary(a, question.id);
   const worth = questionPoints(a, question);
   // Ricky (11 Oct): once credit has been given on this question, the answers
-  // that already match the key are confirmed in one tap, here, without
-  // scrolling -- the bar sticks to the bottom of the screen until it is done.
+  // that already match the key are confirmed in one tap. The bar sticks to the
+  // bottom of the screen until it is done -- but since round 3 it tucks itself
+  // away whenever any control would sit under it, which on a phone is most of
+  // the time; the same button at the top of the question is always there.
+  // That trade is Ricky's call and is put to him (#126 round 3).
   const pendingMatches = REQUIRE_CONFIRM_MATCHES ? matchesToConfirm(a, question.id) : [];
   // Shown once credit has been given here, or straight away when nothing on
   // this question is left to decide (every student matched the key), so a
@@ -796,7 +799,13 @@ function AnswerGroupCard({
     >
       <div className="gbq-group-head">
         <span className="gbq-answer">
-          {g.unsure ? "Unsure — check each one" : blank ? "(blank)" : g.answer}
+          {g.unsure
+            ? "Unsure — check each one"
+            : blank && g.alone
+              ? "Read as blank — check the photo"
+              : blank
+                ? "(blank)"
+                : g.answer}
         </span>
         <span className="cell-meta">
           {g.alone
@@ -900,7 +909,7 @@ function AnswerGroupCard({
         <CreditForm
           worth={worth}
           busy={busy}
-          label={g.answer || "blank"}
+          label={g.answer || (g.alone ? "read as blank" : "blank")}
           initial={g.verified ? (Math.round(g.match) / 100) * worth : null}
           who={together.length === 1 ? "this student" : "all " + together.length}
           onGive={(points) => onGrade(points, errorType, together.map((r) => r.id))}
