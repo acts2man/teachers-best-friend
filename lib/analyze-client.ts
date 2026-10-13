@@ -15,6 +15,35 @@ const POLL_DEADLINE_MS = 13 * 60 * 1000;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnalyzeResult = any;
 
+/** A failed analysis, with what kind of failure it was, so a caller can tell
+ * a passing fault (worth one more try) from a refusal (never). */
+export class AnalyzeError extends Error {
+  constructor(
+    message: string,
+    /** The HTTP status, or "job-failed" / "deadline" for a background job. */
+    public reason: number | "job-failed" | "deadline",
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Whether trying again could help (#125 follow-up review): a network failure,
+ * a background job that failed, or a server error other than 503. Never a
+ * refusal -- a 4xx, including the teacher's daily cap (429); never 503, which
+ * is also the platform's spending cap; never the 13-minute poll deadline, which
+ * would only start a duplicate of a job that may still finish.
+ */
+export function isRetryableAnalyzeError(e: unknown): boolean {
+  if (e instanceof AnalyzeError) {
+    if (e.reason === "job-failed") return true;
+    if (e.reason === "deadline") return false;
+    return e.reason >= 500 && e.reason !== 503;
+  }
+  // fetch rejects with a TypeError when the network fails.
+  return e instanceof TypeError;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -46,7 +75,7 @@ export async function analyzeRequest(
     // A refused scan still moves the meter's meaning (402 = out of scans), so
     // let the UI re-read it rather than showing a stale "you have N left".
     announceScanComplete();
-    throw new Error(d.error);
+    throw new AnalyzeError(d.error, r.status);
   }
   if (!d.scanId) {
     announceScanComplete();
@@ -83,16 +112,18 @@ async function pollScan(scanId: string): Promise<AnalyzeResult> {
       cache: "no-store",
     });
     const d = await readJson(r);
-    if (!r.ok) throw new Error(d.error);
+    if (!r.ok) throw new AnalyzeError(d.error, r.status);
     if (d.status === "complete") return { result: d.result };
     if (d.status === "failed")
-      throw new Error(
+      throw new AnalyzeError(
         d.error ||
           "The analysis couldn’t be completed. Your documents are saved.",
+        "job-failed",
       );
     delay = Math.min(Math.round(delay * 1.3), 5000);
   }
-  throw new Error(
+  throw new AnalyzeError(
     "The analysis is taking longer than expected. Your uploads are saved — please check back shortly.",
+    "deadline",
   );
 }

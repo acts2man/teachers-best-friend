@@ -120,6 +120,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     check(JSON.stringify(sent.classScans) === JSON.stringify([[2], [1, 1]]), `${tag} a: graded once as one, then once more as two (${JSON.stringify(sent.classScans)})`);
     check((await rows(page).count()) === 2, `${tag} a: two rows after the split`);
     check(await save(page).isDisabled(), `${tag} a: nothing saves until the second is matched`);
+    check((await rows(page).nth(1).innerText()).includes("You split this paper off from the one above"), `${tag} a: the second row says it was split off (not the repeated-name text)`);
     await rows(page).first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(OUT, `name-split-after-${W}.png`) });
     // The second row: "Add as a new student".
@@ -131,6 +132,19 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     await ctx.close();
   } catch (e) {
     fail.push(`${tag} a: stopped -- ${String(e.message || e).split("\n")[0]}`);
+  }
+  // ---- a, two-page tests: the name on page 1 only -------------------------
+  try {
+    const { page, ctx, sent } = await scan(W, H, ["Maria", "", "Maria", ""], "a2");
+    check((await rows(page).count()) === 1, `${tag} a2: [Maria, -, Maria, -] starts as one student`);
+    const split = page.getByRole("button", { name: "These are 2 different students" });
+    check((await split.count()) === 1, `${tag} a2: the split is offered across the blank pages`);
+    await split.click();
+    await page.getByText("Split into two students").first().waitFor({ timeout: 15000 }).catch(() => {});
+    check(JSON.stringify(sent.classScans) === JSON.stringify([[4], [2, 2]]), `${tag} a2: graded again as two students of two pages (${JSON.stringify(sent.classScans)})`);
+    await ctx.close();
+  } catch (e) {
+    fail.push(`${tag} a2: stopped -- ${String(e.message || e).split("\n")[0]}`);
   }
   // ---- b ---------------------------------------------------------------
   try {

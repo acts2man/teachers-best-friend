@@ -241,7 +241,7 @@ test("follow-up b: those pages are marked for the teacher to match (unassigned),
     const dee = rows.filter((r) => r.detectedName === "Dee");
     assert.equal(dee.length, 3);
     for (const r of dee) {
-      assert.equal(r.unassigned, true, "the teacher matches it");
+      assert.equal(r.unassigned, "repeated", "the teacher matches it, and is told why");
       assert.equal(r.studentId, null);
       assert.equal(r.suggestedId, null);
     }

@@ -19,7 +19,7 @@ test("a read that fails twice then succeeds is used; the waits back off", async 
   const out = await withRetry(async () => {
     if (++calls < 3) throw new Error("429");
     return "ok";
-  }, NAME_RETRY_DELAYS_MS, async (ms) => void waits.push(ms), () => 0);
+  }, { delays: NAME_RETRY_DELAYS_MS, wait: async (ms) => void waits.push(ms), random: () => 0 });
   assert.equal(out, "ok");
   assert.equal(calls, 3);
   assert.deepEqual(waits, [1500, 4000]);
@@ -27,13 +27,13 @@ test("a read that fails twice then succeeds is used; the waits back off", async 
 
 test("three failures: the last error is thrown, so the page is left for the teacher as before", async () => {
   let calls = 0;
-  await assert.rejects(withRetry(async () => { calls++; throw new Error("boom " + calls); }, [1, 1], async () => {}), /boom 3/);
+  await assert.rejects(withRetry(async () => { calls++; throw new Error("boom " + calls); }, { delays: [1, 1], wait: async () => {} }), /boom 3/);
   assert.equal(calls, 3);
 });
 
 test("jitter is at most a quarter of the delay", async () => {
   const waits = [];
-  await withRetry(async () => { if (waits.length < 1) throw new Error("x"); return 1; }, [1000], async (ms) => void waits.push(ms), () => 0.999);
+  await withRetry(async () => { if (waits.length < 1) throw new Error("x"); return 1; }, { delays: [1000], wait: async (ms) => void waits.push(ms), random: () => 0.999 });
   assert.ok(waits[0] >= 1000 && waits[0] <= 1250, String(waits[0]));
 });
 
@@ -47,8 +47,32 @@ test("a 52-page set, 4 at a time, with a 1-in-10 transient failure: every page g
     requests++;
     if (rand() < 0.1) throw new Error("503");
     return { pages: [{ page: 0, name: "Student " + slice[0].page, confidence: 95 }] };
-  }, [1, 1], async () => {}), () => ({ failed: true }));
+  }, { delays: [1, 1], wait: async () => {} }), () => ({ failed: true }));
   const names = mergeNameReads(52, slices, reads);
   assert.equal(names.filter((n) => n.failed).length, 0, "no page left unread");
   assert.ok(requests > 52, "some were retried: " + requests);
+});
+
+// Review: only a passing fault is retried, and every retry is logged.
+const ac = buildSync({ entryPoints: ["lib/analyze-client.ts"], bundle: true, platform: "node", format: "cjs", write: false });
+const acm = { exports: {} };
+new Function("module", "exports", ac.outputFiles[0].text)(acm, acm.exports);
+const { AnalyzeError, isRetryableAnalyzeError } = acm.exports;
+
+test("never retried: a refusal, the teacher's daily cap (429), the platform cap (503), the poll deadline", async () => {
+  for (const reason of [400, 404, 413, 429, 503, "deadline"]) {
+    let calls = 0;
+    await assert.rejects(withRetry(async () => { calls++; throw new AnalyzeError("no", reason); }, { delays: [1, 1], retryable: isRetryableAnalyzeError, wait: async () => {} }));
+    assert.equal(calls, 1, String(reason));
+  }
+});
+
+test("retried: a network failure, a failed background job, a 500/502/504 -- each retry reported", async () => {
+  for (const make of [() => new TypeError("fetch failed"), () => new AnalyzeError("x", "job-failed"), () => new AnalyzeError("x", 502), () => new AnalyzeError("x", 500), () => new AnalyzeError("x", 504)]) {
+    let calls = 0;
+    const seen = [];
+    const out = await withRetry(async () => { if (++calls < 3) throw make(); return "ok"; }, { delays: [1, 1], retryable: isRetryableAnalyzeError, onRetry: (e, n) => seen.push(n), wait: async () => {} });
+    assert.equal(out, "ok");
+    assert.deepEqual(seen, [1, 2]);
+  }
 });

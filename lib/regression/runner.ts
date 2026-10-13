@@ -338,7 +338,9 @@ export async function stepCase(
         out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
       } catch {
         // As in the class scan: a failed name read is tried again, twice (the
-        // next steps are the backoff), and then leaves its pages unread --
+        // wait is the console's interval between steps, not the class scan's
+        // 1.5 s / 4 s; the replay has no teacher waiting), and then leaves its
+        // pages unread --
         // their own groups, for the teacher -- rather than stopping the case.
         s.job = null;
         const tries = (s.tries ??= []);

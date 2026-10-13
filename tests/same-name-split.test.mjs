@@ -19,14 +19,18 @@ test("two pages reading the same first name, no roster: one student, with the sp
   assert.equal(sameFirstNameSplit(groups[0], names), 1);
 });
 
-test("offered at the first repeat; continuation sheets with no name do not count", () => {
+test("offered at the second reading, skipping pages with no name (two Marias with a two-page test each)", () => {
+  // Review: [Maria, "", Maria, ""] -- the name on page 1 only -- is the common
+  // multi-page case; the split goes at the second Maria's first page.
   const names = pages("Ana", "", "Maria", "", "Maria", "");
   const groups = groupPagesByName(names);
   assert.deepEqual(groups, [[0, 1], [2, 3, 4, 5]]);
   assert.equal(sameFirstNameSplit(groups[0], names), -1);
-  assert.equal(sameFirstNameSplit(groups[1], names), -1, "a blank page between them: not consecutive reads");
+  assert.equal(sameFirstNameSplit(groups[1], names), 2, "split before page 4");
   const tight = pages("Maria", "Maria", "");
   assert.equal(sameFirstNameSplit(groupPagesByName(tight)[0], tight), 1);
+  // A failed read between them breaks the run: unknown is not "no name".
+  assert.equal(sameFirstNameSplit([0, 1, 2], pages("Maria", null, "Maria")), -1);
 });
 
 test("not offered for a full name, different names, or a failed read", () => {

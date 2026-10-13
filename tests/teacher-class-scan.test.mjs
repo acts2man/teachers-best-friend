@@ -1020,7 +1020,8 @@ test("the review screen asks, blocks and flags rather than defaulting", () => {
   const ui = readFileSync("components/teacher-class-scan.tsx", "utf8");
   assert.match(ui, /candidateIds\.length/, "ambiguity reaches the UI");
   assert.match(ui, /"Which " \+ \(firstNameRead\(g\) \|\| "student"\) \+ "\?"/, "and is asked as a question");
-  assert.match(ui, /disabled=\{saving \|\| busy \|\| undecided\.length > 0\}/, "saving waits for the answer");
+  // (#125 follow-up: it also waits while a "2 different students" split grades.)
+  assert.match(ui, /disabled=\{saving \|\| busy \|\| !!splitting \|\| undecided\.length > 0\}/, "saving waits for the answer");
   assert.match(ui, /papers matched to/, "and two papers on one student are named");
   assert.ok(
     !/value=\{g\.studentId \? "existing:" \+ g\.studentId : "new"\}/.test(ui),

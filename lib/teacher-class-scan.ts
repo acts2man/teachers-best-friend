@@ -93,9 +93,11 @@ export const NAME_CONCURRENCY = 4;
 export const NAME_RETRY_DELAYS_MS = [1500, 4000];
 
 /**
- * Runs `fn`, and on a failure tries again after each of `delays` (with up to a
- * quarter of it added at random, so four requests failing together do not all
- * retry at the same instant). Throws the last error once the tries run out.
+ * Runs `fn`, and on a failure that `retryable` says is worth it, tries again
+ * after each of `delays` (with up to a quarter of it added at random, so four
+ * requests failing together do not all retry at the same instant). Throws the
+ * error when it is not retryable or the tries run out. `onRetry` is told about
+ * every failure that is retried, so a retry never hides one from the log.
  *
  * For the per-page name reads (#125 follow-up c): a page whose read fails is
  * left for the teacher to match, one tap each, and a burst of failures -- a
@@ -105,15 +107,26 @@ export const NAME_RETRY_DELAYS_MS = [1500, 4000];
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  delays: number[] = NAME_RETRY_DELAYS_MS,
-  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
-  random: () => number = Math.random,
+  {
+    delays = NAME_RETRY_DELAYS_MS,
+    retryable = () => true,
+    onRetry = () => {},
+    wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+    random = Math.random,
+  }: {
+    delays?: number[];
+    retryable?: (e: unknown) => boolean;
+    onRetry?: (e: unknown, attempt: number) => void;
+    wait?: (ms: number) => Promise<void>;
+    random?: () => number;
+  } = {},
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (e) {
-      if (attempt >= delays.length) throw e;
+      if (attempt >= delays.length || !retryable(e)) throw e;
+      onRetry(e, attempt + 1);
       await wait(Math.round(delays[attempt] * (1 + random() / 4)));
     }
   }
@@ -223,7 +236,8 @@ export type ScannedGroup = {
 export function groupPagesByName(
   pages: PageName[],
   /** How many students on the roster this name could be (0, 1, or more for a
-   * shared first name). Without it nothing is taken for a motto. */
+   * shared first name). Without it, no name is excluded as a roster student
+   * when looking for repeated names (repeatedOffRoster). */
   rosterMatches?: (name: string) => number,
 ): number[][] {
   // The rule for every choice below: a page never joins another student's
@@ -318,12 +332,20 @@ export function repeatedOffRoster(keys: string[], rosterMatches?: (name: string)
  */
 export function sameFirstNameSplit(pageIndexes: number[], names: PageName[]): number {
   const byPage = new Map(names.map((n) => [n.page, n]));
-  for (let j = 1; j < pageIndexes.length; j++) {
-    const a = byPage.get(pageIndexes[j - 1]);
-    const b = byPage.get(pageIndexes[j]);
-    if (!a || !b || a.failed || b.failed) continue;
-    const k = nameKey(b.name);
-    if (k && k === nameKey(a.name) && !k.includes(" ")) return j;
+  // Each name read against the previous name read in the group, skipping pages
+  // with no name: two Marias with a two-page test each read [Maria, "", Maria,
+  // ""] (review). A failed read breaks the run -- it is not "no name".
+  let previous = "";
+  for (let j = 0; j < pageIndexes.length; j++) {
+    const n = byPage.get(pageIndexes[j]);
+    if (!n || n.failed) {
+      previous = "";
+      continue;
+    }
+    const k = nameKey(n.name);
+    if (!k) continue;
+    if (j > 0 && k === previous && !k.includes(" ")) return j;
+    previous = k;
   }
   return -1;
 }
@@ -382,10 +404,12 @@ export type ResolvedGroup = ScannedGroup & {
    * sits, so the matching screen can show the teacher the handwriting. */
   nameUploadId: string | null;
   nameBox: NameBox | null;
-  /** A name read after a different student each time and not on the roster
-   * (repeatedOffRoster): printed text or a student the roster lacks. Nothing
-   * is matched or suggested; the teacher must choose before saving. */
-  unassigned?: boolean;
+  /** The teacher must say whose paper this is before saving; nothing is
+   * matched or suggested. "repeated": a name read after a different student
+   * each time and not on the roster (repeatedOffRoster) -- printed text, or a
+   * student the roster lacks. "split": the second half of a row the teacher
+   * split ("These are 2 different students"). */
+  unassigned?: "repeated" | "split" | false;
 };
 
 /**
@@ -854,7 +878,7 @@ export function resolveScannedGroups(
   );
   for (const { row } of rows)
     if (row.detectedName && repeated.has(nameKey(row.detectedName)))
-      Object.assign(row, { unassigned: true, studentId: null, candidateIds: [], suggestedId: null, matchConfidence: 0 });
+      Object.assign(row, { unassigned: "repeated", studentId: null, candidateIds: [], suggestedId: null, matchConfidence: 0 });
   return rows.map((r) => r.row);
 }
 
