@@ -1,6 +1,6 @@
 "use client";
 import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
-import { isSecondChoice, withoutStandardNote } from "@/lib/standard-match";
+import { isSecondChoice } from "@/lib/standard-match";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
@@ -94,6 +94,7 @@ import {
   alignmentIsStrong,
   assignStandardToRange,
   confirmAllQuestions,
+  confirmQuestion,
   pointsText,
   questionPoints,
   setQuestionPoints,
@@ -199,7 +200,9 @@ export function AssessmentView() {
         q.confidence >= 90 &&
         q.alignment >= 80 &&
         q.level === "On grade" &&
-        a.targetStandards.includes(q.standard),
+        a.targetStandards.includes(q.standard) &&
+        // Never the AI's unchecked second choice (it also has no score).
+        !isSecondChoice(q),
     ) || [];
   async function saveAssessment(next: Assessment, message: string) {
     return save(
@@ -364,10 +367,9 @@ export function AssessmentView() {
         ? withParts(edit, partsAfterKeyEdit(previous, edit.answer))
         : edit;
     // Confirming a question settles its standard: the AI's "second choice" or
-    // "not in your list" note has done its job.
-    const questions = a.questions.map((q) =>
-      q.id === edit.id ? { ...saved, verified: true, reasoning: withoutStandardNote(saved.reasoning) } : q,
-    );
+    // "not in your list" note has done its job, and a second choice becomes
+    // the teacher's own pick (confirmQuestion).
+    const questions = a.questions.map((q) => (q.id === edit.id ? confirmQuestion(saved) : q));
     const contentChanged =
       previous.answer !== edit.answer ||
       previous.text !== edit.text ||
@@ -987,7 +989,7 @@ export function AssessmentView() {
                         onClick={async () => {
                           const ids = new Set(clearQuestions.map((q) => q.id));
                           const questions = a.questions.map((q) =>
-                            ids.has(q.id) ? { ...q, verified: true } : q,
+                            ids.has(q.id) ? confirmQuestion(q) : q,
                           );
                           const allReviewed = questions.every(
                             (q) => q.verified || q.excluded,
@@ -1075,10 +1077,11 @@ export function AssessmentView() {
                                     (alignmentIsStrong(q) ? "align-strong" : "align-weak-score")
                                   }
                                 >
-                                  {questionAlignment(q) === null
-                                    ? "You chose it"
-                                    : questionAlignment(q) + "%"}
-                                  {!q.verified && isSecondChoice(q) && " · AI’s 2nd choice — check"}
+                                  {!q.verified && isSecondChoice(q)
+                                    ? "Not scored · AI’s 2nd choice — check"
+                                    : questionAlignment(q) === null
+                                      ? "You chose it"
+                                      : questionAlignment(q) + "%"}
                                 </span>
                               )}
                             </button>
@@ -1106,6 +1109,19 @@ export function AssessmentView() {
                                 value={questionAlignment(q)}
                                 title="Assigned by you"
                               />
+                            ) : !q.verified && isSecondChoice(q) ? (
+                              // The AI scored its first choice, not this one:
+                              // no score to show, and nothing to average.
+                              <span className="align-weak">
+                                <span className="cell-meta">Not scored</span>
+                                <button
+                                  type="button"
+                                  className="align-strengthen"
+                                  onClick={() => setEdit({ ...q })}
+                                >
+                                  Check it
+                                </button>
+                              </span>
                             ) : alignmentIsStrong(q) ? (
                               <span
                                 className="align-strong"

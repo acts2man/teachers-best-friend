@@ -30,6 +30,8 @@ const PERSISTED = {
     "level", "reasoning", "verified", "excluded", "points", "keyCheck",
     // Multi-part questions (20261012200000).
     "answerParts",
+    // The AI's second-choice standard, unchecked (20261013130000).
+    "secondChoice",
   ],
   StudentResponse: [
     "id", "studentId", "questionId", "answer", "correct", "match",

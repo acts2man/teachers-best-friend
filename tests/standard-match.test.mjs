@@ -159,3 +159,47 @@ test("replay of the saved reads, two readings of the destroyed first choices; Ri
   assert.deepEqual([rejected.rickyAgree, rejected.rickyCompared], [13, 20], "on Ricky's hand-set tests the second choice agrees 13 of 20");
   if (process.env.SHOW_LISTING) console.log(rejected.listing.join("\n"));
 });
+
+// ---- #129 round 3 -----------------------------------------------------------
+// 2a. An unconfirmed second choice counted toward the assessment's alignment
+// average at a made-up 60%, and kept the 60 once confirmed. On Ricky's scan
+// c2e875b2 only 3 of its 10 second choices matched his own tags, so that test
+// showed about 18% alignment built on guesses.
+// 2b. The second-choice flag was text at the start of the editable reasoning:
+// delete it, press "Looks good — confirm all", and the guess was confirmed.
+const { alignment } = bundle("lib/teacher-data.ts");
+function asAssessment(read, blankAs) {
+  const settled = settleStandards(read.q.map(([n, s, sec]) => q(n, s || blankAs, sec, { alignment: s ? 95 : 0, confidence: s ? 95 : 0 })), catalogOf(read.grade)).questions;
+  return {
+    id: "a", title: "T", classId: "c", status: "Needs review", targetStandards: read.targets, responses: [],
+    questions: settled.map((x, i) => ({ ...x, id: "q" + i, text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false })),
+  };
+}
+
+test("2a: unconfirmed second choices are not in the alignment average (c2e875b2 showed ~18% built on guesses)", () => {
+  const read = fixture.reads.find((r) => r.scan === "c2e875b2");
+  const a = asAssessment(read, "?rejected-by-old-filter");
+  assert.equal(a.questions.filter((x) => isSecondChoice(x)).length, 10);
+  assert.equal(alignment(a), null, "nothing the AI actually scored: no average, not 18%");
+});
+
+test("2a: a confirmed second choice is the teacher's pick -- no made-up score, as for any standard they choose", () => {
+  const { confirmQuestion } = bundle("lib/teacher-workflow.ts");
+  const read = fixture.reads.find((r) => r.scan === "c2e875b2");
+  const a = asAssessment(read, "?rejected-by-old-filter");
+  const confirmed = confirmQuestion(a.questions[6]);
+  assert.equal(isSecondChoice(confirmed), false);
+  assert.equal(confirmed.verified, true);
+  assert.equal(confirmed.alignment, 0, "blank, shown as 'You chose it', never 60");
+  assert.equal(alignment({ ...a, questions: a.questions.map((x, i) => (i === 6 ? confirmed : x)) }), null);
+});
+
+test("2b: the flag is its own field: deleting the note from the reasoning never makes 'confirm all' take the guess", () => {
+  const { confirmAllQuestions } = bundle("lib/teacher-workflow.ts");
+  const settled = settleStandards([q(1, "F-IF.7", ""), q(2, "F-IF.9", "F-BF.3")], hs).questions.map((x, i) => ({ ...x, id: "q" + i, text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false }));
+  assert.equal(settled[1].secondChoice, true);
+  const edited = settled.map((x, i) => (i === 1 ? { ...x, reasoning: "The teacher rewrote this." } : x));
+  const out = confirmAllQuestions({ questions: edited, status: "Needs review" });
+  assert.equal(out.secondChoice, 1);
+  assert.equal(out.assessment.questions[1].verified, false, "still the teacher's to check");
+});

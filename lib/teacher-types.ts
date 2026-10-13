@@ -44,6 +44,14 @@ export type Question = {
    * it; absent means one). Grading is told this number, and an answer read with
    * fewer parts is re-asked once and then sent to Unsure (Ricky, 12 Oct 2026). */
   answerParts?: number;
+  /** The standard is the AI's SECOND choice, filled in because its first was
+   * not in the teacher's list (lib/standard-match.ts). Not yet checked: it has
+   * no alignment score (the AI scored only its first choice), stays out of
+   * the alignment average, is never shown as a strong fit, and "Looks good —
+   * confirm all" leaves it for the teacher. Confirming or replacing the
+   * standard clears it. Its own field, not text in the editable reasoning
+   * (#129 round 3). Absent means the AI's first choice, or the teacher's. */
+  secondChoice?: boolean;
   id: string;
   number: number;
   text: string;

@@ -69,7 +69,7 @@ export function assignStandardToRange(
     ...a,
     questions: a.questions.map((q) =>
       !q.excluded && q.number >= lo && q.number <= hi
-        ? { ...q, standard: code, alignment: 0, reasoning: withoutStandardNote(q.reasoning) }
+        ? { ...withoutSecondChoice(q), standard: code, alignment: 0, reasoning: withoutStandardNote(q.reasoning) }
         : q,
     ),
   };
@@ -164,6 +164,8 @@ export function countsAsGraded(a: Assessment, r: StudentResponse): boolean {
  */
 export const STRONG_ALIGNMENT = 80;
 export function alignmentIsStrong(q: Question): boolean {
+  // The AI's unchecked second choice is never a strong fit: nobody scored it.
+  if (isSecondChoice(q) && !q.verified) return false;
   return !(q.alignment > 0) || q.alignment >= STRONG_ALIGNMENT;
 }
 
@@ -172,6 +174,25 @@ export function alignmentIsStrong(q: Question): boolean {
  * which is what the readiness check asks for. A question with no standard
  * cannot be confirmed -- readiness needs one -- and is left for the teacher.
  */
+/** A question without the second-choice mark. */
+function withoutSecondChoice(q: Question): Question {
+  const { secondChoice: _mark, ...rest } = q;
+  void _mark;
+  return rest;
+}
+
+/**
+ * The teacher confirms a question's standard. Its notes have done their job,
+ * and an AI second choice becomes the teacher's own pick. It arrives with no AI
+ * score (the AI scored its first choice; settleStandards leaves it 0), so it is
+ * shown as "You chose it" and left out of the alignment average like any
+ * standard the teacher assigns -- it used to keep a made-up 60% (#129 round
+ * 3). A score the teacher typed in themselves is kept.
+ */
+export function confirmQuestion(q: Question): Question {
+  return { ...withoutSecondChoice(q), verified: true, reasoning: withoutStandardNote(q.reasoning) };
+}
+
 export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number; secondChoice: number } {
   let confirmed = 0;
   let missingStandard = 0;
@@ -189,7 +210,7 @@ export function confirmAllQuestions(a: Assessment): { assessment: Assessment; co
       return q;
     }
     confirmed++;
-    return { ...q, verified: true, reasoning: withoutStandardNote(q.reasoning) };
+    return confirmQuestion(q);
   });
   const allReviewed = questions.every((q) => q.excluded || (q.verified && q.standard));
   return {
