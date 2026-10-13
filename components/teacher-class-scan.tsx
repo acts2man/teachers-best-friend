@@ -42,7 +42,10 @@ import {
   groupPagesByName,
   gradeInBatches,
   keepOtherClassStudents,
+  mapLimit,
+  rosterMatchCount,
   mergeNameReads,
+  NAME_CONCURRENCY,
   planNameBatches,
   planScanBatches,
   resolveScannedGroups,
@@ -628,9 +631,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // in a class set is a request whose size nobody chose. The batching and
       // the mapping back to pages are lib functions the regression replay runs
       // too, so what it measures is what this does.
-      const slices = planNameBatches(pages.map((p) => p.stripId));
-      const reads: { pages?: PageName[] }[] = [];
-      for (const slice of slices) {
+      // One request per student pile the teacher declared (per page when they
+      // declared none), a few at a time, so a name can never be read onto
+      // another child's pages.
+      const slices = planNameBatches(
+        pages.map((p) => p.stripId),
+        explicit ? groupPagesByCapture(explicit) : null,
+      );
+      const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
         const read = await analyzeRequest({
           mode: "name_strip",
           uploadIds: slice.map((s) => s.id),
@@ -639,15 +647,34 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           framework: a.framework,
           assessmentId: a.id,
         });
-        reads.push(read.result as { pages?: PageName[] });
-      }
+        return read.result as { pages?: PageName[] };
+      }, (error) => {
+        // One pile's name read failing leaves that pile unnamed -- the
+        // teacher picks the student on the matching screen -- rather than
+        // stopping the whole class. All of them failing still stops it.
+        logAppEvent("ai_failure", { message: "name read failed: " + ((error as Error)?.message ?? ""), assessmentId: a.id, detail: { mode: "name_strip", kind: "error" } });
+        // Marked failed, not read as "no name": a page with no name joins the
+        // student before it, and a failed read must never do that.
+        return { failed: true };
+      });
       // Each request numbered its answers within the strips it was shown; map
       // them back to the page each strip was cut from.
       const names = mergeNameReads(ids.length, slices, reads);
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
-      const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
+      const pageGroups = explicit
+        ? groupPagesByCapture(explicit)
+        : groupPagesByName(names, (name) => rosterMatchCount(name, students));
+      // Pages whose name read failed or was skipped (a page with no name area
+      // to read -- a PDF page -- is unread too, but nothing failed there).
+      const failedReads = names.filter((n) => n.failed && pages[n.page]?.stripId).length;
+      if (failedReads)
+        toast.warning(
+          failedReads +
+            (failedReads === 1 ? " page's name" : " pages' names") +
+            " could not be read. Those pages are left unmatched — pick the student for each on the next screen.",
+        );
       // The pages are grouped now, so a failure from here on releases only the
       // groups that never graded rather than the whole reserved stack.
       runGroups = pageGroups;
@@ -703,6 +730,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               mode: "class_scan",
               uploadIds: batch.uploadIds,
               pageGroups: batch.groups,
+              // Set only when re-asking short multi-part answers.
+              onlyQuestionIds: batch.onlyQuestionIds ?? [],
               // One teacher action, however many requests it takes.
               batchIndex: index,
               grade: a.grade,
@@ -712,7 +741,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             },
             // Record the job before waiting on it, so a phone that sleeps
             // mid-grade picks this exact one up instead of paying for another.
-            { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) },
+            // Only for the batch itself: a retry or multi-part re-ask is
+            // numbered against its own smaller request, and resuming it as the
+            // whole batch would put one student's answers on another.
+            batch === batches[index]
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) }
+              : undefined,
           );
           return d.result;
         },
@@ -747,6 +781,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               : `class_scan batch ${info.batch}: students ${info.missing.join(", ")} still short after ${info.attempt} retr${info.attempt === 1 ? "y" : "ies"}; some answers may save blank`,
           );
         },
+        a,
+        (info) =>
+          logAppEvent("ai_failure", {
+            message: "multi-part answers came back short; re-asked once",
+            assessmentId: a.id,
+            detail: { mode: "class_scan", kind: "short_parts", batch: info.batch, reasked: info.reasked, unsure: info.unsure },
+          }),
       );
       setProgress(null);
       showGraded(pageGroups, names, graded, ids, nameIds);

@@ -126,6 +126,18 @@ export function documentContent(file: { bytes: ArrayBuffer | Uint8Array; mime: s
       };
 }
 
+/**
+ * The page images for a request, each preceded -- for the name pass -- by a
+ * line saying which position it is. The name prompt asks for "the image at
+ * position N"; saying N out loud next to each image costs a few tokens and
+ * takes the counting out of the model's hands (12 Oct 2026: names came back one
+ * position off). Other modes are sent exactly as before.
+ */
+export function labelledContent(mode: Mode, images: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (mode !== "name_strip") return images;
+  return images.flatMap((image, i) => [{ type: "input_text", text: `Image at position ${i}:` }, image]);
+}
+
 export async function modelSettingsFor(mode: Mode): Promise<ModelSettings> {
   if (!hasSupabaseConfig()) return sitesModelSettings[mode];
   const stage = await pipelineStage(mode);

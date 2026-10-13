@@ -330,6 +330,7 @@ function runnerWith(model) {
   const analyzeServer = {
     modelSettingsFor: async () => settings,
     documentContent: (f) => ({ type: "input_image", image_url: "data:" + f.mime + ";base64,AA", detail: "high" }),
+    labelledContent: (mode, images) => (mode === "name_strip" ? images.flatMap((im, i) => [{ type: "input_text", text: `Image at position ${i}:` }, im]) : images),
     startModelBackground: async (s, content, mode) => {
       calls.start.push({ mode, images: content.filter((c) => c.type === "input_image").length, text: content.at(-1).text });
       return { value: "resp-" + calls.start.length, attempts: 1 };
@@ -411,4 +412,16 @@ test("the runner never reuses a stored read", () => {
   const src = readFileSync("lib/regression/runner.ts", "utf8");
   assert.doesNotMatch(src, /reusablePriorResult|readReuseFingerprint/);
   assert.match(src, /freshRead: true/);
+});
+
+test("undeclared piles: a pile is credited only when the app grouped exactly its pages", () => {
+  const { runner } = runnerWith(() => ({}));
+  const piles = [{ pages: ["a", "b"] }, { pages: ["c", "d"] }, { pages: ["e", "f"] }];
+  // The app merged the first two piles (a name was missed) and got the third right.
+  const groups = [[0, 1, 2, 3], [4, 5]];
+  const resolved = [{ studentId: "s0", suggestedId: null }, { studentId: "s2", suggestedId: null }];
+  const out = runner.pilesAsResolved(piles, groups, resolved);
+  assert.equal(out[0].studentId, "\u0000wrong-pile", "a merged group is not a right answer, and a pre-fill there counts as wrong");
+  assert.equal(out[1].studentId, "\u0000wrong-pile");
+  assert.equal(out[2].studentId, "s2");
 });

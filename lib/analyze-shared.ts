@@ -18,6 +18,7 @@ import {
   catalogForPrompt,
   passageForGrading,
   questionsForGrading,
+  multipartRule,
 } from "@/lib/prompt-payload";
 import type { AnswerRegion, Standard, Subject, Workspace } from "@/lib/teacher-types";
 import { errorTypesFor } from "@/lib/error-types";
@@ -51,10 +52,12 @@ export type Mode =
  * text it refers to. v4: a graphic organizer / fill-in template is read as one
  * item per labelled box (Characters, Setting, Problem, Solution, Beginning/
  * Middle/End, Lesson, ...) instead of invented questions, judged against the
- * story. Each change alters what a read returns, so nothing from an earlier
- * version is reused.
+ * story. v5 (12 Oct 2026): each question also says how many separate answers
+ * it asks for (`parts`, kept as Question.answerParts), so grading knows how
+ * many to expect. Each change alters what a read returns, so nothing from
+ * an earlier version is reused.
  */
-export const READ_PROMPT_VERSION = 4;
+export const READ_PROMPT_VERSION = 5;
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
@@ -163,6 +166,10 @@ export const analyzeInput = z.object({
   // Which pages belong to which student, worked out by the app from the name
   // strips, so the grading call never has to read a name to group pages.
   // Indexes are into uploadIds.
+  // A focused re-ask of a class scan: only these questions, because the first
+  // read returned fewer parts than their keys expect (lib/teacher-class-scan.ts,
+  // planPartsReask). Empty for every ordinary request.
+  onlyQuestionIds: z.array(z.string().max(80)).max(100).default([]),
   pageGroups: z
     .array(z.array(z.number().int().min(0).max(23)).max(24))
     .max(40)
@@ -194,7 +201,9 @@ export function gradingExtras(subject: Subject): string {
 /** Validates the three extras on one graded answer. Anything malformed is
  * dropped rather than trusted: no group key, a whole-page photo, no suggestion. */
 const gradedExtras = {
-  finalAnswer: z.string().max(200).optional(),
+  // Room for every part of a multi-part answer; over the limit is cut, never
+  // a reason to reject the whole batch.
+  finalAnswer: z.string().transform((v) => v.slice(0, 600)).optional(),
   region: z
     .object({
       page: z.number().int(),
@@ -290,6 +299,7 @@ const questionSchema = obj({
     enum: ["On grade", "Below grade", "Above grade", "Unrelated"],
   },
   reasoning: str,
+  parts: { type: "integer", minimum: 1, maximum: 20 },
 });
 const assessmentSchema = obj({ title: str, questions: arr(questionSchema) });
 // The AI's whole job on a graded answer now: transcribe what the student wrote
@@ -444,7 +454,7 @@ export function buildPrompt(
     if (!p.text.trim() && !hasContent)
       throw new HttpError(400, "Add a document or questions first.");
     task =
-      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. If the page is a graphic organizer or a fill-in template rather than a set of questions -- labelled blank boxes or fields for the student to complete, such as Characters, Setting, Motivation, Problem, Beginning, Middle, Ending, Solution or Lesson -- then each labelled box or field IS one item: use the box's printed label (plus any instruction printed inside it) as the item text, keep them in the order they appear on the page, and do not merge, split, rename or reorder them. Create an item ONLY for a box that is actually printed on the page; never invent a question, prompt or box that is not there, and never pad the page out to a question count. These template items have no single fixed answer, so leave their answer key empty -- each is judged against the story when the student's work is read. Still classify every box's standard, alignment, DOK and Costa's level exactly as for any other item. Classify EACH question on its own, independently -- the number of questions or pages never changes how you classify, so a ten-question or two-page test is classified with the same care as a five-question one, and you never leave a whole test unclassified. The teacher built this assignment to assess the intended standards listed below, so assign each question the best-matching standard from the supplied catalog, strongly preferring one of the intended standards when the question plausibly assesses it. Leave a question's standard empty ONLY when it is genuinely unrelated to every catalog standard; being unsure is not a reason to leave it empty -- pick the closest standard and reflect your uncertainty in a lower alignment and confidence instead. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Choose the alignment by how directly the question assesses the selected standard, using these fixed bands the same way every time regardless of how many questions or pages the assignment has: 90–100 when the question directly and fully assesses the standard's target skill at grade level; 70–89 when it assesses the standard but only partially, or with added scaffolding or an easier case; 50–69 when it is related but leans on a prerequisite or adjacent skill more than the standard itself; 25–49 when it only loosely touches the topic and not the standard's skill; 1–24 when it is barely related; 0 only when no catalog standard applies at all. Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. This assignment is for " +
+      "Extract and segment every question from this assignment. The title is a short name for the test only -- for example \"Unit 3 Fractions Quiz\" -- never a sentence, an explanation, or a note about the document; keep it under 120 characters, and if the page has no title use a brief one from its topic. Preserve each question's full associated passage, answer choices, math notation and relevant diagram description. Ignore teacher markings as question text. Work out the answer key. For each question set parts to the number of separate answers the student has to give -- 1 for a single answer; for example 3 for a domain, a range and an asymptote, or one for each transformation plus the intercept -- and write a multi-part answer key with those answers in order separated by \"; \". If the page is a graphic organizer or a fill-in template rather than a set of questions -- labelled blank boxes or fields for the student to complete, such as Characters, Setting, Motivation, Problem, Beginning, Middle, Ending, Solution or Lesson -- then each labelled box or field IS one item: use the box's printed label (plus any instruction printed inside it) as the item text, keep them in the order they appear on the page, and do not merge, split, rename or reorder them. Create an item ONLY for a box that is actually printed on the page; never invent a question, prompt or box that is not there, and never pad the page out to a question count. These template items have no single fixed answer, so leave their answer key empty -- each is judged against the story when the student's work is read. Still classify every box's standard, alignment, DOK and Costa's level exactly as for any other item. Classify EACH question on its own, independently -- the number of questions or pages never changes how you classify, so a ten-question or two-page test is classified with the same care as a five-question one, and you never leave a whole test unclassified. The teacher built this assignment to assess the intended standards listed below, so assign each question the best-matching standard from the supplied catalog, strongly preferring one of the intended standards when the question plausibly assesses it. Leave a question's standard empty ONLY when it is genuinely unrelated to every catalog standard; being unsure is not a reason to leave it empty -- pick the closest standard and reflect your uncertainty in a lower alignment and confidence instead. Score alignment for each question as a whole-number percentage from 0 to 100, where 100 is a perfect match (write 92, never 0.92). Choose the alignment by how directly the question assesses the selected standard, using these fixed bands the same way every time regardless of how many questions or pages the assignment has: 90–100 when the question directly and fully assesses the standard's target skill at grade level; 70–89 when it assesses the standard but only partially, or with added scaffolding or an easier case; 50–69 when it is related but leans on a prerequisite or adjacent skill more than the standard itself; 25–49 when it only loosely touches the topic and not the standard's skill; 1–24 when it is barely related; 0 only when no catalog standard applies at all. Classify Webb DOK 1–4 and Costa's Level 1 Gathering, 2 Processing, or 3 Applying separately. Give one specific improvement that would make a low-alignment question better demonstrate a selected standard. Explain any below/above-grade mismatch; distinguish content alignment from cognitive demand and return honest confidence as a whole-number percentage from 0 to 100 (write 85, never 0.85). Do not fabricate unreadable text. Put [unreadable — teacher review needed] where appropriate. This assignment is for " +
       gradePromptLabel(p.grade, p.subject) +
       ", subject " +
       p.subject +
@@ -486,6 +496,7 @@ export function buildPrompt(
       VERDICT_RULES +
       " Preserve written answers exactly. Do not diagnose misconceptions and do not reproduce student names. " +
       gradingExtras(a.subject) +
+      multipartRule(a) +
       " Questions: " +
       JSON.stringify(questionsForGrading(a)) +
       "." +
@@ -512,8 +523,12 @@ export function buildPrompt(
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
       ". " +
       gradingExtras(a.subject) +
+      multipartRule(a, p.onlyQuestionIds) +
+      (p.onlyQuestionIds.length
+        ? " This is a second look at only the questions listed below: the first reading returned fewer parts than each one asks for. Read the whole of each group's pages again -- every line, the margins and the back -- and find every part; return a response for these questions only."
+        : "") +
       " Questions: " +
-      JSON.stringify(questionsForGrading(a)) +
+      JSON.stringify(questionsForGrading(a, p.onlyQuestionIds)) +
       "." +
       passageForGrading(a);
     schema = classScanSchema;
@@ -750,6 +765,7 @@ export function finalizeAnalysis(
                 "Unrelated",
               ]),
               reasoning: z.string(),
+              parts: z.number().int().min(1).max(20).optional(),
             }),
           )
           .max(100),
@@ -765,8 +781,9 @@ export function finalizeAnalysis(
     // to the save path, where it would fail the assessments_title_check
     // constraint (1-200 chars) and read to the teacher as a generic error.
     output.title = parsed.data.title.trim().slice(0, 120);
-    output.questions = parsed.data.questions.map((q) => ({
+    output.questions = parsed.data.questions.map(({ parts, ...q }) => ({
       ...q,
+      ...(parts && parts > 1 ? { answerParts: parts } : {}),
       id: crypto.randomUUID(),
       verified: false,
       excluded: false,
@@ -928,6 +945,9 @@ export function finalizeAnalysis(
         name: hit?.name ?? "",
         confidence: hit?.confidence ?? 0,
         ...(hit?.box ? { box: hit.box } : {}),
+        // Skipped by the model: unknown, not "no name on the page". The class
+        // scan must not join it to the student before it (#125 review).
+        ...(hit ? {} : { skipped: true }),
       };
     });
   }

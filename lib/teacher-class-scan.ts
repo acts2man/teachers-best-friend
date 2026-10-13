@@ -5,6 +5,8 @@ import {
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
+import { expectedParts, partsRead } from "./answer-parts";
+import { sameReading } from "./math-answer";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -28,6 +30,11 @@ export type PageName = {
   name: string;
   confidence: number;
   box?: NameBox | null;
+  /** The name read for this page FAILED (a timeout, a rate limit) or the model
+   * SKIPPED it -- unknown, which is not the same as a page with no name on it. */
+  failed?: boolean;
+  /** Set by the server on a page the model left out of its answer. */
+  skipped?: boolean;
 };
 
 /** Name areas per name-reading request. The name pass returns a few tokens per
@@ -43,13 +50,78 @@ export const NAME_BATCH = 12;
  * from. */
 export type NameSlice = { id: string; page: number }[];
 
-/** Splits the pages that have a name strip into name-pass requests. */
-export function planNameBatches(stripIds: (string | null)[], size = NAME_BATCH): NameSlice[] {
-  const readable = stripIds
-    .map((id, page) => ({ id, page }))
-    .filter((s): s is { id: string; page: number } => !!s.id);
+/**
+ * Splits the pages that have a name strip into name-pass requests: one request
+ * per STUDENT when the teacher declared the piles, one per page when they did
+ * not.
+ *
+ * It used to be twelve strips per request, trusting the model to say which
+ * image each name came from. It does not reliably (12 Oct 2026, from the saved
+ * name-pass results): on a pilot teacher's 3-student set the third student's
+ * name came back on the second student's back page and the third student got
+ * none; on another set, eight strips came back with every name one position
+ * late; and a 26-student set put a classmate's name on another child's paper.
+ * Inside one student's pile a misplaced name still lands on that student, so
+ * the mistake can no longer cross from one child to another. Without declared
+ * piles the name IS what splits the stack, so each page is read on its own.
+ * A pile longer than `size` is still split, so no request grows unbounded.
+ */
+export function planNameBatches(
+  stripIds: (string | null)[],
+  piles: number[][] | null = null,
+  size = NAME_BATCH,
+): NameSlice[] {
+  const withStrip = (pages: number[]) =>
+    pages
+      .filter((page) => !!stripIds[page])
+      .map((page) => ({ id: stripIds[page] as string, page }));
+  const groups = piles ?? stripIds.map((_, page) => [page]);
   const out: NameSlice[] = [];
-  for (let i = 0; i < readable.length; i += size) out.push(readable.slice(i, i + size));
+  for (const pile of groups) {
+    const slice = withStrip(pile);
+    for (let i = 0; i < slice.length; i += size) out.push(slice.slice(i, i + size));
+  }
+  return out;
+}
+
+/** How many name-pass requests run at once. Per-student requests are small;
+ * four at a time keeps a 26-student set about as quick as the old five
+ * sequential batches of twelve. */
+export const NAME_CONCURRENCY = 4;
+
+/**
+ * Runs `fn` over `items` with at most `limit` in flight, keeping order. A
+ * failed item gives `onError(error, item)`'s value instead of stopping the
+ * others -- one of 26 name reads failing should leave that page unnamed for the
+ * teacher, not throw away the other 25 -- and when EVERY item fails the first
+ * error is thrown, as one request failing used to.
+ */
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onError?: (error: unknown, item: T) => R,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  const errors: unknown[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await fn(items[i], i);
+      } catch (e) {
+        if (!onError) {
+          next = items.length; // start nothing more
+          throw e;
+        }
+        errors.push(e);
+        out[i] = onError(e, items[i]);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (items.length && errors.length === items.length) throw errors[0];
   return out;
 }
 
@@ -63,19 +135,32 @@ export function planNameBatches(stripIds: (string | null)[], size = NAME_BATCH):
 export function mergeNameReads(
   pageCount: number,
   slices: NameSlice[],
-  results: { pages?: PageName[] }[],
+  results: { pages?: PageName[]; failed?: boolean }[],
 ): PageName[] {
   const found = new Map<number, Omit<PageName, "page">>();
   slices.forEach((slice, i) => {
+    // Every page this request was asked about starts as unread; an answer for
+    // it replaces that. A failed request, or one that left a page out, leaves
+    // the page unread (failed) rather than "no name" (#125 review).
+    for (const source of slice) found.set(source.page, { name: "", confidence: 0, failed: true });
+    if (results[i]?.failed) return;
     for (const r of results[i]?.pages ?? []) {
       const source = slice[r.page];
       if (source)
-        found.set(source.page, { name: r.name, confidence: r.confidence, box: r.box ?? null });
+        found.set(
+          source.page,
+          r.skipped
+            ? { name: "", confidence: 0, failed: true }
+            : { name: r.name, confidence: r.confidence, box: r.box ?? null },
+        );
     }
   });
+  // A page no request was asked about (a PDF page, or one the browser could
+  // not cut a name area from) is unread too: unknown, not "no name" (#125
+  // review, round 3).
   return Array.from({ length: pageCount }, (_, page) => {
     const hit = found.get(page);
-    return hit ? { page, ...hit } : { page, name: "", confidence: 0 };
+    return hit ? { page, ...hit } : { page, name: "", confidence: 0, failed: true };
   });
 }
 
@@ -94,22 +179,100 @@ export type ScannedGroup = {
  * Splits a scanned stack into one group per student, using only the names read
  * off the top of each page.
  *
- * A page with a name starts a student. Pages after it with no name are that
- * student's continuation sheets -- which is what a blank name line means on a
- * multi-page worksheet. Pages before any name at all (a stray back side on top
+ * A page with a name starts a student, unless it is the same name as the
+ * student before it (a name written on every page). Pages after it with no
+ * name are that student's continuation sheets -- which is what a blank name
+ * line means on a multi-page worksheet. A page whose name read FAILED starts
+ * its own unnamed group for the teacher to match. Pages before any name at all (a stray back side on top
  * of the pile) become their own group rather than being dropped, so nothing a
  * teacher scanned disappears silently.
  *
  * This is what lets grading happen without a name: the grouping is settled
  * here, from the strips, and the graded request is told the groups.
  */
-export function groupPagesByName(pages: PageName[]): number[][] {
+export function groupPagesByName(
+  pages: PageName[],
+  /** How many students on the roster this name could be (0, 1, or more for a
+   * shared first name). Without it nothing is taken for a motto. */
+  rosterMatches?: (name: string) => number,
+): number[][] {
+  // The rule for every choice below: a page never joins another student's
+  // group on a guess. Where the app cannot tell, the page is left as its own
+  // group for the teacher to match on the next screen -- one extra tap -- rather
+  // than graded silently as someone else's (#125 review, 13 Oct 2026).
+  const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
+  const keys = pages.map((p) => (p.failed ? "" : key(p.name)));
+  const headers = runningHeaders(keys, rosterMatches);
   const groups: number[][] = [];
-  for (const page of pages) {
-    if (page.name.trim() || !groups.length) groups.push([page.page]);
+  let current = "";
+  pages.forEach((page, i) => {
+    const k = headers.has(keys[i]) ? "" : keys[i];
+    // A name that fits more than one student on the roster (two Marias) is
+    // never taken as "the same student as the page before": Maria, Maria
+    // could be two children, so each starts a group and the teacher picks.
+    const ambiguous = !!k && !!rosterMatches && rosterMatches(k) > 1;
+    // A failed read is unknown, not blank: it never continues the student
+    // before it. It starts an unnamed group, and the pages after it with no
+    // name follow it, as a student's continuation sheets do.
+    const starts = page.failed || (!!k && (k !== current || ambiguous)) || !groups.length;
+    if (starts) groups.push([page.page]);
     else groups[groups.length - 1].push(page.page);
-  }
+    if (page.failed) current = "\u0000failed" + i;
+    else if (k) current = k;
+  });
   return groups;
+}
+
+/**
+ * Names that are a line printed on every student's paper -- a class motto read
+ * as a name ("Hope Always", 10 Oct 2026) -- rather than a student. Such a page
+ * is treated as having no name, so it stays with the student before it.
+ *
+ * A name is taken for printed text only when ALL of these hold, because the
+ * cost of a wrong yes is one child's page graded as another's:
+ *   - it is not a student on the roster (a recurring roster name is a real
+ *     student: fronts then backs, a re-scan, two students sharing a first
+ *     name), and the roster is known -- an empty one, nothing is a header;
+ *   - it appears on THREE or more pages, never two in a row (see below);
+ *   - before its first appearance and between each pair of appearances there
+ *     is exactly one other name, and those names are all DIFFERENT -- one per
+ *     student, as a motto on each student's paper produces. A real student
+ *     missing from the roster, scanned fronts then backs, repeats the same
+ *     neighbours instead (Avery, Newkid, Avery, Newkid), so it is not taken.
+ * Left over, stated in the PR: a student missing from the roster scanned
+ * three or more times, each time right after a different single student,
+ * would still pass. A motto on a two-student stack is no longer recognised;
+ * its pages are left for the teacher to match, which costs a tap, not a
+ * misfiled paper.
+ */
+function runningHeaders(keys: string[], rosterMatches?: (name: string) => number): Set<string> {
+  const out = new Set<string>();
+  if (!rosterMatches) return out;
+  const at = new Map<string, number[]>();
+  keys.forEach((k, i) => k && at.set(k, [...(at.get(k) ?? []), i]));
+  // An empty roster tells nothing apart: every name is "not on it".
+  if (!keys.some((k) => k && rosterMatches(k) > 0)) return out;
+  for (const [k, idx] of at) {
+    // Three or more appearances. With two, a printed motto (Ana, Hope Always,
+    // Ben, Hope Always) and a student missing from the roster who was scanned
+    // twice (Zed, Ana, Ben, Ana) look exactly alike, and guessing "motto"
+    // files that child's pages under two other children. So two appearances
+    // are left as their own groups for the teacher (#125 review, round 3). A
+    // real class set has the motto on every student's paper -- far more than
+    // three.
+    if (idx.length < 3 || rosterMatches(k) > 0) continue;
+    if (idx.some((v, j) => j > 0 && v === idx[j - 1] + 1)) continue;
+    const runs: string[] = [];
+    let ok = true;
+    for (let j = 0; j < idx.length && ok; j++) {
+      const from = j === 0 ? 0 : idx[j - 1] + 1;
+      const names = new Set(keys.slice(from, idx[j]).filter((x) => x && x !== k));
+      if (names.size !== 1) ok = false;
+      else runs.push([...names][0]);
+    }
+    if (ok && new Set(runs).size === runs.length) out.add(k);
+  }
+  return out;
 }
 
 /**
@@ -435,6 +598,13 @@ export type RosterMatch = {
   score?: number;
 };
 
+/** How many students on this roster a read name could be: 0 (not on it), 1,
+ * or more (a first name two students share). */
+export function rosterMatchCount(name: string, students: Student[]): number {
+  const m = matchRosterStudent(name, students);
+  return m.student ? 1 : (m.candidates?.length ?? 0);
+}
+
 export function matchRosterStudent(
   name: string,
   students: Student[],
@@ -701,6 +871,36 @@ export type ConfirmedGroup = {
  * the scanned pages. Pure — the caller is responsible for persisting the
  * returned workspace slice.
  */
+/**
+ * Two groups of one scan matched to the same student, question by question:
+ * an answer one group read wins over a blank or missing one from the other;
+ * two DIFFERENT answers read for the same question go to the teacher as
+ * Unsure, never silently one or the other.
+ */
+export function mergeSplitGroups(first: StudentResponse[], second: StudentResponse[]): StudentResponse[] {
+  const byQuestion = new Map(second.map((r) => [r.questionId, r]));
+  const read = (r?: StudentResponse) => (r?.finalAnswer?.trim() || r?.answer.trim() || "");
+  const merged = first.map((a) => {
+    const b = byQuestion.get(a.questionId);
+    byQuestion.delete(a.questionId);
+    if (!b) return a;
+    const ra = read(a);
+    const rb = read(b);
+    if (!rb) return a;
+    if (!ra) return b;
+    if (ra === rb || sameReading(ra, rb)) return a.confidence >= b.confidence ? a : b;
+    return {
+      ...a,
+      correct: false,
+      match: undefined,
+      confidence: 0,
+      verified: false,
+      misconception: "Two pages of this student were read with different answers (" + ra + " / " + rb + "). Check both pages.",
+    };
+  });
+  return [...merged, ...byQuestion.values()];
+}
+
 export function applyScannedGroups(
   a: Assessment,
   students: Student[],
@@ -750,12 +950,18 @@ export function applyScannedGroups(
     // the same test unless it actually answers the question, so keep what an
     // earlier pass found where this one saw nothing.
     scanned.push(studentId);
+    const incoming = normalizeRecognizedResponses(a, studentId, group.responses);
+    const earlier = responsesByStudent.get(studentId);
     responsesByStudent.set(
       studentId,
-      mergeStudentResponses(
-        a.responses.filter((r) => r.studentId === studentId),
-        normalizeRecognizedResponses(a, studentId, group.responses),
-      ),
+      earlier
+        ? // A second group of THIS scan for the same student -- fronts then
+          // backs, a re-scanned page, an unread page matched by the teacher.
+          // Merged with the first group, not with what was saved before the
+          // scan: the last group used to win, so a correct front-page answer
+          // became a blank from the back page (#125 review).
+          mergeSplitGroups(earlier, incoming)
+        : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming),
     );
     studentUploadIds[studentId] = [
       ...new Set([
@@ -853,6 +1059,11 @@ export type ScanBatch = {
   uploadIds: string[];
   groups: number[][];
   groupIndexes: number[];
+  /** Set only on a multi-part re-ask: the questions to look at again. */
+  onlyQuestionIds?: string[];
+  /** A multi-part re-ask: the "group|questionId" pairs (whole-scan group
+   * indexes) it was asked for. Only these are taken back from its answer. */
+  reaskPairs?: string[];
 };
 
 /**
@@ -1028,6 +1239,100 @@ export function retryBatch(batch: ScanBatch, missing: number[]): ScanBatch {
   return subBatch(batch, missing);
 }
 
+/** A graded answer with fewer parts than its key asks for. `group` is the
+ * whole-scan group index. */
+export type PartsShort = { group: number; questionId: string; expected: number; got: number };
+
+/** The answers in these groups that came back with fewer parts than their
+ * question's key has (Ricky, 12 Oct: question 2 read 4 of 8 parts). */
+export function partsShortfall(a: Assessment, groups: GradedGroup[]): PartsShort[] {
+  const wanted = new Map(
+    a.questions.filter((q) => !q.excluded).map((q) => [q.id, expectedParts(q)] as const),
+  );
+  const out: PartsShort[] = [];
+  for (const g of groups)
+    for (const r of g.responses ?? []) {
+      const expected = wanted.get(r.questionId) ?? 1;
+      if (expected < 2 || r.verdict === "blank") continue;
+      const got = partsRead(r.finalAnswer?.trim() || r.answer || "");
+      if (got < expected) out.push({ group: g.group, questionId: r.questionId, expected, got });
+    }
+  return out;
+}
+
+/** The re-ask for short multi-part answers: each student is asked again only
+ * for the questions THEY came back short on. Students short on the same
+ * questions share a request, so there is one request per distinct set of short
+ * questions -- usually one. Each request also carries the exact (student,
+ * question) pairs it is for, and only those are taken back from it. */
+export function planPartsReask(batch: ScanBatch, shorts: PartsShort[]): ScanBatch[] {
+  const byGroup = new Map<number, string[]>();
+  for (const x of shorts) byGroup.set(x.group, [...new Set([...(byGroup.get(x.group) ?? []), x.questionId])].sort());
+  const bySet = new Map<string, { groups: number[]; questions: string[] }>();
+  for (const [group, questions] of byGroup) {
+    const k = questions.join("\u0000");
+    const entry = bySet.get(k) ?? { groups: [], questions };
+    entry.groups.push(group);
+    bySet.set(k, entry);
+  }
+  return [...bySet.values()].map(({ groups, questions }) => ({
+    ...subBatch(batch, groups),
+    onlyQuestionIds: questions,
+    reaskPairs: groups.flatMap((g) => questions.map((q) => g + "|" + q)),
+  }));
+}
+
+/**
+ * Takes from a re-ask an answer that now has more parts than before -- only for
+ * the (student, question) pairs that request was for, and never a "blank": a
+ * question that showed work and came back short stays for the teacher (Unsure
+ * after settleShortParts), it is not turned into a zero by a second look that
+ * saw nothing.
+ */
+export function absorbPartsReask(
+  best: Map<number, GradedGroup>,
+  reask: ScanBatch,
+  groups: GradedGroup[] | undefined,
+) {
+  const only = new Set(reask.onlyQuestionIds ?? []);
+  const pairs = reask.reaskPairs ? new Set(reask.reaskPairs) : null;
+  for (const g of groups ?? []) {
+    const at = reask.groupIndexes[g.group];
+    const current = at === undefined ? undefined : best.get(at);
+    if (!current) continue;
+    for (const fresh of g.responses ?? []) {
+      if (!only.has(fresh.questionId)) continue;
+      if (pairs && !pairs.has(at + "|" + fresh.questionId)) continue;
+      if (fresh.verdict === "blank") continue;
+      const i = current.responses.findIndex((r) => r.questionId === fresh.questionId);
+      const before = i < 0 ? -1 : partsRead(current.responses[i].finalAnswer?.trim() || current.responses[i].answer || "");
+      if (partsRead(fresh.finalAnswer?.trim() || fresh.answer || "") > before) {
+        const responses = [...current.responses];
+        if (i < 0) responses.push(fresh);
+        else responses[i] = fresh;
+        best.set(at, { ...current, responses });
+      }
+    }
+  }
+}
+
+/**
+ * After the re-ask: any answer still short of its parts goes to Unsure for the
+ * teacher -- never blank, never wrong, never matched on the parts that were
+ * read. Returns how many were sent there.
+ */
+export function settleShortParts(best: Map<number, GradedGroup>, groupIndexes: number[], a: Assessment): number {
+  const shorts = partsShortfall(a, groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+  for (const s of shorts) {
+    const g = best.get(s.group)!;
+    best.set(s.group, {
+      ...g,
+      responses: g.responses.map((r) => (r.questionId === s.questionId ? { ...r, verdict: "unsure" as const } : r)),
+    });
+  }
+  return shorts.length;
+}
+
 export async function gradeInBatches(
   batches: ScanBatch[],
   grade: (batch: ScanBatch, index: number) => Promise<{ groups?: GradedGroup[] }>,
@@ -1041,6 +1346,10 @@ export async function gradeInBatches(
   questionCount = 0,
   maxRetries = 2,
   onShortBatch?: (info: ShortBatch) => void,
+  // The assessment, to check multi-part answers against their keys: a short
+  // one is re-asked once, then sent to Unsure. Absent: no parts check.
+  partsOf?: Assessment,
+  onShortParts?: (info: { batch: number; reasked: number; unsure: number }) => void,
 ): Promise<GradedGroup[]> {
   const graded: GradedGroup[] = [...already];
 
@@ -1069,6 +1378,20 @@ export async function gradeInBatches(
       // Log before re-asking, so a run that is watched shows the retry happening.
       onShortBatch?.({ batch: index, missing, attempt, retried: true });
       attemptBatch = subBatch(batch, missing);
+    }
+
+    if (partsOf) {
+      const shorts = partsShortfall(partsOf, batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+      for (const reask of shorts.length ? planPartsReask(batch, shorts) : []) {
+        try {
+          absorbPartsReask(best, reask, (await grade(reask, index)).groups);
+        } catch {
+          // A failed re-ask must not lose the batch: what is still short goes
+          // to Unsure below, which is where it was headed anyway.
+        }
+      }
+      const unsure = settleShortParts(best, batch.groupIndexes, partsOf);
+      if (shorts.length) onShortParts?.({ batch: index, reasked: shorts.length, unsure });
     }
 
     for (const at of batch.groupIndexes) {

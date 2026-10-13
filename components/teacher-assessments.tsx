@@ -1,4 +1,5 @@
 "use client";
+import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
@@ -353,14 +354,22 @@ export function AssessmentView() {
       toast.error("Choose a standard and name the skill before accepting.");
       return;
     }
-    const questions = a.questions.map((q) =>
-      q.id === edit.id ? { ...edit, verified: true } : q,
-    );
     const previous = a.questions.find((q) => q.id === edit.id)!;
+    // Worked out once, here, from the saved question -- not on every keystroke,
+    // which lost the count the moment a half-typed key had one part (#125
+    // review). A count the teacher set in the box is kept as they set it.
+    const saved =
+      previous.answer.trim() !== edit.answer.trim() && edit.answerParts === previous.answerParts
+        ? withParts(edit, partsAfterKeyEdit(previous, edit.answer))
+        : edit;
+    const questions = a.questions.map((q) =>
+      q.id === edit.id ? { ...saved, verified: true } : q,
+    );
     const contentChanged =
       previous.answer !== edit.answer ||
       previous.text !== edit.text ||
-      previous.passage !== edit.passage;
+      previous.passage !== edit.passage ||
+      (previous.answerParts ?? 1) !== (saved.answerParts ?? 1);
     const next = {
       ...a,
       questions,
@@ -1483,6 +1492,18 @@ export function AssessmentView() {
                   value={edit.answer}
                   onChange={(e) => setEdit({ ...edit, answer: e.target.value })}
                 />
+              </label>
+              <label>
+                Answer parts
+                <Pick
+                  label="Answer parts"
+                  value={String(edit.answerParts ?? 1)}
+                  onChange={(v) => setEdit(withParts(edit, clampParts(v)))}
+                  options={Array.from({ length: 20 }, (_, i) => ({ value: String(i + 1), label: i === 0 ? "1 (one answer)" : String(i + 1) }))}
+                />
+                <span className="cell-meta">
+                  How many separate answers this question asks for. An answer read with a different number goes to Unsure for you.
+                </span>
               </label>
               <div className="suggestion-reason">
                 <span>

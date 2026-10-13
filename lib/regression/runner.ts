@@ -42,6 +42,7 @@ import {
 import {
   documentContent,
   getBackgroundResponse,
+  labelledContent,
   modelSettingsFor,
   startModelBackground,
   deleteBackgroundResponse,
@@ -49,7 +50,13 @@ import {
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
   absorbGraded,
+  absorbPartsReask,
   groupPagesByCapture,
+  groupPagesByName,
+  rosterMatchCount,
+  partsShortfall,
+  planPartsReask,
+  settleShortParts,
   mergeNameReads,
   planNameBatches,
   planScanBatches,
@@ -62,6 +69,7 @@ import {
   type ScanBatch,
 } from "@/lib/teacher-class-scan";
 import { activeQuestions, normalizeRecognizedResponses } from "@/lib/teacher-workflow";
+import { expectedParts } from "@/lib/prompt-payload";
 import type { Assessment, Student, Workspace } from "@/lib/teacher-types";
 import { scoreAnswers, scoreKey, scoreNames, scoreStandards } from "./score";
 import type { AssessmentSnapshot, Expected, ExpectedAnswers, ExpectedNames, RegressionCase } from "./types";
@@ -76,7 +84,7 @@ type Job = { providerId: string; model: string; effort: string };
 type Usage = { costUsd: number; model: string; effort: string };
 
 export type RunState =
-  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[] } | null)[]; cursor: number; job: Job | null }
+  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[]; failed?: boolean } | null)[]; cursor: number; job: Job | null }
   | {
       stage: "grade";
       batches: ScanBatch[];
@@ -86,6 +94,10 @@ export type RunState =
       best: [number, GradedGroup][];
       graded: GradedGroup[];
       job: Job | null;
+      /** True while a multi-part re-ask for this batch is out. */
+      partsPhase?: boolean;
+      /** Multi-part re-asks still to send after the current one. */
+      partsQueue?: ScanBatch[];
     }
   | { stage: "assignment"; result: Record<string, unknown> | null; job: Job | null };
 
@@ -201,7 +213,7 @@ async function advanceJob(
   if (!job) {
     const { w, catalog } = await prompt();
     const settings: ModelSettings = await modelSettingsFor(p.mode);
-    const content = await fixtureContent(svc, c, sourceIds);
+    const content = labelledContent(p.mode, await fixtureContent(svc, c, sourceIds));
     const { task, schema } = buildPrompt(p, w, catalog, content.length > 0);
     content.push({ type: "input_text", text: task });
     const started = await startModelBackground(settings, content, p.mode, schema, key);
@@ -241,6 +253,32 @@ async function advanceJob(
   return finalizeAnalysis(p, parsed, w, catalog);
 }
 
+/**
+ * What the app decided for each TRUE pile, given the groups it actually drew.
+ * A pile is credited only when its pages are exactly one group; a group that
+ * swallowed part of another pile, or was split, is not a right answer even if
+ * its name matched.
+ */
+export function pilesAsResolved(
+  piles: { pages: string[] }[],
+  groups: number[][],
+  resolved: { studentId: string | null; suggestedId: string | null }[],
+) {
+  let start = 0;
+  return piles.map((pile) => {
+    const own = pile.pages.map((_, i) => start + i);
+    start += pile.pages.length;
+    const gi = groups.findIndex((g) => g.includes(own[0]));
+    const g = groups[gi] ?? [];
+    const exact = g.length === own.length && own.every((x) => g.includes(x));
+    const r = resolved[gi];
+    if (!r) return { studentId: null, suggestedId: null };
+    // Not exactly this pile: credit nothing; keep a pre-fill as the
+    // (wrong) answer it is, so a confident mistake is still counted.
+    return exact ? r : { studentId: r.studentId ? "\u0000wrong-pile" : null, suggestedId: null };
+  });
+}
+
 function stageFor(e: Expected): RunState["stage"] {
   return e.kind === "names" ? "names" : e.kind === "answer_key" || e.kind === "standards" ? "assignment" : "grade";
 }
@@ -253,7 +291,8 @@ export async function planCase(svc: Svc, c: RegressionCase): Promise<RunState> {
   const piles = (e as ExpectedNames | ExpectedAnswers).piles;
   if (stage === "names") {
     const strips = piles.flatMap((p) => p.strips);
-    const slices = planNameBatches(strips);
+    const declared = (e as ExpectedNames).pilesDeclared !== false;
+    const slices = planNameBatches(strips, declared ? groupPagesByCapture(piles.map((p) => p.pages.length)) : null);
     return { stage, slices, results: slices.map(() => null), cursor: 0, job: null };
   }
   const pages = piles.flatMap((p) => p.pages);
@@ -293,9 +332,17 @@ export async function stepCase(
     const names = e as ExpectedNames;
     if (s.cursor < s.slices.length) {
       const slice = s.slices[s.cursor];
-      const out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
+      let out: Record<string, unknown> | null;
+      try {
+        out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
+      } catch {
+        // As in the class scan: a failed name read leaves its pages unread
+        // (their own groups, for the teacher), it does not stop the case.
+        s.job = null;
+        out = { failed: true };
+      }
       if (out) {
-        s.results[s.cursor] = out as { pages?: PageName[] };
+        s.results[s.cursor] = out as { pages?: PageName[]; failed?: boolean };
         s.cursor++;
       }
       return { state: s, result: { status: "running", progress: `Reading names: request ${Math.min(s.cursor + 1, s.slices.length)} of ${s.slices.length}` } };
@@ -303,10 +350,13 @@ export async function stepCase(
     const strips = names.piles.flatMap((p) => p.strips);
     const pages = names.piles.flatMap((p) => p.pages);
     const read = mergeNameReads(pages.length, s.slices, s.results.map((r) => r ?? {}));
-    const groups = groupPagesByCapture(names.piles.map((p) => p.pages.length));
+    const declared = names.pilesDeclared !== false;
     const roster: Student[] = names.roster.map((r) => ({ id: r.id, classId: e.assessment.classId, name: r.name, color: "#000", evidence: [], notes: "" }));
+    const groups = declared
+      ? groupPagesByCapture(names.piles.map((p) => p.pages.length))
+      : groupPagesByName(read, (name) => rosterMatchCount(name, roster));
     const resolved = resolveScannedGroups(groups, read, [], pages, roster, strips);
-    const score = scoreNames(names.piles, resolved);
+    const score = scoreNames(names.piles, pilesAsResolved(names.piles, groups, resolved));
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Names scored", metrics: { names: score } } };
   }
 
@@ -318,20 +368,46 @@ export async function stepCase(
     if (s.cursor < s.batches.length) {
       const batch = s.batches[s.cursor];
       const attemptBatch = s.attemptBatch ?? batch;
-      const out = await advanceJob(
+      let out: Record<string, unknown> | null;
+      try {
+        out = await advanceJob(
         svc, c, key, s.job,
-        params("class_scan", e.assessment, attemptBatch.uploadIds, { pageGroups: attemptBatch.groups, batchIndex: s.cursor }),
+        params("class_scan", e.assessment, attemptBatch.uploadIds, {
+          pageGroups: attemptBatch.groups,
+          batchIndex: s.cursor,
+          onlyQuestionIds: attemptBatch.onlyQuestionIds ?? [],
+        }),
         attemptBatch.uploadIds, usage, (j) => (s.job = j),
-      );
+        );
+      } catch (err) {
+        // As in gradeInBatches: a failed multi-part re-ask does not fail the
+        // batch; what is still short is settled to Unsure below.
+        if (!s.partsPhase) throw err;
+        s.job = null;
+        out = { groups: [] };
+      }
       if (out) {
         const best = new Map(s.best);
-        absorbGraded(best, attemptBatch, (out as { groups?: GradedGroup[] }).groups);
-        const missing = shortGroups(batch, best, questionCount);
+        const groups = (out as { groups?: GradedGroup[] }).groups;
+        // The same order as gradeInBatches: missing students are re-asked
+        // first, then short multi-part answers once, then anything still short
+        // goes to Unsure.
+        const missing = s.partsPhase ? [] : (absorbGraded(best, attemptBatch, groups), shortGroups(batch, best, questionCount));
+        if (s.partsPhase) absorbPartsReask(best, attemptBatch, groups);
+        const shorts = s.partsPhase ? [] : partsShortfall(a, batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+        const queue = s.partsPhase ? (s.partsQueue ?? []) : shorts.length ? planPartsReask(batch, shorts) : [];
         if (missing.length && s.attempt < MAX_RETRIES) {
           s.attempt++;
           s.attemptBatch = retryBatch(batch, missing);
           s.best = [...best];
+        } else if (queue.length) {
+          // One re-ask per step: each set of short questions is its own request.
+          s.partsPhase = true;
+          s.attemptBatch = queue[0];
+          s.partsQueue = queue.slice(1);
+          s.best = [...best];
         } else {
+          settleShortParts(best, batch.groupIndexes, a);
           for (const at of batch.groupIndexes) {
             const g = best.get(at);
             if (g) s.graded.push(g);
@@ -339,6 +415,8 @@ export async function stepCase(
           s.cursor++;
           s.attempt = 0;
           s.attemptBatch = null;
+          s.partsPhase = false;
+          s.partsQueue = [];
           s.best = [];
         }
       }
@@ -348,7 +426,8 @@ export async function stepCase(
       const g = s.graded.find((x) => x.group === i);
       return normalizeRecognizedResponses(a, pile.studentId, g?.responses ?? []);
     });
-    const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping");
+    const parts = Object.fromEntries(activeQuestions(a).map((q) => [q.id, expectedParts(q)]));
+    const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping", parts);
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Answers scored", metrics: { answers: score } } };
   }
 

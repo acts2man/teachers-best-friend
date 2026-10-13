@@ -41,6 +41,7 @@ import {
   reusablePriorResult,
   readReuseFingerprint,
   documentContent,
+  labelledContent,
 } from "@/lib/analyze-server";
 import { failureKind, logAiFailure } from "@/lib/app-events-server";
 import { AiCallError } from "@/lib/ai-retry";
@@ -132,6 +133,8 @@ export async function POST(request: Request) {
       content.push(documentContent(file));
     }
     const { task, schema } = buildPrompt(p, w, catalog, content.length > 0);
+    const labelled = labelledContent(p.mode, content);
+    content.splice(0, content.length, ...labelled);
     content.push({ type: "input_text", text: task });
 
     // The scan is reserved before the model call so quota and account checks

@@ -1,4 +1,6 @@
 import { activeQuestions } from "./teacher-workflow";
+import { expectedParts } from "./answer-parts";
+export { expectedParts, partsRead } from "./answer-parts";
 import type { Assessment, Standard } from "./teacher-types";
 
 /**
@@ -49,16 +51,30 @@ export function catalogForPrompt(catalog: Standard[]) {
  * "every non-excluded question", and normalizeRecognizedResponses maps the
  * result over activeQuestions(), so sending them was pure cost.
  */
-export function questionsForGrading(a: Assessment) {
-  return activeQuestions(a).map((q) => ({
-    id: q.id,
-    number: q.number,
-    text: q.text,
-    passage: q.passage,
-    answer: q.answer,
-    standard: q.standard,
-    skill: q.skill,
-  }));
+export function questionsForGrading(a: Assessment, only?: string[]) {
+  return activeQuestions(a)
+    .filter((q) => !only?.length || only.includes(q.id))
+    .map((q) => {
+      const parts = expectedParts(q);
+      return {
+        id: q.id,
+        number: q.number,
+        text: q.text,
+        passage: q.passage,
+        answer: q.answer,
+        standard: q.standard,
+        skill: q.skill,
+        // Only on questions with more than one part, so every other prompt is
+        // exactly what it was.
+        ...(parts > 1 ? { parts } : {}),
+      };
+    });
+}
+
+/** The grading instruction for multi-part questions, or "" when there are none. */
+export function multipartRule(a: Assessment, only?: string[]): string {
+  if (!questionsForGrading(a, only).some((q) => "parts" in q)) return "";
+  return ' A question with "parts": N expects N separate answers. For it, give finalAnswer as the N parts in the order they appear, separated by "; ", and write "?" for any part you cannot find or read -- never merge two parts into one, never drop a part, and never guess one.';
 }
 
 /** How much of a transcribed passage travels with a grading request. Long

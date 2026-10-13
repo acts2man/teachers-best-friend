@@ -90,6 +90,7 @@ for (const [width, height] of VIEWPORTS) {
   const questionIds = a.questions.filter((q) => !q.excluded).map((q) => q.id);
   let saved = null;
   let uploads = 0;
+  const nameRequests = [];
 
   const ctx = await browser.newContext({ viewport: { width, height } });
   const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -111,15 +112,21 @@ for (const [width, height] of VIEWPORTS) {
     r.fulfill(json(r.request().method() === "GET" ? { state: null, revision: 0 } : { revision: 1, ok: true })));
   await ctx.route("**/api/analyze", async (r) => {
     const p = JSON.parse(r.request().postData() || "{}");
-    if (p.mode === "name_strip")
-      // Page 0 carries an active-class student's exact name; page 2 a name that
-      // is on nobody's roster, so the save also creates a student.
-      return r.fulfill(json({ model: "mock", result: { pages: p.uploadIds.map((_, i) => ({
+    if (p.mode === "name_strip") {
+      nameRequests.push(p.uploadIds.length);
+      // Answers by WHICH strip it was sent, not by position: uploads alternate
+      // page, strip, page, strip..., so the first page's strip is upload-2 and
+      // the third page's is upload-6. Page 1 carries an active-class student's
+      // exact name; page 3 a name on nobody's roster, so the save also creates
+      // a student.
+      const NAMES = { "upload-2": active[0].name, "upload-6": "Maximiliano Delacroix-Whitfield" };
+      return r.fulfill(json({ model: "mock", result: { pages: p.uploadIds.map((id, i) => ({
         page: i,
-        name: i === 0 ? active[0].name : i === 2 ? "Maximiliano Delacroix-Whitfield" : "",
-        confidence: i % 2 === 0 ? 96 : 0,
+        name: NAMES[id] ?? "",
+        confidence: NAMES[id] ? 96 : 0,
         box: null,
       })) } }));
+    }
     if (p.mode === "class_scan")
       return r.fulfill(json({ model: "mock", result: { groups: p.pageGroups.map((_, g) => ({
         group: g,
@@ -168,6 +175,8 @@ for (const [width, height] of VIEWPORTS) {
     const graded = (saved.workspace?.assessments ?? []).find((x) => x.id === "ela-demo");
     check(graded && graded.responses.length > a.responses.length, `${tag}: the graded answers were saved`);
   }
+  if (process.env.EXPECT_NAME_REQUESTS)
+    check(nameRequests.join(",") === process.env.EXPECT_NAME_REQUESTS, `${tag}: name requests per call were ${nameRequests.join(",")} (expected ${process.env.EXPECT_NAME_REQUESTS})`);
   check(errors.length === 0, `${tag}: no uncaught errors${errors.length ? " — " + errors.join(" | ") : ""}`);
   await ctx.close();
 }
