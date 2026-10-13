@@ -180,7 +180,7 @@ test("2a: unconfirmed second choices are not in the alignment average (c2e875b2 
   const read = fixture.reads.find((r) => r.scan === "c2e875b2");
   const a = asAssessment(read, "?rejected-by-old-filter");
   assert.equal(a.questions.filter((x) => isSecondChoice(x)).length, 10);
-  assert.equal(alignment(a), null, "nothing the AI actually scored: no average, not 18%");
+  assert.equal(alignment(a), null, "nothing the AI actually scored: no average, not 15%");
 });
 
 test("2a: a confirmed second choice is the teacher's pick -- no made-up score, as for any standard they choose", () => {

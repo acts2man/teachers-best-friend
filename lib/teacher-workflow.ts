@@ -181,7 +181,8 @@ function withoutSecondChoice(q: Question): Question {
  * and an AI second choice becomes the teacher's own pick. It arrives with no AI
  * score (the AI scored its first choice; settleStandards leaves it 0), so it is
  * shown as "You chose it" and left out of the alignment average like any
- * standard the teacher assigns -- it used to keep a made-up 60% (#129 round
+ * standard the teacher assigns -- it used to keep a made-up score (60, or 50
+ * where the read had none) (#129 round
  * 3). A score the teacher typed in themselves is kept.
  */
 export function confirmQuestion(q: Question): Question {
