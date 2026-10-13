@@ -81,6 +81,9 @@ test("settle: first choice kept as the AI scored it; second choice marked to che
   assert.ok(isSecondChoice(questions[1]));
   assert.match(questions[1].reasoning, /first choice \(F-IF\.9\) isn't in your standards list; this is its second choice/);
   assert.equal(withoutStandardNote(questions[1].reasoning), "Fits.", "the note comes off cleanly");
+  assert.equal(withoutStandardNote("[AI's second choice — check it] my own careful explanation"), "my own careful explanation", "a teacher's edited text is never wiped");
+  const pilcrow = settleStandards([q(1, "F-IF.9 ¶ x", "F-BF.3")], hs).questions[0];
+  assert.equal(withoutStandardNote(pilcrow.reasoning), "Fits.");
   assert.deepEqual([questions[2].standard, questions[2].alignment, questions[2].confidence], ["", 0, 0]);
   assert.match(questions[2].reasoning, /The AI suggested F-IF\.9, which isn't in your standards list/);
   assert.deepEqual(records.map((r) => [r.number, r.wrote, r.used, r.how]), [[1, "HSF-IF.C.7", "F-IF.7", "spelling"], [2, "F-IF.9", "F-BF.3", "second-choice"], [3, "F-IF.9", "", ""]]);

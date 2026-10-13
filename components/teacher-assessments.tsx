@@ -1078,6 +1078,7 @@ export function AssessmentView() {
                                   {questionAlignment(q) === null
                                     ? "You chose it"
                                     : questionAlignment(q) + "%"}
+                                  {!q.verified && isSecondChoice(q) && " · AI’s 2nd choice — check"}
                                 </span>
                               )}
                             </button>

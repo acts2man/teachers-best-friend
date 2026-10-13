@@ -131,12 +131,14 @@ export function withoutStandardNote(reasoning: string): string {
   for (const marker of [SECOND_CHOICE_NOTE, NOT_IN_LIST_NOTE])
     if (reasoning.startsWith(marker)) {
       const end = reasoning.indexOf(" ¶ ");
-      return end >= 0 ? reasoning.slice(end + 3) : "";
+      // The separator gone (the teacher edited the text): take off only the
+      // marker, never their words.
+      return end >= 0 ? reasoning.slice(end + 3) : reasoning.slice(marker.length);
     }
   return reasoning;
 }
 
-const shown = (code: string) => code.trim().slice(0, 40);
+const shown = (code: string) => code.replace(/¶/g, "").trim().slice(0, 40);
 
 /**
  * Settles every question's standard against the catalog:
