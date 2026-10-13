@@ -6,7 +6,7 @@ import {
 import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 import { expectedParts, partsRead } from "./answer-parts";
-import { compareAnswers } from "./math-answer";
+import { sameReading } from "./math-answer";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -888,7 +888,7 @@ export function mergeSplitGroups(first: StudentResponse[], second: StudentRespon
     const rb = read(b);
     if (!rb) return a;
     if (!ra) return b;
-    if (ra === rb || compareAnswers(ra, rb) === "same") return a.confidence >= b.confidence ? a : b;
+    if (ra === rb || sameReading(ra, rb)) return a.confidence >= b.confidence ? a : b;
     return {
       ...a,
       correct: false,

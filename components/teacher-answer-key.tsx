@@ -1,4 +1,5 @@
 "use client";
+import { expectedParts } from "@/lib/answer-parts";
 import { useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
@@ -503,6 +504,13 @@ export function AnswerKeyReview({
             <div>
               <strong>{q.text}</strong>
               <span>{q.standard || "Standard not yet assigned"}</span>
+              {expectedParts(q) > 1 && (
+                // The count grading checks against. A key edit here never
+                // lowers it to one answer; the question's edit sheet does.
+                <span className="cell-meta">
+                  Expects {expectedParts(q)} answers, separated by &ldquo;;&rdquo; — change this in the question&rsquo;s details
+                </span>
+              )}
               <textarea
                 ref={(el) => {
                   boxes.current[q.id] = el;

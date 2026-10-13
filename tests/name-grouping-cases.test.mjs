@@ -194,3 +194,14 @@ test("B1. two groups of one scan matched to the same student keep BOTH groups' a
   assert.equal(c1.correct, false);
   assert.equal(c1.confidence, 0, "for the teacher");
 });
+
+test("split groups with different WORD answers are a clash for the teacher, not a silent pick (round-4 review)", () => {
+  const { mergeSplitGroups } = bundle("lib/teacher-class-scan.ts");
+  const r = (answer, confidence) => ({ id: answer, studentId: "s", questionId: "q", answer, finalAnswer: answer, correct: false, confidence, verified: false, misconception: "" });
+  for (const [x, y] of [["The slope is positive", "The slope is negative"], ["It is 5", "It is 7"]]) {
+    const [m] = mergeSplitGroups([r(x, 100)], [r(y, 95)]);
+    assert.equal(m.confidence, 0, x + " / " + y + " goes to the teacher");
+  }
+  const [same] = mergeSplitGroups([r("1/2", 100)], [r("0.5", 100)]);
+  assert.equal(same.confidence, 100, "equal values are not a clash");
+});

@@ -388,6 +388,20 @@ function itemProvablyDifferent(x: string, y: string): boolean {
   return provablyDifferentSingle(x, y);
 }
 
+/**
+ * Two reads of ONE answer that say the same thing: identical once spacing,
+ * case and symbols are normalised, or both math that evaluates equal ("4" and
+ * "4.0", "1/2" and "0.5"). No note-stripping -- unlike compareAnswers, which
+ * cuts a key at "is"/"for" and would call "the slope is positive" and "the
+ * slope is negative" the same (#125 review, round 4).
+ */
+export function sameReading(a: string, b: string): boolean {
+  const fa = canonical(a).replace(/\s+/g, "");
+  const fb = canonical(b).replace(/\s+/g, "");
+  if (fa === fb) return true;
+  return sameValue(fa, fb) === true;
+}
+
 export function compareAnswers(a: string, b: string): Verdict {
   const parts = pairedParts(a, b);
   if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
