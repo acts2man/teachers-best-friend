@@ -88,14 +88,20 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   check(q[1].verified === false && q[1].secondChoice === true, `${W}x${H} 2b: and left the second choice for the teacher, though its reasoning no longer says so`);
   check((await page.getByText(/2nd choice — check/).filter({ visible: true }).count()) >= 1, `${W}x${H} 2b: still labelled on screen`);
 
-  // 2a: the teacher confirms it -- no made-up score.
-  await page.getByText(a.questions[1].text.slice(0, 30)).first().click();
-  await page.getByRole("button", { name: /Accept & save decision/ }).click();
-  await page.waitForTimeout(800);
-  const c = saved()[1];
-  check(c.verified === true && c.secondChoice === undefined && c.alignment === 0, `${W}x${H} 2a: confirmed, it is the teacher's pick: mark gone, alignment ${c.alignment} (not 60)`);
-  check((await header()) === (expected === null ? "—" : expected + "%"), `${W}x${H} 2a: the average is unchanged by confirming it (${await header()})`);
-  check((await page.getByText(/2nd choice — check/).filter({ visible: true }).count()) === 0, `${W}x${H}: the label is gone`);
+  // 2a: the teacher confirms it -- no made-up score. (On the build before the
+  // fix "confirm all" already took it, so there is nothing left to confirm:
+  // reported as a failure, not a crash.)
+  try {
+    await page.getByText(a.questions[1].text.slice(0, 30)).first().click();
+    await page.getByRole("button", { name: /Accept & save decision/ }).click({ timeout: 8000 });
+    await page.waitForTimeout(800);
+    const c = saved()[1];
+    check(c.verified === true && c.secondChoice === undefined && c.alignment === 0, `${W}x${H} 2a: confirmed, it is the teacher's pick: mark gone, alignment ${c.alignment} (not 60)`);
+    check((await header()) === (expected === null ? "—" : expected + "%"), `${W}x${H} 2a: the average is unchanged by confirming it (${await header()})`);
+    check((await page.getByText(/2nd choice — check/).filter({ visible: true }).count()) === 0, `${W}x${H}: the label is gone`);
+  } catch (e) {
+    check(false, `${W}x${H} 2a: confirming the second choice -- stopped: ${String(e.message).split("\n")[0]}`);
+  }
   await ctx.close();
 }
 await browser.close();
