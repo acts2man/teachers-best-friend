@@ -14,7 +14,7 @@ const m = { exports: {} };
 new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
 const { scrubEventText, scrubDetail, clientEventSchema } = m.exports;
 
-const NAMES = ["Maria", "MARIA", "Lopez", "LOPEZ", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope", "deShawn", "mcKenzie", "May"];
+const NAMES = ["Maria", "MARIA", "Lopez", "LOPEZ", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope", "deShawn", "mcKenzie", "May", "maria-lopez", "lopez.m"];
 
 test("unquoted names are removed from messages", () => {
   for (const msg of [
@@ -30,6 +30,9 @@ test("unquoted names are removed from messages", () => {
     "deShawn mcKenzie MariaError MariaLopezException",
     "Could not read Maria's page in May",
     "see https://app.example/x?student=Maria%20Lopez",
+    // Round 3.
+    "Student maria.lopez not found (maria.lopez) student.maria lopez.m maria()",
+    "Failed /students/maria-lopez and https://x.app/roster/maria-lopez#x",
   ]) {
     const out = scrubEventText(msg);
     for (const n of NAMES) assert.ok(!out.includes(n), `"${msg}" -> "${out}" still has ${n}`);
@@ -61,4 +64,13 @@ test("the browser's events go through the same rules on the server", () => {
   const e = clientEventSchema.parse({ type: "client_error", message: "Student Maria Lopez not found", detail: { student: "maria", status: 404 } });
   assert.ok(!/Maria|Lopez/.test(e.message));
   assert.deepEqual(e.detail, { status: 404 });
+});
+
+test("real error text stays useful (round-3 review)", () => {
+  assert.match(scrubEventText("Error: Minified React error #418; visit https://react.dev/errors/418?args[]=x"), /#418/);
+  assert.equal(scrubEventText("sync_workspace failed: 500"), "sync_workspace failed: 500");
+  assert.equal(scrubEventText("NotReadableError: Could not start video source"), "NotReadableError: Could not start video source");
+  assert.equal(scrubEventText("e.map is not a function"), "e.map is not a function");
+  assert.equal(scrubEventText("This classroom changed in another tab. Reload to see the latest version before saving."), "This classroom changed in another tab. Reload to see the latest version before saving.");
+  assert.deepEqual(scrubDetail({ endpoint: "/api/students/maria-lopez" }), { endpoint: "/api/students/:seg" });
 });

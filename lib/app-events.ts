@@ -48,7 +48,10 @@ const ERROR_WORDS = new Set(
     "short batch retry retries attempt still some answers may blank empty unread result results model mode kind " +
     "stopped incomplete unparseable too many large small long minified react hydration render rendering hook hooks " +
     "mismatch element child children key keys unique prop props state update unmounted component components " +
-    "and or but if then else when while after before during only also more less than into out up down over"
+    "and or but if then else when while after before during only also more less than into out up down over " +
+    "this that these it its your you please select choose classroom latest version first sign signed session expired " +
+    "account credits left plan limit reached video source start started camera minified visit full message see " +
+    "observer loop completed undelivered notifications already exists gone"
   ).split(/\s+/),
 );
 
@@ -58,7 +61,8 @@ const ERROR_CLASSES = new Set(
   (
     "Error TypeError RangeError SyntaxError ReferenceError EvalError URIError AggregateError DOMException " +
     "AbortError TimeoutError NetworkError ChunkLoadError HttpError ZodError AiCallError QuotaExceededError " +
-    "NotAllowedError NotFoundError SecurityError InvalidStateError DataCloneError"
+    "NotAllowedError NotFoundError SecurityError InvalidStateError DataCloneError NotReadableError " +
+    "OverconstrainedError NotSupportedError UnknownError"
   ).split(" "),
 );
 
@@ -67,20 +71,32 @@ const ACRONYMS = new Set("JSON HTTP HTTPS API URL PDF JPEG JPG PNG HEIC HTML CSS
 
 /** The app's own AI request modes, as its messages name them. */
 const MODES = new Set(
-  "class_scan name_strip answer_key key_check assignment passage roster rubric writing lesson reteaching responses catalog support embedding".split(" "),
+  (
+    "class_scan name_strip answer_key key_check assignment passage roster rubric writing lesson reteaching responses catalog support embedding " +
+    "sync_workspace get_workspace_json"
+  ).split(" "),
 );
 
-/** Code with internal structure -- never a bare word with a stray dot. */
+/** Property names code is written in, for "e.map", "res.json", "x.length". */
+const CODE_PROPS = new Set("length map filter forEach find reduce then catch json text slice split trim push id name type value data error message status body headers current target style".split(" "));
+
+/**
+ * Code with internal structure -- never a bare word with a stray dot. A dotted
+ * token is code only when it looks like code: a short receiver ("e.map"), a
+ * known property at the end ("res.json"), or a camelCase / $ / _ segment --
+ * so a lower-case "maria.lopez" username is not taken for one (#124 review).
+ */
 function codeShaped(token: string): boolean {
-  return (
-    ERROR_CLASSES.has(token) ||
-    ACRONYMS.has(token) ||
-    MODES.has(token) ||
-    /^ERR_[A-Z_]+$/.test(token) || // ERR_NETWORK
-    /^[a-z_$][\w$]*(\.[a-z_$][\w$]*)+$/.test(token) || // a.b.c (lower-case code paths)
-    /^[a-z_$][\w$]*\(\)?$/.test(token) || // fn( or fn()
-    /^\d{1,5}(\.\d+)?$/.test(token) // statuses, positions, counts
-  );
+  if (ERROR_CLASSES.has(token) || ACRONYMS.has(token) || MODES.has(token)) return true;
+  if (/^ERR_[A-Z_]+$/.test(token)) return true; // ERR_NETWORK
+  if (/^#\d{1,5}$/.test(token)) return true; // "Minified React error #418"
+  if (/^\d{1,5}(\.\d+)?$/.test(token)) return true; // statuses, positions, counts
+  const dotted = token.match(/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)+$/);
+  if (dotted) {
+    const seg = token.split(".");
+    return seg[0].length <= 2 || CODE_PROPS.has(seg[seg.length - 1]) || seg.some((x) => /[A-Z_$]/.test(x.slice(1)) || /^[_$]/.test(x));
+  }
+  return false;
 }
 
 /** A URL or path in a message, reduced to its route template. */
@@ -175,6 +191,17 @@ export function scrubStack(stack: unknown, max = 4000): string {
   return frames.join("\n").slice(0, max);
 }
 
+/** Every path segment the app's own routes use. Anything else in a path --
+ * "/students/maria-lopez" -- becomes ":seg", so a route can carry no name. */
+const ROUTE_WORDS = new Set(
+  (
+    "account accounts admin analyze api app assessments audit auth billing callback candidates checkout classes clear " +
+    "contact delete diagnostics events export guide impersonation legal lessons library login pipeline portal quota " +
+    "regression release reserve resources reteach scan scans session settings signout signup standards state students " +
+    "support tickets uploads usage version webhook workspace errors privacy terms student-data ai"
+  ).split(" "),
+);
+
 const UUIDISH = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /**
@@ -193,7 +220,7 @@ export function routeTemplate(urlOrPath: unknown): string {
   return path
     .replace(UUIDISH, ":id")
     .split("/")
-    .map((seg) => (/\d{3,}|^[A-Za-z0-9_-]{20,}$/.test(seg) ? ":id" : seg))
+    .map((seg) => (/\d{3,}|^[A-Za-z0-9_-]{20,}$/.test(seg) ? ":id" : !seg || seg.startsWith(":") || ROUTE_WORDS.has(seg) ? seg : ":seg"))
     .join("/")
     .slice(0, 200);
 }
