@@ -18,9 +18,24 @@
 // file Storage knows about with no teacher_uploads row (an upload whose row
 // insert failed, a row deleted by hand), and a live row whose file is gone.
 //
+// The lost window, 12 Oct 2026: the request logs DO record those uploads
+// (Supabase Logs Explorer, edge_logs: POST /storage/v1/object/teacher-documents/
+// <teacher>/<upload> with status 200 -- 47 of them, checked on 13 Oct). Export
+// them as "<ISO time><TAB><teacher>/<upload>" lines and pass --logged <file>:
+// the report then counts them by teacher and time range too, and confirms none
+// has a row. They still cannot be deleted from here -- the paths are what to
+// give Supabase support. Logs are kept only a few days on Supabase plans.
+//
+//   select timestamp, log_attributes['request.path'] from logs
+//   where source = 'edge_logs' and log_attributes['request.method'] = 'POST'
+//     and log_attributes['request.path'] like '/storage/v1/object/teacher-documents/%'
+//     and log_attributes['response.status_code'] = '200'
+//   -- with the window set to 2026-10-12T12:54:00Z .. 2026-10-13T00:36:00Z
+//
 // Three steps, each run separately:
 //   1. report   -- counts by teacher and time range; writes a manifest of the
-//                  orphans to a local file. Changes nothing.
+//                  orphans to a local file OUTSIDE the repository. Changes
+//                  nothing.
 //   2. dry-run  -- reads that manifest, re-checks every path against the
 //                  database now, and prints exactly what step 3 would remove,
 //                  with the token step 3 needs. Changes nothing.
@@ -28,19 +43,29 @@
 //                  the Storage API, and only with the dry run's token.
 //
 //   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
-//     node scripts/admin/orphan-photos.mjs report  --out orphans.json
-//     node scripts/admin/orphan-photos.mjs dry-run --manifest orphans.json
-//     node scripts/admin/orphan-photos.mjs delete  --manifest orphans.json --token <from dry-run>
+//     node scripts/admin/orphan-photos.mjs report  [--logged lost-window.tsv]
+//     node scripts/admin/orphan-photos.mjs dry-run --manifest <path the report printed>
+//     node scripts/admin/orphan-photos.mjs delete  --manifest <same> --token <from dry-run>
+//
+// "A row" means a teacher_uploads row or a legacy uploads row in this bucket:
+// both point at files here, and a file either one names is never touched.
+// Files younger than an hour are left out (an upload may be mid-flight), and
+// the report refuses to write a manifest if more than half the bucket would be
+// "orphaned" -- that is a listing or paging fault, not a finding.
 //
 // The key is read from the environment and never printed or written. The
 // manifest holds storage paths (teacher id / upload id), no names or content;
-// keep it local -- it is not for the repository.
+// it is written to the system temp folder with owner-only permissions, and
+// never inside the repository.
 import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
-import { compare, manifestToken, stillOrphaned, teacherOf, timeRange } from "./orphan-photos-lib.mjs";
+import { compare, loggedButGone, manifestToken, stillOrphaned, teacherOf, timeRange, isPlaceholder } from "./orphan-photos-lib.mjs";
 
 const BUCKET = "teacher-documents";
-const PAGE = 1000;
+const PAGE = Number(process.env.ORPHAN_PAGE_SIZE) || 1000;
 const REMOVE_CHUNK = 100;
 
 const [, , step, ...rest] = process.argv;
@@ -59,60 +84,124 @@ function client() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-/** Every file in the bucket, folder by folder, through the Storage API. */
+/** Every file in the bucket, folder by folder, through the Storage API. Pages
+ * until an empty one: a server that caps a page below PAGE must not end the
+ * listing early (review). */
 async function listBucket(svc) {
   const out = [];
   const walk = async (prefix) => {
-    for (let offset = 0; ; offset += PAGE) {
+    for (let offset = 0; ; ) {
       const { data, error } = await svc.storage.from(BUCKET).list(prefix, { limit: PAGE, offset, sortBy: { column: "name", order: "asc" } });
       if (error) throw new Error("listing " + (prefix || "(root)") + ": " + error.message);
-      for (const item of data ?? []) {
+      if (!data || !data.length) break;
+      for (const item of data) {
         const path = prefix ? prefix + "/" + item.name : item.name;
         // A folder has no id; a file does.
         if (item.id === null || item.id === undefined) await walk(path);
-        else out.push({ path, size: item.metadata?.size ?? 0, createdAt: item.created_at ?? null });
+        else if (!isPlaceholder(path)) out.push({ path, size: item.metadata?.size ?? 0, createdAt: item.created_at ?? null });
       }
-      if (!data || data.length < PAGE) break;
+      offset += data.length;
     }
   };
   await walk("");
   return out;
 }
 
-/** Every teacher_uploads row's path, a page at a time (one select stops at 1,000). */
-async function uploadRows(svc) {
-  const rows = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await svc.from("teacher_uploads").select("object_path, purged_at").order("object_path").range(from, from + PAGE - 1);
-    if (error) throw new Error("teacher_uploads: " + error.message);
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) break;
+/** Every row that points at a file in this bucket: teacher_uploads, and the
+ * legacy uploads table (the purge and account deletion still treat its rows as
+ * files here). Pages until an empty page, and checks the total against an
+ * exact count, so a capped page can never make a file with a row look like an
+ * orphan (review). */
+async function rowsFor(svc, table, extra = (q) => q) {
+  const { count, error: countError } = await extra(svc.from(table).select("object_path", { count: "exact", head: true }));
+  if (countError) {
+    if (/does not exist|schema cache/i.test(countError.message)) return [];
+    throw new Error(table + ": " + countError.message);
   }
+  const rows = [];
+  for (let from = 0; ; ) {
+    const { data, error } = await extra(svc.from(table).select("object_path, purged_at")).order("object_path").range(from, from + PAGE - 1);
+    if (error) throw new Error(table + ": " + error.message);
+    if (!data || !data.length) break;
+    rows.push(...data);
+    from += data.length;
+  }
+  if (typeof count === "number" && rows.length !== count)
+    throw new Error(`${table}: read ${rows.length} rows but the table has ${count}. Stopping rather than calling files orphans.`);
   return rows;
+}
+async function uploadRows(svc) {
+  const [current, legacy] = await Promise.all([
+    rowsFor(svc, "teacher_uploads"),
+    rowsFor(svc, "uploads", (q) => q.eq("bucket_id", BUCKET)),
+  ]);
+  return [...current, ...legacy];
+}
+
+/** Where the manifest goes: the system temp folder by default, never inside
+ * the repository (it holds teacher and upload ids; the repo is public). */
+function manifestPath(requested) {
+  const path = resolve(requested ?? join(tmpdir(), `orphan-photos-${Date.now()}.json`));
+  let repo = "";
+  try {
+    repo = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    /* not in a repository */
+  }
+  if (repo && path.startsWith(resolve(repo) + "/")) {
+    console.error(`Refusing to write the manifest inside the repository (${path}). Leave out --out, or give a path outside it.`);
+    process.exit(2);
+  }
+  return path;
 }
 
 const mb = (bytes) => (bytes / 1e6).toFixed(1) + " MB";
 
 async function report() {
-  const out = arg("out") ?? "orphan-photos-manifest.json";
+  const out = manifestPath(arg("out"));
   const svc = client();
   const [objects, rows] = await Promise.all([listBucket(svc), uploadRows(svc)]);
   const { orphans, missing, purgedButPresent, counts } = compare(objects, rows);
-  console.log(`Bucket ${BUCKET}: ${objects.length} files listed; teacher_uploads: ${rows.length} rows.`);
-  console.log("NOTE: the listing reads storage.objects. A file whose row the 12 Oct restore removed is not listed (see the header of this script).");
-  console.log(`\nFiles with no teacher_uploads row (never purged): ${orphans.length}`);
+  console.log(`Bucket ${BUCKET}: ${objects.length} files listed; ${rows.length} rows point at it (teacher_uploads + legacy uploads).`);
+  console.log("NOTE: the listing reads storage.objects. A file whose row the 12 Oct restore removed is not listed -- see --logged in the header of this script.");
+  console.log(`\nFiles with no row (never purged): ${orphans.length}`);
   for (const [key, c] of Object.entries(counts).sort()) console.log(`  ${key.padEnd(52)} ${String(c.files).padStart(5)} files  ${mb(c.bytes)}`);
   console.log(`\nLive rows whose file is missing: ${missing.length}`);
-  console.log(`Purged rows whose file is still there: ${purgedButPresent.length}`);
+  console.log(`Purged rows whose file is still there: ${purgedButPresent.length}${purgedButPresent.length ? " (the purge will not retry these; remove them through Storage after checking)" : ""}`);
+  const logged = arg("logged");
+  if (logged) {
+    const lines = readFileSync(logged, "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("uploaded_utc"));
+    const entries = lines.map((l) => {
+      const [createdAt, raw] = l.split("\t");
+      return { createdAt, path: (raw ?? "").replace(/^\/?storage\/v1\/object\/teacher-documents\//, "") };
+    });
+    const { gone, counts: goneCounts } = loggedButGone(entries, objects, rows);
+    console.log(`\nUploads in the request log (${entries.length}) that Storage no longer lists and no table records: ${gone.length}`);
+    for (const [key, n] of Object.entries(goneCounts).sort()) console.log(`  ${key.padEnd(52)} ${String(n).padStart(5)} files`);
+    if (gone.length) console.log("  These cannot be removed from here (no storage.objects row); give the paths to Supabase support.");
+  }
+  if (objects.length && orphans.length > objects.length / 2) {
+    console.error(`\nRefusing to write a manifest: ${orphans.length} of ${objects.length} files would be orphans. That is a listing or paging fault, not a finding.`);
+    process.exit(5);
+  }
   const manifest = { bucket: BUCKET, createdAt: new Date().toISOString(), paths: orphans.map((o) => o.path), detail: orphans };
-  writeFileSync(out, JSON.stringify(manifest, null, 2));
-  console.log(`\nManifest of the ${orphans.length} orphans written to ${out} (local only). Next: dry-run --manifest ${out}`);
+  writeFileSync(out, JSON.stringify(manifest, null, 2), { mode: 0o600 });
+  console.log(`\nManifest of the ${orphans.length} orphans written to ${out} (outside the repository). Next: dry-run --manifest ${out}`);
+}
+
+function readManifest(file) {
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  if (manifest.bucket !== BUCKET) {
+    console.error(`This manifest is for bucket "${manifest.bucket}", not "${BUCKET}".`);
+    process.exit(2);
+  }
+  return manifest;
 }
 
 async function dryRun() {
   const file = arg("manifest");
   if (!file) return usage();
-  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  const manifest = readManifest(file);
   const svc = client();
   const { remove, skipped } = stillOrphaned(manifest.paths, await uploadRows(svc));
   const detail = new Map((manifest.detail ?? []).map((d) => [d.path, d]));
@@ -129,7 +218,7 @@ async function del() {
   const file = arg("manifest");
   const token = arg("token");
   if (!file || !token) return usage();
-  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  const manifest = readManifest(file);
   const svc = client();
   const { remove } = stillOrphaned(manifest.paths, await uploadRows(svc));
   const expect = await manifestToken(remove);
@@ -147,11 +236,11 @@ async function del() {
     }
     removed += data?.length ?? 0;
   }
-  console.log(`Removed ${removed} of ${remove.length} files.`);
+  console.log(`Removed ${removed} of ${remove.length} files${removed < remove.length ? `; ${remove.length - removed} were already gone` : ""}.`);
 }
 
 function usage() {
-  console.error("usage: orphan-photos.mjs report [--out file] | dry-run --manifest file | delete --manifest file --token t");
+  console.error("usage: orphan-photos.mjs report [--out file] [--logged file] | dry-run --manifest file | delete --manifest file --token t");
   process.exit(2);
 }
 

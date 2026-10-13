@@ -13,21 +13,33 @@ export function timeRange(createdAt, window = LOST_WINDOW) {
   return "after the restore";
 }
 
+/** Files younger than this are never orphans (an upload in flight). */
+export const MIN_AGE_MS = 60 * 60 * 1000;
+
+/** The dashboard's empty-folder marker is not a photo. */
+export const isPlaceholder = (path) => /(^|\/)\.emptyFolderPlaceholder$/.test(path);
+
 /** A teacher id shortened for a printed report: enough to tell teachers apart. */
 export const teacherOf = (path) => String(path).split("/")[0].slice(0, 8) || "(root)";
 
 /**
- * Compares what the bucket holds with what teacher_uploads records.
+ * Compares what the bucket holds with what the database records.
  *   objects: [{ path, size, createdAt }] -- from the Storage API listing
- *   rows:    [{ object_path, purged_at }] -- every teacher_uploads row
+ *   rows:    [{ object_path, purged_at }] -- every teacher_uploads row AND
+ *            every legacy uploads row in this bucket (both point at files here)
  * Returns the files with no row at all (orphans: nothing will ever purge
  * them), the live rows whose file is missing, and counts of the orphans by
  * teacher and time range.
  */
-export function compare(objects, rows, window = LOST_WINDOW) {
+export function compare(objects, rows, window = LOST_WINDOW, { now = Date.now(), minAgeMs = MIN_AGE_MS } = {}) {
   const byPath = new Map(rows.map((r) => [r.object_path, r]));
   const inBucket = new Set(objects.map((o) => o.path));
-  const orphans = objects.filter((o) => !byPath.has(o.path)).sort((a, b) => a.path.localeCompare(b.path));
+  // A file younger than an hour may be an upload whose row is being written
+  // right now: never called an orphan (review: report-time race).
+  const settled = (o) => !(now - Date.parse(o.createdAt ?? "") < minAgeMs);
+  const orphans = objects
+    .filter((o) => !byPath.has(o.path) && settled(o) && !isPlaceholder(o.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
   const missing = rows.filter((r) => !r.purged_at && !inBucket.has(r.object_path)).map((r) => r.object_path).sort();
   // A purged row whose file is still there: the 30-day job said it removed it.
   const purgedButPresent = objects.filter((o) => byPath.get(o.path)?.purged_at).map((o) => o.path).sort();
@@ -46,6 +58,26 @@ export function compare(objects, rows, window = LOST_WINDOW) {
 export async function manifestToken(paths) {
   const { createHash } = await import("node:crypto");
   return createHash("sha256").update([...paths].sort().join("\n")).digest("hex").slice(0, 12);
+}
+
+/**
+ * Paths the request logs say were uploaded (POST to the bucket, 200) that
+ * Storage no longer lists and no table records: the 12 Oct restore removed
+ * their storage.objects rows, so no listing sees them and remove() cannot
+ * delete them. Counted by teacher and time range for the report; only
+ * Supabase support can remove the files.
+ *   logged: [{ path, createdAt }] -- from a Logs Explorer export
+ */
+export function loggedButGone(logged, objects, rows, window = LOST_WINDOW) {
+  const listed = new Set(objects.map((o) => o.path));
+  const known = new Set(rows.map((r) => r.object_path));
+  const gone = logged.filter((l) => !listed.has(l.path) && !known.has(l.path));
+  const counts = {};
+  for (const g of gone) {
+    const key = teacherOf(g.path) + " | " + timeRange(g.createdAt, window);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return { gone, counts };
 }
 
 /** The manifest paths that are STILL orphans now (a row may have appeared

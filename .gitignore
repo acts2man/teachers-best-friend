@@ -49,3 +49,6 @@ next-env.d.ts
 
 # scripts/admin/orphan-photos.mjs writes storage paths here; local only.
 orphan-photos-manifest.json
+
+# Any manifest the orphan script is pointed at by mistake.
+*orphan*.json
