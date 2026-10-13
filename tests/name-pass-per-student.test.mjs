@@ -138,7 +138,10 @@ test("a stack without declared piles: a motto read again after another name does
   // Telling a motto from a student needs the roster (a recurring roster name is
   // a real student); see tests/name-grouping-cases.test.mjs for the cases.
   const onRoster = (name) => roster.some((s) => s.name.toLowerCase() === name.toLowerCase());
-  assert.deepEqual(groupPagesByName(read, onRoster), [[0, 1], [2, 3]]);
+  // Two appearances: left for the teacher (see name-grouping-cases); three: a motto.
+  assert.deepEqual(groupPagesByName(read, onRoster), [[0], [1], [2], [3]]);
+  const three = [...read, { page: 4, name: "Casey Morgan", confidence: 95 }, { page: 5, name: "Hope Always", confidence: 86 }];
+  assert.deepEqual(groupPagesByName(three, onRoster), [[0, 1], [2, 3], [4, 5]]);
   // Without one, the motto page is left for the teacher, never under a student.
   assert.deepEqual(groupPagesByName(read), [[0], [1], [2], [3]]);
   // A student whose name is read on both of their pages, one after the other, is still one student.

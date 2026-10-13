@@ -355,7 +355,10 @@ function pairedBrackets(a: string, b: string): { bracketsDiffer: boolean; items:
 
 /** "x<=-2", "-2>=x" (flipped to the variable's side): a one-variable
  * inequality. Null for anything else, including an equation. */
-function inequality(raw: string): { v: string; op: string; rhs: string } | null {
+function inequality(input: string): { v: string; op: string; rhs: string } | null {
+  // "x > 2, x ≠ 5": the restriction is a note on the answer, not part of the
+  // inequality -- it used to make the whole answer uncomparable.
+  const raw = input.replace(/,\s*[a-z]\s*(≠|!=|\\neq?(?![a-z]))[^,]*$/i, "");
   const s = bare(raw);
   // One inequality only: "x < -2 or x > 3" (a union, in either order) is
   // left to the general comparison rather than read as its first clause.

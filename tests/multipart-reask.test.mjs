@@ -248,7 +248,7 @@ test("1f. answerParts follows a key edit on a multi-part question, and is never 
   assert.equal(edited.questions[0].answerParts, 3, "follows the key to 3 parts");
   assert.equal(edited.questions[1].answerParts, undefined, "a note after ';' does not make a question multi-part");
   const back = workflow.applyAnswerKey(edited, { m: "x=2" });
-  assert.equal(back.questions[0].answerParts, undefined, "edited down to one answer: no longer multi-part");
+  assert.equal(back.questions[0].answerParts, 3, "never switched to one answer by a key edit alone; the picker does that");
   // An unchanged key leaves the count alone.
   const same = workflow.applyAnswerKey({ ...assessment, questions: [multi] }, { m: "x=2; y=3" });
   assert.equal(same.questions[0].answerParts, 2);
@@ -263,5 +263,16 @@ test("a note after ';' in an edited key is not counted as a part (#125 round-2 r
   const { answerPartsInKey } = bundle("lib/answer-parts.ts");
   assert.equal(answerPartsInKey("B; D"), 2, "one-word multiple-choice parts still count");
   assert.equal(answerPartsInKey("x = 15/2; x = 5 is excluded"), 1);
-  assert.equal(answerPartsInKey("y = 4; (0, 10/3); full sentence required here"), 2);
+  assert.equal(answerPartsInKey("y = 4; (0, 10/3); note: full sentence required"), 2);
+});
+
+test("word answers are answers: a typo fix never changes the count, and word parts count (round-3 review)", () => {
+  const { answerPartsInKey } = bundle("lib/answer-parts.ts");
+  assert.equal(answerPartsInKey("Shift right 2; reflect over the x axis; vertical stretch by two"), 3);
+  assert.equal(answerPartsInKey("slope is positive; y-intercept is 3"), 2);
+  assert.equal(answerPartsInKey("The lines are parallel; no solution"), 2);
+  assert.equal(answerPartsInKey("equivalent; not equivalent"), 2);
+  const words = q("w", 1, "Shift right 2; reflect over the x axis; vertical strech by two", 3);
+  const fixed = workflow.applyAnswerKey({ ...assessment, questions: [words] }, { w: "Shift right 2; reflect over the x axis; vertical stretch by two" });
+  assert.equal(fixed.questions[0].answerParts, 3);
 });

@@ -59,9 +59,18 @@ test("3. two students with the same first name (Maria,_,John,_,Maria,_)", () => 
   assert.deepEqual(r.groups, [[0, 1], [2, 3], [4, 5]]);
 });
 
-test("4. a printed motto read as a name (Ana, Hope Always, Ben, Hope Always) stays with the student before it", () => {
-  const r = run(["Ana", "Hope Always", "Ben", "Hope Always"], ["A", "A", "B", "B"]);
-  assert.deepEqual(r.groups, [[0, 1], [2, 3]]);
+test("4. a printed motto on a real class set stays with each student before it", () => {
+  const r = run(["Ana", "Hope Always", "Ben", "Hope Always", "Casey", "Hope Always"], ["A", "A", "B", "B", "C", "C"]);
+  assert.deepEqual(r.groups, [[0, 1], [2, 3], [4, 5]]);
+});
+
+test("4, as written (two students): the motto pages are left for the teacher, never put under another child", () => {
+  // Trade-off (#125 review, round 3): with only two appearances this is
+  // indistinguishable from a student missing from the roster scanned twice
+  // (Zed, Ana, Ben, Ana), so neither is guessed.
+  const r = run(["Ana", "Hope Always", "Ben", "Hope Always"], ["A", "M", "B", "M"]);
+  noMixing(r, "two-student motto");
+  assert.deepEqual(r.groups, [[0], [1], [2], [3]]);
 });
 
 test("5. a name on every page (Ana, Ana, Ben, Ben) is two students", () => {
@@ -109,9 +118,31 @@ test("re-scan of a student NOT on the roster (Zed,_,Ana,_,Ben,_,Ana) is not take
   noMixing(empty, "empty roster");
 });
 
-test("the motto still stays with the student before it on an empty roster", () => {
-  const r = run(["Ana", "Hope Always", "Ben", "Hope Always"], ["A", "A", "B", "B"], { roster: [] });
-  noMixing(r, "motto, empty roster");
+test("an empty roster takes nothing for a motto (Ann, Bob, Cy, Bob)", () => {
+  const r = run(["Ann", "Bob", "Cy", "Bob"], ["A", "B", "C", "B"], { roster: [] });
+  noMixing(r, "empty roster");
+});
+
+test("a one-page re-scan of a student not on the roster (Zed, Ana, Ben, Ana) is not taken for a motto", () => {
+  const partial = roster.filter((s) => !s.name.startsWith("Ana"));
+  noMixing(run(["Zed", "Ana", "Ben", "Ana"], ["Z", "A", "B", "A"], { roster: partial }), "one-page re-scan, partial roster");
+  noMixing(run(["Zed", "", "Ana", "Ben", "", "Ana"], ["Z", "Z", "A", "B", "B", "A"], { roster: partial }), "mixed lengths");
+  noMixing(run(["Zed", "Ana", "Ben", "Ana"], ["Z", "A", "B", "A"], { roster: [] }), "empty roster");
+});
+
+test("a page with no name area to read (a PDF page) is unread, not joined to the student before it", () => {
+  const slices = [[{ id: "n0", page: 0 }], [{ id: "n2", page: 2 }]];
+  const names = mergeNameReads(3, slices, [{ pages: [{ page: 0, name: "Ana", confidence: 95 }] }, { pages: [{ page: 0, name: "Ben", confidence: 95 }] }]);
+  assert.equal(names[1].failed, true);
+  assert.deepEqual(groupPagesByName(names, onRoster), [[0], [1], [2]]);
+});
+
+test("split groups reading the same value two ways ('4' and '4.0') are not sent to Unsure", () => {
+  const { mergeSplitGroups } = bundle("lib/teacher-class-scan.ts");
+  const r = (answer, correct) => ({ id: answer, studentId: "s", questionId: "q", answer, finalAnswer: answer, correct, match: correct ? 100 : undefined, confidence: 100, verified: false, misconception: "" });
+  const [m] = mergeSplitGroups([r("4", true)], [r("4.0", true)]);
+  assert.equal(m.confidence, 100);
+  assert.equal(m.correct, true);
 });
 
 test("two students sharing a first name, scanned one after the other (Maria,_,Maria,_), are not merged", () => {

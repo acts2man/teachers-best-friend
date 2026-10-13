@@ -30,28 +30,35 @@ export function partsRead(final: string): number {
  * ";" is often a note ("x = 15/2; x = 5 is excluded") -- the teacher sets that
  * with the "Answer parts" box instead. Undefined means one answer.
  */
-export function partsAfterKeyEdit(q: { answerParts?: number }, newKey: string): number | undefined {
+export function partsAfterKeyEdit(
+  q: { answerParts?: number; answer?: string },
+  newKey: string,
+): number | undefined {
   if (expectedParts(q) < 2) return q.answerParts;
-  return clampParts(answerPartsInKey(newKey));
+  const raw = (k: string) => k.split(";").map((p) => p.trim()).filter(Boolean).length;
+  // An edit that keeps the same ";" parts -- a typo fixed, a word changed --
+  // never changes the count (#125 review, round 3: a typo fix on a 3-part
+  // word answer dropped it to 2 and sent the whole class to Unsure).
+  if (q.answer !== undefined && raw(q.answer) === raw(newKey)) return q.answerParts;
+  const n = answerPartsInKey(newKey);
+  // Never down to one answer from a key edit alone ("x = 2, y = 3" with a
+  // comma): that would switch the multi-part check off without saying so.
+  // The teacher sets one answer with the "Answer parts" picker.
+  return n < 2 ? q.answerParts : clampParts(n);
 }
 
-/** Words that mark a ";"-part of a key as a note for the teacher, not an
- * answer the student gives ("x = 2; y = 3; accept equivalent forms"). */
-const NOTE = /\b(accept|accepts|accepted|because|excluded|extraneous|equivalent|note|or any|also ok|allow|ignore)\b/i;
+/** A ";"-part of a key that is a note for the teacher, not an answer the
+ * student gives: it starts with a note phrase ("accept equivalent forms",
+ * "note: ...", "because ..."), or says a value is excluded/extraneous. Word
+ * answers ("the lines are parallel", "equivalent") are answers. */
+const NOTE = /^(accept|also accept|allow|note\b|because|or any|any equivalent|equivalent forms?\b)|\b(is|are) (excluded|extraneous)\b/i;
 
-/**
- * The answers a key lists, separated by ";", leaving out the parts that are
- * notes: a part with a note word in it, or one of three or more words with
- * no number, "=" or math in it ("full sentence required"). A one-word part
- * ("B") stays an answer, so a multiple-choice "B; D" is two.
- */
+/** The answers a key lists, separated by ";", leaving out note parts. */
 export function answerPartsInKey(key: string): number {
   return key
     .split(";")
     .map((p) => p.trim())
-    .filter((p) => p && p !== "?")
-    .filter((p) => !NOTE.test(p))
-    .filter((p) => /[\d=<>≤≥()^/+*-]/.test(p) || p.split(/\s+/).length < 3).length;
+    .filter((p) => p && p !== "?" && !NOTE.test(p)).length;
 }
 
 /** A parts count as stored: 2-20, or undefined for a single answer. Same

@@ -666,7 +666,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       const pageGroups = explicit
         ? groupPagesByCapture(explicit)
         : groupPagesByName(names, (name) => rosterMatchCount(name, students));
-      const failedReads = names.filter((n) => n.failed).length;
+      // Pages whose name read failed or was skipped (a page with no name area
+      // to read -- a PDF page -- is unread too, but nothing failed there).
+      const failedReads = names.filter((n) => n.failed && pages[n.page]?.stripId).length;
       if (failedReads)
         toast.warning(
           failedReads +

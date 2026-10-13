@@ -146,3 +146,8 @@ test("LaTeX commands are read with no space after them", () => {
   assert.equal(compareAnswers("5\\cdot2\\frac{1}{2}", "12.5"), "same");
   assert.equal(compareAnswers("5\\cdot 2\\frac{1}{2}", "12.5"), "same");
 });
+
+test("an inequality with an 'x != 5' note is still compared (round-3 review)", () => {
+  assert.equal(provablyDifferent("x>2, x≠5", "x<2, x≠5"), true);
+  assert.equal(compareAnswers("x > 2, x ≠ 5", "x>2, x≠5"), "same");
+});

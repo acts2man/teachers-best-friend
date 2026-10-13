@@ -6,6 +6,7 @@ import {
 import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 import { expectedParts, partsRead } from "./answer-parts";
+import { compareAnswers } from "./math-answer";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -154,9 +155,12 @@ export function mergeNameReads(
         );
     }
   });
+  // A page no request was asked about (a PDF page, or one the browser could
+  // not cut a name area from) is unread too: unknown, not "no name" (#125
+  // review, round 3).
   return Array.from({ length: pageCount }, (_, page) => {
     const hit = found.get(page);
-    return hit ? { page, ...hit } : { page, name: "", confidence: 0 };
+    return hit ? { page, ...hit } : { page, name: "", confidence: 0, failed: true };
   });
 }
 
@@ -198,8 +202,7 @@ export function groupPagesByName(
   // than graded silently as someone else's (#125 review, 13 Oct 2026).
   const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
   const keys = pages.map((p) => (p.failed ? "" : key(p.name)));
-  const failedAt = new Set(pages.flatMap((p, i) => (p.failed ? [i] : [])));
-  const headers = runningHeaders(keys, failedAt, rosterMatches);
+  const headers = runningHeaders(keys, rosterMatches);
   const groups: number[][] = [];
   let current = "";
   pages.forEach((page, i) => {
@@ -229,38 +232,36 @@ export function groupPagesByName(
  * cost of a wrong yes is one child's page graded as another's:
  *   - it is not a student on the roster (a recurring roster name is a real
  *     student: fronts then backs, a re-scan, two students sharing a first
- *     name), and the roster is known -- without one, nothing is a header;
- *   - no appearance is followed by a page with no name (that is a student's
- *     first page and its continuation sheet, not a printed line);
- *   - it appears on two or more pages, never two in a row;
+ *     name), and the roster is known -- an empty one, nothing is a header;
+ *   - it appears on THREE or more pages, never two in a row (see below);
  *   - before its first appearance and between each pair of appearances there
  *     is exactly one other name, and those names are all DIFFERENT -- one per
  *     student, as a motto on each student's paper produces. A real student
  *     missing from the roster, scanned fronts then backs, repeats the same
  *     neighbours instead (Avery, Newkid, Avery, Newkid), so it is not taken.
- * Left over, stated in the PR: an unrostered student with a name on EVERY page
- * whose pages were shuffled apart with exactly one different student before
- * each could still pass; that needs a roster gap, a name on every page and a
- * shuffled pile at once.
+ * Left over, stated in the PR: a student missing from the roster scanned
+ * three or more times, each time right after a different single student,
+ * would still pass. A motto on a two-student stack is no longer recognised;
+ * its pages are left for the teacher to match, which costs a tap, not a
+ * misfiled paper.
  */
-function runningHeaders(
-  keys: string[],
-  failedAt: Set<number>,
-  rosterMatches?: (name: string) => number,
-): Set<string> {
+function runningHeaders(keys: string[], rosterMatches?: (name: string) => number): Set<string> {
   const out = new Set<string>();
   if (!rosterMatches) return out;
   const at = new Map<string, number[]>();
   keys.forEach((k, i) => k && at.set(k, [...(at.get(k) ?? []), i]));
+  // An empty roster tells nothing apart: every name is "not on it".
+  if (!keys.some((k) => k && rosterMatches(k) > 0)) return out;
   for (const [k, idx] of at) {
-    if (idx.length < 2 || rosterMatches(k) > 0) continue;
+    // Three or more appearances. With two, a printed motto (Ana, Hope Always,
+    // Ben, Hope Always) and a student missing from the roster who was scanned
+    // twice (Zed, Ana, Ben, Ana) look exactly alike, and guessing "motto"
+    // files that child's pages under two other children. So two appearances
+    // are left as their own groups for the teacher (#125 review, round 3). A
+    // real class set has the motto on every student's paper -- far more than
+    // three.
+    if (idx.length < 3 || rosterMatches(k) > 0) continue;
     if (idx.some((v, j) => j > 0 && v === idx[j - 1] + 1)) continue;
-    // A name followed by a page with NO name is acting as a student's first
-    // page -- that page is their continuation sheet. A printed motto is not
-    // followed that way. This is what keeps a re-scanned student who is not
-    // on the roster (Zed,_,Ana,_,Ben,_,Ana) from being taken for a motto
-    // (#125 review). An unread (failed) page does not count either way.
-    if (idx.some((v) => v + 1 < keys.length && keys[v + 1] === "" && !failedAt.has(v + 1))) continue;
     const runs: string[] = [];
     let ok = true;
     for (let j = 0; j < idx.length && ok; j++) {
@@ -887,7 +888,7 @@ export function mergeSplitGroups(first: StudentResponse[], second: StudentRespon
     const rb = read(b);
     if (!rb) return a;
     if (!ra) return b;
-    if (ra === rb) return a.confidence >= b.confidence ? a : b;
+    if (ra === rb || compareAnswers(ra, rb) === "same") return a.confidence >= b.confidence ? a : b;
     return {
       ...a,
       correct: false,
