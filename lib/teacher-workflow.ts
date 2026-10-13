@@ -1,3 +1,4 @@
+import { isSecondChoice, withoutStandardNote } from "./standard-match";
 import type {
   AnswerRegion,
   Assessment,
@@ -42,7 +43,7 @@ export function assignStandardToUntagged(a: Assessment, code: string): Assessmen
   return {
     ...a,
     questions: a.questions.map((q) =>
-      !q.excluded && !q.standard ? { ...q, standard: code } : q,
+      !q.excluded && !q.standard ? { ...q, standard: code, reasoning: withoutStandardNote(q.reasoning) } : q,
     ),
   };
 }
@@ -68,7 +69,7 @@ export function assignStandardToRange(
     ...a,
     questions: a.questions.map((q) =>
       !q.excluded && q.number >= lo && q.number <= hi
-        ? { ...q, standard: code, alignment: 0 }
+        ? { ...q, standard: code, alignment: 0, reasoning: withoutStandardNote(q.reasoning) }
         : q,
     ),
   };
@@ -171,23 +172,31 @@ export function alignmentIsStrong(q: Question): boolean {
  * which is what the readiness check asks for. A question with no standard
  * cannot be confirmed -- readiness needs one -- and is left for the teacher.
  */
-export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number } {
+export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number; secondChoice: number } {
   let confirmed = 0;
   let missingStandard = 0;
+  let secondChoice = 0;
   const questions = a.questions.map((q) => {
     if (q.excluded || q.verified) return q;
     if (!q.standard) {
       missingStandard++;
       return q;
     }
+    // The AI's second choice is for the teacher to look at, one by one -- not
+    // swept in with the rest (standards review, 13 Oct 2026).
+    if (isSecondChoice(q)) {
+      secondChoice++;
+      return q;
+    }
     confirmed++;
-    return { ...q, verified: true };
+    return { ...q, verified: true, reasoning: withoutStandardNote(q.reasoning) };
   });
   const allReviewed = questions.every((q) => q.excluded || (q.verified && q.standard));
   return {
     assessment: { ...a, questions, status: allReviewed ? "Ready" : a.status },
     confirmed,
     missingStandard,
+    secondChoice,
   };
 }
 

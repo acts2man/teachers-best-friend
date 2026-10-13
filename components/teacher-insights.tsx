@@ -1,4 +1,5 @@
 "use client";
+import { withoutStandardNote } from "@/lib/standard-match";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -1016,7 +1017,7 @@ export function DiagnosticsView() {
                 { name: "The response", text: example.r.answer },
                 {
                   name: "Expected thinking",
-                  text: example.q.skill + ". " + example.q.reasoning,
+                  text: example.q.skill + ". " + withoutStandardNote(example.q.reasoning),
                 },
                 {
                   name: "Likely breakdown",

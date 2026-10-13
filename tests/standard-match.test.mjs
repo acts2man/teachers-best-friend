@@ -21,7 +21,7 @@ function bundle(entry) {
   new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
   return m.exports;
 }
-const { codeKey, matchCatalogCode, settleStandards } = bundle("lib/standard-match.ts");
+const { codeKey, matchCatalogCode, settleStandards, isSecondChoice, withoutStandardNote } = bundle("lib/standard-match.ts");
 const { catalogFor } = bundle("lib/teacher-catalog.ts");
 
 const cat = (...codes) => codes.map((code) => ({ code }));
@@ -78,10 +78,36 @@ test("settle: first choice kept as the AI scored it; second choice marked to che
   assert.equal(questions[1].standard, "F-BF.3");
   assert.ok(questions[1].alignment <= 60, "never shown as a strong (green) fit");
   assert.ok(questions[1].confidence <= 50);
-  assert.match(questions[1].reasoning, /first choice \(F-IF\.9\) isn't in your standards list; this is its second choice — check it/);
+  assert.ok(isSecondChoice(questions[1]));
+  assert.match(questions[1].reasoning, /first choice \(F-IF\.9\) isn't in your standards list; this is its second choice/);
+  assert.equal(withoutStandardNote(questions[1].reasoning), "Fits.", "the note comes off cleanly");
   assert.deepEqual([questions[2].standard, questions[2].alignment, questions[2].confidence], ["", 0, 0]);
   assert.match(questions[2].reasoning, /The AI suggested F-IF\.9, which isn't in your standards list/);
   assert.deepEqual(records.map((r) => [r.number, r.wrote, r.used, r.how]), [[1, "HSF-IF.C.7", "F-IF.7", "spelling"], [2, "F-IF.9", "F-BF.3", "second-choice"], [3, "F-IF.9", "", ""]]);
+});
+
+test("review round 1: no runner-up over an empty or 'Unrelated' first choice; ambiguous spellings match nothing; spaces and inner clusters", () => {
+  const empty = settleStandards([q(1, "", "F-BF.3"), q(2, "F-IF.9", "F-BF.3", { level: "Unrelated" })], hs).questions;
+  assert.deepEqual(empty.map((x) => x.standard), ["", ""], "the AI said these fit no standard");
+  assert.equal(empty[0].secondary, "F-BF.3", "its second choice is still shown as the secondary");
+  // A custom "HSS.7.1" beside "S.7.1" may be two standards: neither is guessed.
+  assert.deepEqual(matchCatalogCode("S-7.1", cat("HSS.7.1", "HSS.7.2", "S.7.1")), { code: "S.7.1", how: "spelling" });
+  assert.deepEqual(matchCatalogCode("HSS-7.1", cat("HSS.7.1", "S.7.1")), { code: "HSS.7.1", how: "spelling" });
+  assert.deepEqual(matchCatalogCode("hss 7 1", cat("HSS.7.1", "S.7.1")), { code: "HSS.7.1", how: "spelling" });
+  assert.deepEqual(matchCatalogCode("HSS.C.7.1", cat("HSS.7.1", "S.7.1")), { code: "", how: "" }, "could be either: neither");
+  assert.deepEqual(matchCatalogCode("7 RP 3", grade7), { code: "7.RP.3", how: "spelling" });
+  assert.deepEqual(matchCatalogCode("HSG-SRT.C.8.1", cat("G-SRT.8", "G-SRT.8.1")), { code: "G-SRT.8.1", how: "spelling" });
+  const long = settleStandards([q(1, "X".repeat(500), "")], hs).questions[0];
+  assert.ok(long.reasoning.length < 200, "the echoed code is capped");
+});
+
+test("'Looks good — confirm all' leaves the AI's second choices for the teacher; confirming removes the note", () => {
+  const { confirmAllQuestions } = bundle("lib/teacher-workflow.ts");
+  const settled = settleStandards([q(1, "F-IF.7", ""), q(2, "F-IF.9", "F-BF.3")], hs).questions.map((x, i) => ({ ...x, id: "q" + i, text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false }));
+  const out = confirmAllQuestions({ questions: settled, status: "Needs review" });
+  assert.equal(out.confirmed, 1);
+  assert.equal(out.secondChoice, 1);
+  assert.equal(out.assessment.questions[1].verified, false);
 });
 
 // ---- The replay: every saved read from the 48 hours before 23:56 UTC 12 Oct.
@@ -91,24 +117,42 @@ function catalogOf(grade) {
   return catalogFor({ customStandards: [], sharedStandards: shared }, grade, "California", "Math");
 }
 
-test("replay of the saved reads: blanks before and after, every match listed, Ricky's kept suggestions unchanged", () => {
-  let questions = 0, blankBefore = 0, blankAfter = 0, secondChoice = 0;
+/** The saved rows hold the first choice AFTER the old filter blanked it, so a
+ * blank cannot say what the AI wrote. Two readings are replayed: as stored
+ * (the AI wrote nothing), and with each blank treated as a code the old filter
+ * rejected (`unmatched`). The truth is between them; standardMatches on
+ * fresh reads after deploy will say which. */
+function replay(blankAs) {
+  let questions = 0, blankBefore = 0, blankAfter = 0, secondChoice = 0, spelling = 0;
+  let rickyAgree = 0, rickyCompared = 0;
   const listing = [];
   for (const read of fixture.reads) {
     const catalog = catalogOf(read.grade);
-    const { questions: out, records } = settleStandards(read.q.map(([n, s, sec]) => q(n, s, sec, { alignment: s ? 95 : 0, confidence: s ? 95 : 0 })), catalog);
+    const { questions: out, records } = settleStandards(read.q.map(([n, s, sec]) => q(n, s || blankAs, sec, { alignment: s ? 95 : 0, confidence: s ? 95 : 0 })), catalog);
     questions += out.length;
     blankBefore += read.q.filter(([, s]) => !s).length;
     blankAfter += out.filter((x) => !x.standard).length;
     secondChoice += records.filter((r) => r.how === "second-choice").length;
+    spelling += records.filter((r) => r.how === "spelling" || r.how === "parent").length;
     for (const r of records) listing.push(`${read.scan} Q${r.number}: first "${r.wrote}" second "${r.secondaryWrote}" -> ${r.used || "(none)"} [${r.how || "no match"}]`);
     for (const x of out) assert.ok(!x.standard || catalog.some((s) => s.code === x.standard), `${read.scan} Q${x.number}: ${x.standard} not in catalog`);
-    // Ricky kept every suggestion on these two: the matcher changes none.
     if (read.ricky?.startsWith("kept")) read.q.forEach(([, s], i) => assert.equal(out[i].standard, s, `${read.scan} Q${i + 1}`));
+    // Where Ricky set the standard by hand, how often does a second-choice fill agree?
+    const handSet = read.ricky?.match(/^(\S+) on all/);
+    if (handSet) for (const r of records) if (r.how === "second-choice") { rickyCompared++; if (r.used === handSet[1]) rickyAgree++; }
   }
-  if (process.env.SHOW_LISTING) console.log(listing.join("\n"));
-  assert.equal(questions, 138);
-  assert.equal(blankBefore, 85);
-  assert.equal(secondChoice, 32, "32 blanks recovered from the AI's second choice");
-  assert.equal(blankAfter, 53, "53 have no catalog code left in the saved row to recover");
+  return { questions, blankBefore, blankAfter, secondChoice, spelling, rickyAgree, rickyCompared, listing };
+}
+
+test("replay of the saved reads, two readings of the destroyed first choices; Ricky's kept suggestions unchanged", () => {
+  const stored = replay("");
+  assert.equal(stored.questions, 138);
+  assert.equal(stored.blankBefore, 85);
+  assert.equal(stored.blankAfter, 85, "as stored: an empty first choice is never overruled");
+  const rejected = replay("?rejected-by-old-filter");
+  assert.equal(rejected.blankAfter, 53, "if each blank was a rejected code: 32 filled from the second choice");
+  assert.equal(rejected.secondChoice, 32);
+  assert.equal(rejected.spelling, 0, "the saved data cannot show the spelling fix: the codes it would correct were destroyed");
+  assert.deepEqual([rejected.rickyAgree, rejected.rickyCompared], [13, 20], "on Ricky's hand-set tests the second choice agrees 13 of 20");
+  if (process.env.SHOW_LISTING) console.log(rejected.listing.join("\n"));
 });

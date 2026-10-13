@@ -1,5 +1,6 @@
 "use client";
 import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
+import { isSecondChoice, withoutStandardNote } from "@/lib/standard-match";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
@@ -362,8 +363,10 @@ export function AssessmentView() {
       previous.answer.trim() !== edit.answer.trim() && edit.answerParts === previous.answerParts
         ? withParts(edit, partsAfterKeyEdit(previous, edit.answer))
         : edit;
+    // Confirming a question settles its standard: the AI's "second choice" or
+    // "not in your list" note has done its job.
     const questions = a.questions.map((q) =>
-      q.id === edit.id ? { ...saved, verified: true } : q,
+      q.id === edit.id ? { ...saved, verified: true, reasoning: withoutStandardNote(saved.reasoning) } : q,
     );
     const contentChanged =
       previous.answer !== edit.answer ||
@@ -955,13 +958,16 @@ export function AssessmentView() {
                       <Action
                         disabled={busy}
                         onClick={async () => {
-                          const { assessment: next, confirmed, missingStandard } =
+                          const { assessment: next, confirmed, missingStandard, secondChoice } =
                             confirmAllQuestions(a);
                           const saved = await saveAssessment(
                             next,
                             confirmed +
                               (confirmed === 1 ? " question" : " questions") +
                               " confirmed" +
+                              (secondChoice
+                                ? " · " + secondChoice + " are the AI's second choice — open each to check"
+                                : "") +
                               (missingStandard
                                 ? " · " + missingStandard + " still need a standard"
                                 : ""),
@@ -1083,6 +1089,9 @@ export function AssessmentView() {
                             <span className="cell-meta">
                               {q.standard || "Not assigned"}
                             </span>
+                            {!q.verified && isSecondChoice(q) && (
+                              <Pill tone="amber">AI&rsquo;s 2nd choice — check</Pill>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Pill>DOK {q.dok}</Pill>

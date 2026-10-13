@@ -5,11 +5,13 @@
  * choice only when it equalled a catalog code character for character, and
  * otherwise blanked it -- standard, alignment and confidence -- keeping no
  * copy. 85 of 138 questions read in the 48 hours before then came back with no
- * standard. On those same questions the AI's reasoning named catalog codes
- * ("F-IF.7 is the closest catalog standard") and its second choice was often
- * a catalog code, so the AI was choosing; the app was throwing the choice away
- * over spelling: "7.RP.A.3" (cluster letter), "HSF-IF.C.7" (high-school
- * prefix), "7.RP.2a" vs "7.RP.2.a", case and spacing.
+ * standard. On those same questions the AI's written reasoning named catalog
+ * codes ("F-IF.7 is the closest catalog standard" -- read on production on
+ * 12 Oct; the reasoning is not kept in the test fixture) and its second choice
+ * was often a catalog code, so the AI was choosing and the app was throwing
+ * the choice away. Why the exact match failed was never recorded; the likely
+ * spellings are handled here ("7.RP.A.3", "HSF-IF.C.7", "7.RP.2a" vs
+ * "7.RP.2.a", case and spacing), and standardMatches now records the truth.
  *
  * The rule that never bends: the result is always a code that IS in the
  * catalog, or nothing. Normalising only decides which catalog code a spelling
@@ -28,7 +30,8 @@ export type MatchHow = "exact" | "spelling" | "parent" | "";
  * sub-part letter joined to its number ("7.RP.2.a" and "7.RP.2a" -> "7.RP.2A").
  */
 export function codeKey(raw: string): string {
-  let s = raw.trim().toUpperCase().replace(/\s+/g, "");
+  // Spaces separate, like "." and "-": "7 RP 3" is 7.RP.3.
+  let s = raw.trim().toUpperCase().replace(/\s+/g, ".");
   s = s.replace(/^(CCSS\.)?(MATH\.CONTENT\.|ELA-LITERACY\.)/, "").replace(/^(CA|CCSS)[.:-]/, "");
   const parts = s.split(/[.-]/).filter(Boolean);
   if (!parts.length) return "";
@@ -36,11 +39,11 @@ export function codeKey(raw: string): string {
   // A sub-part written as its own segment ("2.a" -> "2A").
   if (parts.length >= 3 && /^[A-Z]$/.test(parts[parts.length - 1]) && /\d$/.test(parts[parts.length - 2]))
     parts.splice(parts.length - 2, 2, parts[parts.length - 2] + parts[parts.length - 1]);
-  // The cluster letter: one letter A-D just before a final segment that
-  // starts with a digit, with a domain before it ("7.RP.A.3", "F.IF.C.7").
-  // Never the grade letter in "RL.K.1": K is not A-D.
-  if (parts.length >= 4 && /^[A-D]$/.test(parts[parts.length - 2]) && /^\d/.test(parts[parts.length - 1]))
-    parts.splice(parts.length - 2, 1);
+  // The cluster letter: one letter A-D right after the domain, before a
+  // number ("7.RP.A.3", "F.IF.C.7", "G.SRT.C.8.1"). Never the grade letter in
+  // "RL.K.1": it is the second segment, and K is not A-D.
+  for (let i = parts.length - 2; i >= 2; i--)
+    if (/^[A-D]$/.test(parts[i]) && /^\d/.test(parts[i + 1]) && /^[A-Z]+$/.test(parts[i - 1])) parts.splice(i, 1);
   return parts.join(".");
 }
 
@@ -68,15 +71,26 @@ export function matchCatalogCode(raw: string, catalog: Pick<Standard, "code">[])
     const k = codeKey(s.code);
     if (k) byKey.set(k, [...(byKey.get(k) ?? []), s.code]);
   }
-  // Several catalog entries can share a key only by spelling the same
-  // standard two ways ("7.RP.2a" in one list, "7.RP.2.a" in another); they
-  // are one standard, so the first is used.
   const key = codeKey(wrote);
+  const bare = (c: string) => c.toUpperCase().replace(/[\s.-]/g, "");
+  const one = (codes: string[] | undefined) => {
+    if (!codes?.length) return "";
+    // Several catalog entries can share a key by spelling ONE standard two
+    // ways ("7.RP.2a" in one list, "7.RP.2.a" in another): same characters
+    // apart from separators and case. Anything else sharing a key (a custom
+    // "HSS.7.1" beside "S.7.1") may be two standards: then neither.
+    if (new Set(codes.map(bare)).size === 1) return codes[0];
+    // Unless one of them is what the AI wrote, but for separators and case.
+    return codes.find((c) => bare(c) === bare(wrote)) ?? "";
+  };
   const hit = byKey.get(key);
-  if (hit?.length) return { code: hit[0], how: "spelling" };
+  if (hit?.length) {
+    const code = one(hit);
+    return code ? { code, how: "spelling" } : { code: "", how: "" };
+  }
   const parent = parentKey(key);
-  const up = parent ? byKey.get(parent) : undefined;
-  if (up?.length) return { code: up[0], how: "parent" };
+  const up = one(parent ? byKey.get(parent) : undefined);
+  if (up) return { code: up, how: "parent" };
   return { code: "", how: "" };
 }
 
@@ -97,7 +111,32 @@ type ReadQuestion = {
   alignment: number;
   confidence: number;
   reasoning: string;
+  level?: string;
 };
+
+/** How the notes this module adds to `reasoning` begin. They are for the
+ * teacher while choosing a standard, and are taken out once they have
+ * (see withoutStandardNote). */
+export const SECOND_CHOICE_NOTE = "[AI's second choice — check it] ";
+export const NOT_IN_LIST_NOTE = "[Not in your standards list] ";
+
+/** The question's standard is the AI's second choice, not yet checked. */
+export function isSecondChoice(q: { reasoning?: string }): boolean {
+  return (q.reasoning ?? "").startsWith(SECOND_CHOICE_NOTE);
+}
+
+/** `reasoning` without a note this module added: what the AI said about the
+ * question, as before. */
+export function withoutStandardNote(reasoning: string): string {
+  for (const marker of [SECOND_CHOICE_NOTE, NOT_IN_LIST_NOTE])
+    if (reasoning.startsWith(marker)) {
+      const end = reasoning.indexOf(" ¶ ");
+      return end >= 0 ? reasoning.slice(end + 3) : "";
+    }
+  return reasoning;
+}
+
+const shown = (code: string) => code.trim().slice(0, 40);
 
 /**
  * Settles every question's standard against the catalog:
@@ -124,11 +163,13 @@ export function settleStandards<Q extends ReadQuestion>(
       records.push({ ...record, used: first.code, how: first.how });
       return { ...q, standard: first.code, secondary };
     }
-    if (second.code) {
+    // The second choice stands in only for a first choice the AI DID give that
+    // is not in the list. An empty first choice is the AI saying the question
+    // fits no standard (the prompt allows empty only then), and "Unrelated"
+    // says the same: neither is overruled by a runner-up.
+    if (second.code && q.standard.trim() && q.level !== "Unrelated") {
       records.push({ ...record, used: second.code, how: "second-choice" });
-      const note = q.standard.trim()
-        ? `The AI's first choice (${q.standard.trim()}) isn't in your standards list; this is its second choice — check it. `
-        : "The AI gave no first choice from your standards list; this is its second choice — check it. ";
+      const note = `${SECOND_CHOICE_NOTE}The AI's first choice (${shown(q.standard)}) isn't in your standards list; this is its second choice. ¶ `;
       return {
         ...q,
         standard: second.code,
@@ -139,10 +180,12 @@ export function settleStandards<Q extends ReadQuestion>(
       };
     }
     records.push({ ...record, used: "", how: "" });
+    // Kept as the question's secondary, so the teacher still sees it.
+    const keptSecond = second.code;
     const note = q.standard.trim()
-      ? `The AI suggested ${q.standard.trim()}, which isn't in your standards list — choose one. `
+      ? `${NOT_IN_LIST_NOTE}The AI suggested ${shown(q.standard)}, which isn't in your standards list — choose one. ¶ `
       : "";
-    return { ...q, standard: "", secondary: "", alignment: 0, confidence: 0, reasoning: note + q.reasoning };
+    return { ...q, standard: "", secondary: keptSecond, alignment: 0, confidence: 0, reasoning: note + q.reasoning };
   });
   return { questions: out, records };
 }
