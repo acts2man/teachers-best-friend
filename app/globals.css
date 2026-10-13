@@ -215,6 +215,10 @@ input,textarea,.pick {font-size:1rem}
 .confirm-matches-spacer{height:96px}
 html.confirm-bar-on{scroll-padding-bottom:104px}
 .confirm-matches-bar .confirm-matches{pointer-events:auto;max-width:100%}
+.confirm-matches-bar{transition:transform .18s ease,opacity .18s ease}
+.confirm-matches-bar.is-tucked{transform:translateY(calc(100% + 28px));opacity:0}
+.confirm-matches-bar.is-tucked .confirm-matches{pointer-events:none}
+.reduce-motion .confirm-matches-bar{transition:none}
 .action.confirm-matches{background:#1f8a4c!important;border-color:#1f8a4c!important;color:#fff!important;font-weight:700;white-space:normal;text-align:center;height:auto;min-height:48px;padding:12px 20px;box-shadow:0 6px 18px rgb(31 138 76 / .28)}
 .action.confirm-matches:hover:not(:disabled){background:#187340!important}
 .source-documents {flex-wrap:wrap;line-height:1.8}

@@ -1005,7 +1005,10 @@ export function groupAnswers(
     // whole group "needs review" (23 clean matches + 1 at 70% showed as "0
     // correct, 24 need review"), and confirming the 23 then left the one
     // undecided and silently uncounted (#126 review).
-    const shaky = !r.verified && !unsure && r.confidence < CLEAN_READ;
+    // Only a read that would otherwise be a clean match: a wrong answer or a
+    // blank read at 70% is already the teacher's to decide, in its usual
+    // group, and must never be labelled as matching the key (#126 review).
+    const shaky = !r.verified && !unsure && r.confidence < CLEAN_READ && r.correct && responseMatch(r) >= 100;
     const key = unsure
       ? UNSURE_KEY
       : answerKey(final) + (r.verified ? "|" + Math.round(responseMatch(r)) : shaky ? SHAKY_SUFFIX : "");

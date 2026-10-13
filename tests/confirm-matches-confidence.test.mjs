@@ -60,3 +60,13 @@ test("under 50 is still the Unsure group, and confirmed answers are untouched", 
   assert.equal(g.find((x) => x.unsure)?.needsDecision, true);
   assert.equal(g.find((x) => !x.unsure)?.needsDecision, false, "a confirmed answer is decided");
 });
+
+test("#126 round-2 review: a 70% WRONG answer or 70% blank stays in its usual group, never labelled as a match", () => {
+  const wrong = (id, confidence) => resp(id, confidence, { answer: "236", finalAnswer: "236", correct: false, match: undefined });
+  const a = assessment([wrong("1", 100), wrong("2", 100), wrong("3", 70), resp("4", 70, { answer: "", finalAnswer: "", correct: false, match: 0 })]);
+  const groups = groupAnswers(a, "q1");
+  const g236 = groups.filter((g) => g.answer === "236");
+  assert.equal(g236.length, 1, "the same wrong answer is one decision, not two");
+  assert.equal(g236[0].responseIds.length, 3);
+  assert.ok(groups.every((g) => !g.lowConfidence), "nothing here reads as matching the key");
+});

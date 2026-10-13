@@ -171,7 +171,7 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   await page.waitForTimeout(900);
   const decideGate = page.getByText(/1 answer still needs your decision/);
   check((await decideGate.count()) === 1, "after confirming them, analysis is still blocked: 1 answer still needs a decision");
-  check((await page.locator(".class-analysis, [data-testid=class-analysis]").count()) === 0 || (await decideGate.count()) === 1, "class analysis itself is not shown");
+  check((await page.getByRole("heading", { name: "Class analysis" }).count()) === 0, "class analysis itself is not shown");
   await page.screenshot({ path: join(OUT, `confirm-matches-decide-gate-${W}x${H}.png`) });
   if (!(await decideGate.count())) {
     // Before the fix: no such gate, the class analysis just opened.
@@ -179,15 +179,16 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
     await ctx.close();
   } else {
   await page.getByRole("button", { name: /Grade it now/ }).click();
-  await page.locator("#grade-by-question").getByRole("button", { name: /^Review/ }).first().click();
+  // Straight to the question with the decision waiting, already open.
   const shaky = page.locator(".gbq-group", { hasText: "wasn’t fully sure" }).first();
+  check(await shaky.waitFor({ timeout: 8000 }).then(() => true, () => false), "'Grade it now' opens the question with the decision waiting");
   check((await shaky.count()) === 1, "the 70% read is its own group, labelled for a check");
   const points = shaky.locator("input[aria-label^='Points for the answer']").first();
   await points.fill(String(Number(await points.getAttribute("max")) || 1));
   await shaky.locator(".gbq-credit").getByRole("button", { name: /^Give/ }).click();
   await page.waitForTimeout(900);
   await page.goto(`${BASE}/assessments?id=math-demo&tab=analysis`, { waitUntil: "networkidle" });
-  check((await page.getByText("One step before class analysis").count()) === 0, `once it is decided, class analysis opens (${saves.length} saves)`);
+  check((await page.getByText("One step before class analysis").count()) === 0 && (await page.getByRole("heading", { name: "Class analysis" }).count()) === 1, `once it is decided, class analysis opens (${saves.length} saves)`);
   await ctx.close();
   }
 }

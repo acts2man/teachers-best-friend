@@ -50,6 +50,9 @@ const CONTROLS = "#grade-by-question .gbq-group input[aria-label^='Points for th
 
 async function covered(page) {
   return page.evaluate((sel) => {
+    const wrap = document.querySelector(".confirm-matches-bar");
+    // Tucked away (slid off the bottom, not tappable): covering nothing.
+    if (wrap?.classList.contains("is-tucked")) return { bar: true, tucked: true, hits: [] };
     const bar = document.querySelector(".confirm-matches-bar .confirm-matches")?.getBoundingClientRect();
     if (!bar) return { bar: false, hits: [] };
     const hits = [...document.querySelectorAll(sel)]
@@ -83,7 +86,7 @@ for (const [W, H] of [[360, 640], [390, 844], [412, 915]]) {
   await page.waitForTimeout(1200); // the smooth scroll to the next group
   await page.evaluate(() => document.querySelectorAll("#grade-by-question button").forEach((b) => /Reteach/.test(b.textContent || "") && b.setAttribute("data-reteach", "")));
   const landed = await covered(page);
-  check(landed.bar && landed.hits.length === 0, `${W}x${H}: where the app leaves the teacher after giving credit, nothing is under the bar${landed.hits.length ? " — under it: " + landed.hits.join(", ") : ""}`);
+  check(landed.bar && !landed.tucked && landed.hits.length === 0, `${W}x${H}: right after giving credit the bar is on screen (Ricky) and nothing is under it${landed.tucked ? " — it was tucked away" : ""}${landed.hits.length ? " — under it: " + landed.hits.join(", ") : ""}`);
   await page.screenshot({ path: join(OUT, `bar-after-credit-${W}x${H}.png`) });
 
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -105,15 +108,19 @@ for (const [W, H] of [[360, 640], [390, 844], [412, 915]]) {
   }
   check(blocked.length === 0, `${W}x${H}: each of ${n} credit controls, scrolled into view, is clear of the bar${blocked.length ? " — not: " + blocked.join(", ") : ""}`);
 
-  // The honest part: a sweep of every scroll position, 40px apart.
+  // Every scroll position, 20px apart: wherever the bar is showing, nothing
+  // of a group's is under it (it tucks itself away instead).
   const total = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
-  let under = 0, positions = 0;
-  for (let y = 0; y <= total; y += 40) {
+  let under = 0, positions = 0, tucked = 0;
+  for (let y = 0; y <= total; y += 20) {
     await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(40); // one frame for the bar to react
     positions++;
-    if ((await covered(page)).hits.length) under++;
+    const c = await covered(page);
+    if (c.tucked) tucked++;
+    if (c.hits.length) under++;
   }
-  console.log(`  info ${W}x${H}: mid-scroll, a credit control passes under the pinned bar at ${under} of ${positions} scroll positions (inherent to a pinned bar)`);
+  check(under === 0, `${W}x${H}: at every one of ${positions} scroll positions, no credit control is under the bar (${under} were; the bar tucked away at ${tucked})`);
   await ctx.close();
 }
 await browser.close();

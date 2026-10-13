@@ -91,6 +91,7 @@ import {
 } from "@/lib/teacher-metrics";
 import {
   activeQuestions,
+  groupAnswers,
   alignmentIsStrong,
   assignStandardToRange,
   confirmAllQuestions,
@@ -113,7 +114,7 @@ import {
   autoGradedToConfirm,
   confirmResponses,
 } from "@/lib/teacher-workflow";
-import { StudentResponseReview } from "./teacher-review";
+import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
 import { isWritingAssessment } from "@/lib/ela";
@@ -1452,7 +1453,17 @@ export function AssessmentView() {
               ) : REQUIRE_CONFIRM_MATCHES && answersToDecide(a).length > 0 ? (
                 // Every answer is decided before the class picture is shown: an
                 // undecided one is silently uncounted otherwise (#126 review).
-                <DecideFirst count={answersToDecide(a).length} onGo={() => setTab("responses")} />
+                <DecideFirst
+                  count={answersToDecide(a).length}
+                  onGo={() => {
+                    // Straight to the first question with a decision waiting,
+                    // not the top of a long tab (#126 review: at 360x640 the
+                    // teacher landed with nothing open).
+                    const first = activeQuestions(a).find((q) => groupAnswers(a, q.id).some((g) => g.needsDecision));
+                    if (first) openQuestionForGrading(first.id);
+                    setTab("responses");
+                  }}
+                />
               ) : (
                 <ClassAnalysisPanel assessment={a} students={students} catalog={catalog} go={go} />
               )}

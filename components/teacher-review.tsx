@@ -245,6 +245,20 @@ function StudentWorkPhoto({ pages, alt }: { pages: string[]; alt: string }) {
  * teacher is the one held responsible for a partial-credit call, so the
  * teacher makes each one -- once per group, not 35 times.
  */
+const OPEN_QUESTION_EVENT = "tbf:open-question";
+let questionToOpen: string | null = null;
+function takeQuestionToOpen() {
+  const id = questionToOpen;
+  questionToOpen = null;
+  return id;
+}
+/** Opens one question in Grade by question -- whether the panel is already on
+ * screen or is about to be (a tab switch mounts it fresh). */
+export function openQuestionForGrading(questionId: string) {
+  questionToOpen = questionId;
+  window.dispatchEvent(new CustomEvent(OPEN_QUESTION_EVENT, { detail: questionId }));
+}
+
 function GradeByQuestion({
   assessment: a,
   students,
@@ -259,7 +273,19 @@ function GradeByQuestion({
   const { w, classroom, save, go } = useTeacher();
   const questions = activeQuestions(a);
   // null: the summary of every question. Otherwise the question under review.
-  const [openId, setOpenId] = useState<string | null>(null);
+  // "Grade it now" on the class-analysis step asks for a question to be open.
+  const [openId, setOpenId] = useState<string | null>(() => takeQuestionToOpen());
+  useEffect(() => {
+    const onOpen = (e: Event) => setOpenId((e as CustomEvent<string>).detail);
+    window.addEventListener(OPEN_QUESTION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_QUESTION_EVENT, onOpen);
+  }, []);
+  useEffect(() => {
+    if (!openId) return;
+    requestAnimationFrame(() =>
+      document.getElementById("grade-by-question")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }, [openId]);
   // Decided groups the teacher tapped "Change" on, so the controls show again.
   const [reopened, setReopened] = useState<Set<string>>(new Set());
   const question = questions.find((q) => q.id === openId) || null;
@@ -281,6 +307,43 @@ function GradeByQuestion({
     const root = document.documentElement;
     root.classList.toggle("confirm-bar-on", barUp);
     return () => root.classList.remove("confirm-bar-on");
+  }, [barUp]);
+  // The bar gets out of the way: whenever a credit control (the Points box,
+  // Give / No credit / Full credit, Reteach) would sit under it, it slides out of
+  // sight and comes back when the strip is clear -- so a tap meant for "Give"
+  // can never land on "Confirm N answers" (#126 review, 360x640).
+  const [barTucked, setBarTucked] = useState(false);
+  useEffect(() => {
+    if (!barUp) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const bar = document.querySelector(".confirm-matches-bar .confirm-matches");
+      if (!bar) return;
+      // The strip the bar occupies when shown, whether or not it is now.
+      const h = (bar as HTMLElement).offsetHeight;
+      const top = window.innerHeight - 12 - h - 8;
+      const under = [...document.querySelectorAll("#grade-by-question .gbq-credit :is(input, button, select)")].some((el) => {
+        const r = el.getBoundingClientRect();
+        return r.height > 0 && r.bottom > top && r.top < window.innerHeight;
+      });
+      setBarTucked(under);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    const observer = new MutationObserver(schedule);
+    const panel = document.getElementById("grade-by-question");
+    if (panel) observer.observe(panel, { childList: true, subtree: true });
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      observer.disconnect();
+    };
   }, [barUp]);
 
   /** Confirm the answers that need no judgement (a clean match to the key; a blank always needs a look). */
@@ -557,7 +620,7 @@ function GradeByQuestion({
         // position:fixed fixed to IT rather than to the screen (measured: the
         // button sat 1,400-1,900px down the page).
         createPortal(
-          <div className="confirm-matches-bar" role="status">
+          <div className={"confirm-matches-bar" + (barUp && barTucked ? " is-tucked" : "")} role="status" aria-hidden={(barUp && barTucked) || undefined}>
             <Action className="confirm-matches" disabled={busy} onClick={() => confirmQuestionMatches(question)}>
               <Check size={18} /> Confirm {pendingMatches.length} answer{pendingMatches.length === 1 ? "" : "s"} that
               match the key
