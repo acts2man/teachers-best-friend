@@ -1021,3 +1021,5 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .gbq-students li.is-apart{padding:8px 10px;border:1px solid hsl(calc(35deg + var(--th)) calc(60% * var(--ts)) 80%);border-radius:10px}
 .gbq-student-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
 .gbq-students .cropped-photo{max-width:340px}
+/* "These are 2 different students" wraps on a phone instead of running off the card. */
+.action.name-match-split{white-space:normal;max-width:100%;height:auto;min-height:36px;text-align:left}

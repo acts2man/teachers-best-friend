@@ -59,9 +59,19 @@ test("3. two students with the same first name (Maria,_,John,_,Maria,_)", () => 
   assert.deepEqual(r.groups, [[0, 1], [2, 3], [4, 5]]);
 });
 
-test("4. a printed motto on a real class set stays with each student before it", () => {
-  const r = run(["Ana", "Hope Always", "Ben", "Hope Always", "Casey", "Hope Always"], ["A", "A", "B", "B", "C", "C"]);
-  assert.deepEqual(r.groups, [[0, 1], [2, 3], [4, 5]]);
+test("4. a repeated name not on the roster -- a printed motto OR a real student -- is left for the teacher, never folded under another child", () => {
+  // #125 follow-up b (13 Oct): this pattern used to be taken for a printed
+  // motto and each such page put under the student before it. A real student
+  // missing from the roster, appearing after a different student each time,
+  // looks exactly the same -- and then their pages went under three other
+  // children. So neither is guessed: each such page is its own group, marked
+  // for the teacher to match. A real motto now costs a tap per student instead
+  // of a misfiled paper.
+  const motto = run(["Ana", "Hope Always", "Ben", "Hope Always", "Casey", "Hope Always"], ["A", "A", "B", "B", "C", "C"]);
+  assert.deepEqual(motto.groups, [[0], [1], [2], [3], [4], [5]]);
+  const student = run(["Ana", "Dee", "Ben", "Dee", "Casey", "Dee"], ["A", "D", "B", "D", "C", "D"]);
+  noMixing(student, "Dee, a student not on the roster");
+  assert.deepEqual(student.groups, [[0], [1], [2], [3], [4], [5]]);
 });
 
 test("4, as written (two students): the motto pages are left for the teacher, never put under another child", () => {
@@ -210,4 +220,31 @@ test("split groups with different WORD answers are a clash for the teacher, not 
   }
   const [sq] = mergeSplitGroups([r("sqrt(4)", 100)], [r("2", 100)]);
   assert.equal(sq.confidence, 100);
+});
+
+// ---- #125 follow-up b (13 Oct) -------------------------------------------
+
+test("follow-up b: [Ana, Dee, Ben, Dee, Cy, Dee] with continuation sheets -- Dee's pages never go under Ana, Ben or Cy", () => {
+  const partial = roster.filter((s) => !s.name.startsWith("Dee"));
+  for (const opts of [{ roster: partial }, { roster: [] }, { noRoster: true }]) {
+    const r = run(["Ana", "", "Dee", "", "Ben", "", "Dee", "", "Cy", "", "Dee", ""], ["A", "A", "D", "D", "B", "B", "D", "D", "C", "C", "D", "D"], opts);
+    noMixing(r, JSON.stringify(Object.keys(opts)));
+  }
+});
+
+test("follow-up b: those pages are marked for the teacher to match (unassigned), whatever the roster", () => {
+  const { resolveScannedGroups } = bundle("lib/teacher-class-scan.ts");
+  const names = ["Ana", "Dee", "Ben", "Dee", "Casey", "Dee"].map((name, page) => ({ page, name, confidence: 95 }));
+  for (const students of [roster, []]) {
+    const groups = groupPagesByName(names, (n) => rosterMatchCount(n, students));
+    const rows = resolveScannedGroups(groups, names, [], names.map((_, i) => "u" + i), students);
+    const dee = rows.filter((r) => r.detectedName === "Dee");
+    assert.equal(dee.length, 3);
+    for (const r of dee) {
+      assert.equal(r.unassigned, true, "the teacher matches it");
+      assert.equal(r.studentId, null);
+      assert.equal(r.suggestedId, null);
+    }
+    assert.ok(rows.filter((r) => r.detectedName !== "Dee").every((r) => !r.unassigned), "the others are matched as usual");
+  }
 });

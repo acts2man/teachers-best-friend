@@ -53,6 +53,7 @@ import {
   absorbPartsReask,
   groupPagesByCapture,
   groupPagesByName,
+  NAME_RETRY_DELAYS_MS,
   rosterMatchCount,
   partsShortfall,
   planPartsReask,
@@ -84,7 +85,7 @@ type Job = { providerId: string; model: string; effort: string };
 type Usage = { costUsd: number; model: string; effort: string };
 
 export type RunState =
-  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[]; failed?: boolean } | null)[]; cursor: number; job: Job | null }
+  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[]; failed?: boolean } | null)[]; cursor: number; job: Job | null; tries?: number[] }
   | {
       stage: "grade";
       batches: ScanBatch[];
@@ -336,10 +337,13 @@ export async function stepCase(
       try {
         out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
       } catch {
-        // As in the class scan: a failed name read leaves its pages unread
-        // (their own groups, for the teacher), it does not stop the case.
+        // As in the class scan: a failed name read is tried again, twice (the
+        // next steps are the backoff), and then leaves its pages unread --
+        // their own groups, for the teacher -- rather than stopping the case.
         s.job = null;
-        out = { failed: true };
+        const tries = (s.tries ??= []);
+        tries[s.cursor] = (tries[s.cursor] ?? 0) + 1;
+        out = tries[s.cursor] > NAME_RETRY_DELAYS_MS.length ? { failed: true } : null;
       }
       if (out) {
         s.results[s.cursor] = out as { pages?: PageName[]; failed?: boolean };

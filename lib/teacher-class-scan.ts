@@ -89,6 +89,36 @@ export function planNameBatches(
  * sequential batches of twelve. */
 export const NAME_CONCURRENCY = 4;
 
+/** How long to wait before each retry of a failed name read. */
+export const NAME_RETRY_DELAYS_MS = [1500, 4000];
+
+/**
+ * Runs `fn`, and on a failure tries again after each of `delays` (with up to a
+ * quarter of it added at random, so four requests failing together do not all
+ * retry at the same instant). Throws the last error once the tries run out.
+ *
+ * For the per-page name reads (#125 follow-up c): a page whose read fails is
+ * left for the teacher to match, one tap each, and a burst of failures -- a
+ * rate limit, as on 25 Sep -- cost a whole class set. A name read is free to
+ * the teacher (the page ledger never charges name_strip), so a retry costs
+ * only a second or two.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  delays: number[] = NAME_RETRY_DELAYS_MS,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  random: () => number = Math.random,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt >= delays.length) throw e;
+      await wait(Math.round(delays[attempt] * (1 + random() / 4)));
+    }
+  }
+}
+
 /**
  * Runs `fn` over `items` with at most `limit` in flight, keeping order. A
  * failed item gives `onError(error, item)`'s value instead of stopping the
@@ -200,13 +230,22 @@ export function groupPagesByName(
   // group on a guess. Where the app cannot tell, the page is left as its own
   // group for the teacher to match on the next screen -- one extra tap -- rather
   // than graded silently as someone else's (#125 review, 13 Oct 2026).
-  const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
-  const keys = pages.map((p) => (p.failed ? "" : key(p.name)));
-  const headers = runningHeaders(keys, rosterMatches);
+  const keys = pages.map((p) => (p.failed ? "" : nameKey(p.name)));
+  const repeated = repeatedOffRoster(keys, rosterMatches);
   const groups: number[][] = [];
   let current = "";
   pages.forEach((page, i) => {
-    const k = headers.has(keys[i]) ? "" : keys[i];
+    const k = keys[i];
+    // A name that recurs after a different student each time, and is not on
+    // the roster: a printed motto, or a real student the roster lacks. Its
+    // page is never put under the student before it -- it starts a group of
+    // its own, which resolveScannedGroups marks for the teacher to match
+    // (#125 follow-up b; it used to be folded in as a motto).
+    if (k && repeated.has(k)) {
+      groups.push([page.page]);
+      current = "\u0000repeated" + i;
+      return;
+    }
     // A name that fits more than one student on the roster (two Marias) is
     // never taken as "the same student as the page before": Maria, Maria
     // could be two children, so each starts a group and the teacher picks.
@@ -223,44 +262,36 @@ export function groupPagesByName(
   return groups;
 }
 
+const nameKey = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
+
 /**
- * Names that are a line printed on every student's paper -- a class motto read
- * as a name ("Hope Always", 10 Oct 2026) -- rather than a student. Such a page
- * is treated as having no name, so it stays with the student before it.
+ * Names that recur after a different student each time and are not on the
+ * roster -- what a line printed on every paper looks like ("Hope Always", read
+ * as a name on 10 Oct 2026), and equally what a real student missing from the
+ * roster looks like ([Ana, Dee, Ben, Dee, Cy, Dee]). The app cannot tell the
+ * two apart, so it guesses neither: groupPagesByName gives each such page a
+ * group of its own and resolveScannedGroups marks it for the teacher to match
+ * (#125 follow-up b, 13 Oct 2026). It used to fold them in as a motto, which
+ * put a real student's pages under three other children.
  *
- * A name is taken for printed text only when ALL of these hold, because the
- * cost of a wrong yes is one child's page graded as another's:
- *   - it is not a student on the roster (a recurring roster name is a real
- *     student: fronts then backs, a re-scan, two students sharing a first
- *     name), and the roster is known -- an empty one, nothing is a header;
- *   - it appears on THREE or more pages, never two in a row (see below);
- *   - before its first appearance and between each pair of appearances there
- *     is exactly one other name, and those names are all DIFFERENT -- one per
- *     student, as a motto on each student's paper produces. A real student
- *     missing from the roster, scanned fronts then backs, repeats the same
- *     neighbours instead (Avery, Newkid, Avery, Newkid), so it is not taken.
- * Left over, stated in the PR: a student missing from the roster scanned
- * three or more times, each time right after a different single student,
- * would still pass. A motto on a two-student stack is no longer recognised;
- * its pages are left for the teacher to match, which costs a tap, not a
- * misfiled paper.
+ * The pattern, all of it required:
+ *   - not a student on the roster (a recurring roster name is a real student:
+ *     fronts then backs, a re-scan, two students sharing a first name). With
+ *     no roster, or an empty one, nothing is excluded this way;
+ *   - THREE or more pages, never two in a row;
+ *   - before its first page and between each pair of its pages, exactly one
+ *     other name, all of them DIFFERENT. Fronts-then-backs of a student the
+ *     roster lacks repeats the same neighbours (Avery, Newkid, Avery, Newkid)
+ *     and is grouped as usual instead.
+ * Anything short of the pattern is grouped as usual -- a page with a name
+ * starts a student -- so it reaches the matching screen as its own row anyway.
  */
-function runningHeaders(keys: string[], rosterMatches?: (name: string) => number): Set<string> {
+export function repeatedOffRoster(keys: string[], rosterMatches?: (name: string) => number): Set<string> {
   const out = new Set<string>();
-  if (!rosterMatches) return out;
   const at = new Map<string, number[]>();
   keys.forEach((k, i) => k && at.set(k, [...(at.get(k) ?? []), i]));
-  // An empty roster tells nothing apart: every name is "not on it".
-  if (!keys.some((k) => k && rosterMatches(k) > 0)) return out;
   for (const [k, idx] of at) {
-    // Three or more appearances. With two, a printed motto (Ana, Hope Always,
-    // Ben, Hope Always) and a student missing from the roster who was scanned
-    // twice (Zed, Ana, Ben, Ana) look exactly alike, and guessing "motto"
-    // files that child's pages under two other children. So two appearances
-    // are left as their own groups for the teacher (#125 review, round 3). A
-    // real class set has the motto on every student's paper -- far more than
-    // three.
-    if (idx.length < 3 || rosterMatches(k) > 0) continue;
+    if (idx.length < 3 || (rosterMatches && rosterMatches(k) > 0)) continue;
     if (idx.some((v, j) => j > 0 && v === idx[j - 1] + 1)) continue;
     const runs: string[] = [];
     let ok = true;
@@ -273,6 +304,28 @@ function runningHeaders(keys: string[], rosterMatches?: (name: string) => number
     if (ok && new Set(runs).size === runs.length) out.add(k);
   }
   return out;
+}
+
+/**
+ * Where a group could be two students: the first page whose name reads the same
+ * as the page before it, when that name is a first name only ("Maria").
+ * groupPagesByName keeps such pages together -- a student often writes their
+ * name on every page -- but two different Marias handed in one after the other
+ * read exactly the same. Returns the position in `pageIndexes` to split at
+ * (the second Maria's first page), or -1. The matching screen offers "These
+ * are 2 different students" there (#125 follow-up a). A full name ("Maria
+ * Lopez") on both pages is taken as one student and not offered.
+ */
+export function sameFirstNameSplit(pageIndexes: number[], names: PageName[]): number {
+  const byPage = new Map(names.map((n) => [n.page, n]));
+  for (let j = 1; j < pageIndexes.length; j++) {
+    const a = byPage.get(pageIndexes[j - 1]);
+    const b = byPage.get(pageIndexes[j]);
+    if (!a || !b || a.failed || b.failed) continue;
+    const k = nameKey(b.name);
+    if (k && k === nameKey(a.name) && !k.includes(" ")) return j;
+  }
+  return -1;
 }
 
 /**
@@ -329,6 +382,10 @@ export type ResolvedGroup = ScannedGroup & {
    * sits, so the matching screen can show the teacher the handwriting. */
   nameUploadId: string | null;
   nameBox: NameBox | null;
+  /** A name read after a different student each time and not on the roster
+   * (repeatedOffRoster): printed text or a student the roster lacks. Nothing
+   * is matched or suggested; the teacher must choose before saving. */
+  unassigned?: boolean;
 };
 
 /**
@@ -786,6 +843,18 @@ export function resolveScannedGroups(
     if (open.length !== 1)
       row.matchConfidence = Math.round(row.matchConfidence / Math.max(2, open.length));
   }
+  // A name the stack repeats after a different student each time, off the
+  // roster: the teacher decides whose paper each one is (#125 follow-up b).
+  const repeated = repeatedOffRoster(
+    pageGroups.flatMap((g) => g).sort((x, y) => x - y).map((p) => {
+      const n = nameOf.get(p);
+      return n && !n.failed ? nameKey(n.name) : "";
+    }),
+    students.length ? (nm) => rosterMatchCount(nm, students) : undefined,
+  );
+  for (const { row } of rows)
+    if (row.detectedName && repeated.has(nameKey(row.detectedName)))
+      Object.assign(row, { unassigned: true, studentId: null, candidateIds: [], suggestedId: null, matchConfidence: 0 });
   return rows.map((r) => r.row);
 }
 

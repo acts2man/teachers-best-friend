@@ -327,14 +327,18 @@ test("a case is refused where the teacher has not confirmed what it would test",
 });
 
 // ------------------------------------------------------------------ the runner, end to end
-function runnerWith(model) {
-  const calls = { start: [], poll: 0, deleted: 0 };
+function runnerWith(model, { failStarts = () => false } = {}) {
+  const calls = { start: [], poll: 0, deleted: 0, refused: 0 };
   const settings = { model: "gpt-5.6-luna", effort: "medium", maxOutput: 32000 };
   const analyzeServer = {
     modelSettingsFor: async () => settings,
     documentContent: (f) => ({ type: "input_image", image_url: "data:" + f.mime + ";base64,AA", detail: "high" }),
     labelledContent: (mode, images) => (mode === "name_strip" ? images.flatMap((im, i) => [{ type: "input_text", text: `Image at position ${i}:` }, im]) : images),
     startModelBackground: async (s, content, mode) => {
+      if (failStarts(mode)) {
+        calls.refused++;
+        throw new Error("503 from the provider");
+      }
       calls.start.push({ mode, images: content.filter((c) => c.type === "input_image").length, text: content.at(-1).text });
       return { value: "resp-" + calls.start.length, attempts: 1 };
     },
@@ -356,7 +360,7 @@ function runnerWith(model) {
             table === "model_pricing"
               ? { data: [{ model: "gpt-5.6-luna", input_per_mtok: 0.2, cached_input_per_mtok: 0.02, output_per_mtok: 1.2 }], error: null }
               : table === "regression_fixtures"
-                ? { data: ["p1", "p2"].map((id) => ({ source_upload_id: id, object_path: "t/a1/" + id, mime: "image/jpeg", size_bytes: 400000 })), error: null }
+                ? { data: ["p1", "p2", "s1", "s2"].map((id) => ({ source_upload_id: id, object_path: "t/a1/" + id, mime: "image/jpeg", size_bytes: 400000 })), error: null }
                 : { data: [], error: null },
           ),
       };
@@ -495,4 +499,33 @@ test("#124 follow-up round 3: ties, small groups, credit splits, equivalent form
   const eq = score.scoreAnswers(four.map((id) => want(id, "q", "1/2", 100)), four.map((id, i) => resp(id, "q", { answer: i < 2 ? "1/2" : "0.5", finalAnswer: i < 2 ? "1/2" : "0.5" })), "grouping");
   assert.equal(eq.inGroup, 0, "an even split has no majority");
   assert.equal(eq.misses.equivalent_not_grouped, 4, "labelled as split equivalents, not as the teacher's split");
+});
+
+test("#125 follow-up c: a failed name read is tried again twice before its page is left unread", async () => {
+  const expected = ex.buildExpected("names", workspaceFor(), "a1", uploads);
+  const c = { id: "c2", code: "case-names1", teacherId: "t", assessmentLegacyId: "a1", kind: "names", expected };
+  const run = async (failures) => {
+    let left = failures;
+    const { runner, calls, svc } = runnerWith(
+      () => ({ pages: [{ page: 0, name: "Placeholder Name", confidence: 95, box: { x: 0.1, y: 0.1, width: 0.3, height: 0.1 } }] }),
+      { failStarts: (mode) => mode === "name_strip" && left-- > 0 },
+    );
+    const usage = { costUsd: 0, model: "", effort: "" };
+    let state = await runner.planCase(svc, c);
+    assert.equal(state.stage, "names");
+    const first = state.slices.length;
+    for (let i = 0; i < 40 && state.stage === "names"; i++) {
+      const out = await runner.stepCase(svc, c, "key", state, usage);
+      state = out.state;
+      if (out.result.status !== "running") break;
+      if (state.stage === "names" && state.cursor >= 1) break;
+    }
+    return { state, calls, first };
+  };
+  const twice = await run(2);
+  assert.equal(twice.calls.refused, 2);
+  assert.equal(twice.state.results[0]?.failed, undefined, "the third try read the name");
+  const always = await run(99);
+  assert.equal(always.calls.refused, 3, "one try and two retries");
+  assert.equal(always.state.results[0]?.failed, true, "then the page is left unread, as before");
 });
