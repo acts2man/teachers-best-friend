@@ -110,6 +110,9 @@ export function preparationGaps(a: Assessment) {
   };
 }
 
+/** The reading confidence an AI match needs to count without a look. */
+export const CLEAN_READ = 90;
+
 export function responseFlag(
   response: StudentResponse,
   question?: Question,
@@ -118,7 +121,7 @@ export function responseFlag(
   if (!question.verified || !question.answer.trim())
     return "Check the assignment or answer key";
   if (!response.answer.trim()) return "Missing answer";
-  if (response.confidence < 90)
+  if (response.confidence < CLEAN_READ)
     return "Reading or interpretation needs a check";
   if (responseMatch(response) < 100)
     return responseMatch(response) + "% match with the key and standard";
@@ -868,12 +871,17 @@ export function forgetUploads(a: Assessment, released: string[]): Assessment {
 /** One cluster of students who answered a question the same way. */
 /** The key of a question's Unsure group. */
 export const UNSURE_KEY = "\u0000unsure";
+/** Appended to the group key of reads made at 50-89% confidence. */
+const SHAKY_SUFFIX = "\u0000check";
 
 export type AnswerGroup = {
   key: string;
   /** The answers the model was not sure about, or skipped, for this question:
    * one group, whatever each student wrote, graded student by student. */
   unsure?: boolean;
+  /** Reads of this answer the model was only fairly sure of (50-89%): kept
+   * apart from confident reads of the same answer, and always a decision. */
+  lowConfidence?: boolean;
   answer: string;
   responseIds: string[];
   studentIds: string[];
@@ -992,9 +1000,15 @@ export function groupAnswers(
     // Once the teacher has graded an answer it groups with answers given the
     // SAME credit -- so pulling one student out and grading them on their own
     // gives them their own group rather than dragging the rest along.
+    // A read the model was only fairly sure of (50-89%) is kept apart from the
+    // confident reads of the same answer: mixed in, one shaky read made the
+    // whole group "needs review" (23 clean matches + 1 at 70% showed as "0
+    // correct, 24 need review"), and confirming the 23 then left the one
+    // undecided and silently uncounted (#126 review).
+    const shaky = !r.verified && !unsure && r.confidence < CLEAN_READ;
     const key = unsure
       ? UNSURE_KEY
-      : answerKey(final) + (r.verified ? "|" + Math.round(responseMatch(r)) : "");
+      : answerKey(final) + (r.verified ? "|" + Math.round(responseMatch(r)) : shaky ? SHAKY_SUFFIX : "");
     if (r.suggestedErrorType) {
       const tally = suggestions.get(key) ?? new Map<string, number>();
       tally.set(r.suggestedErrorType, (tally.get(r.suggestedErrorType) ?? 0) + 1);
@@ -1043,12 +1057,16 @@ export function groupAnswers(
       // below full credit stayed "to decide" forever — the bug Ricky hit.
       // Blank answers are decisions too now: the teacher sees the photo
       // before an empty answer is scored zero.
+      // A group of reads made with less than full confidence (50-89; under 50
+      // is the Unsure group) is not a clean match (isCleanAiMatch wants >=90),
+      // so it is the teacher's call, not something the green button confirms.
       needsDecision:
         !!question &&
         !question.excluded &&
         !g.verified &&
-        !(g.correct && g.match >= 100 && g.key !== UNSURE_KEY),
+        !(g.correct && g.match >= 100 && g.key !== UNSURE_KEY && !g.key.endsWith(SHAKY_SUFFIX)),
       unsure: g.key === UNSURE_KEY,
+      lowConfidence: g.key.endsWith(SHAKY_SUFFIX),
       answer: g.key === UNSURE_KEY ? "" : g.answer,
     }))
     .sort((x, y) => y.responseIds.length - x.responseIds.length);
@@ -1139,9 +1157,28 @@ export function autoGradedToConfirm(a: Assessment): string[] {
       // Clean matches only. A blank is no longer confirmed in bulk: the
       // teacher sees the photo of an empty answer first (Ricky: never marked
       // blank when the page shows work), and an unsure answer is never a match.
-      return r.correct && responseMatch(r) >= 100 && r.confidence >= 50;
+      return r.correct && responseMatch(r) >= 100 && r.confidence >= CLEAN_READ;
     })
     .map((r) => r.id);
+}
+
+/** The answers on active questions that still need the teacher to decide
+ * them: every response in a group that needs a decision (an answer that is not
+ * the key, a blank, an Unsure read, a 50-89% read). Clean matches waiting for
+ * the green button are not in here -- see matchesToConfirm. */
+export function answersToDecide(a: Assessment): string[] {
+  return activeQuestions(a).flatMap((q) =>
+    groupAnswers(a, q.id)
+      .filter((g) => g.needsDecision)
+      .flatMap((g) => g.responseIds),
+  );
+}
+
+/** The clean matches still waiting for a confirmation, on one question or on
+ * all of them: what the green "Confirm N answers that match the key" settles. */
+export function matchesToConfirm(a: Assessment, questionId?: string): string[] {
+  const ids = new Set(autoGradedToConfirm(a));
+  return a.responses.filter((r) => ids.has(r.id) && (!questionId || r.questionId === questionId)).map((r) => r.id);
 }
 
 /** Confirm (verify) responses at their current score, without changing it. */

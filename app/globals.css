@@ -178,6 +178,45 @@ input,textarea,.pick {font-size:1rem}
   .report-table td:first-child{max-width:360px}
   .report-table td:nth-child(2){max-width:240px}
 }
+/* Phones (12 Oct 2026, Michael on Android, Ricky on iPhone): "Check what each
+   question measures" overlapped again -- a question's text ran across the
+   Skill & standard column and the Depth / Alignment / Review / Points columns
+   sat off the right edge. #119 above fixed desktop on the assumption that a
+   phone scrolls the table sideways; measured at 360-430px it did not. Below
+   768px each question is a card instead: the question, then its skill and
+   standard, then its pills, one under another. Nothing sits beside anything
+   that could run into it, and nothing is off-screen. */
+@media(max-width:767px){
+  .measures-table [data-slot=table-container]{overflow:visible}
+  .measures-table table,.measures-table tbody,.measures-table tr,.measures-table td{display:block;width:100%}
+  .measures-table thead{display:none}
+  .measures-table tr{padding:12px 0;border-bottom:1px solid hsl(calc(95deg + var(--th)) calc(20% * var(--ts)) 88.2%)}
+  .measures-table td{white-space:normal;padding:3px 0;border:0;max-width:none}
+  .measures-table td:nth-child(n+3){display:inline-block;width:auto;margin-right:12px;vertical-align:top}
+  /* After the rule above, and as specific: an empty cell is hidden, not an
+     empty inline box (#126 review: the nth-child rule used to win). */
+  .measures-table td:empty,.measures-table td:nth-child(n+3):empty{display:none}
+  /* The header row is hidden on phones, so each value carries its own label. */
+  .measures-table td[data-label]::before{content:attr(data-label);display:block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6b7867;margin-bottom:2px}
+  .measures-table .question-cell,.measures-table .cell-title,.measures-table .cell-meta{overflow-wrap:anywhere;word-break:break-word}
+  /* And the assessment's tab row wraps rather than hiding tabs off the right
+     edge. Scoped: Planning and Insights keep their scrolling tab rows. */
+  .assessment-tabs.page-tabs{flex-wrap:wrap!important;gap:2px 16px!important;overflow:visible!important}
+}
+/* The green "Confirm N answers that match the key" step (Ricky, 11 Oct; see
+   lib/grading-settings.ts). Pinned to the bottom of the screen while the
+   question is open, so it is in reach right after giving credit, on a phone,
+   without scrolling. Fixed, not sticky: an app-shell ancestor clips overflow,
+   which turns sticky into "the end of the panel" (measured: 1,978px down), and
+   an animated ancestor's transform does the same to fixed -- so the bar is
+   rendered into <body> (components/teacher-review.tsx). */
+.confirm-matches-bar{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom));z-index:40;display:flex;justify-content:center;padding:0 16px;pointer-events:none}
+/* Room under the last answer group so the pinned button never covers it. */
+.confirm-matches-spacer{height:96px}
+html.confirm-bar-on{scroll-padding-bottom:104px}
+.confirm-matches-bar .confirm-matches{pointer-events:auto;max-width:100%}
+.action.confirm-matches{background:#1f8a4c!important;border-color:#1f8a4c!important;color:#fff!important;font-weight:700;white-space:normal;text-align:center;height:auto;min-height:48px;padding:12px 20px;box-shadow:0 6px 18px rgb(31 138 76 / .28)}
+.action.confirm-matches:hover:not(:disabled){background:#187340!important}
 .source-documents {flex-wrap:wrap;line-height:1.8}
 .source-documents>a {font-size:.8rem}
 .review-student-toolbar {display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:21px}
@@ -859,6 +898,25 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .name-match-main{flex-direction:column;align-items:stretch}
 .name-match-main .pick{width:100%;min-width:0}
 .name-match-guess{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* Real names are long ("Alexandria Montgomery-Fitzgerald"). Measured 12 Oct at
+   360-430px, the matching card ran off the right edge: the read-as line, the
+   "Best guess" line, the "Use <name>" button and the note were cut, and the
+   Discard button sat on the text. Everything in the details column now fits its
+   width and wraps; the button wraps its label instead of pushing the card wider. */
+.name-match-main{min-width:0}
+.name-match-main>*{max-width:100%}
+.name-match-main .cell-meta,.name-match-main .key-notice{min-width:0;overflow-wrap:anywhere}
+.name-match-guess .action{white-space:normal;text-align:left;height:auto;max-width:100%}
+.name-match-main .pick{max-width:100%}
+@media(max-width:599px){
+  .name-match-row{flex-wrap:wrap;position:relative;padding-right:46px}
+  .name-match-work{flex-direction:row;width:auto}
+  .name-match-work>*{flex:0 0 112px}
+  .name-match-thumb,.name-match-work .name-crop{width:112px}
+  .name-match-thumb{height:144px}
+  .name-match-main{flex:1 1 100%}
+  .name-match-row>.icon-button{position:absolute;top:10px;right:8px}
+}
 @media(max-width:520px){.name-match-work,.name-match-thumb{width:104px}.name-match-thumb{height:136px}}
 .image-viewer-fallback{padding:18px 20px;border-radius:10px;background:#fff;color:var(--ink);font-size:15px}
 .image-viewer-fallback a{text-decoration:underline;font-weight:600}

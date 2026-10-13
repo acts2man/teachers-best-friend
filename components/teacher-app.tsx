@@ -3,7 +3,7 @@ import { readJson } from "@/lib/utils";
 import { withWorkspaceDefaults } from "@/lib/workspace-safety";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { describeFailure } from "@/lib/connection";
 import { useUpdateAvailable } from "@/lib/app-version";
 import { installAppEventLogging } from "@/lib/app-events-client";
@@ -35,6 +35,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Toaster, toast } from "sonner";
 import { catalogFor } from "@/lib/teacher-catalog";
@@ -474,6 +475,7 @@ export default function TeacherApp({ view }: { view: string }) {
         style={{ "--sidebar-width": "238px" } as React.CSSProperties}
         className={w.settings.reduceMotion ? "reduce-motion" : ""}
       >
+        <CloseMobileMenuOnNavigate />
         <Sidebar className="app-sidebar">
           <SidebarHeader className="brand-area">
             <Link href="/app" className="brand">
@@ -877,4 +879,26 @@ function QuotaMeter({ quota }: { quota: Quota | null }) {
       )}
     </div>
   );
+}
+
+/**
+ * On a phone the menu is a sheet over the screen. A menu link used to leave it
+ * open whenever the page did not happen to remount -- tapping "Assessments"
+ * from inside an assessment kept the menu covering the screen (#126 review,
+ * reproduced at 390 and 412). It now closes on every menu link tap, and on any
+ * change of address (a link, Back, a redirect), whatever React keeps mounted.
+ */
+function CloseMobileMenuOnNavigate() {
+  const { setOpenMobile } = useSidebar();
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  useEffect(() => setOpenMobile(false), [pathname, search, setOpenMobile]);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.('[data-mobile="true"] a[href]')) setOpenMobile(false);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [setOpenMobile]);
+  return null;
 }

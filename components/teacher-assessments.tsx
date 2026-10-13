@@ -1,6 +1,7 @@
 "use client";
 import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
 import { useEffect, useRef, useState } from "react";
+import { REQUIRE_CONFIRM_MATCHES } from "@/lib/grading-settings";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
@@ -108,6 +109,9 @@ import {
   replaceWritingResponses,
   setWritingScore,
   confirmWritingScores,
+  answersToDecide,
+  autoGradedToConfirm,
+  confirmResponses,
 } from "@/lib/teacher-workflow";
 import { StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
@@ -785,7 +789,7 @@ export function AssessmentView() {
           )}
           {isWritingAssessment(a) ? (
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="page-tabs">
+              <TabsList className="page-tabs assessment-tabs">
                 <TabsTrigger value="questions">1. Rubric</TabsTrigger>
                 <TabsTrigger value="responses">2. Student writing</TabsTrigger>
                 <TabsTrigger value="analysis">Class analysis</TabsTrigger>
@@ -806,7 +810,7 @@ export function AssessmentView() {
             </Tabs>
           ) : (
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="page-tabs">
+            <TabsList className="page-tabs assessment-tabs">
               <TabsTrigger value="questions">1. Assessment review</TabsTrigger>
               <TabsTrigger value="key">2. Answer key</TabsTrigger>
               <TabsTrigger value="responses">3. Student work</TabsTrigger>
@@ -942,7 +946,7 @@ export function AssessmentView() {
                   </span>
                 </div>
               )}
-              <div className="panel report-table">
+              <div className="panel report-table measures-table">
                 <SectionTitle
                   title="Check what each question measures"
                   description="Confirm the suggestions that fit. Open a question to adjust its standard or reasoning."
@@ -1084,13 +1088,13 @@ export function AssessmentView() {
                               {q.standard || "Not assigned"}
                             </span>
                           </TableCell>
-                          <TableCell>
+                          <TableCell data-label="Depth">
                             <Pill>DOK {q.dok}</Pill>
                             <span className="cell-meta">
                               Costa {costaFor(q)}
                             </span>
                           </TableCell>
-                          <TableCell>
+                          <TableCell data-label="Alignment">
                             {q.excluded ? (
                               <Score
                                 value={questionAlignment(q)}
@@ -1126,7 +1130,7 @@ export function AssessmentView() {
                             )}
                             <span className="cell-meta">{q.level}</span>
                           </TableCell>
-                          <TableCell>
+                          <TableCell data-label="Review">
                             {q.excluded ? (
                               <Pill>Excluded</Pill>
                             ) : q.verified ? (
@@ -1138,7 +1142,7 @@ export function AssessmentView() {
                               <Pill tone="amber">Needs review</Pill>
                             )}
                           </TableCell>
-                          <TableCell>
+                          <TableCell data-label="Points">
                             {q.excluded ? (
                               <span className="cell-meta">—</span>
                             ) : (
@@ -1443,7 +1447,15 @@ export function AssessmentView() {
               />
             </TabsContent>
             <TabsContent value="analysis">
-              <ClassAnalysisPanel assessment={a} students={students} catalog={catalog} go={go} />
+              {REQUIRE_CONFIRM_MATCHES && autoGradedToConfirm(a).length > 0 ? (
+                <ConfirmMatchesFirst assessment={a} onSave={saveAssessment} />
+              ) : REQUIRE_CONFIRM_MATCHES && answersToDecide(a).length > 0 ? (
+                // Every answer is decided before the class picture is shown: an
+                // undecided one is silently uncounted otherwise (#126 review).
+                <DecideFirst count={answersToDecide(a).length} onGo={() => setTab("responses")} />
+              ) : (
+                <ClassAnalysisPanel assessment={a} students={students} catalog={catalog} go={go} />
+              )}
             </TabsContent>
           </Tabs>
           )}
@@ -2931,5 +2943,64 @@ function QuestionPoints({
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
     />
+  );
+}
+
+/**
+ * Class analysis waits until every answer that matches the key is confirmed
+ * (REQUIRE_CONFIRM_MATCHES, Ricky 11 Oct 2026): one tap here does it, and the
+ * analysis appears.
+ */
+/** Class analysis is held back while any answer still waits for the teacher. */
+function DecideFirst({ count, onGo }: { count: number; onGo: () => void }) {
+  return (
+    <div className="panel grade-done" role="status">
+      <Check size={22} />
+      <div>
+        <strong>One step before class analysis</strong>
+        <p>
+          {count} answer{count === 1 ? " still needs" : "s still need"} your decision. Until {count === 1 ? "it is" : "they are"} graded,
+          the class results would leave {count === 1 ? "it" : "them"} out.
+        </p>
+      </div>
+      <Action onClick={onGo}>Grade {count === 1 ? "it" : "them"} now</Action>
+    </div>
+  );
+}
+
+function ConfirmMatchesFirst({
+  assessment: a,
+  onSave,
+}: {
+  assessment: Assessment;
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+}) {
+  const ids = autoGradedToConfirm(a);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="panel grade-done" role="status">
+      <Check size={22} />
+      <div>
+        <strong>One step before class analysis</strong>
+        <p>
+          {ids.length} answer{ids.length === 1 ? "" : "s"} match your key and are marked correct. Confirm
+          them and the class results are ready.
+        </p>
+      </div>
+      <Action
+        className="confirm-matches"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await onSave(confirmResponses(a, ids), ids.length + (ids.length === 1 ? " answer" : " answers") + " that match the key confirmed");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Check size={16} /> Confirm {ids.length} answer{ids.length === 1 ? "" : "s"} that match the key
+      </Action>
+    </div>
   );
 }
