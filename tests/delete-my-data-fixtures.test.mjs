@@ -138,10 +138,13 @@ test("the fixture copies go first: if that fails, nothing else has been deleted 
   await assert.rejects(deleteAllDocuments("t1"));
   assert.ok(!log.some((l) => l.startsWith("remove teacher-documents")), "documents untouched: " + log.join(" | "));
   assert.equal(tables.teacher_uploads.length, 1, "upload rows untouched");
-  // And when it works, the fixtures are the first thing removed.
+  // And when it works, the fixtures (agreement, then files) go before any document.
   delete tables.__failBucket;
   log.length = 0;
   await deleteAllDocuments("t1");
-  assert.ok(log[0].startsWith("remove regression-fixtures"), "fixtures first: " + log.join(" | "));
+  const firstDoc = log.findIndex((l) => l.startsWith("remove teacher-documents"));
+  const fixtureSteps = log.map((l, i) => [l, i]).filter(([l]) => /regression-fixtures|regression_fixture_allowlist/.test(l)).map(([, i]) => i);
+  assert.ok(fixtureSteps.length >= 2 && fixtureSteps.every((i) => i < firstDoc), "fixtures first: " + log.join(" | "));
+  assert.ok(log.indexOf("delete regression_fixture_allowlist 1") < log.findIndex((l) => l.startsWith("remove regression-fixtures")), "the agreement before the files");
   assert.ok(log.includes("remove teacher-documents t1/a.jpg"));
 });

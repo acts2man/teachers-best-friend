@@ -40,6 +40,15 @@ export async function removeTeacherFixtures(
     for (const r of data ?? []) if (r.object_path) paths.add(r.object_path as string);
     if (!data || data.length < PAGE) break;
   }
+  // The agreement goes before the files (#128 round-3 review): a fixture copy
+  // being made while this runs could otherwise land after the files were
+  // removed and before the agreement was, and outlive "delete my data". With
+  // the agreement gone first, no new copy can be made, and the folder listing
+  // below still finds every file whose row the revocation cascaded away.
+  if (revokeConsent) {
+    const { error } = await svc.from("regression_fixture_allowlist").delete().eq("teacher_id", teacherId);
+    if (error && !/does not exist|schema cache/i.test(error.message)) throw error;
+  }
   // And whatever is in the teacher's folder of the bucket -- a copy whose row
   // was never written (the upload succeeded, the insert did not) is found
   // only this way. Every fixture lives at <teacher>/<assessment>/<upload>.
@@ -50,10 +59,6 @@ export async function removeTeacherFixtures(
     const { error } = await svc.storage.from(FIXTURE_BUCKET).remove(all.slice(i, i + REMOVE_CHUNK));
     // A file already gone is fine: the point is to end up with none.
     if (error && !/not found/i.test(error.message)) throw error;
-  }
-  if (revokeConsent) {
-    const { error } = await svc.from("regression_fixture_allowlist").delete().eq("teacher_id", teacherId);
-    if (error && !/does not exist|schema cache/i.test(error.message)) throw error;
   }
   return all.length;
 }

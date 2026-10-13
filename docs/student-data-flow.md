@@ -401,8 +401,12 @@ counts -- never the prompt, the pages or the output.
 
 Tightened in #128 (built, not yet live): a message keeps only error vocabulary and
 code-shaped words; a stack keeps only lines that parse as real code-location frames, with
-any page URL in them reduced to its route template; and an event's `detail` takes `mode`,
-`kind` and `effort` only from the app's own fixed lists. **No student name or answer is part
+any page URL in them reduced to its route template (build output under `/_next/`,
+`/.next/`, `/.netlify/` and `node_modules` keeps its hashed file name -- a deliberate
+choice, since that is where the useful part of a stack is); and an event's `detail` takes
+`mode`, `kind` and `effort` only from the app's own fixed lists. One channel remains by
+nature: a function name in a stack frame is kept as written, so code that named a function
+after data (a computed property name) would show it. The app's code does not do that. **No student name or answer is part
 of any event**, by construction: the fields are fixed and free text is scrubbed in the
 browser and again on the server.
 

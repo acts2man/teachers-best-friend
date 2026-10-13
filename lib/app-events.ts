@@ -195,66 +195,79 @@ export function scrubDetail(detail: unknown): Record<string, string | number | b
 }
 
 /** A function name as code writes it: identifiers, dots, "<anonymous>",
- * Firefox's "/<" nesting -- no spaces (a sentence is not a function name). */
-const FRAME_FN = /^(?:(?:async|new)\s+)?[\w$.<>\[\]/]{1,100}$/;
+ * Firefox's "/<" nesting, Safari's "global code" -- not a sentence. */
+const FRAME_FN = /^(?:(?:async|new) )?(?:[\w$.<>[\]/]{1,100}|(?:global|module|eval) code)$/;
+
+/** Locations that are markers, not files. */
+const MARKER = /^(?:<anonymous>|<eval>|native|\[native code\]|index \d{1,4})$/;
 
 /** A frame's location, made safe. Build output (bundled chunks, the server
  * build, node_modules, node's internals) keeps its file path -- hashed file
  * names, not data. Any other URL or path is reduced to its route template, so
  * a page URL like /students/maria-lopez in a frame says only /students/:seg. */
 function frameLocation(loc: string): string {
-  if (/^(<anonymous>|native|index \d+)$/.test(loc)) return loc;
-  if (/^node:[\w/._-]+$/.test(loc)) return loc;
+  if (MARKER.test(loc)) return loc;
+  if (/^node:(?:internal|[a-z_]{1,30})(?:\/[\w/._-]{1,120})?$/.test(loc)) return loc;
   let path = loc;
   try {
     path = new URL(loc).pathname;
   } catch {
     path = loc.split(/[?#]/)[0];
   }
-  const build = /\/(_next|\.next|node_modules)\//.exec(path);
+  const build = /\/(?:_next|\.next|\.netlify|node_modules)\//.exec(path);
   if (build) {
     const tail = path.slice(build.index);
-    return tail.split("/").map((seg) => (!seg || /^[\w.\-[\]()@+~]+$/.test(seg) ? seg : ":seg")).join("/").slice(0, 160);
+    return tail.split("/").map((seg) => (!seg || /^[\w.\-[\]()@~]+$/.test(seg) ? seg : ":seg")).join("/").slice(0, 160);
   }
   return routeTemplate(path) || "…";
 }
 
+/** One stack line as [function, location, ":line:col"], or null when it is not
+ * a code-location frame. Linear-time patterns only: this runs on text a
+ * browser sent, before anything else is trusted. */
+function parseFrame(l: string): [string, string, string] | null {
+  if (l.length > 600) return null;
+  let m: RegExpExecArray | null;
+  // V8: "at fn (loc:L:C)", "at fn [as alias] (loc:L:C)", "at fn (<anonymous>)".
+  if ((m = /^at ((?:async |new )?(?:[^\s()[\]]{1,120}|(?:global|module|eval) code))(?: \[as [\w$]{1,60}\])? \((index \d{1,4}|\[native code\]|[^()\s]+?)(:\d{1,7}:\d{1,7})?\)$/.exec(l)))
+    return m[3] || MARKER.test(m[2]) ? [m[1], m[2], m[3] ?? ""] : null;
+  // V8 eval: "at eval (eval at f (loc:L:C), <anonymous>:L:C)" -- where it was evaluated is the useful part.
+  if ((m = /^at (eval|[\w$.]{1,120}) \(eval at [\w$.<>]{1,120} \(([^()\s]+?)(:\d{1,7}:\d{1,7})\), [^()]{1,200}\)$/.exec(l)))
+    return [m[1], m[2], m[3]];
+  // V8, no function: "at loc:L:C".
+  if ((m = /^at ([^\s()]+?)(:\d{1,7}:\d{1,7})$/.exec(l))) return ["", m[1], m[2]];
+  // Firefox / Safari: "fn@loc:L:C", "@loc:L:C", "global code@loc:L:C", "fn@[native code]".
+  if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@(\[native code\])$/.exec(l))) return [m[1], m[2], ""];
+  if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@([^@\s]+?)(?: line \d{1,7} > (?:eval|Function))?(:\d{1,7}:\d{1,7})$/.exec(l)))
+    return [m[1], m[2], m[3]];
+  return null;
+}
+
 /**
- * A stack trace reduced to code locations, one "fn (location:line:col)" per
- * frame. Only lines that parse as a real frame are kept -- V8's "at fn
- * (location:L:C)" / "at location:L:C", and Firefox/Safari's "fn@location:L:C"
- * -- so a message or data line that merely contains "at", "@" or "12:30:45"
- * is dropped (#128 round 3). The message line at the top is dropped too; it is
- * logged (scrubbed) separately.
+ * A stack trace reduced to code locations, one V8-style frame per line ("at fn
+ * (location:L:C)" or "at location:L:C"). Only lines that parse as real frames
+ * are kept -- so a message or data line that merely contains "at", "@" or
+ * "12:30:45" is dropped (#128 round 3) -- and a URL in one is its route
+ * template unless it is build output. The message line at the top is dropped
+ * too; it is logged (scrubbed) separately.
+ *
+ * The output is itself a valid stack in this form, so scrubbing twice changes
+ * nothing: the browser scrubs before sending and the server scrubs again (the
+ * round-3 review found the first version's output did not survive the second
+ * pass, which emptied every browser stack).
  */
 export function scrubStack(stack: unknown, max = 4000): string {
   if (typeof stack !== "string") return "";
   const frames: string[] = [];
   for (const raw of stack.split("\n")) {
-    const l = raw.trim();
-    let fn = "";
-    let loc = "";
-    let pos = "";
-    let m: RegExpExecArray | null;
-    if ((m = /^at\s+(.+?)\s+\((.+?)(?::(\d+):(\d+))?\)$/.exec(l))) {
-      fn = m[1];
-      loc = m[2];
-      pos = m[3] ? ":" + m[3] + ":" + m[4] : "";
-      // Without line and column the location must be a non-file marker.
-      if (!pos && !/^(<anonymous>|native|index \d+)$/.test(loc)) continue;
-    } else if ((m = /^at\s+(\S+):(\d+):(\d+)$/.exec(l))) {
-      loc = m[1];
-      pos = ":" + m[2] + ":" + m[3];
-    } else if ((m = /^([^\s@]*)@(\S+):(\d+):(\d+)$/.exec(l))) {
-      fn = m[1];
-      loc = m[2];
-      pos = ":" + m[3] + ":" + m[4];
-    } else continue;
+    const f = parseFrame(raw.trim());
+    if (!f) continue;
+    const [fn, loc, pos] = f;
     if (fn && !FRAME_FN.test(fn)) continue;
     // A bare location must look like one: a URL, a path or a node/webpack id.
-    if (!/^(https?:\/\/|file:\/\/|webpack-internal:\/\/|\/|node:|<anonymous>|native|index \d)/.test(loc)) continue;
+    if (!MARKER.test(loc) && !/^(?:https?:\/\/|file:\/\/|webpack-internal:\/\/|\/|node:)/.test(loc)) continue;
     const where = frameLocation(loc) + pos;
-    frames.push(fn ? fn + " (" + where + ")" : where);
+    frames.push(fn ? `at ${fn} (${where})` : `at ${where}`);
     if (frames.length >= 30) break;
   }
   return frames.join("\n").slice(0, max);

@@ -121,7 +121,7 @@ test("3a: URLs in frames are route templates; build output keeps its file names"
   assert.match(out, /Array\.map \(<anonymous>\)/);
   assert.match(out, /Object\.<anonymous> \(\/\.next\/server\/chunks\/123\.js:7:8\)/);
   assert.match(out, /node:internal\/process\/task_queues:95:5/);
-  assert.match(out, /Gt\/<@?.*main-abc\.js:1:2|Gt\/< \(\/_next\/static\/chunks\/main-abc\.js:1:2\)/);
+  assert.match(out, /^at Gt\/< \(\/_next\/static\/chunks\/main-abc\.js:1:2\)$/m);
   assert.equal(routeTemplate("/students/maria-lopez"), "/students/:seg");
 });
 
@@ -150,4 +150,69 @@ test("3b: every kind the app's own code sends is on the list", () => {
   const sent = new Set([...src.matchAll(/kind: "([a-z_]+)"/g)].map((x) => x[1]));
   const declared = /AiFailureKind = ([^;]+);/.exec(src)[1].match(/"([a-z_]+)"/g).map((x) => x.slice(1, -1));
   for (const k of [...sent, ...declared]) assert.ok(DETAIL_KINDS.has(k), k);
+});
+
+// ---- #128 round-3 review ----------------------------------------------------
+// The browser scrubs a stack before sending it and the server scrubs it again;
+// the first round-3 parser rejected its own output, so every browser stack was
+// stored empty. And real frames were dropped: Chrome's "[as onclick]" alias
+// (often the frame that threw), eval frames, Safari's "global code".
+const REAL = [
+  "TypeError: Cannot read properties of undefined (reading 'x')",
+  "    at Object.render [as current] (https://tbf.app/_next/static/chunks/app/assessments/page-3f2a.js:1:2345)",
+  "    at HTMLButtonElement.callCallback [as onclick] (https://tbf.app/_next/static/chunks/main-app.js:9:10)",
+  "    at async Promise.all (index 0)",
+  "    at eval (eval at compile (https://tbf.app/_next/static/chunks/x.js:1:2), <anonymous>:3:9)",
+  "    at /var/task/.netlify/dist/run/handlers/server.js:12:3",
+  "global code@https://tbf.app/_next/static/chunks/y.js:1:2",
+  "promiseReactionJob@[native code]",
+  "fn/<@https://tbf.app/_next/static/chunks/z.js line 2 > eval:1:5",
+].join("\n");
+
+test("review: real Chrome, Safari, Firefox and server frames are kept", () => {
+  const out = scrubStack(REAL).split("\n");
+  assert.deepEqual(out, [
+    "at Object.render (/_next/static/chunks/app/assessments/page-3f2a.js:1:2345)",
+    "at HTMLButtonElement.callCallback (/_next/static/chunks/main-app.js:9:10)",
+    "at async Promise.all (index 0)",
+    "at eval (/_next/static/chunks/x.js:1:2)",
+    "at /.netlify/dist/run/handlers/server.js:12:3",
+    "at global code (/_next/static/chunks/y.js:1:2)",
+    "at promiseReactionJob ([native code])",
+    "at fn/< (/_next/static/chunks/z.js:1:5)",
+  ]);
+});
+
+test("review: scrubbing twice changes nothing -- the server's second pass keeps the browser's frames", () => {
+  for (const stack of [REAL, "Error: x\n    at onClick (https://app.example/students/maria-lopez?name=Maria:10:5)\nrender@https://app.example/_next/static/chunks/a.js:3:4"]) {
+    const once = scrubStack(stack);
+    assert.ok(once.length > 0);
+    assert.equal(scrubStack(once), once);
+  }
+});
+
+test("review: a stack sent from the browser survives the server's validation", () => {
+  const { clientEventsBody } = m.exports;
+  const parsed = clientEventsBody.parse({
+    sessionId: "abcdef12-3456",
+    events: [{ type: "client_error", message: "x", stack: scrubStack(REAL), route: "/assessments", viewportW: 390, viewportH: 844, build: "53d3e56" }],
+  });
+  assert.equal(parsed.events[0].stack.split("\n").length, 8);
+});
+
+test("review: no quadratic blow-up on hostile input", () => {
+  const evil = "at " + "a (".repeat(5000) + "x";
+  const t = Date.now();
+  for (let i = 0; i < 10; i++) scrubStack(Array(10).fill(evil).join("\n"));
+  assert.ok(Date.now() - t < 200, "10 x 10 hostile lines in " + (Date.now() - t) + "ms");
+  const long = Array.from({ length: 40 }, () => "at f (" + "(".repeat(590) + ")").join("\n");
+  const t2 = Date.now();
+  scrubStack(long);
+  assert.ok(Date.now() - t2 < 100);
+});
+
+test("review: node: locations and build paths are restricted", () => {
+  assert.equal(scrubStack("at node:Maria Lopez:1:2"), "");
+  assert.equal(scrubStack("at node:internal/process/task_queues:95:5"), "at node:internal/process/task_queues:95:5");
+  assert.equal(scrubStack("at x (/_next/static/Maria+Lopez.js:1:2)"), "at x (/_next/static/:seg:1:2)");
 });
