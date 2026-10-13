@@ -82,9 +82,9 @@ const CODE_PROPS = new Set("length map filter forEach find reduce then catch jso
 
 /**
  * Code with internal structure -- never a bare word with a stray dot. A dotted
- * token is code only when it looks like code: a short receiver ("e.map"), a
- * known property at the end ("res.json"), or a camelCase / $ / _ segment --
- * so a lower-case "maria.lopez" username is not taken for one (#124 review).
+ * token is code only when every part after the first starts lower-case and it
+ * ends in a known property ("e.map", "res.json") or has a camelCase / $ / _
+ * part -- so "maria.lopez", "M.Lopez" and "jo.garcia" are not (#124 review).
  */
 function codeShaped(token: string): boolean {
   if (ERROR_CLASSES.has(token) || ACRONYMS.has(token) || MODES.has(token)) return true;
@@ -94,7 +94,14 @@ function codeShaped(token: string): boolean {
   const dotted = token.match(/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)+$/);
   if (dotted) {
     const seg = token.split(".");
-    return seg[0].length <= 2 || CODE_PROPS.has(seg[seg.length - 1]) || seg.some((x) => /[A-Z_$]/.test(x.slice(1)) || /^[_$]/.test(x));
+    // Every part after the first must read as a property: lower-case start
+    // ("e.map", "res.json") -- so "M.Lopez" and "J.Smith" (an initial and a
+    // surname) are never taken for code (#124 review, round 4).
+    if (!seg.slice(1).every((x) => /^[a-z_$]/.test(x))) return false;
+    // And it ends in a known property ("e.map") or has a camelCase / _ / $
+    // part ("t.toLowerCase", "this._x"); a short receiver alone is not enough
+    // ("jo.garcia", "a.maria").
+    return CODE_PROPS.has(seg[seg.length - 1]) || seg.some((x) => /[A-Z_$]/.test(x.slice(1)) || /^[_$]/.test(x));
   }
   return false;
 }
@@ -198,7 +205,8 @@ const ROUTE_WORDS = new Set(
     "account accounts admin analyze api app assessments audit auth billing callback candidates checkout classes clear " +
     "contact delete diagnostics events export guide impersonation legal lessons library login pipeline portal quota " +
     "regression release reserve resources reteach scan scans session settings signout signup standards state students " +
-    "support tickets uploads usage version webhook workspace errors privacy terms student-data ai"
+    "support tickets uploads usage version webhook workspace errors privacy terms student-data ai dpa how-we-use-ai " +
+    "student-data-privacy"
   ).split(" "),
 );
 

@@ -14,7 +14,7 @@ const m = { exports: {} };
 new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
 const { scrubEventText, scrubDetail, clientEventSchema } = m.exports;
 
-const NAMES = ["Maria", "MARIA", "Lopez", "LOPEZ", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope", "deShawn", "mcKenzie", "May", "maria-lopez", "lopez.m"];
+const NAMES = ["Maria", "MARIA", "Lopez", "LOPEZ", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope", "deShawn", "mcKenzie", "May", "maria-lopez", "lopez.m", "Lopez", "Smith", "garcia"];
 
 test("unquoted names are removed from messages", () => {
   for (const msg of [
@@ -33,6 +33,8 @@ test("unquoted names are removed from messages", () => {
     // Round 3.
     "Student maria.lopez not found (maria.lopez) student.maria lopez.m maria()",
     "Failed /students/maria-lopez and https://x.app/roster/maria-lopez#x",
+    // Round 4.
+    "M.Lopez not found Student M.Lopez. J.Smith JL.Smith x.Maria jo.garcia a.maria",
   ]) {
     const out = scrubEventText(msg);
     for (const n of NAMES) assert.ok(!out.includes(n), `"${msg}" -> "${out}" still has ${n}`);
