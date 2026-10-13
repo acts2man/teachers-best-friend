@@ -43,7 +43,7 @@ import {
   gradeInBatches,
   keepOtherClassStudents,
   mapLimit,
-  matchRosterStudent,
+  rosterMatchCount,
   mergeNameReads,
   NAME_CONCURRENCY,
   planNameBatches,
@@ -665,16 +665,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // teacher declared or by what pass one found. Shown no name at all.
       const pageGroups = explicit
         ? groupPagesByCapture(explicit)
-        : groupPagesByName(names, (name) => {
-            const m = matchRosterStudent(name, students);
-            return !!(m.student || m.candidates?.length);
-          });
+        : groupPagesByName(names, (name) => rosterMatchCount(name, students));
       const failedReads = names.filter((n) => n.failed).length;
       if (failedReads)
         toast.warning(
           failedReads +
             (failedReads === 1 ? " page's name" : " pages' names") +
-            " could not be read (the connection dropped). Those pages are left unmatched — pick the student for each on the next screen.",
+            " could not be read. Those pages are left unmatched — pick the student for each on the next screen.",
         );
       // The pages are grouped now, so a failure from here on releases only the
       // groups that never graded rather than the whole reserved stack.

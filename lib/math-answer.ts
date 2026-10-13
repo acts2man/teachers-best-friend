@@ -27,7 +27,12 @@ export type Verdict = "same" | "different";
  */
 function fromLatex(raw: string): string {
   if (!raw.includes("\\")) return raw;
-  let s = raw.replace(/\\(left|right)\b/g, "");
+  // A command ends where its letters end: "x\\le2" is "x <= 2". (A word
+  // boundary missed that, because a digit is a word character.)
+  const cmd = (names: string) => new RegExp("\\\\(?:" + names + ")(?![a-zA-Z])", "g");
+  let s = raw.replace(cmd("left|right"), "");
+  // Operators first, so "\\cdot2\\frac{1}{2}" and "\\cdot 2\\frac{1}{2}" read the same.
+  s = s.replace(cmd("cdot|times"), "*").replace(cmd("div"), "/");
   // A mixed number, "2\\frac{1}{2}" or "12\\frac{1}{2}", is the whole part
   // PLUS the fraction -- not times it, and the whole part is every digit (it
   // used to take only the last one, reading 12 1/2 as 2.5). Not after a
@@ -39,14 +44,14 @@ function fromLatex(raw: string): string {
       .replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)")
       .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "(($1)/($2))");
   s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)");
-  s = s.replace(/\\(cdot|times)\b/g, "*").replace(/\\div\b/g, "/").replace(/\\pi\b/g, "pi");
+  s = s.replace(cmd("pi"), "pi");
   s = s
-    .replace(/\\(leq|le)\b/g, "<=")
-    .replace(/\\(geq|ge)\b/g, ">=")
-    .replace(/\\lt\b/g, "<")
-    .replace(/\\gt\b/g, ">")
-    .replace(/\\(neq|ne)\b/g, "!=")
-    .replace(/\\infty\b/g, "∞");
+    .replace(cmd("leqslant|leq|le"), "<=")
+    .replace(cmd("geqslant|geq|ge"), ">=")
+    .replace(cmd("lt"), "<")
+    .replace(cmd("gt"), ">")
+    .replace(cmd("neq|ne"), "!=")
+    .replace(cmd("infty"), "∞");
   return s.replace(/\\[,;:! ]/g, "");
 }
 
@@ -301,7 +306,9 @@ function bare(raw: string): string {
     .replace(/\u2264/g, "<=")
     .replace(/\u2265/g, ">=")
     .replace(/\binf(inity)?\b/gi, "∞")
+    .replace(/\boo\b/gi, "∞")
     .replace(/\s+/g, "")
+    .replace(/\+∞/g, "∞")
     .toLowerCase();
 }
 
@@ -350,6 +357,9 @@ function pairedBrackets(a: string, b: string): { bracketsDiffer: boolean; items:
  * inequality. Null for anything else, including an equation. */
 function inequality(raw: string): { v: string; op: string; rhs: string } | null {
   const s = bare(raw);
+  // One inequality only: "x < -2 or x > 3" (a union, in either order) is
+  // left to the general comparison rather than read as its first clause.
+  if (/\b(or|and)\b|,|∪|∩|(<|>).*(<|>)/.test(raw.toLowerCase()) || /(or|and)/.test(s)) return null;
   const flip: Record<string, string> = { "<": ">", ">": "<", "<=": ">=", ">=": "<=" };
   let m = s.match(/^([a-z])(<=|>=|<|>)(.+)$/);
   if (m) return { v: m[1], op: m[2], rhs: m[3] };
@@ -366,7 +376,12 @@ function itemSame(x: string, y: string): boolean {
 }
 
 function itemProvablyDifferent(x: string, y: string): boolean {
-  if (infinite(x) || infinite(y)) return bare(x) !== bare(y);
+  if (infinite(x) || infinite(y)) {
+    const sign = (v: string) => (bare(v).startsWith("-") ? "-∞" : "∞");
+    // ∞ against a number, or -∞ against ∞, differ; two spellings of the same
+    // infinity ("+∞", "oo", "\\infty") do not.
+    return infinite(x) !== infinite(y) || sign(x) !== sign(y);
+  }
   return provablyDifferentSingle(x, y);
 }
 
@@ -424,7 +439,9 @@ function provablyDifferentOne(a: string, b: string): boolean {
   if (br) return br.bracketsDiffer || br.items.some(([x, y]) => itemProvablyDifferent(x, y));
   const ia = inequality(a);
   const ib = inequality(b);
-  if (ia && ib) return ia.v !== ib.v || ia.op !== ib.op || itemProvablyDifferent(ia.rhs, ib.rhs);
+  // A different letter ("t >= 2" for "x >= 2") is not a provable difference
+  // in value; the model's verdict and the teacher decide that one.
+  if (ia && ib) return ia.v === ib.v && (ia.op !== ib.op || itemProvablyDifferent(ia.rhs, ib.rhs));
   return provablyDifferentSingle(a, b);
 }
 

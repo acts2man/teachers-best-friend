@@ -945,6 +945,9 @@ export function finalizeAnalysis(
         name: hit?.name ?? "",
         confidence: hit?.confidence ?? 0,
         ...(hit?.box ? { box: hit.box } : {}),
+        // Skipped by the model: unknown, not "no name on the page". The class
+        // scan must not join it to the student before it (#125 review).
+        ...(hit ? {} : { skipped: true }),
       };
     });
   }

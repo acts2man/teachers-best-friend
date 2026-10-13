@@ -53,7 +53,7 @@ import {
   absorbPartsReask,
   groupPagesByCapture,
   groupPagesByName,
-  matchRosterStudent,
+  rosterMatchCount,
   partsShortfall,
   planPartsReask,
   settleShortParts,
@@ -84,7 +84,7 @@ type Job = { providerId: string; model: string; effort: string };
 type Usage = { costUsd: number; model: string; effort: string };
 
 export type RunState =
-  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[] } | null)[]; cursor: number; job: Job | null }
+  | { stage: "names"; slices: NameSlice[]; results: ({ pages?: PageName[]; failed?: boolean } | null)[]; cursor: number; job: Job | null }
   | {
       stage: "grade";
       batches: ScanBatch[];
@@ -332,9 +332,17 @@ export async function stepCase(
     const names = e as ExpectedNames;
     if (s.cursor < s.slices.length) {
       const slice = s.slices[s.cursor];
-      const out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
+      let out: Record<string, unknown> | null;
+      try {
+        out = await advanceJob(svc, c, key, s.job, params("name_strip", e.assessment, slice.map((x) => x.id)), slice.map((x) => x.id), usage, (j) => (s.job = j));
+      } catch {
+        // As in the class scan: a failed name read leaves its pages unread
+        // (their own groups, for the teacher), it does not stop the case.
+        s.job = null;
+        out = { failed: true };
+      }
       if (out) {
-        s.results[s.cursor] = out as { pages?: PageName[] };
+        s.results[s.cursor] = out as { pages?: PageName[]; failed?: boolean };
         s.cursor++;
       }
       return { state: s, result: { status: "running", progress: `Reading names: request ${Math.min(s.cursor + 1, s.slices.length)} of ${s.slices.length}` } };
@@ -346,10 +354,7 @@ export async function stepCase(
     const roster: Student[] = names.roster.map((r) => ({ id: r.id, classId: e.assessment.classId, name: r.name, color: "#000", evidence: [], notes: "" }));
     const groups = declared
       ? groupPagesByCapture(names.piles.map((p) => p.pages.length))
-      : groupPagesByName(read, (name) => {
-          const m = matchRosterStudent(name, roster);
-          return !!(m.student || m.candidates?.length);
-        });
+      : groupPagesByName(read, (name) => rosterMatchCount(name, roster));
     const resolved = resolveScannedGroups(groups, read, [], pages, roster, strips);
     const score = scoreNames(names.piles, pilesAsResolved(names.piles, groups, resolved));
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Names scored", metrics: { names: score } } };

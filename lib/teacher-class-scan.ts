@@ -29,9 +29,11 @@ export type PageName = {
   name: string;
   confidence: number;
   box?: NameBox | null;
-  /** The name read for this page FAILED (a timeout, a rate limit) -- unknown,
-   * which is not the same as a page with no name on it. */
+  /** The name read for this page FAILED (a timeout, a rate limit) or the model
+   * SKIPPED it -- unknown, which is not the same as a page with no name on it. */
   failed?: boolean;
+  /** Set by the server on a page the model left out of its answer. */
+  skipped?: boolean;
 };
 
 /** Name areas per name-reading request. The name pass returns a few tokens per
@@ -136,12 +138,20 @@ export function mergeNameReads(
 ): PageName[] {
   const found = new Map<number, Omit<PageName, "page">>();
   slices.forEach((slice, i) => {
-    if (results[i]?.failed)
-      for (const source of slice) found.set(source.page, { name: "", confidence: 0, failed: true });
+    // Every page this request was asked about starts as unread; an answer for
+    // it replaces that. A failed request, or one that left a page out, leaves
+    // the page unread (failed) rather than "no name" (#125 review).
+    for (const source of slice) found.set(source.page, { name: "", confidence: 0, failed: true });
+    if (results[i]?.failed) return;
     for (const r of results[i]?.pages ?? []) {
       const source = slice[r.page];
       if (source)
-        found.set(source.page, { name: r.name, confidence: r.confidence, box: r.box ?? null });
+        found.set(
+          source.page,
+          r.skipped
+            ? { name: "", confidence: 0, failed: true }
+            : { name: r.name, confidence: r.confidence, box: r.box ?? null },
+        );
     }
   });
   return Array.from({ length: pageCount }, (_, page) => {
@@ -178,7 +188,9 @@ export type ScannedGroup = {
  */
 export function groupPagesByName(
   pages: PageName[],
-  onRoster?: (name: string) => boolean,
+  /** How many students on the roster this name could be (0, 1, or more for a
+   * shared first name). Without it nothing is taken for a motto. */
+  rosterMatches?: (name: string) => number,
 ): number[][] {
   // The rule for every choice below: a page never joins another student's
   // group on a guess. Where the app cannot tell, the page is left as its own
@@ -186,15 +198,20 @@ export function groupPagesByName(
   // than graded silently as someone else's (#125 review, 13 Oct 2026).
   const key = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
   const keys = pages.map((p) => (p.failed ? "" : key(p.name)));
-  const headers = runningHeaders(keys, onRoster);
+  const failedAt = new Set(pages.flatMap((p, i) => (p.failed ? [i] : [])));
+  const headers = runningHeaders(keys, failedAt, rosterMatches);
   const groups: number[][] = [];
   let current = "";
   pages.forEach((page, i) => {
     const k = headers.has(keys[i]) ? "" : keys[i];
+    // A name that fits more than one student on the roster (two Marias) is
+    // never taken as "the same student as the page before": Maria, Maria
+    // could be two children, so each starts a group and the teacher picks.
+    const ambiguous = !!k && !!rosterMatches && rosterMatches(k) > 1;
     // A failed read is unknown, not blank: it never continues the student
     // before it. It starts an unnamed group, and the pages after it with no
     // name follow it, as a student's continuation sheets do.
-    const starts = page.failed || (!!k && k !== current) || !groups.length;
+    const starts = page.failed || (!!k && (k !== current || ambiguous)) || !groups.length;
     if (starts) groups.push([page.page]);
     else groups[groups.length - 1].push(page.page);
     if (page.failed) current = "\u0000failed" + i;
@@ -213,24 +230,37 @@ export function groupPagesByName(
  *   - it is not a student on the roster (a recurring roster name is a real
  *     student: fronts then backs, a re-scan, two students sharing a first
  *     name), and the roster is known -- without one, nothing is a header;
+ *   - no appearance is followed by a page with no name (that is a student's
+ *     first page and its continuation sheet, not a printed line);
  *   - it appears on two or more pages, never two in a row;
  *   - before its first appearance and between each pair of appearances there
  *     is exactly one other name, and those names are all DIFFERENT -- one per
  *     student, as a motto on each student's paper produces. A real student
  *     missing from the roster, scanned fronts then backs, repeats the same
  *     neighbours instead (Avery, Newkid, Avery, Newkid), so it is not taken.
- * Left over, stated in the PR: an unrostered student whose two pages were
- * shuffled apart with exactly one different student before each could still
- * pass; that needs a roster gap AND a shuffled pile at once.
+ * Left over, stated in the PR: an unrostered student with a name on EVERY page
+ * whose pages were shuffled apart with exactly one different student before
+ * each could still pass; that needs a roster gap, a name on every page and a
+ * shuffled pile at once.
  */
-function runningHeaders(keys: string[], onRoster?: (name: string) => boolean): Set<string> {
+function runningHeaders(
+  keys: string[],
+  failedAt: Set<number>,
+  rosterMatches?: (name: string) => number,
+): Set<string> {
   const out = new Set<string>();
-  if (!onRoster) return out;
+  if (!rosterMatches) return out;
   const at = new Map<string, number[]>();
   keys.forEach((k, i) => k && at.set(k, [...(at.get(k) ?? []), i]));
   for (const [k, idx] of at) {
-    if (idx.length < 2 || onRoster(k)) continue;
+    if (idx.length < 2 || rosterMatches(k) > 0) continue;
     if (idx.some((v, j) => j > 0 && v === idx[j - 1] + 1)) continue;
+    // A name followed by a page with NO name is acting as a student's first
+    // page -- that page is their continuation sheet. A printed motto is not
+    // followed that way. This is what keeps a re-scanned student who is not
+    // on the roster (Zed,_,Ana,_,Ben,_,Ana) from being taken for a motto
+    // (#125 review). An unread (failed) page does not count either way.
+    if (idx.some((v) => v + 1 < keys.length && keys[v + 1] === "" && !failedAt.has(v + 1))) continue;
     const runs: string[] = [];
     let ok = true;
     for (let j = 0; j < idx.length && ok; j++) {
@@ -567,6 +597,13 @@ export type RosterMatch = {
   score?: number;
 };
 
+/** How many students on this roster a read name could be: 0 (not on it), 1,
+ * or more (a first name two students share). */
+export function rosterMatchCount(name: string, students: Student[]): number {
+  const m = matchRosterStudent(name, students);
+  return m.student ? 1 : (m.candidates?.length ?? 0);
+}
+
 export function matchRosterStudent(
   name: string,
   students: Student[],
@@ -833,6 +870,36 @@ export type ConfirmedGroup = {
  * the scanned pages. Pure — the caller is responsible for persisting the
  * returned workspace slice.
  */
+/**
+ * Two groups of one scan matched to the same student, question by question:
+ * an answer one group read wins over a blank or missing one from the other;
+ * two DIFFERENT answers read for the same question go to the teacher as
+ * Unsure, never silently one or the other.
+ */
+export function mergeSplitGroups(first: StudentResponse[], second: StudentResponse[]): StudentResponse[] {
+  const byQuestion = new Map(second.map((r) => [r.questionId, r]));
+  const read = (r?: StudentResponse) => (r?.finalAnswer?.trim() || r?.answer.trim() || "");
+  const merged = first.map((a) => {
+    const b = byQuestion.get(a.questionId);
+    byQuestion.delete(a.questionId);
+    if (!b) return a;
+    const ra = read(a);
+    const rb = read(b);
+    if (!rb) return a;
+    if (!ra) return b;
+    if (ra === rb) return a.confidence >= b.confidence ? a : b;
+    return {
+      ...a,
+      correct: false,
+      match: undefined,
+      confidence: 0,
+      verified: false,
+      misconception: "Two pages of this student were read with different answers (" + ra + " / " + rb + "). Check both pages.",
+    };
+  });
+  return [...merged, ...byQuestion.values()];
+}
+
 export function applyScannedGroups(
   a: Assessment,
   students: Student[],
@@ -882,12 +949,18 @@ export function applyScannedGroups(
     // the same test unless it actually answers the question, so keep what an
     // earlier pass found where this one saw nothing.
     scanned.push(studentId);
+    const incoming = normalizeRecognizedResponses(a, studentId, group.responses);
+    const earlier = responsesByStudent.get(studentId);
     responsesByStudent.set(
       studentId,
-      mergeStudentResponses(
-        a.responses.filter((r) => r.studentId === studentId),
-        normalizeRecognizedResponses(a, studentId, group.responses),
-      ),
+      earlier
+        ? // A second group of THIS scan for the same student -- fronts then
+          // backs, a re-scanned page, an unread page matched by the teacher.
+          // Merged with the first group, not with what was saved before the
+          // scan: the last group used to win, so a correct front-page answer
+          // became a blank from the back page (#125 review).
+          mergeSplitGroups(earlier, incoming)
+        : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming),
     );
     studentUploadIds[studentId] = [
       ...new Set([

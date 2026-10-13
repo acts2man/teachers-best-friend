@@ -121,3 +121,28 @@ test("1e. a mixed number with a two-digit whole part is read whole", () => {
   assert.equal(compareAnswers("-12\\frac{1}{2}", "-12.5"), "same");
   assert.equal(compareAnswers("2\\frac{1}{2}", "5/2"), "same");
 });
+
+// ---- #125 round-2 review ----------------------------------------------------
+
+test("equal answers are never 'provably different' (a false one sends a correct student to Unsure)", () => {
+  for (const [x, y] of [
+    ["x < -2 or x > 3", "x > 3 or x < -2"],
+    ["[2, +∞)", "[2, ∞)"],
+    ["(-oo, 2)", "(-∞, 2)"],
+    ["(-\\infty, 2)", "(-inf, 2)"],
+    ["t ≥ 2", "x ≥ 2"],
+  ])
+    assert.equal(provablyDifferent(x, y), false, x + " vs " + y);
+  assert.equal(compareAnswers("[2, +∞)", "[2, ∞)"), "same");
+  // ...while real differences with infinity still are.
+  assert.equal(provablyDifferent("(-∞, 2)", "(∞, 2)"), true);
+  assert.equal(provablyDifferent("[2, ∞)", "[2, 5)"), true);
+});
+
+test("LaTeX commands are read with no space after them", () => {
+  assert.equal(provablyDifferent("x\\le2", "x >= 2"), true);
+  assert.equal(compareAnswers("x\\leq2", "x <= 2"), "same");
+  assert.equal(compareAnswers("x \\leqslant 2", "x <= 2"), "same");
+  assert.equal(compareAnswers("5\\cdot2\\frac{1}{2}", "12.5"), "same");
+  assert.equal(compareAnswers("5\\cdot 2\\frac{1}{2}", "12.5"), "same");
+});

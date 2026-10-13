@@ -19,8 +19,8 @@
 -- constraint stays as the last guard, but no value the save writes can trip it,
 -- so one odd question can never fail a teacher's whole workspace save.
 --
--- Proof: supabase/tests/20261012200000_answer_parts_round_trip.sql, run by
--- hand AFTER this file, in a transaction that rolls back.
+-- Proof: supabase/checks/answer-parts-round-trip.sql, run by hand AFTER this
+-- file; it rolls itself back.
 
 set lock_timeout = '5s';
 
@@ -54,6 +54,14 @@ begin
     def := pg_get_functiondef(case fn
       when 'sync_workspace' then 'public.sync_workspace(uuid,jsonb)'::regprocedure
       else 'public.get_workspace_json(uuid)'::regprocedure end);
+    -- An earlier draft of this migration wrote answerParts without the clamp.
+    -- If a database ever got that draft, patching on top of it would add a
+    -- second value to the INSERT and break every save: stop instead.
+    if fn = 'sync_workspace'
+       and position('answerParts' in def) > 0
+       and position('nullif(least(greatest(coalesce(public.safe_int(q->>''answerParts'')' in def) = 0 then
+      raise exception 'answer_parts migration: sync_workspace already has a different answerParts patch; fix by hand';
+    end if;
     for i in 1 .. array_length(edits, 1) loop
       continue when edits[i][1] <> fn;
       if position(edits[i][3] in def) > 0 then

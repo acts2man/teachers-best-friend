@@ -31,8 +31,27 @@ export function partsRead(final: string): number {
  * with the "Answer parts" box instead. Undefined means one answer.
  */
 export function partsAfterKeyEdit(q: { answerParts?: number }, newKey: string): number | undefined {
-  if (expectedParts(q) < 2) return q.answerParts && q.answerParts > 1 ? q.answerParts : undefined;
-  return clampParts(partsRead(newKey));
+  if (expectedParts(q) < 2) return q.answerParts;
+  return clampParts(answerPartsInKey(newKey));
+}
+
+/** Words that mark a ";"-part of a key as a note for the teacher, not an
+ * answer the student gives ("x = 2; y = 3; accept equivalent forms"). */
+const NOTE = /\b(accept|accepts|accepted|because|excluded|extraneous|equivalent|note|or any|also ok|allow|ignore)\b/i;
+
+/**
+ * The answers a key lists, separated by ";", leaving out the parts that are
+ * notes: a part with a note word in it, or one of three or more words with
+ * no number, "=" or math in it ("full sentence required"). A one-word part
+ * ("B") stays an answer, so a multiple-choice "B; D" is two.
+ */
+export function answerPartsInKey(key: string): number {
+  return key
+    .split(";")
+    .map((p) => p.trim())
+    .filter((p) => p && p !== "?")
+    .filter((p) => !NOTE.test(p))
+    .filter((p) => /[\d=<>≤≥()^/+*-]/.test(p) || p.split(/\s+/).length < 3).length;
 }
 
 /** A parts count as stored: 2-20, or undefined for a single answer. Same

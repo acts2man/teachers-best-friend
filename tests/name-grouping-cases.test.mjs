@@ -22,15 +22,12 @@ function bundle(path) {
   new Function("module", "exports", r.outputFiles[0].text)(m, m.exports);
   return m.exports;
 }
-const { groupPagesByName, matchRosterStudent, mergeNameReads, mapLimit } = bundle("lib/teacher-class-scan.ts");
+const { groupPagesByName, rosterMatchCount, mergeNameReads, mapLimit } = bundle("lib/teacher-class-scan.ts");
 
 const roster = ["Avery Quinn", "Blake Rivera", "Casey Morgan", "Zed Ortiz", "Ana Silva", "Ben Okafor", "John Park", "Maria Lopez", "Maria Chen"].map(
   (name, i) => ({ id: "s" + i, classId: "c", name, color: "#000", evidence: [], notes: "" }),
 );
-const onRoster = (name) => {
-  const m = matchRosterStudent(name, roster);
-  return !!(m.student || m.candidates?.length);
-};
+const onRoster = (name) => rosterMatchCount(name, roster);
 
 /** names: what the name pass read on each page ("" = nothing, null = the read
  * FAILED). owners: whose page it really is. */
@@ -38,7 +35,7 @@ function run(names, owners, opts = {}) {
   const pages = names.map((name, page) =>
     name === null ? { page, name: "", confidence: 0, failed: true } : { page, name, confidence: name ? 95 : 0 },
   );
-  const groups = groupPagesByName(pages, opts.noRoster ? undefined : onRoster);
+  const groups = groupPagesByName(pages, opts.noRoster ? undefined : opts.roster ? (n) => rosterMatchCount(n, opts.roster) : onRoster);
   const mixed = groups.filter((g) => new Set(g.map((p) => owners[p])).size > 1);
   return { groups, mixed };
 }
@@ -100,4 +97,69 @@ test("1b. the failure is carried from the request to the page: mapLimit's fallba
   assert.equal(names[1].failed, true);
   assert.equal(names[0].failed, undefined);
   assert.deepEqual(groupPagesByName(names, onRoster), [[0], [1], [2]]);
+});
+
+// ---- #125 round-2 review -------------------------------------------------
+
+test("re-scan of a student NOT on the roster (Zed,_,Ana,_,Ben,_,Ana) is not taken for a motto", () => {
+  const partial = roster.filter((s) => !s.name.startsWith("Ana"));
+  const r = run(["Zed", "", "Ana", "", "Ben", "", "Ana"], ["Z", "Z", "A", "A", "B", "B", "A"], { roster: partial });
+  noMixing(r, "unrostered re-scan");
+  const empty = run(["Zed", "", "Ana", "", "Ben", "", "Ana"], ["Z", "Z", "A", "A", "B", "B", "A"], { roster: [] });
+  noMixing(empty, "empty roster");
+});
+
+test("the motto still stays with the student before it on an empty roster", () => {
+  const r = run(["Ana", "Hope Always", "Ben", "Hope Always"], ["A", "A", "B", "B"], { roster: [] });
+  noMixing(r, "motto, empty roster");
+});
+
+test("two students sharing a first name, scanned one after the other (Maria,_,Maria,_), are not merged", () => {
+  const r = run(["Maria", "", "Maria", ""], ["M1", "M1", "M2", "M2"]);
+  noMixing(r, "adjacent namesakes");
+  assert.deepEqual(r.groups, [[0, 1], [2, 3]]);
+});
+
+test("a page the model SKIPPED is unread, not blank: it is never joined to the student before it", () => {
+  const slices = [[{ id: "n0", page: 0 }, { id: "n1", page: 1 }, { id: "n2", page: 2 }]];
+  // The server marks a page it had to fill in as skipped.
+  const names = mergeNameReads(3, slices, [{ pages: [
+    { page: 0, name: "Ana", confidence: 95 },
+    { page: 1, name: "", confidence: 0, skipped: true },
+    { page: 2, name: "Ben", confidence: 95 },
+  ] }]);
+  assert.equal(names[1].failed, true);
+  assert.deepEqual(groupPagesByName(names, onRoster), [[0], [1], [2]]);
+  // And a page left out of the answer entirely, client side, the same.
+  const missing = mergeNameReads(3, slices, [{ pages: [{ page: 0, name: "Ana", confidence: 95 }, { page: 2, name: "Ben", confidence: 95 }] }]);
+  assert.equal(missing[1].failed, true);
+});
+
+test("B1. two groups of one scan matched to the same student keep BOTH groups' answers", () => {
+  const { applyScannedGroups } = bundle("lib/teacher-class-scan.ts");
+  const a = {
+    id: "a", classId: "c", title: "t", subject: "Math", grade: 7, framework: "California", createdAt: "", status: "Ready", source: "ai",
+    targetStandards: [], answerKeyVerified: true, uploadIds: [], responses: [],
+    questions: [
+      { id: "q1", number: 1, text: "", passage: "", answer: "4", standard: "", secondary: "", skill: "", dok: 1, alignment: 0, confidence: 0, level: "On grade", reasoning: "", verified: true, excluded: false },
+      { id: "q2", number: 2, text: "", passage: "", answer: "9", standard: "", secondary: "", skill: "", dok: 1, alignment: 0, confidence: 0, level: "On grade", reasoning: "", verified: true, excluded: false },
+    ],
+  };
+  const student = roster[0];
+  const group = (pageUploadIds, responses) => ({ pageUploadIds, responses, studentId: student.id, name: student.name });
+  // Front page answers q1; back page answers q2 (and leaves q1 blank).
+  const front = group(["p0"], [{ questionId: "q1", answer: "4", verdict: "match", finalAnswer: "4" }, { questionId: "q2", answer: "", verdict: "blank", finalAnswer: "" }]);
+  const back = group(["p1"], [{ questionId: "q1", answer: "", verdict: "blank", finalAnswer: "" }, { questionId: "q2", answer: "9", verdict: "match", finalAnswer: "9" }]);
+  const out = applyScannedGroups(a, roster, "c", [front, back]).assessment.responses;
+  const q = (id) => out.find((r) => r.questionId === id);
+  assert.equal(out.length, 2);
+  assert.equal(q("q1").answer, "4");
+  assert.equal(q("q1").correct, true, "the front page's correct answer survives the back page");
+  assert.equal(q("q2").correct, true);
+  // Two different answers for one question from two groups: Unsure, not a pick.
+  const clash = group(["p2"], [{ questionId: "q1", answer: "7", verdict: "other", finalAnswer: "7" }, { questionId: "q2", answer: "", verdict: "blank", finalAnswer: "" }]);
+  const out2 = applyScannedGroups(a, roster, "c", [front, clash]).assessment.responses;
+  const c1 = out2.find((r) => r.questionId === "q1");
+  assert.equal(c1.correct, false);
+  assert.equal(c1.confidence, 0, "for the teacher");
 });

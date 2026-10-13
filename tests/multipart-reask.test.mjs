@@ -253,3 +253,15 @@ test("1f. answerParts follows a key edit on a multi-part question, and is never 
   const same = workflow.applyAnswerKey({ ...assessment, questions: [multi] }, { m: "x=2; y=3" });
   assert.equal(same.questions[0].answerParts, 2);
 });
+
+test("a note after ';' in an edited key is not counted as a part (#125 round-2 review)", () => {
+  const multi = q("m", 1, "x=2; y=3", 2);
+  const edited = workflow.applyAnswerKey({ ...assessment, questions: [multi] }, { m: "x = 2; y = 3; accept equivalent forms" });
+  assert.equal(edited.questions[0].answerParts, 2, "still 2: the note is not an answer");
+  const r = workflow.normalizeRecognizedResponses(edited, "s", [{ questionId: "m", answer: "x=2; y=3", verdict: "match", finalAnswer: "x=2; y=3" }])[0];
+  assert.equal(r.correct, true, "a correct 2-part answer is not sent to Unsure");
+  const { answerPartsInKey } = bundle("lib/answer-parts.ts");
+  assert.equal(answerPartsInKey("B; D"), 2, "one-word multiple-choice parts still count");
+  assert.equal(answerPartsInKey("x = 15/2; x = 5 is excluded"), 1);
+  assert.equal(answerPartsInKey("y = 4; (0, 10/3); full sentence required here"), 2);
+});
