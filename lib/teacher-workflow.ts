@@ -169,11 +169,6 @@ export function alignmentIsStrong(q: Question): boolean {
   return !(q.alignment > 0) || q.alignment >= STRONG_ALIGNMENT;
 }
 
-/**
- * "Looks good": confirms every question that has a standard in one action,
- * which is what the readiness check asks for. A question with no standard
- * cannot be confirmed -- readiness needs one -- and is left for the teacher.
- */
 /** A question without the second-choice mark. */
 function withoutSecondChoice(q: Question): Question {
   const { secondChoice: _mark, ...rest } = q;
@@ -193,6 +188,11 @@ export function confirmQuestion(q: Question): Question {
   return { ...withoutSecondChoice(q), verified: true, reasoning: withoutStandardNote(q.reasoning) };
 }
 
+/**
+ * "Looks good": confirms every question that has a standard in one action,
+ * which is what the readiness check asks for. A question with no standard
+ * cannot be confirmed -- readiness needs one -- and is left for the teacher.
+ */
 export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number; secondChoice: number } {
   let confirmed = 0;
   let missingStandard = 0;

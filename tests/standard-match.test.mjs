@@ -76,7 +76,7 @@ test("settle: first choice kept as the AI scored it; second choice marked to che
   const { questions, records } = settleStandards([q(1, "HSF-IF.C.7", ""), q(2, "F-IF.9", "F-BF.3"), q(3, "F-IF.9", "")], hs);
   assert.deepEqual([questions[0].standard, questions[0].alignment, questions[0].confidence], ["F-IF.7", 92, 95]);
   assert.equal(questions[1].standard, "F-BF.3");
-  assert.ok(questions[1].alignment <= 60, "never shown as a strong (green) fit");
+  assert.equal(questions[1].alignment, 0, "no score: the AI's 92 was for its first choice (#129 round 3)");
   assert.ok(questions[1].confidence <= 50);
   assert.ok(isSecondChoice(questions[1]));
   assert.match(questions[1].reasoning, /first choice \(F-IF\.9\) isn't in your standards list; this is its second choice/);
@@ -162,9 +162,9 @@ test("replay of the saved reads, two readings of the destroyed first choices; Ri
 
 // ---- #129 round 3 -----------------------------------------------------------
 // 2a. An unconfirmed second choice counted toward the assessment's alignment
-// average at a made-up 60%, and kept the 60 once confirmed. On Ricky's scan
-// c2e875b2 only 3 of its 10 second choices matched his own tags, so that test
-// showed about 18% alignment built on guesses.
+// average at a made-up score -- 60, or 50 where the read had none -- and kept
+// it once confirmed. On Ricky's scan c2e875b2 only 3 of its 10 second choices
+// matched his own tags; the old code showed 15% (3 x 50 / 10) built on guesses.
 // 2b. The second-choice flag was text at the start of the editable reasoning:
 // delete it, press "Looks good — confirm all", and the guess was confirmed.
 const { alignment } = bundle("lib/teacher-data.ts");
@@ -176,7 +176,7 @@ function asAssessment(read, blankAs) {
   };
 }
 
-test("2a: unconfirmed second choices are not in the alignment average (c2e875b2 showed ~18% built on guesses)", () => {
+test("2a: unconfirmed second choices are not in the alignment average (c2e875b2 showed 15% built on guesses)", () => {
   const read = fixture.reads.find((r) => r.scan === "c2e875b2");
   const a = asAssessment(read, "?rejected-by-old-filter");
   assert.equal(a.questions.filter((x) => isSecondChoice(x)).length, 10);
@@ -202,4 +202,26 @@ test("2b: the flag is its own field: deleting the note from the reasoning never 
   const out = confirmAllQuestions({ questions: edited, status: "Needs review" });
   assert.equal(out.secondChoice, 1);
   assert.equal(out.assessment.questions[1].verified, false, "still the teacher's to check");
+});
+
+test("2a review: a read the AI DID score -- the second choice still gets no score, before or after confirming", () => {
+  const { confirmQuestion } = bundle("lib/teacher-workflow.ts");
+  const settled = settleStandards([q(1, "F-IF.7", "", { alignment: 95 }), q(2, "F-IF.9", "F-BF.3", { alignment: 92 })], hs).questions
+    .map((x, i) => ({ ...x, id: "q" + i, text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false }));
+  assert.equal(settled[1].alignment, 0, "the 92 was the first choice's");
+  const a = { id: "a", title: "T", classId: "c", status: "Needs review", targetStandards: ["F-IF.7", "F-BF.3"], responses: [], questions: settled };
+  assert.equal(alignment(a), 95, "only the scored first choice counts");
+  const confirmed = { ...a, questions: [settled[0], confirmQuestion(settled[1])] };
+  assert.equal(confirmed.questions[1].alignment, 0, "confirmed: the teacher's pick, no made-up score");
+  assert.equal(alignment(confirmed), 95);
+});
+
+test("2b review: fails safe -- if the field is lost (code before the migration), the note still marks the guess", () => {
+  const { confirmAllQuestions, confirmQuestion, alignmentIsStrong } = bundle("lib/teacher-workflow.ts");
+  const settled = settleStandards([q(1, "F-IF.9", "F-BF.3")], hs).questions.map((x) => ({ ...x, id: "q0", text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false }));
+  const { secondChoice: _lost, ...dropped } = settled[0];
+  assert.ok(isSecondChoice(dropped));
+  assert.equal(alignmentIsStrong(dropped), false, "never green 'You chose it'");
+  assert.equal(confirmAllQuestions({ questions: [dropped], status: "Needs review" }).secondChoice, 1);
+  assert.equal(isSecondChoice(confirmQuestion(dropped)), false, "confirming clears it either way");
 });

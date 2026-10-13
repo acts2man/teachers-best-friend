@@ -120,11 +120,14 @@ type ReadQuestion = {
 export const SECOND_CHOICE_NOTE = "[AI's second choice — check it] ";
 export const NOT_IN_LIST_NOTE = "[Not in your standards list] ";
 
-/** The question's standard is the AI's second choice, not yet checked. Read
- * from its own field: the note in the reasoning is only there to explain it,
- * and a teacher can edit that text away (#129 round 3). */
-export function isSecondChoice(q: { secondChoice?: boolean }): boolean {
-  return q.secondChoice === true;
+/** The question's standard is the AI's second choice, not yet checked. Its
+ * own field decides: a teacher can edit the reasoning's note away and it still
+ * counts (#129 round 3). The note also counts, so the mark fails safe if the
+ * field is ever lost -- e.g. code deployed before migration 20261013130000,
+ * whose save would drop it and show the guess as "You chose it". Confirming a
+ * question clears both (confirmQuestion). */
+export function isSecondChoice(q: { secondChoice?: boolean; reasoning?: string }): boolean {
+  return q.secondChoice === true || (q.reasoning ?? "").startsWith(SECOND_CHOICE_NOTE);
 }
 
 /** `reasoning` without a note this module added: what the AI said about the
@@ -148,7 +151,8 @@ const shown = (code: string) => code.replace(/¶/g, "").trim().slice(0, 40);
  *   2. else its second choice, matched the same way -- marked as such
  *      (secondChoice): no alignment score, because the AI's score was for its
  *      first choice and inventing one put guesses in the average (#129 round
- *      3: 15% on Ricky's c2e875b2, where 3 of 10 matched his tags); confidence
+ *      3: the old code showed 15% on Ricky's c2e875b2, where 3 of 10 matched his
+ *      tags); confidence
  *      capped at 50; and a note in the reasoning saying why;
  *   3. else no standard, and the reasoning says what the AI wrote that is not
  *      in the teacher's list.

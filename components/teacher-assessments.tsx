@@ -1543,7 +1543,22 @@ export function AssessmentView() {
                 </span>
                 <p>{edit.reasoning}</p>
               </div>
-              {edit.alignment < 80 && (
+              {!edit.verified && isSecondChoice(edit) && (
+                // Said here from the field, so the reason survives the
+                // teacher editing the note out of the reasoning (#129 round 3).
+                <div className="alignment-improvement">
+                  <Lightbulb size={17} />
+                  <div>
+                    <strong>The AI&rsquo;s second choice — check it</strong>
+                    <p>
+                      The AI&rsquo;s first choice isn&rsquo;t in your standards list, so this is
+                      its runner-up. It has no alignment score: the AI scored its first choice,
+                      not this one. Keep it if it fits, or choose another.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {edit.alignment < 80 && !(!edit.verified && isSecondChoice(edit)) && (
                 <div className="alignment-improvement">
                   <Lightbulb size={17} />
                   <div>

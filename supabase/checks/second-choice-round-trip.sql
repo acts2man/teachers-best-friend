@@ -6,7 +6,8 @@
 --
 -- What it proves (CLAUDE.md, "Workspace persistence"): Question.secondChoice
 -- survives a save and a reload through sync_workspace / get_workspace_json,
--- and a value other than true is dropped instead of failing the whole save.
+-- a value other than true is dropped instead of failing the whole save, and a
+-- stored true is cleared by the next save without it (the teacher confirming).
 --
 -- Set the teacher below to an account whose workspace has an assessment with
 -- at least 3 questions -- ideally your own test account, not a pilot teacher's.
@@ -21,6 +22,7 @@ declare
   tid uuid := '00000000-0000-0000-0000-000000000000'; -- <-- set this
   ws jsonb;
   back jsonb;
+  cleared jsonb;
   ai int;
   before_counts jsonb;
   after_counts jsonb;
@@ -46,12 +48,17 @@ begin
   execute counts into before_counts using tid;
   perform public.sync_workspace(tid, ws);
   back := public.get_workspace_json(tid);
+  -- The teacher confirms q0: the next save no longer carries the mark.
+  perform public.sync_workspace(tid, jsonb_set(back, array['assessments', ai::text, 'questions', '0'],
+    (back->'assessments'->ai->'questions'->0) - 'secondChoice'));
+  cleared := public.get_workspace_json(tid);
   execute counts into after_counts using tid;
 
-  raise exception 'ROLLED_BACK expect q0=true q1=absent q2=absent and equal counts | got q0=% q1=% q2=% | counts before=% after=%',
+  raise exception 'ROLLED_BACK expect q0=true q1=absent q2=absent q0_after_confirm=absent and equal counts | got q0=% q1=% q2=% q0_after_confirm=% | counts before=% after=%',
     coalesce(back->'assessments'->ai->'questions'->0->>'secondChoice', 'absent'),
     coalesce(back->'assessments'->ai->'questions'->1->>'secondChoice', 'absent'),
     coalesce(back->'assessments'->ai->'questions'->2->>'secondChoice', 'absent'),
+    coalesce(cleared->'assessments'->ai->'questions'->0->>'secondChoice', 'absent'),
     before_counts, after_counts;
 end
 $check$;

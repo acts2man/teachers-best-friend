@@ -1,7 +1,8 @@
 // #129 round 3, in a browser at 390x844 and 1366x768.
 //
 // 2a. The AI's unchecked second-choice standard used to count toward the
-//     assessment's "Standards alignment" at a made-up 60%, and kept it once
+//     assessment's "Standards alignment" at a made-up score (60, or 50 where
+//     the read had none), and kept it once
 //     confirmed. Proven when: it is left out of the average, and confirming it
 //     gives no made-up score ("You chose it", like any standard the teacher
 //     picks).
@@ -45,8 +46,8 @@ function fixture() {
   const expected = scored.length
     ? Math.round(scored.reduce((s, q) => s + (a.targetStandards.length && !a.targetStandards.includes(q.standard) ? 0 : q.alignment), 0) / scored.length)
     : null;
-  // What it showed before the fix: the second choice in, at 60 (capped from 50
-  // when the read had no score).
+  // What it showed before the fix: the second choice in, at 50 (the old code's
+  // score for a read with none; 60 when the read had one).
   const withGuess = [...scored, { ...a.questions[1], alignment: 50 }];
   const before = Math.round(withGuess.reduce((s, q) => s + (a.targetStandards.length && !a.targetStandards.includes(q.standard) ? 0 : q.alignment), 0) / withGuess.length);
   return { w, a, expected, before };
