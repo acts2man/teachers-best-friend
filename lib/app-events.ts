@@ -30,14 +30,49 @@ export const SESSION_EVENT_CAP = 25;
 export const EVENTS_PER_POST = 10;
 
 /**
+ * Words an error message is allowed to keep: the vocabulary browsers, fetch,
+ * JSON, React and this app's own errors are written in. Anything else that is
+ * not code-shaped becomes "…" (#124 review: unquoted text such as "Student
+ * Maria Lopez not found" used to pass straight through).
+ */
+const ERROR_WORDS = new Set(
+  (
+    "a an the of to in on at for from by with without is are was were be been not no cannot can't could " +
+    "read reading properties property undefined null nan object function is not a valid invalid unexpected token end " +
+    "json input position line column parse syntax type reference range error errors exception failed failure fail " +
+    "fetch network request response timeout timed out aborted abort abortsignal load loading chunk module script " +
+    "missing found exceeded maximum call stack size memory quota storage access denied permission forbidden " +
+    "unauthorized unavailable service server client status code http https offline connection reset refused closed " +
+    "upload download file image page pages photo scan scans grading grade name names class student students " +
+    "assessment workspace save saving sync conflict revision changed another tab reload try again later " +
+    "short batch retry retries attempt still some answers may blank empty unread result results model mode kind " +
+    "stopped incomplete unparseable too many large small long minified react hydration render rendering hook hooks " +
+    "mismatch element child children key keys unique prop props state update unmounted component components " +
+    "and or but if then else when while after before during only also more less than into out up down over"
+  ).split(/\s+/),
+);
+
+/** Code, not words: identifiers, paths, numbers, status codes, constants. */
+function codeShaped(token: string): boolean {
+  return (
+    /^[A-Z][a-zA-Z]*(Error|Exception)$/.test(token) || // TypeError, DOMException
+    /^[A-Z]{2,}[A-Z0-9_]*$/.test(token) || // JSON, HTTP, ERR_NETWORK
+    /^[a-z]+[A-Z][A-Za-z0-9]*$/.test(token) || // camelCase identifiers
+    /[_.()[\]/:<>=#]/.test(token) || // a.b, fn(), /api/x, key:value
+    /^\d{1,5}$/.test(token) // statuses, positions, counts
+  );
+}
+
+/**
  * Error text with anything that could be a student's words taken out.
  *
  * An error message is code talking -- "Cannot read properties of undefined
  * (reading 'length')" -- but it can echo data: a failed JSON.parse quotes the
- * text it choked on, a validation error quotes the value. Quoted spans are the
- * usual carrier, so they go; so do email addresses and long digit runs (ids and
- * phone numbers), and the whole thing is capped. What is left identifies the
- * failure without carrying what was being processed when it happened.
+ * text it choked on, a validation error quotes the value, and an app message
+ * can name a student. So: quoted spans go, email addresses and long digit runs
+ * go, and then every remaining word that is neither error vocabulary nor
+ * code-shaped is replaced by "…". What is left says what failed, never who or
+ * what was being processed.
  */
 export function scrubEventText(text: unknown, max = 500): string {
   if (typeof text !== "string") return "";
@@ -45,9 +80,43 @@ export function scrubEventText(text: unknown, max = 500): string {
     .replace(/"[^"]{0,400}"|'[^']{0,400}'|`[^`]{0,400}`|“[^”]{0,400}”|‘[^’]{0,400}’/g, "\"…\"")
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "<email>")
     .replace(/\d{6,}/g, "<n>")
+    .split(/\s+/)
+    .map((token) => {
+      const word = token.replace(/^[,;:!?(]+|[,;:!?)]+$/g, "");
+      if (!word || word === "\"…\"" || word === "<email>" || word === "<n>") return token;
+      if (ERROR_WORDS.has(word.toLowerCase()) || codeShaped(word)) return token;
+      return "…";
+    })
+    .join(" ")
+    .replace(/…(\s+…)+/g, "…")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
+}
+
+/** detail keys that may carry a string, and the shape each must have. Any
+ * other string is dropped: a detail is small structured facts, never text. */
+const DETAIL_STRINGS: Record<string, RegExp> = {
+  mode: /^[a-z_]{1,24}$/,
+  kind: /^[a-z_]{1,24}$/,
+  effort: /^[a-z]{1,12}$/,
+  model: /^[a-z0-9][a-z0-9.\-]{0,39}$/,
+  method: /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/,
+  endpoint: /^\/[a-z0-9_\-/:]{0,120}$/i,
+};
+
+/** The detail object as stored: numbers and booleans as given, strings only
+ * under the keys above and in their shape, at most 12 entries. */
+export function scrubDetail(detail: unknown): Record<string, string | number | boolean> | null {
+  if (!detail || typeof detail !== "object") return null;
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(detail as Record<string, unknown>).slice(0, 12)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,29}$/.test(k)) continue;
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "boolean") out[k] = v;
+    else if (typeof v === "string" && DETAIL_STRINGS[k]?.test(v)) out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /**
@@ -150,6 +219,8 @@ export const clientEventSchema = z.object({
   detail: z
     .record(z.union([z.number(), z.boolean(), z.string().max(60).regex(/^[A-Za-z0-9_.:/ -]*$/)]))
     .refine((d) => Object.keys(d).length <= 12)
+    // Then narrower still: only known keys may carry a string, in their shape.
+    .transform(scrubDetail)
     .optional(),
 });
 export type ClientEvent = z.input<typeof clientEventSchema>;

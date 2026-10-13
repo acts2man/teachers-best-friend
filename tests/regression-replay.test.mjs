@@ -425,3 +425,29 @@ test("undeclared piles: a pile is credited only when the app grouped exactly its
   assert.equal(out[1].studentId, "\u0000wrong-pile");
   assert.equal(out[2].studentId, "s2");
 });
+
+test("#124 follow-up d: the old-data check reaches teacher 1,201 of 1,500 (the 1,000-row cap is not a limit)", async () => {
+  const { workspaceOwnerAt } = bundle("lib/regression/old-data.ts");
+  const owners = Array.from({ length: 1500 }, (_, i) => ({ owner_id: "t" + String(i).padStart(5, "0") }));
+  // A stand-in that behaves like PostgREST: a plain select returns at most
+  // 1,000 rows; range() and count work as documented.
+  const svc = {
+    from: () => {
+      let range = null;
+      let head = false;
+      const q = {
+        select(_c, opts) { head = !!opts?.head; return q; },
+        order() { return q; },
+        range(a, b) { range = [a, b]; return q; },
+        then(resolve) {
+          if (head) return resolve({ count: owners.length, error: null });
+          const rows = range ? owners.slice(range[0], range[1] + 1) : owners.slice(0, 1000);
+          return resolve({ data: rows, error: null });
+        },
+      };
+      return q;
+    },
+  };
+  assert.deepEqual(await workspaceOwnerAt(svc, 1200), { teacher: "t01200", total: 1500 });
+  assert.deepEqual(await workspaceOwnerAt(svc, 1500), { teacher: null, total: 1500 });
+});

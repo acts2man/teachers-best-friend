@@ -1,5 +1,6 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/service";
+import { removeTeacherFixtures } from "@/lib/regression/fixture-purge";
 import { billingEnabled } from "@/lib/billing/config";
 import { stripeClient } from "@/lib/billing/stripe";
 import {
@@ -10,7 +11,6 @@ import {
 
 /** Same bucket for both the current uploads table and the legacy one. */
 const DOCUMENT_BUCKET = "teacher-documents";
-const FIXTURE_BUCKET = "regression-fixtures";
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -77,22 +77,11 @@ export async function purgeTeacherDocuments(
   // their own private bucket and are not teacher_uploads rows. Their rows go
   // with the account by cascade; the files have to be removed here, through the
   // Storage API, before that happens.
-  const { data: fixtures, error: fixturesError } = await svc
-    .from("regression_fixtures")
-    .select("object_path")
-    .eq("teacher_id", teacherId);
-  // Before the regression migration is applied the table does not exist; that
-  // is "no fixtures", not a failed deletion.
-  if (fixturesError && !/does not exist|schema cache/i.test(fixturesError.message)) throw fixturesError;
-  const fixturePaths = (fixtures ?? []).map((r) => r.object_path as string).filter(Boolean);
-  if (fixturePaths.length) {
-    const { error } = await svc.storage.from(FIXTURE_BUCKET).remove(fixturePaths);
-    if (error && !/not found/i.test(error.message)) throw error;
-  }
+  const fixtureFiles = await removeTeacherFixtures(svc, teacherId, { revokeConsent: false });
 
   // The rows themselves are deleted by delete_teacher_account, in the same
   // transaction as everything else it removes.
-  return paths.size + fixturePaths.length;
+  return paths.size + fixtureFiles;
 }
 
 /** The real steps, wired to Supabase and Stripe. */

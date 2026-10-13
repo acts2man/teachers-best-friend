@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+
 -- PR 1 (foundation): error logging, and the private tables the in-app
 -- regression replay runs on. NOT applied by the author -- apply by hand before
 -- merging the PR that adds lib/app-events*.ts and lib/regression/*.

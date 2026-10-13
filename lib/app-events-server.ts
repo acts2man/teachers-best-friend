@@ -10,7 +10,7 @@ import "server-only";
  * the output.
  */
 import { BUILD_REF } from "@/lib/build-info";
-import { scrubEventText } from "@/lib/app-events";
+import { scrubDetail, scrubEventText } from "@/lib/app-events";
 import { createServiceClient } from "@/lib/supabase/service";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 
@@ -57,7 +57,7 @@ export async function logAiFailure(f: AiFailure) {
       message: scrubEventText(f.message ?? `${f.mode}: ${f.kind}`),
       assessment_id: f.assessmentId?.slice(0, 80) ?? null,
       scan_id: f.scanId?.slice(0, 80) ?? null,
-      detail,
+      detail: scrubDetail(detail),
     });
     if (error) console.error("ai_failure event not stored", error.code ?? "", error.message);
   } catch (error) {

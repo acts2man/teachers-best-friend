@@ -16,7 +16,7 @@ import { requireRegressionAdminApi } from "@/lib/regression/gate";
 import { planCase, stepCase, type RunState } from "@/lib/regression/runner";
 import { copyFixtures, createCases, revokeFixtures } from "@/lib/regression/fixtures";
 import { CaseRefused } from "@/lib/regression/expected";
-import { checkWorkspace } from "@/lib/regression/old-data";
+import { checkWorkspace, workspaceOwnerAt } from "@/lib/regression/old-data";
 import { CASE_KINDS, type RegressionCase } from "@/lib/regression/types";
 import { scrubEventText } from "@/lib/app-events";
 import type { Workspace } from "@/lib/teacher-types";
@@ -195,15 +195,13 @@ export async function POST(request: Request) {
     if (b.action === "revoke") return Response.json(await revokeFixtures(svc, b.assessmentId));
 
     // old-data-check: one teacher per request, in a stable order.
-    const { data: owners } = await svc.from("teacher_workspaces").select("owner_id").order("owner_id");
-    const ids = (owners ?? []).map((o) => o.owner_id as string);
-    if (b.index >= ids.length) return Response.json({ done: true, teachers: ids.length });
-    const teacher = ids[b.index];
+    const { teacher, total } = await workspaceOwnerAt(svc, b.index);
+    if (!teacher) return Response.json({ done: true, teachers: total });
     const { data: raw, error } = await svc.rpc("get_workspace_json", { p_teacher: teacher });
     const report = error
       ? { loadError: "get_workspace_json failed", assessments: [] as unknown[] }
       : checkWorkspace(raw, (w: Workspace) => normalizeWorkspace(w), anon(teacher));
-    return Response.json({ done: false, teachers: ids.length, index: b.index, teacher: anon("t")(teacher), ...report });
+    return Response.json({ done: false, teachers: total, index: b.index, teacher: anon("t")(teacher), ...report });
   } catch (e) {
     if (e instanceof CaseRefused) return Response.json({ error: e.message }, { status: 400 });
     return apiError(e);

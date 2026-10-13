@@ -32,13 +32,44 @@ const js = buildSync({
 
 const cases = ["case-k3m9q2", "case-p7x1w4", "case-a8d2n5", "case-r4t6y0", "case-z9c3v8"];
 const kinds = ["names", "answer_reading", "grouping", "answer_key", "standards"];
-const metrics = [
-  { names: { piles: 26, correct: 23, wrongConfident: 1, unassigned: 2, rightSuggestion: 2, accuracy: 0.885 } },
-  { answers: { readAccuracy: 0.912, groupAccuracy: 0.884, wronglyCorrect: 2, wronglyBlank: 0, unsure: 7, partsRead: 18, partsExpected: 24 } },
-  { answers: { readAccuracy: 0.912, groupAccuracy: 0.884, wronglyCorrect: 2, wronglyBlank: 0, unsure: 7, partsRead: 18, partsExpected: 24 } },
-  { answer_key: { items: 15, right: 14, accuracy: 0.933 } },
-  { standards: { items: 15, right: 11, accuracy: 0.733 } },
-];
+
+// The numbers shown come from the REAL scoring code run on made-up students,
+// so every field the console reads exists under its current name, and
+// "passed" is whatever the real pass rule says (#124 review: a hand-written
+// mock showed "undefined" fields and a "passed" case with 2 wrongly correct,
+// which the rule forbids).
+const scoreMod = (() => {
+  const out = buildSync({ entryPoints: [join(REPO, "lib/regression/score.ts")], bundle: true, platform: "node", format: "cjs", write: false, absWorkingDir: REPO }).outputFiles[0].text;
+  const m = { exports: {} };
+  new Function("module", "exports", out)(m, m.exports);
+  return m.exports;
+})();
+const ids = Array.from({ length: 26 }, (_, i) => "s" + i);
+const piles = ids.map((studentId) => ({ studentId, pages: ["p-" + studentId], strips: ["n-" + studentId] }));
+const namesScore = scoreMod.scoreNames(
+  piles,
+  ids.map((id, i) => (i < 24 ? { studentId: id, suggestedId: null } : { studentId: null, suggestedId: i === 24 ? id : null })),
+);
+const expected = ids.flatMap((studentId) => ["q1", "q2"].map((questionId) => ({ studentId, questionId, finalAnswer: questionId === "q1" ? "12" : "3/4", answer: "", match: 100, verified: true })));
+const response = (e, over = {}) => ({ id: e.studentId + e.questionId, studentId: e.studentId, questionId: e.questionId, answer: e.finalAnswer, finalAnswer: e.finalAnswer, correct: true, match: 100, confidence: 100, verified: false, misconception: "", ...over });
+// Reading: two answers the model was unsure of -- passes the rule.
+const readingScore = scoreMod.scoreAnswers(expected, expected.map((e, i) => response(e, i < 2 ? { correct: false, match: undefined, confidence: 0 } : {})), "answer_reading");
+// Grouping: one answer the teacher gave half credit that the replay marked
+// correct -- a wrongly-correct, which fails the rule whatever the accuracy.
+const halfCredit = expected.map((e, i) => (i === 5 ? { ...e, match: 50 } : e));
+const groupingScore = scoreMod.scoreAnswers(halfCredit, expected.map((e) => response(e)), "grouping");
+const keyScore = scoreMod.scoreKey(
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: String(i + 1) })),
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: String(i === 3 ? 99 : i + 1) })),
+);
+const standardsScore = scoreMod.scoreStandards(
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, standard: "7.RP.3" })),
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, standard: i < 9 ? "7.RP.3" : "" })),
+);
+const metrics = [{ names: namesScore }, { answers: readingScore }, { answers: groupingScore }, { answer_key: keyScore }, { standards: standardsScore }];
+const statusOf = (i) => (Object.values(metrics[i])[0].passed ? "passed" : "failed");
+const passedCount = cases.filter((_, i) => statusOf(i) === "passed").length;
+
 let steps = 0;
 
 const pass = [];
@@ -57,10 +88,10 @@ for (const [w, h] of [[390, 844], [412, 915], [1366, 768]]) {
     if (b.action === "step") {
       steps++;
       const i = cases.indexOf(b.caseCode);
-      return ok(steps % 2 ? { status: "running", progress: "Grading: batch 3 of 5 (re-ask 1)" } : { status: i % 2 ? "passed" : "failed", metrics: metrics[i], costUsd: 0.021 });
+      return ok(steps % 2 ? { status: "running", progress: "Grading: batch 3 of 5 (re-ask 1)" } : { status: statusOf(i), metrics: metrics[i], costUsd: 0.021 });
     }
     if (b.action === "finish-run")
-      return ok({ summary: { cases: 5, passed: 2, failed: 3, errors: 0, costUsd: 0.1043, perCase: cases.map((code, i) => ({ code, kind: kinds[i], status: i % 2 ? "passed" : "failed", metrics: metrics[i], costUsd: 0.021 })) } });
+      return ok({ summary: { cases: 5, passed: passedCount, failed: 5 - passedCount, errors: 0, costUsd: 0.1043, perCase: cases.map((code, i) => ({ code, kind: kinds[i], status: statusOf(i), metrics: metrics[i], costUsd: 0.021 })) } });
     return ok({});
   });
   const page = await ctx.newPage();
@@ -68,7 +99,9 @@ for (const [w, h] of [[390, 844], [412, 915], [1366, 768]]) {
   await page.addInitScript(() => { const st = window.setTimeout; window.setTimeout = (f, ms, ...a) => st(f, Math.min(ms ?? 0, 10), ...a); });
   await page.goto(BASE + "/__regression-harness");
   await page.getByRole("button", { name: "Run test cases" }).click();
-  await page.getByText(/Last run: 2\/5 passed/).waitFor({ timeout: 15000 });
+  await page.getByText(new RegExp(`Last run: ${passedCount}\\/5 passed`)).waitFor({ timeout: 15000 });
+  const text = await page.locator("body").innerText();
+  check(!/\bundefined\b|\bNaN\b/.test(text), `${w}x${h}: no "undefined" or "NaN" on the page`);
   await page.screenshot({ path: join(OUT, `regression-console-${w}x${h}.png`), fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   check(!overflow, `${w}x${h}: no sideways scroll`);

@@ -10,6 +10,7 @@ import { canonicalHosts, hostGuardEnforced } from "@/lib/canonical-host";
 export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { removeTeacherFixtures } from "@/lib/regression/fixture-purge";
 import type { Assessment, Workspace } from "@/lib/teacher-types";
 import { withAssessmentDefaults } from "@/lib/workspace-safety";
 
@@ -696,6 +697,10 @@ export async function deleteAllDocuments(ownerId: string) {
       .delete()
       .eq("owner_id", ownerId);
     if (deleteError) throw deleteError;
+    // And any copies kept as regression test fixtures, with the agreement that
+    // allowed them: "delete my data" has to mean these too, as full account
+    // deletion already did (#124 review).
+    await removeTeacherFixtures(createServiceClient(), ownerId, { revokeConsent: true });
     return;
   }
 
