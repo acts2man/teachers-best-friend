@@ -25,16 +25,29 @@ export async function removeTeacherFixtures(
   teacherId: string,
   { revokeConsent }: { revokeConsent: boolean },
 ): Promise<number> {
-  const { data: fixtures, error: fixturesError } = await svc
-    .from("regression_fixtures")
-    .select("object_path")
-    .eq("teacher_id", teacherId);
-  // Before the regression migration is applied the table does not exist; that
-  // is "no fixtures", not a failed deletion.
-  if (fixturesError && !/does not exist|schema cache/i.test(fixturesError.message)) throw fixturesError;
-  const paths = (fixtures ?? []).map((r) => r.object_path as string).filter(Boolean);
-  if (paths.length) {
-    const { error } = await svc.storage.from(FIXTURE_BUCKET).remove(paths);
+  const paths = new Set<string>();
+  // Every row, a page at a time: one select stops at 1,000 rows (#124 review).
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await svc
+      .from("regression_fixtures")
+      .select("object_path")
+      .eq("teacher_id", teacherId)
+      .order("object_path")
+      .range(from, from + PAGE - 1);
+    // Before the regression migration is applied the table does not exist;
+    // that is "no fixtures", not a failed deletion.
+    if (error && !/does not exist|schema cache/i.test(error.message)) throw error;
+    for (const r of data ?? []) if (r.object_path) paths.add(r.object_path as string);
+    if (!data || data.length < PAGE) break;
+  }
+  // And whatever is in the teacher's folder of the bucket -- a copy whose row
+  // was never written (the upload succeeded, the insert did not) is found
+  // only this way. Every fixture lives at <teacher>/<assessment>/<upload>.
+  for (const folder of await listNames(svc, teacherId))
+    for (const file of await listNames(svc, `${teacherId}/${folder}`)) paths.add(`${teacherId}/${folder}/${file}`);
+  const all = [...paths];
+  for (let i = 0; i < all.length; i += REMOVE_CHUNK) {
+    const { error } = await svc.storage.from(FIXTURE_BUCKET).remove(all.slice(i, i + REMOVE_CHUNK));
     // A file already gone is fine: the point is to end up with none.
     if (error && !/not found/i.test(error.message)) throw error;
   }
@@ -42,5 +55,23 @@ export async function removeTeacherFixtures(
     const { error } = await svc.from("regression_fixture_allowlist").delete().eq("teacher_id", teacherId);
     if (error && !/does not exist|schema cache/i.test(error.message)) throw error;
   }
-  return paths.length;
+  return all.length;
+}
+
+const PAGE = 1000;
+/** Files per Storage remove call; kept well under the API's per-call limit. */
+const REMOVE_CHUNK = 500;
+
+/** The names directly under `prefix` in the fixtures bucket, every page. */
+async function listNames(svc: ServiceClient, prefix: string): Promise<string[]> {
+  const names: string[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await svc.storage.from(FIXTURE_BUCKET).list(prefix, { limit: PAGE, offset });
+    if (error) {
+      if (/not found/i.test(error.message)) return names;
+      throw error;
+    }
+    for (const item of data ?? []) if (item.name && item.name !== ".emptyFolderPlaceholder") names.push(item.name);
+    if (!data || data.length < PAGE) return names;
+  }
 }

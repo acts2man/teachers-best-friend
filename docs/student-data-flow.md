@@ -420,7 +420,7 @@ agreement for that assessment.
 | Item | Detail |
 |---|---|
 | Who can read | The service role only (no storage policy for anyone else). Results are readable by accounts on `regression_admins`. |
-| Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases) or the teacher's account is deleted (`purgeTeacherDocuments` removes the files) |
+| Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases), the teacher presses "delete my workspace data" (`deleteAllDocuments` removes every fixture file in the teacher's folder of the bucket and withdraws every allow-list row, which cascades to fixtures and cases), or the teacher's account is deleted (`purgeTeacherDocuments` removes the files; the rows go with the account) |
 | Purge | Not touched by `purge-expired-uploads`: the copies are not `teacher_uploads` rows, and the function skips the bucket by name |
 | Sent to OpenAI | The same pages and prompts a teacher's scan sends, when an admin runs the replay |
 | Also held | `regression_cases.expected` (roster names for matching, the confirmed answers and credits, the questions and key) and `regression_run_cases.state` (what each replay read: names and answers). Same lifetime as the copies; readable by the service role and, for run results, by `regression_admins`. |

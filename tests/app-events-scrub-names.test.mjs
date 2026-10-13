@@ -14,7 +14,7 @@ const m = { exports: {} };
 new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
 const { scrubEventText, scrubDetail, clientEventSchema } = m.exports;
 
-const NAMES = ["Maria", "Lopez", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope"];
+const NAMES = ["Maria", "MARIA", "Lopez", "LOPEZ", "Avery", "Quinn", "Montgomery-Fitzgerald", "Jose", "maria", "Hope", "deShawn", "mcKenzie", "May"];
 
 test("unquoted names are removed from messages", () => {
   for (const msg of [
@@ -23,6 +23,13 @@ test("unquoted names are removed from messages", () => {
     "Montgomery-Fitzgerald page 2 failed to upload",
     "name read failed for maria",
     "Hope Always is not a student",
+    // Round-2 review: the shapes that still got through.
+    "Student not found: Maria.",
+    "No roster match for MARIA LOPEZ",
+    "student:Maria Maria_Lopez Maria/Lopez [Maria] <Maria> #Maria name=Maria",
+    "deShawn mcKenzie MariaError MariaLopezException",
+    "Could not read Maria's page in May",
+    "see https://app.example/x?student=Maria%20Lopez",
   ]) {
     const out = scrubEventText(msg);
     for (const n of NAMES) assert.ok(!out.includes(n), `"${msg}" -> "${out}" still has ${n}`);
@@ -35,6 +42,10 @@ test("the error itself stays readable", () => {
   assert.equal(scrubEventText("class_scan: short"), "class_scan: short");
   assert.equal(scrubEventText("Unexpected token < in JSON at position 0"), "Unexpected token < in JSON at position 0");
   assert.match(scrubEventText("ChunkLoadError: Loading chunk 812 failed."), /^ChunkLoadError: Loading chunk 812 failed\.$/);
+});
+
+test("an endpoint in detail is templated on the server too", () => {
+  assert.deepEqual(scrubDetail({ endpoint: "/api/students/maria-lopez-123456" }), { endpoint: "/api/students/:id" });
 });
 
 test("detail keeps numbers, booleans and fixed-shape strings only", () => {

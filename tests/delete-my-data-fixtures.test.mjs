@@ -30,12 +30,16 @@ function fakeClient(tables, log) {
   const query = (table) => {
     const filters = [];
     let op = "select";
+    let range = null;
     const q = {
       select() { op = "select"; return q; },
       delete() { op = "delete"; return q; },
       eq(col, v) { filters.push([col, v]); return q; },
+      order() { return q; },
+      range(a, b) { range = [a, b]; return q; },
       then(resolve) {
-        const rows = (tables[table] ?? []).filter((r) => filters.every(([c, v]) => r[c] === v));
+        let rows = (tables[table] ?? []).filter((r) => filters.every(([c, v]) => r[c] === v));
+        if (op === "select") rows = range ? rows.slice(range[0], range[1] + 1) : rows.slice(0, 1000);
         if (op === "delete") {
           tables[table] = (tables[table] ?? []).filter((r) => !rows.includes(r));
           log.push(`delete ${table} ${rows.length}`);
@@ -48,7 +52,21 @@ function fakeClient(tables, log) {
   };
   return {
     from: query,
-    storage: { from: (bucket) => ({ remove: async (paths) => { log.push(`remove ${bucket} ${paths.join(",")}`); return { error: null }; } }) },
+    storage: {
+      from: (bucket) => ({
+        remove: async (paths) => {
+          log.push(`remove ${bucket} ${paths.join(",")}`);
+          return { error: null };
+        },
+        // The bucket's folders: <teacher>/<assessment>/<file>.
+        list: async (prefix, { limit = 100, offset = 0 } = {}) => {
+          const names = [...new Set((tables.__files?.[bucket] ?? [])
+            .filter((p) => p.startsWith(prefix + "/"))
+            .map((p) => p.slice(prefix.length + 1).split("/")[0]))];
+          return { data: names.slice(offset, offset + limit).map((name) => ({ name })), error: null };
+        },
+      }),
+    },
   };
 }
 
@@ -74,4 +92,27 @@ test("delete my data removes the teacher's fixture copies and the consent that a
   assert.ok(log.includes("remove regression-fixtures fx/t1/1.jpg,fx/t1/2.jpg"), "fixture files removed: " + log.join(" | "));
   assert.deepEqual(tables.regression_fixture_allowlist.map((r) => r.teacher_id), ["t2"], "only this teacher's consent rows go");
   assert.ok(!log.some((l) => l.includes("fx/t2")), "another teacher's fixtures untouched");
+});
+
+test("a teacher with over 1,000 fixture rows, and a copy whose row was never written, loses them all", async () => {
+  const log = [];
+  const rows = Array.from({ length: 1203 }, (_, i) => ({ teacher_id: "t1", object_path: `t1/a${Math.floor(i / 40)}/u${i}` }));
+  const tables = {
+    teacher_uploads: [],
+    regression_fixtures: rows,
+    regression_fixture_allowlist: [{ teacher_id: "t1", assessment_legacy_id: "a0" }],
+    __files: { "regression-fixtures": [...rows.map((r) => r.object_path), "t1/a0/orphan-no-row", "t2/b/keep"] },
+  };
+  const client = fakeClient(tables, log);
+  const { deleteAllDocuments } = bundle("lib/teacher-server.ts", {
+    "@/lib/supabase/server": { createClient: async () => client, hasSupabaseConfig: () => true },
+    "@/lib/supabase/service": { createServiceClient: () => client },
+    "next/headers": { cookies: async () => ({}), headers: async () => new Map() },
+  });
+  await deleteAllDocuments("t1");
+  const removed = log.filter((l) => l.startsWith("remove regression-fixtures ")).flatMap((l) => l.slice("remove regression-fixtures ".length).split(","));
+  assert.equal(new Set(removed).size, 1204, "all 1,203 rows' files plus the orphan");
+  assert.ok(removed.includes("t1/a0/orphan-no-row"));
+  assert.ok(!removed.some((p) => p.startsWith("t2/")));
+  assert.ok(log.filter((l) => l.startsWith("remove regression-fixtures")).every((l) => l.split(",").length <= 500), "removed in chunks");
 });

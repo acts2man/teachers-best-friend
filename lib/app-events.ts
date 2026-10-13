@@ -52,15 +52,41 @@ const ERROR_WORDS = new Set(
   ).split(/\s+/),
 );
 
-/** Code, not words: identifiers, paths, numbers, status codes, constants. */
+/** Error class names a browser, fetch, React or this app actually throw. A
+ * name ending in "Error" is not enough ("MariaError" would pass). */
+const ERROR_CLASSES = new Set(
+  (
+    "Error TypeError RangeError SyntaxError ReferenceError EvalError URIError AggregateError DOMException " +
+    "AbortError TimeoutError NetworkError ChunkLoadError HttpError ZodError AiCallError QuotaExceededError " +
+    "NotAllowedError NotFoundError SecurityError InvalidStateError DataCloneError"
+  ).split(" "),
+);
+
+/** Upper-case words allowed through: acronyms, not a name in capitals. */
+const ACRONYMS = new Set("JSON HTTP HTTPS API URL PDF JPEG JPG PNG HEIC HTML CSS DOM ID OK AI CORS UTF GET POST PUT PATCH DELETE".split(" "));
+
+/** The app's own AI request modes, as its messages name them. */
+const MODES = new Set(
+  "class_scan name_strip answer_key key_check assignment passage roster rubric writing lesson reteaching responses catalog support embedding".split(" "),
+);
+
+/** Code with internal structure -- never a bare word with a stray dot. */
 function codeShaped(token: string): boolean {
   return (
-    /^[A-Z][a-zA-Z]*(Error|Exception)$/.test(token) || // TypeError, DOMException
-    /^[A-Z]{2,}[A-Z0-9_]*$/.test(token) || // JSON, HTTP, ERR_NETWORK
-    /^[a-z]+[A-Z][A-Za-z0-9]*$/.test(token) || // camelCase identifiers
-    /[_.()[\]/:<>=#]/.test(token) || // a.b, fn(), /api/x, key:value
-    /^\d{1,5}$/.test(token) // statuses, positions, counts
+    ERROR_CLASSES.has(token) ||
+    ACRONYMS.has(token) ||
+    MODES.has(token) ||
+    /^ERR_[A-Z_]+$/.test(token) || // ERR_NETWORK
+    /^[a-z_$][\w$]*(\.[a-z_$][\w$]*)+$/.test(token) || // a.b.c (lower-case code paths)
+    /^[a-z_$][\w$]*\(\)?$/.test(token) || // fn( or fn()
+    /^\d{1,5}(\.\d+)?$/.test(token) // statuses, positions, counts
   );
+}
+
+/** A URL or path in a message, reduced to its route template. */
+function pathToken(token: string): string | null {
+  if (/^https?:\/\//i.test(token) || /^\/[\w\-./:%?=&]*$/.test(token)) return routeTemplate(token) || "…";
+  return null;
 }
 
 /**
@@ -81,10 +107,21 @@ export function scrubEventText(text: unknown, max = 500): string {
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "<email>")
     .replace(/\d{6,}/g, "<n>")
     .split(/\s+/)
-    .map((token) => {
-      const word = token.replace(/^[,;:!?(]+|[,;:!?)]+$/g, "");
-      if (!word || word === "\"…\"" || word === "<email>" || word === "<n>") return token;
-      if (ERROR_WORDS.has(word.toLowerCase()) || codeShaped(word)) return token;
+    .map((token, i, all) => {
+      const path = pathToken(token);
+      if (path) return path;
+      const m = token.match(/^([,;:!?("'“‘\[<]*)(.*?)([,;:!?)."'”’\]>]*)$/);
+      const [lead, word, trail] = m ? [m[1], m[2], m[3]] : ["", token, ""];
+      if (!word || word === "…" || word === "\"…\"" || word === "<email>" || word === "<n>") return token;
+      // Vocabulary counts in lower case; a capital only where a sentence
+      // starts (the first word, after "SomeError:", or after a full stop),
+      // so "May" or "Page" as a name mid-sentence does not pass.
+      const lower = word.toLowerCase();
+      const prev = all[i - 1] ?? "";
+      const sentenceStart = i === 0 || /(Error|Exception):$/.test(prev) || /[.!?]$/.test(prev);
+      const capitalised = word === lower.charAt(0).toUpperCase() + lower.slice(1);
+      const vocab = ERROR_WORDS.has(lower) && (word === lower || (sentenceStart && capitalised));
+      if (vocab || codeShaped(word)) return lead + word + trail;
       return "…";
     })
     .join(" ")
@@ -114,7 +151,10 @@ export function scrubDetail(detail: unknown): Record<string, string | number | b
     if (!/^[a-zA-Z][a-zA-Z0-9_]{0,29}$/.test(k)) continue;
     if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
     else if (typeof v === "boolean") out[k] = v;
-    else if (typeof v === "string" && DETAIL_STRINGS[k]?.test(v)) out[k] = v;
+    else if (typeof v === "string") {
+      const value = k === "endpoint" ? routeTemplate(v) : v;
+      if (DETAIL_STRINGS[k]?.test(value)) out[k] = value;
+    }
   }
   return Object.keys(out).length ? out : null;
 }

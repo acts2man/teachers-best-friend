@@ -227,8 +227,10 @@ test("grouping is judged against the teacher's groups: a same-answer group the t
   const expected = [want("a", "q6", "27", 25), want("b", "q6", "27", 75), want("c", "q6", "27", 75), want("d", "q6", "156.52", 25)];
   const replayed = ["a", "b", "c"].map((id) => resp(id, "q6", { answer: "27", finalAnswer: "27" })).concat(resp("d", "q6", { answer: "156.52", finalAnswer: "156.52" }));
   const s = score.scoreAnswers(expected, replayed, "grouping");
-  assert.equal(s.inGroup, 1, "only the 156.52 group matches the teacher's");
-  assert.equal(s.misses.teacher_split_same_answer, 3);
+  // One student (a, at 25) was split off by the teacher: that is one miss.
+  // (Before #124's follow-up it charged all three, b and c included.)
+  assert.equal(s.inGroup, 3, "b and c sit in the group that is mostly theirs; 156.52 matches");
+  assert.equal(s.misses.teacher_split_same_answer, 1);
   assert.equal(s.readRight, 4, "every read agrees -- grouping is what differs");
 });
 
@@ -450,4 +452,29 @@ test("#124 follow-up d: the old-data check reaches teacher 1,201 of 1,500 (the 1
   };
   assert.deepEqual(await workspaceOwnerAt(svc, 1200), { teacher: "t01200", total: 1500 });
   assert.deepEqual(await workspaceOwnerAt(svc, 1500), { teacher: null, total: 1500 });
+});
+
+test("#124 follow-up: one Unsure or one half-credit student is ONE grouping miss, not the whole group", () => {
+  const ids = Array.from({ length: 26 }, (_, i) => "s" + i);
+  const expected = ids.flatMap((id) => [want(id, "q1", "12", 100), want(id, "q2", "3/4", 100)]);
+  const right = (id, q, ans) => resp(id, q, { answer: ans, finalAnswer: ans, correct: true, match: 100 });
+  // One Unsure per question.
+  const unsure = ids.flatMap((id, i) => [
+    i === 0 ? resp(id, "q1", { answer: "?", confidence: 0 }) : right(id, "q1", "12"),
+    i === 1 ? resp(id, "q2", { answer: "?", confidence: 0 }) : right(id, "q2", "3/4"),
+  ]);
+  const a = score.scoreAnswers(expected, unsure, "grouping");
+  assert.equal(a.inGroup, 50, "50 of 52 -- it was 0 of 52");
+  // The teacher gave one student half credit for the same final answer.
+  const half = expected.map((e) => (e.studentId === "s5" && e.questionId === "q1" ? { ...e, match: 50 } : e));
+  const b = score.scoreAnswers(half, ids.flatMap((id) => [right(id, "q1", "12"), right(id, "q2", "3/4")]), "grouping");
+  assert.equal(b.inGroup, 51, "51 of 52 -- it was 26 of 52");
+  assert.equal(b.misses.teacher_split_same_answer, 1);
+  // A teacher group the replay split in two still counts against the smaller part.
+  const split = score.scoreAnswers(
+    ids.slice(0, 4).map((id) => want(id, "q1", "1/2", 100)),
+    ids.slice(0, 4).map((id, i) => resp(id, "q1", { answer: i < 3 ? "1/2" : "0.5", finalAnswer: i < 3 ? "1/2" : "0.5" })),
+    "grouping",
+  );
+  assert.equal(split.inGroup, 3, "the student read as 0.5 sits in a group of their own");
 });
