@@ -11,6 +11,14 @@ queries; no names, answers or file paths were read. The database was restored on
 12 Oct to its 05:54 PT state, so anything between then and about 17:36 PT that day
 is missing from these counts. Teachers are "pilot teacher A" and "B" here.
 
+## In plain words
+
+Confirming a student's grading is supposed to delete their photos straight away.
+Today that happens only through one button that the app no longer leads you to, so
+almost all photos are deleted by the 30-day clean-up instead. And 47 photos taken on
+12 Oct, during the hours the database was later rolled back over, are outside even
+that clean-up: they need Supabase's help to remove.
+
 ## The short answer
 
 - [VERIFIED] **One button deletes photos on confirm**: "Confirm N clear answers" in the
@@ -21,17 +29,30 @@ is missing from these counts. Teachers are "pilot teacher A" and "B" here.
   No / Half / Full credit on one answer, the edit-answer sheet, and the writing
   rubric's confirm. The guided path the app now sends teachers down -- scan, match
   names, Grade by question, class analysis -- never reaches the deleting button.
-- [VERIFIED] **Most uploads are linked to no student at all** (382 of 512 live), so no
+- [VERIFIED] **Most uploads are linked to no student at all** (382 of the two pilot
+  teachers' 512 live uploads; 518 live in all, counting a test account's 6), so no
   confirm could reach them: the name-area copy of every class-scan page is uploaded
   as its own file and never recorded on the assessment, and pages from discarded or
   unsaved scans are never linked. Only the 30-day job removes those.
-- [VERIFIED] **The 30-day job works**: it runs daily at 09:00 UTC, removes the actual
-  files through the Storage API, and marks the row `purged_at`. No live row is past
-  its expiry; no purged row still has a file; no file lacks a row.
+- [VERIFIED] **The 30-day job works for every photo the database knows about**: it
+  runs daily at 09:00 UTC, deletes the actual files, and marks the record as cleaned
+  up. No live record is past its expiry; no cleaned-up record still has a file; the
+  518 files the database lists are exactly the 518 live records.
+- [VERIFIED] **It cannot reach 47 photos from 12 Oct.** The request logs show 47
+  uploads between 17:52 and 21:02 UTC (45 by pilot teacher A, 2 by B), inside the
+  hours the 12 Oct restore rolled the database back over. Their records are gone,
+  so neither the clean-up nor the app can see or delete them, and the 30-day promise
+  does not hold for them until Supabase support removes the files. The exact paths
+  were saved from the logs on 13 Oct for that request (see the orphan-photo script
+  PR).
 
 ## The one deleting path, step by step [VERIFIED]
 
-1. "Confirm N clear answers" marks that student's clear answers confirmed.
+1. "Confirm N clear answers" marks that student's clear answers confirmed. It deletes
+   anything only if that click confirms the student's LAST unconfirmed answers. Click
+   it first and then settle the flagged answers one by one (No / Half / Full credit),
+   and nothing is ever deleted; and a student whose remaining answers are all flagged
+   never sees the button at all (it shows only while there are clear answers).
 2. `releasedStudentUploads` (`lib/teacher-workflow.ts`) then checks *every* student on
    the assessment: a student's pages are released only when every active question has
    an answer and every answer is confirmed. A clean AI match that counts toward the
@@ -49,15 +70,17 @@ is missing from these counts. Teachers are "pilot teacher A" and "B" here.
 - `content/legal/how-we-use-ai.md`: "A student's scanned pages are deleted as soon as
   you confirm that student's grading ... deleted automatically 30 days after upload
   regardless."
-- `content/legal/privacy.md`, `student-data-privacy.md`, `dpa.md`: "Deleted as soon as
-  you confirm that student's grading, and automatically 30 days after upload in any
-  case."
+- `content/legal/privacy.md`: "Deleted as soon as you confirm that student's grading,
+  and automatically 30 days after upload in any case"
+- `content/legal/student-data-privacy.md` and `dpa.md`: "Deleted once the teacher
+  confirms that student's grading, and automatically 30 days after upload in any case"
 - `docs/student-data-flow.md`: "Confirming a student's grading deletes that student's
   scanned pages straight away."
 - The green bar's own text says confirming "frees up the photos"; it does not.
 
-So the 30-day promise holds; the "as soon as you confirm" promise holds only on one
-route that the app no longer steers teachers to.
+So the 30-day promise holds for every photo the database knows about (not the 47
+above); the "as soon as you confirm" promise holds only on one route that the app no
+longer steers teachers to.
 
 ## Production, in numbers (aggregate)
 
@@ -66,13 +89,17 @@ route that the app no longer steers teachers to.
 | Live uploads | 289 | 223 |
 | Linked to a student's pages | 88 | 16 |
 | ... of those, the student fully confirmed | 8 | 16 |
+| The teacher's own documents (blank test, answer key) | 23 | 3 |
 | Linked to nothing | 178 | 204 |
 | Students with pages / fully confirmed | 43 / 4 | 8 / 8 |
 
-[VERIFIED] 206 charged uploads no longer have a row, which only the app's delete path
-(or account deletion) does -- so confirm-deletion has worked at times; for teacher B,
-18 fully confirmed students' page lists are empty. [INFERRED] Some of teacher A's
-grading may have been lost in the 12 Oct restore.
+[VERIFIED] 206 pages the teachers were billed for no longer have a record. Only the
+app deletes records (the 30-day clean-up keeps them), through any of: confirming
+("Confirm N clear answers"), reading a passage or a roster photo (deleted straight
+after), deleting an assessment, removing a class, "Clear roster & work", or deleting
+the account. [INFERRED] Which of those removed these 206 cannot be told from the
+tables, so this does not show that confirm-deletion ever ran. Some of teacher A's
+grading may also have been lost in the 12 Oct restore.
 
 ## Fix options (none implemented)
 

@@ -527,8 +527,8 @@ and the key check (**$0.0023**) [VERIFIED: averages over 9 and 7 requests in
 | | What you would see | Effort |
 |---|---|---|
 | **A. Keep it as it is** | Auto on, with the button to switch to Manual. | None. |
-| **B. Auto off by default** | The camera opens in Manual: nothing is taken until you tap. The Auto button stays, and a teacher who turns it on keeps it on. | About half a day: one default, the tests that assume Auto, the "how to use" text. Teachers who already chose keep their choice; to reset everyone, a little more. |
-| **C. Remove auto capture** | Tap the shutter for every page. The page guide stays, as an aiming aid only, or goes too (C2). | About a day: the auto-snap code and its tests come out, the camera tests are reworked, the help text changes. C2 adds about half a day, and loses the "move back a little" hint that uses the same detection. |
+| **B. Auto off by default** | The camera opens in Manual: nothing is taken until you tap. The Auto button stays, and a teacher who turns it on keeps it on. | About half a day: one default and the tests that assume Auto. Teachers who already chose keep their choice; to reset everyone, a little more. |
+| **C. Remove auto capture** | Tap the shutter for every page. The page guide stays, as an aiming aid only, or goes too (C2). | About a day: the auto-snap code and its tests come out and the camera tests are reworked; the "Hold steady or tap the shutter" hint goes with it. C2 adds about half a day to remove the outline. The "too blurry -- move a little farther" check stays either way: it comes from the sharpness check, not the outline. |
 
 ### Risks
 - **Auto on (A):** a page snapped while still moving, or the same page twice when
