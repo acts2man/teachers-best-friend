@@ -246,12 +246,13 @@ function StudentWorkPhoto({ pages, alt }: { pages: string[]; alt: string }) {
  * teacher is the one held responsible for a partial-credit call, so the
  * teacher makes each one -- once per group, not 35 times.
  */
-/** Everything on the page a teacher can tap or type into. A tab panel is
- * focusable (tabindex=0) but is a whole page section, not a control. */
+/** Everything on the page a teacher can tap or type into. A tab panel and a
+ * tab list are focusable (tabindex=0) but are containers, not controls -- the
+ * tabs inside a list are buttons and counted on their own. */
 const TAPPABLE =
   "a[href], button, input:not([type=hidden]), select, textarea, summary, label[for], " +
   "[role=button], [role=link], [role=combobox], [role=checkbox], [role=radio], [role=tab], " +
-  "[tabindex]:not([tabindex='-1']):not([role=tabpanel])";
+  "[tabindex]:not([tabindex='-1']):not([role=tabpanel]):not([role=tablist])";
 const OPEN_QUESTION_EVENT = "tbf:open-question";
 // A request to open a question, for a panel that is about to mount. It only
 // lives long enough for that mount: a request nobody took (the panel never
@@ -375,7 +376,7 @@ function GradeByQuestion({
     window.addEventListener("resize", schedule);
     const observer = new MutationObserver(schedule);
     // The layout also moves without a scroll -- a photo finishing loading, a
-    // group growing -- so watch the panel's size and image loads as well
+    // group growing -- so watch the page's size and image loads as well
     // (#126 review: the bar could stay tucked over a clear strip).
     const sized = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
     const panel = document.getElementById("grade-by-question");

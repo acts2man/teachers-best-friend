@@ -55,7 +55,7 @@ function fixture() {
 const TAPPABLE =
   "a[href], button, input:not([type=hidden]), select, textarea, summary, label[for], " +
   "[role=button], [role=link], [role=combobox], [role=checkbox], [role=radio], [role=tab], " +
-  "[tabindex]:not([tabindex='-1']):not([role=tabpanel])";
+  "[tabindex]:not([tabindex='-1']):not([role=tabpanel]):not([role=tablist])";
 
 async function covered(page) {
   return page.evaluate((sel) => {
@@ -216,6 +216,29 @@ for (const [W, H] of [[360, 640], [390, 844], [412, 915]]) {
     await page.evaluate(() => document.querySelectorAll(".shift-block").forEach((b) => b.remove()));
     await page.waitForTimeout(150);
     const t2 = await truth();
+    // The same, by a style change alone -- no element added or removed, so
+    // only the page-size watcher can notice (a photo finishing loading looks
+    // like this). Review: the insert above exercises only the DOM watcher.
+    let s0 = await truth();
+    let styled = false;
+    let s1 = s0;
+    for (let round = 0; round < 6 && s1.under; round++) {
+      styled = await page.evaluate(() => {
+        const el = document.querySelector("[data-under]");
+        if (!el) return false;
+        const row = el.closest("li, .gbq-credit, .gbq-group-head, .grade-decided, label, .gbq-group") || el;
+        row.style.marginTop = (parseFloat(row.style.marginTop) || 0) + innerHeight + "px";
+        row.setAttribute("data-shifted", "");
+        return true;
+      });
+      await page.waitForTimeout(150);
+      s1 = await truth();
+    }
+    await page.evaluate(() => document.querySelectorAll("[data-shifted]").forEach((r) => { r.style.marginTop = ""; r.removeAttribute("data-shifted"); }));
+    await page.waitForTimeout(150);
+    const s2 = await truth();
+    check(s0.tucked && styled && !s1.under && !s1.tucked && s2.tucked,
+      `${W}x${H}: and when only a style moves the layout, too (cleared ${s1.tucked ? "tucked" : "showing"}/${s1.under ? "control" : "clear"}, restored ${s2.tucked ? "tucked" : "showing"})`);
     check(t0.tucked && t0.under && moved && !t1.under && !t1.tucked && t2.under && t2.tucked,
       `${W}x${H}: with no scroll, the bar comes back when the layout clears its spot and tucks again when a control returns (before ${t0.tucked ? "tucked" : "showing"}/${t0.under ? "control" : "clear"}, cleared ${t1.tucked ? "tucked" : "showing"}/${t1.under ? "control" : "clear"}, restored ${t2.tucked ? "tucked" : "showing"}/${t2.under ? "control" : "clear"})`);
   }
