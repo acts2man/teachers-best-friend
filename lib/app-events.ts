@@ -154,15 +154,27 @@ export function scrubEventText(text: unknown, max = 500): string {
     .slice(0, max);
 }
 
-/** detail keys that may carry a string, and the shape each must have. Any
- * other string is dropped: a detail is small structured facts, never text. */
-const DETAIL_STRINGS: Record<string, RegExp> = {
-  mode: /^[a-z_]{1,24}$/,
-  kind: /^[a-z_]{1,24}$/,
-  effort: /^[a-z]{1,12}$/,
-  model: /^[a-z0-9][a-z0-9.\-]{0,39}$/,
-  method: /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/,
-  endpoint: /^\/[a-z0-9_\-/:]{0,120}$/i,
+/** The values detail.mode, detail.kind and detail.effort may take: the app's
+ * own lists, nothing else (#128 round 3: any lower-case word was accepted, so
+ * detail:{kind:"maria"} was stored). DETAIL_MODES is the analyze route's mode
+ * enum; a test fails if the two drift apart. */
+export const DETAIL_MODES = new Set(
+  "assignment responses class_scan writing name_strip answer_key passage lesson catalog roster rubric key_check".split(" "),
+);
+/** AiFailureKind (lib/app-events-server.ts) and the class scan's own kinds. */
+export const DETAIL_KINDS = new Set("error timeout unparseable short incomplete empty short_parts".split(" "));
+/** pipeline_config's reasoning efforts, and the retired "minimal". */
+export const DETAIL_EFFORTS = new Set("none minimal low medium high".split(" "));
+
+/** detail keys that may carry a string, and what each must be. Any other
+ * string is dropped: a detail is small structured facts, never text. */
+const DETAIL_STRINGS: Record<string, (v: string) => boolean> = {
+  mode: (v) => DETAIL_MODES.has(v),
+  kind: (v) => DETAIL_KINDS.has(v),
+  effort: (v) => DETAIL_EFFORTS.has(v),
+  model: (v) => /^[a-z0-9][a-z0-9.\-]{0,39}$/.test(v),
+  method: (v) => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(v),
+  endpoint: (v) => /^\/[a-z0-9_\-/:]{0,120}$/i.test(v),
 };
 
 /** The detail object as stored: numbers and booleans as given, strings only
@@ -176,25 +188,75 @@ export function scrubDetail(detail: unknown): Record<string, string | number | b
     else if (typeof v === "boolean") out[k] = v;
     else if (typeof v === "string") {
       const value = k === "endpoint" ? routeTemplate(v) : v;
-      if (DETAIL_STRINGS[k]?.test(value)) out[k] = value;
+      if (DETAIL_STRINGS[k]?.(value)) out[k] = value;
     }
   }
   return Object.keys(out).length ? out : null;
 }
 
+/** A function name as code writes it: identifiers, dots, "<anonymous>",
+ * Firefox's "/<" nesting -- no spaces (a sentence is not a function name). */
+const FRAME_FN = /^(?:(?:async|new)\s+)?[\w$.<>\[\]/]{1,100}$/;
+
+/** A frame's location, made safe. Build output (bundled chunks, the server
+ * build, node_modules, node's internals) keeps its file path -- hashed file
+ * names, not data. Any other URL or path is reduced to its route template, so
+ * a page URL like /students/maria-lopez in a frame says only /students/:seg. */
+function frameLocation(loc: string): string {
+  if (/^(<anonymous>|native|index \d+)$/.test(loc)) return loc;
+  if (/^node:[\w/._-]+$/.test(loc)) return loc;
+  let path = loc;
+  try {
+    path = new URL(loc).pathname;
+  } catch {
+    path = loc.split(/[?#]/)[0];
+  }
+  const build = /\/(_next|\.next|node_modules)\//.exec(path);
+  if (build) {
+    const tail = path.slice(build.index);
+    return tail.split("/").map((seg) => (!seg || /^[\w.\-[\]()@+~]+$/.test(seg) ? seg : ":seg")).join("/").slice(0, 160);
+  }
+  return routeTemplate(path) || "…";
+}
+
 /**
- * A stack trace reduced to code locations: one "fn@file:line:col" per frame.
- * Function names and bundle paths are code, not data; the message line at the
- * top of a stack is dropped here because it is logged (scrubbed) separately.
+ * A stack trace reduced to code locations, one "fn (location:line:col)" per
+ * frame. Only lines that parse as a real frame are kept -- V8's "at fn
+ * (location:L:C)" / "at location:L:C", and Firefox/Safari's "fn@location:L:C"
+ * -- so a message or data line that merely contains "at", "@" or "12:30:45"
+ * is dropped (#128 round 3). The message line at the top is dropped too; it is
+ * logged (scrubbed) separately.
  */
 export function scrubStack(stack: unknown, max = 4000): string {
   if (typeof stack !== "string") return "";
-  const frames = stack
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => /^at\s|@|:\d+:\d+/.test(l) && !/^[A-Za-z]*Error[:\s]/.test(l))
-    .map((l) => l.replace(/^at\s+/, "").replace(/\?[^\s:)]*/g, "").slice(0, 200))
-    .slice(0, 30);
+  const frames: string[] = [];
+  for (const raw of stack.split("\n")) {
+    const l = raw.trim();
+    let fn = "";
+    let loc = "";
+    let pos = "";
+    let m: RegExpExecArray | null;
+    if ((m = /^at\s+(.+?)\s+\((.+?)(?::(\d+):(\d+))?\)$/.exec(l))) {
+      fn = m[1];
+      loc = m[2];
+      pos = m[3] ? ":" + m[3] + ":" + m[4] : "";
+      // Without line and column the location must be a non-file marker.
+      if (!pos && !/^(<anonymous>|native|index \d+)$/.test(loc)) continue;
+    } else if ((m = /^at\s+(\S+):(\d+):(\d+)$/.exec(l))) {
+      loc = m[1];
+      pos = ":" + m[2] + ":" + m[3];
+    } else if ((m = /^([^\s@]*)@(\S+):(\d+):(\d+)$/.exec(l))) {
+      fn = m[1];
+      loc = m[2];
+      pos = ":" + m[3] + ":" + m[4];
+    } else continue;
+    if (fn && !FRAME_FN.test(fn)) continue;
+    // A bare location must look like one: a URL, a path or a node/webpack id.
+    if (!/^(https?:\/\/|file:\/\/|webpack-internal:\/\/|\/|node:|<anonymous>|native|index \d)/.test(loc)) continue;
+    const where = frameLocation(loc) + pos;
+    frames.push(fn ? fn + " (" + where + ")" : where);
+    if (frames.length >= 30) break;
+  }
   return frames.join("\n").slice(0, max);
 }
 

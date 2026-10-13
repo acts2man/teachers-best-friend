@@ -76,3 +76,78 @@ test("real error text stays useful (round-3 review)", () => {
   assert.equal(scrubEventText("This classroom changed in another tab. Reload to see the latest version before saving."), "This classroom changed in another tab. Reload to see the latest version before saving.");
   assert.deepEqual(scrubDetail({ endpoint: "/api/students/maria-lopez" }), { endpoint: "/api/students/:seg" });
 });
+
+// ---- #128 round 3 -----------------------------------------------------------
+// 3a. scrubStack kept any line with "@", ":N:N" or a leading "at ". Verified
+// leaks: "Maria Lopez came at 12:30:45", "maria@school.org", and URLs inside
+// stack lines not reduced to route templates. Only real code-location frames
+// are kept now, and a URL in one is a route template unless it is build output.
+const { scrubStack, routeTemplate } = m.exports;
+
+test("3a: lines that only look like frames are dropped", () => {
+  const stack = [
+    "TypeError: x is undefined",
+    "Maria Lopez came at 12:30:45",
+    "maria@school.org",
+    "at Maria Lopez",
+    "    at the end of the day 1:2:3",
+    "Maria@school.org:1:2 extra",
+    "at Maria (Lopez)",
+  ].join("\n");
+  const out = scrubStack(stack);
+  for (const n of ["Maria", "Lopez", "maria", "school", "day"]) assert.doesNotMatch(out, new RegExp(n), out);
+});
+
+test("3a: URLs in frames are route templates; build output keeps its file names", () => {
+  const stack = [
+    "Error: boom",
+    "    at onClick (https://app.example/students/maria-lopez?name=Maria:10:5)",
+    "    at https://app.example/assessments/1a54469a-06b9-42e3-879e-bc55714ea0aa/maria:1:1",
+    "render@https://app.example/students/maria-lopez:3:4",
+    "    at commit (https://app.example/_next/static/chunks/app/assessments/page-3f9a1c.js?v=1:12:34)",
+    "    at async Promise.all (index 0)",
+    "    at Array.map (<anonymous>)",
+    "    at new Foo (webpack-internal:///./lib/foo.ts:5:6)",
+    "    at Object.<anonymous> (/var/task/.next/server/chunks/123.js:7:8)",
+    "    at node:internal/process/task_queues:95:5",
+    "Gt/<@https://app.example/_next/static/chunks/main-abc.js:1:2",
+  ].join("\n");
+  const out = scrubStack(stack);
+  assert.doesNotMatch(out, /maria|Maria|name=/, out);
+  assert.match(out, /onClick \(\/students\/:seg:10:5\)/);
+  assert.match(out, /\/assessments\/:id\/:seg:1:1/);
+  assert.match(out, /render \(\/students\/:seg:3:4\)/);
+  assert.match(out, /commit \(\/_next\/static\/chunks\/app\/assessments\/page-3f9a1c\.js:12:34\)/);
+  assert.match(out, /Array\.map \(<anonymous>\)/);
+  assert.match(out, /Object\.<anonymous> \(\/\.next\/server\/chunks\/123\.js:7:8\)/);
+  assert.match(out, /node:internal\/process\/task_queues:95:5/);
+  assert.match(out, /Gt\/<@?.*main-abc\.js:1:2|Gt\/< \(\/_next\/static\/chunks\/main-abc\.js:1:2\)/);
+  assert.equal(routeTemplate("/students/maria-lopez"), "/students/:seg");
+});
+
+// 3b. detail.kind, detail.mode and detail.effort took any lower-case word
+// (detail:{kind:"maria"} was stored). Each is now checked against a fixed list.
+test("3b: kind, mode and effort only from fixed lists", () => {
+  assert.equal(scrubDetail({ kind: "maria" }), null);
+  assert.equal(scrubDetail({ mode: "lopez" }), null);
+  assert.equal(scrubDetail({ effort: "maria" }), null);
+  assert.deepEqual(scrubDetail({ mode: "class_scan", kind: "short_parts", effort: "high", batch: 2 }), { mode: "class_scan", kind: "short_parts", effort: "high", batch: 2 });
+  for (const kind of ["error", "timeout", "unparseable", "short", "incomplete", "empty", "short_parts"]) assert.deepEqual(scrubDetail({ kind }), { kind });
+  for (const effort of ["none", "minimal", "low", "medium", "high"]) assert.deepEqual(scrubDetail({ effort }), { effort });
+});
+
+test("3b: the mode list is exactly the AI modes the analyze route accepts", async () => {
+  const { DETAIL_MODES } = m.exports;
+  const a = buildSync({ entryPoints: ["lib/analyze-shared.ts"], bundle: true, platform: "node", format: "cjs", write: false, external: ["pdfjs-dist/legacy/build/pdf.mjs"], alias: { "server-only": process.cwd() + "/tests/fixtures/empty-module.cjs" } });
+  const am = { exports: {} };
+  new Function("module", "exports", "require", a.outputFiles[0].text)(am, am.exports, require);
+  assert.deepEqual([...DETAIL_MODES].sort(), [...am.exports.analyzeInput.shape.mode.options].sort());
+});
+
+test("3b: every kind the app's own code sends is on the list", () => {
+  const { DETAIL_KINDS } = m.exports;
+  const src = ["lib/app-events-server.ts", "components/teacher-class-scan.tsx"].map((f) => require("node:fs").readFileSync(f, "utf8")).join("\n");
+  const sent = new Set([...src.matchAll(/kind: "([a-z_]+)"/g)].map((x) => x[1]));
+  const declared = /AiFailureKind = ([^;]+);/.exec(src)[1].match(/"([a-z_]+)"/g).map((x) => x.slice(1, -1));
+  for (const k of [...sent, ...declared]) assert.ok(DETAIL_KINDS.has(k), k);
+});

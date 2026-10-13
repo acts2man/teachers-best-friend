@@ -55,6 +55,7 @@ function fakeClient(tables, log) {
     storage: {
       from: (bucket) => ({
         remove: async (paths) => {
+          if (tables.__failBucket === bucket) return { error: new Error("storage unavailable") };
           log.push(`remove ${bucket} ${paths.join(",")}`);
           return { error: null };
         },
@@ -115,4 +116,32 @@ test("a teacher with over 1,000 fixture rows, and a copy whose row was never wri
   assert.ok(removed.includes("t1/a0/orphan-no-row"));
   assert.ok(!removed.some((p) => p.startsWith("t2/")));
   assert.ok(log.filter((l) => l.startsWith("remove regression-fixtures")).every((l) => l.split(",").length <= 500), "removed in chunks");
+});
+
+// #128 round 3, item c: the fixtures were purged AFTER the documents and the
+// upload rows were already deleted, so a failure there left a half-deleted
+// account -- documents gone, fixture copies of the same photos still kept.
+test("the fixture copies go first: if that fails, nothing else has been deleted yet", async () => {
+  const log = [];
+  const tables = {
+    teacher_uploads: [{ owner_id: "t1", object_path: "t1/a.jpg" }],
+    regression_fixtures: [{ teacher_id: "t1", object_path: "fx/t1/1.jpg" }],
+    regression_fixture_allowlist: [{ teacher_id: "t1", assessment_legacy_id: "a" }],
+    __failBucket: "regression-fixtures",
+  };
+  const client = fakeClient(tables, log);
+  const { deleteAllDocuments } = bundle("lib/teacher-server.ts", {
+    "@/lib/supabase/server": { createClient: async () => client, hasSupabaseConfig: () => true },
+    "@/lib/supabase/service": { createServiceClient: () => client },
+    "next/headers": { cookies: async () => ({}), headers: async () => new Map() },
+  });
+  await assert.rejects(deleteAllDocuments("t1"));
+  assert.ok(!log.some((l) => l.startsWith("remove teacher-documents")), "documents untouched: " + log.join(" | "));
+  assert.equal(tables.teacher_uploads.length, 1, "upload rows untouched");
+  // And when it works, the fixtures are the first thing removed.
+  delete tables.__failBucket;
+  log.length = 0;
+  await deleteAllDocuments("t1");
+  assert.ok(log[0].startsWith("remove regression-fixtures"), "fixtures first: " + log.join(" | "));
+  assert.ok(log.includes("remove teacher-documents t1/a.jpg"));
 });

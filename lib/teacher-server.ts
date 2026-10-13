@@ -679,6 +679,12 @@ export async function deleteDocument(ownerId: string, id: string) {
 
 export async function deleteAllDocuments(ownerId: string) {
   if (hasSupabaseConfig()) {
+    // First any copies kept as regression test fixtures, with the agreement
+    // that allowed them: "delete my data" has to mean these too, as full
+    // account deletion already did (#124 review). First, so a failure here
+    // leaves the account as it was, to be retried -- not with its documents
+    // gone and fixture copies of the same photos still kept (#128 round 3).
+    await removeTeacherFixtures(createServiceClient(), ownerId, { revokeConsent: true });
     const supabase = await createClient();
     const { data: rows, error } = await supabase
       .from("teacher_uploads")
@@ -697,10 +703,6 @@ export async function deleteAllDocuments(ownerId: string) {
       .delete()
       .eq("owner_id", ownerId);
     if (deleteError) throw deleteError;
-    // And any copies kept as regression test fixtures, with the agreement that
-    // allowed them: "delete my data" has to mean these too, as full account
-    // deletion already did (#124 review).
-    await removeTeacherFixtures(createServiceClient(), ownerId, { revokeConsent: true });
     return;
   }
 
