@@ -121,6 +121,29 @@ for (const [W, H] of [[360, 640], [390, 844], [412, 915]]) {
     if (c.hits.length) under++;
   }
   check(under === 0, `${W}x${H}: at every one of ${positions} scroll positions, no credit control is under the bar (${under} were; the bar tucked away at ${tucked})`);
+
+  // Round-2 review: the layout moving WITHOUT a scroll (a photo loading, a
+  // group growing) must also be followed. Find a position where the bar is
+  // tucked, then push the controls down so the strip clears.
+  let y0 = -1;
+  for (let y = 0; y <= total && y0 < 0; y += 20) {
+    await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(40);
+    if ((await covered(page)).tucked) y0 = y;
+  }
+  if (y0 >= 0) {
+    // Tucked: the button cannot be focused from the keyboard.
+    const focusable = await page.evaluate(() => {
+      const b = document.querySelector(".confirm-matches-bar .confirm-matches");
+      b?.focus();
+      return document.activeElement === b;
+    });
+    check(!focusable, `${W}x${H}: tucked away, the button cannot take keyboard focus`);
+    await page.evaluate(() => document.querySelectorAll("#grade-by-question .gbq-key").forEach((el) => (el.style.paddingBottom = "900px")));
+    await page.waitForTimeout(150);
+    const after = await covered(page);
+    check(!after.tucked && after.hits.length === 0, `${W}x${H}: after the layout moved with no scroll, the bar is back and covers nothing${after.tucked ? " — still tucked" : ""}`);
+  }
   await ctx.close();
 }
 await browser.close();

@@ -336,13 +336,23 @@ function GradeByQuestion({
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     const observer = new MutationObserver(schedule);
+    // The layout also moves without a scroll -- a photo finishing loading, a
+    // group growing -- so watch the panel's size and image loads as well
+    // (#126 review: the bar could stay tucked over a clear strip).
+    const sized = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
     const panel = document.getElementById("grade-by-question");
-    if (panel) observer.observe(panel, { childList: true, subtree: true });
+    if (panel) {
+      observer.observe(panel, { childList: true, subtree: true });
+      sized?.observe(panel);
+      panel.addEventListener("load", schedule, true);
+    }
     return () => {
       if (frame) cancelAnimationFrame(frame);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       observer.disconnect();
+      sized?.disconnect();
+      panel?.removeEventListener("load", schedule, true);
     };
   }, [barUp]);
 
@@ -620,7 +630,13 @@ function GradeByQuestion({
         // position:fixed fixed to IT rather than to the screen (measured: the
         // button sat 1,400-1,900px down the page).
         createPortal(
-          <div className={"confirm-matches-bar" + (barUp && barTucked ? " is-tucked" : "")} role="status" aria-hidden={(barUp && barTucked) || undefined}>
+          <div
+            className={"confirm-matches-bar" + (barUp && barTucked ? " is-tucked" : "")}
+            role="status"
+            aria-hidden={(barUp && barTucked) || undefined}
+            // Tucked away it can be neither tapped nor reached by keyboard.
+            inert={barUp && barTucked ? true : undefined}
+          >
             <Action className="confirm-matches" disabled={busy} onClick={() => confirmQuestionMatches(question)}>
               <Check size={18} /> Confirm {pendingMatches.length} answer{pendingMatches.length === 1 ? "" : "s"} that
               match the key
