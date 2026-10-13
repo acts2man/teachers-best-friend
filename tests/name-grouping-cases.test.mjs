@@ -204,4 +204,10 @@ test("split groups with different WORD answers are a clash for the teacher, not 
   }
   const [same] = mergeSplitGroups([r("1/2", 100)], [r("0.5", 100)]);
   assert.equal(same.confidence, 100, "equal values are not a clash");
+  for (const [x, y] of [["(2,5)", "[2,5]"], ["[2,5)", "(2,5]"], ["no", "on"], ["dog", "god"]]) {
+    const [m] = mergeSplitGroups([r(x, 100)], [r(y, 95)]);
+    assert.equal(m.confidence, 0, x + " / " + y + " is a clash, not the same");
+  }
+  const [sq] = mergeSplitGroups([r("sqrt(4)", 100)], [r("2", 100)]);
+  assert.equal(sq.confidence, 100);
 });

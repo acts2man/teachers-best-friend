@@ -396,10 +396,17 @@ function itemProvablyDifferent(x: string, y: string): boolean {
  * slope is negative" the same (#125 review, round 4).
  */
 export function sameReading(a: string, b: string): boolean {
+  // Brackets kept: "(2,5)" and "[2,5]" are different readings.
+  if (bare(a).replace(/["'“”‘’]/g, "") === bare(b).replace(/["'“”‘’]/g, "")) return true;
+  // Evaluated only when both are plainly math: a digit or operator, and no
+  // run of letters other than sqrt/pi -- otherwise "no" and "on" are the same
+  // product of two variables.
+  const mathy = (s: string) => /[\d+\-*/^]/.test(s) && !/[a-z]{2,}/i.test(s.replace(/sqrt|pi/gi, ""));
+  if (!mathy(a) || !mathy(b)) return false;
   const fa = canonical(a).replace(/\s+/g, "");
   const fb = canonical(b).replace(/\s+/g, "");
-  if (fa === fb) return true;
-  return sameValue(fa, fb) === true;
+  if (/[[\]{}]/.test(a + b)) return false;
+  return fa === fb || sameValue(fa, fb) === true;
 }
 
 export function compareAnswers(a: string, b: string): Verdict {
