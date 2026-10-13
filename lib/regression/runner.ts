@@ -53,6 +53,7 @@ import {
   absorbPartsReask,
   groupPagesByCapture,
   groupPagesByName,
+  matchRosterStudent,
   partsShortfall,
   planPartsReask,
   settleShortParts,
@@ -93,8 +94,10 @@ export type RunState =
       best: [number, GradedGroup][];
       graded: GradedGroup[];
       job: Job | null;
-      /** True while the one multi-part re-ask for this batch is out. */
+      /** True while a multi-part re-ask for this batch is out. */
       partsPhase?: boolean;
+      /** Multi-part re-asks still to send after the current one. */
+      partsQueue?: ScanBatch[];
     }
   | { stage: "assignment"; result: Record<string, unknown> | null; job: Job | null };
 
@@ -340,8 +343,13 @@ export async function stepCase(
     const pages = names.piles.flatMap((p) => p.pages);
     const read = mergeNameReads(pages.length, s.slices, s.results.map((r) => r ?? {}));
     const declared = names.pilesDeclared !== false;
-    const groups = declared ? groupPagesByCapture(names.piles.map((p) => p.pages.length)) : groupPagesByName(read);
     const roster: Student[] = names.roster.map((r) => ({ id: r.id, classId: e.assessment.classId, name: r.name, color: "#000", evidence: [], notes: "" }));
+    const groups = declared
+      ? groupPagesByCapture(names.piles.map((p) => p.pages.length))
+      : groupPagesByName(read, (name) => {
+          const m = matchRosterStudent(name, roster);
+          return !!(m.student || m.candidates?.length);
+        });
     const resolved = resolveScannedGroups(groups, read, [], pages, roster, strips);
     const score = scoreNames(names.piles, pilesAsResolved(names.piles, groups, resolved));
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Names scored", metrics: { names: score } } };
@@ -382,13 +390,16 @@ export async function stepCase(
         const missing = s.partsPhase ? [] : (absorbGraded(best, attemptBatch, groups), shortGroups(batch, best, questionCount));
         if (s.partsPhase) absorbPartsReask(best, attemptBatch, groups);
         const shorts = s.partsPhase ? [] : partsShortfall(a, batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g));
+        const queue = s.partsPhase ? (s.partsQueue ?? []) : shorts.length ? planPartsReask(batch, shorts) : [];
         if (missing.length && s.attempt < MAX_RETRIES) {
           s.attempt++;
           s.attemptBatch = retryBatch(batch, missing);
           s.best = [...best];
-        } else if (shorts.length) {
+        } else if (queue.length) {
+          // One re-ask per step: each set of short questions is its own request.
           s.partsPhase = true;
-          s.attemptBatch = planPartsReask(batch, shorts);
+          s.attemptBatch = queue[0];
+          s.partsQueue = queue.slice(1);
           s.best = [...best];
         } else {
           settleShortParts(best, batch.groupIndexes, a);
@@ -400,6 +411,7 @@ export async function stepCase(
           s.attempt = 0;
           s.attemptBatch = null;
           s.partsPhase = false;
+          s.partsQueue = [];
           s.best = [];
         }
       }

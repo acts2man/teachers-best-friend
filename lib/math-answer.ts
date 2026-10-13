@@ -28,8 +28,11 @@ export type Verdict = "same" | "different";
 function fromLatex(raw: string): string {
   if (!raw.includes("\\")) return raw;
   let s = raw.replace(/\\(left|right)\b/g, "");
-  // A mixed number, "2\\frac{1}{2}", is 2 + 1/2 -- not 2 times it.
-  s = s.replace(/(\d)\s*\\[dt]?frac\s*\{(\d+)\}\s*\{(\d+)\}/g, "($1+$2/$3)");
+  // A mixed number, "2\\frac{1}{2}" or "12\\frac{1}{2}", is the whole part
+  // PLUS the fraction -- not times it, and the whole part is every digit (it
+  // used to take only the last one, reading 12 1/2 as 2.5). Not after a
+  // letter, digit, "." or "^", where the number is part of something else.
+  s = s.replace(/(^|[^\w.^}])(\d+)\s*\\[dt]?frac\s*\{(\d+)\}\s*\{(\d+)\}/g, "$1($2+$3/$4)");
   for (let i = 0; i < 6; i++)
     s = s
       .replace(/\^\{([^{}]*)\}/g, "^($1)")
@@ -37,6 +40,13 @@ function fromLatex(raw: string): string {
       .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "(($1)/($2))");
   s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)");
   s = s.replace(/\\(cdot|times)\b/g, "*").replace(/\\div\b/g, "/").replace(/\\pi\b/g, "pi");
+  s = s
+    .replace(/\\(leq|le)\b/g, "<=")
+    .replace(/\\(geq|ge)\b/g, ">=")
+    .replace(/\\lt\b/g, "<")
+    .replace(/\\gt\b/g, ">")
+    .replace(/\\(neq|ne)\b/g, "!=")
+    .replace(/\\infty\b/g, "∞");
   return s.replace(/\\[,;:! ]/g, "");
 }
 
@@ -268,36 +278,112 @@ function sameValue(fa: string, fb: string): boolean | null {
  * is a single answer or the two have different numbers of parts (then the
  * whole-answer comparison below decides, as before -- a key whose second part
  * is a note, "x = 15/2; x = 5 is excluded", stays a single answer). */
+const splitParts = (s: string) => s.split(";").map((p) => p.trim()).filter(Boolean);
+const multiPart = (s: string) => splitParts(s).length > 1;
+
 function pairedParts(a: string, b: string): [string, string][] | null {
-  const split = (s: string) => s.split(";").map((p) => p.trim()).filter(Boolean);
-  const pa = split(a);
-  const pb = split(b);
+  const pa = splitParts(a);
+  const pb = splitParts(b);
   if (pa.length < 2 || pa.length !== pb.length) return null;
   return pa.map((p, i) => [p, pb[i]]);
 }
 
-/** "(0, 10/3)" -> ["0", "10/3"]: a point or pair, compared one value at a
- * time. Null for anything else, or pairs of different lengths. */
-function pairedTuple(a: string, b: string): [string, string][] | null {
-  const tuple = (s: string) => {
-    const m = s.trim().match(/^\(([^()]*)\)$/);
-    return m && m[1].includes(",") ? m[1].split(",").map((x) => x.trim()) : null;
+/**
+ * The answer as written, LaTeX unpacked and signs normalised, but with its
+ * brackets and inequality signs KEPT -- canonical() turns "[" into "(", which
+ * is right for grouping and wrong for an interval, where "[2,5]" and "(2,5)"
+ * are different answers.
+ */
+function bare(raw: string): string {
+  return fromLatex(raw)
+    .normalize("NFKC")
+    .replace(/[\u2212\u2012\u2013\u2014\u2010\uFE63\uFF0D]/g, "-")
+    .replace(/\u2264/g, "<=")
+    .replace(/\u2265/g, ">=")
+    .replace(/\binf(inity)?\b/gi, "∞")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+/** "(1/2, -3)", "[2,5)", "(-∞,2]": a pair, point or interval -- its brackets
+ * and its top-level items. Null for anything else. LaTeX is unpacked first,
+ * so "\\left(\\frac{1}{2}, -3\\right)" is a pair too (it used to be checked
+ * before, and a sign flip inside one slipped through). */
+function bracketed(raw: string): { open: string; close: string; items: string[] } | null {
+  const s = bare(raw);
+  if (s.length < 3 || !"([".includes(s[0]) || !")]".includes(s[s.length - 1])) return null;
+  const items: string[] = [];
+  let depth = 0;
+  let from = 1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      depth--;
+      // The opening bracket closes before the end: "(1)+(2)" is not a pair.
+      if (depth === 0 && i !== s.length - 1) return null;
+    } else if (c === "," && depth === 1) {
+      items.push(s.slice(from, i));
+      from = i + 1;
+    }
+  }
+  items.push(s.slice(from, -1));
+  return items.length >= 2 && items.every(Boolean) ? { open: s[0], close: s[s.length - 1], items } : null;
+}
+
+/** Both answers as pairs/intervals with the same number of items: whether
+ * their brackets differ in a way that matters, and the items to compare. */
+function pairedBrackets(a: string, b: string): { bracketsDiffer: boolean; items: [string, string][] } | null {
+  const ba = bracketed(a);
+  const bb = bracketed(b);
+  if (!ba || !bb || ba.items.length !== bb.items.length) return null;
+  // Only an interval's brackets carry meaning; "(1,3)" vs "(1,3)" as points
+  // never differ by bracket. A square bracket on either side makes it one.
+  const interval = /[[\]]/.test(ba.open + ba.close + bb.open + bb.close);
+  return {
+    bracketsDiffer: interval && (ba.open !== bb.open || ba.close !== bb.close),
+    items: ba.items.map((x, i) => [x, bb.items[i]]),
   };
-  const ta = tuple(a);
-  const tb = tuple(b);
-  if (!ta || !tb || ta.length !== tb.length) return null;
-  return ta.map((x, i) => [x, tb[i]]);
+}
+
+/** "x<=-2", "-2>=x" (flipped to the variable's side): a one-variable
+ * inequality. Null for anything else, including an equation. */
+function inequality(raw: string): { v: string; op: string; rhs: string } | null {
+  const s = bare(raw);
+  const flip: Record<string, string> = { "<": ">", ">": "<", "<=": ">=", ">=": "<=" };
+  let m = s.match(/^([a-z])(<=|>=|<|>)(.+)$/);
+  if (m) return { v: m[1], op: m[2], rhs: m[3] };
+  m = s.match(/^(.+?)(<=|>=|<|>)([a-z])$/);
+  if (m) return { v: m[3], op: flip[m[2]], rhs: m[1] };
+  return null;
+}
+
+const infinite = (x: string) => x.includes("∞");
+
+function itemSame(x: string, y: string): boolean {
+  if (infinite(x) || infinite(y)) return bare(x) === bare(y);
+  return compareSingle(x, y) === "same";
+}
+
+function itemProvablyDifferent(x: string, y: string): boolean {
+  if (infinite(x) || infinite(y)) return bare(x) !== bare(y);
+  return provablyDifferentSingle(x, y);
 }
 
 export function compareAnswers(a: string, b: string): Verdict {
   const parts = pairedParts(a, b);
   if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
+  // Both multi-part, but a different number of parts: not the same answer.
+  if (multiPart(a) && multiPart(b)) return "different";
   return compareOne(a, b);
 }
 
 function compareOne(a: string, b: string): Verdict {
-  const tuple = pairedTuple(a, b);
-  if (tuple) return tuple.every(([x, y]) => compareSingle(x, y) === "same") ? "same" : "different";
+  const br = pairedBrackets(a, b);
+  if (br) return !br.bracketsDiffer && br.items.every(([x, y]) => itemSame(x, y)) ? "same" : "different";
+  const ia = inequality(a);
+  const ib = inequality(b);
+  if (ia && ib) return ia.v === ib.v && ia.op === ib.op && itemSame(ia.rhs, ib.rhs) ? "same" : "different";
   return compareSingle(a, b);
 }
 
@@ -322,12 +408,23 @@ export function provablyDifferent(a: string, b: string): boolean {
   // not hidden behind an equal first part.
   const parts = pairedParts(a, b);
   if (parts) return parts.some(([x, y]) => provablyDifferentOne(x, y));
+  // Both multi-part with different counts: the parts they share are still
+  // compared, so "x=2; y=-3; z=1; 4" against "x=2; y=3; z=1" is caught by its
+  // sign even before the count sends it to the teacher.
+  if (multiPart(a) && multiPart(b)) {
+    const pa = splitParts(a);
+    const pb = splitParts(b);
+    return pa.slice(0, pb.length).some((x, i) => provablyDifferentOne(x, pb[i]));
+  }
   return provablyDifferentOne(a, b);
 }
 
 function provablyDifferentOne(a: string, b: string): boolean {
-  const tuple = pairedTuple(a, b);
-  if (tuple) return tuple.some(([x, y]) => provablyDifferentSingle(x, y));
+  const br = pairedBrackets(a, b);
+  if (br) return br.bracketsDiffer || br.items.some(([x, y]) => itemProvablyDifferent(x, y));
+  const ia = inequality(a);
+  const ib = inequality(b);
+  if (ia && ib) return ia.v !== ib.v || ia.op !== ib.op || itemProvablyDifferent(ia.rhs, ib.rhs);
   return provablyDifferentSingle(a, b);
 }
 

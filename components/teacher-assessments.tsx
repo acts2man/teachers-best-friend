@@ -1,4 +1,5 @@
 "use client";
+import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { uprightPage } from "@/lib/image-prep";
@@ -1481,8 +1482,25 @@ export function AssessmentView() {
                 Answer key
                 <textarea
                   value={edit.answer}
-                  onChange={(e) => setEdit({ ...edit, answer: e.target.value })}
+                  onChange={(e) =>
+                    setEdit(withParts({ ...edit, answer: e.target.value }, partsAfterKeyEdit(edit, e.target.value)))
+                  }
                 />
+              </label>
+              <label>
+                Answer parts
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  inputMode="numeric"
+                  aria-describedby="answer-parts-hint"
+                  value={edit.answerParts ?? 1}
+                  onChange={(e) => setEdit(withParts(edit, clampParts(e.target.value)))}
+                />
+                <span id="answer-parts-hint" className="cell-meta">
+                  How many separate answers this question asks for. An answer read with a different number goes to Unsure for you.
+                </span>
               </label>
               <div className="suggestion-reason">
                 <span>

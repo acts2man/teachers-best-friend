@@ -22,3 +22,32 @@ export function partsRead(final: string): number {
     .filter((p) => p && p !== "?").length;
 }
 
+
+/**
+ * The question's answerParts after the teacher edits its key (#125 review). A
+ * multi-part question follows its key: a key edited to "x=2; y=3; z=1" asks for
+ * 3. A single-answer question is NOT made multi-part by a ";" in its key -- a
+ * ";" is often a note ("x = 15/2; x = 5 is excluded") -- the teacher sets that
+ * with the "Answer parts" box instead. Undefined means one answer.
+ */
+export function partsAfterKeyEdit(q: { answerParts?: number }, newKey: string): number | undefined {
+  if (expectedParts(q) < 2) return q.answerParts && q.answerParts > 1 ? q.answerParts : undefined;
+  return clampParts(partsRead(newKey));
+}
+
+/** A parts count as stored: 2-20, or undefined for a single answer. Same
+ * bounds the database keeps (it clamps rather than rejecting the save). */
+export function clampParts(n: unknown): number | undefined {
+  const v = Math.trunc(Number(n));
+  if (!Number.isFinite(v) || v < 2) return undefined;
+  return Math.min(v, 20);
+}
+
+/** A copy of `q` with answerParts set to `n`, or without it when `n` is
+ * undefined (one answer) -- never a stored `answerParts: undefined`. */
+export function withParts<T extends { answerParts?: number }>(q: T, n: number | undefined): T {
+  const next = { ...q };
+  if (n) next.answerParts = n;
+  else delete next.answerParts;
+  return next;
+}

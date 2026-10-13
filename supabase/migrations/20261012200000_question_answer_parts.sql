@@ -12,8 +12,17 @@
 -- definition with pg_get_functiondef, replaces exactly these fragments, and
 -- refuses to continue if any fragment is not found exactly once. Run against a
 -- database whose functions have moved on, it stops with an error naming the
--- fragment instead of guessing. Proven on production in a rolled-back
--- transaction (see the PR): a question saved with answerParts = 4 reads back 4.
+-- fragment instead of guessing.
+--
+-- A bad answerParts in a saved workspace (0, 25, "abc") is CLAMPED here, not
+-- rejected: under 2 is stored as NULL (one answer), over 20 as 20. The check
+-- constraint stays as the last guard, but no value the save writes can trip it,
+-- so one odd question can never fail a teacher's whole workspace save.
+--
+-- Proof: supabase/tests/20261012200000_answer_parts_round_trip.sql, run by
+-- hand AFTER this file, in a transaction that rolls back.
+
+set lock_timeout = '5s';
 
 alter table public.assessment_questions
   add column if not exists answer_parts integer
@@ -29,7 +38,7 @@ declare
       'reasoning, verified, excluded, key_check, points, answer_parts)'],
     array['sync_workspace',
       'public.safe_numeric(q->>''points'')',
-      'public.safe_numeric(q->>''points''), public.safe_int(q->>''answerParts'')'],
+      'public.safe_numeric(q->>''points''), nullif(least(greatest(coalesce(public.safe_int(q->>''answerParts''), 1), 1), 20), 1)'],
     array['sync_workspace',
       'key_check = excluded.key_check, points = excluded.points,',
       'key_check = excluded.key_check, points = excluded.points, answer_parts = excluded.answer_parts,'],

@@ -190,3 +190,66 @@ test("a long multi-part final answer is cut, never a reason to reject the batch"
   const out = shared.finalizeAnalysis(p, { groups: [{ group: 0, responses: [{ questionId: "q2", answer: long, verdict: "other", finalAnswer: long, region: { page: 0, x: 0, y: 0, width: 0, height: 0 }, errorType: "" }] }] }, w, []);
   assert.ok(out.groups[0].responses[0].finalAnswer.length <= 600);
 });
+
+// ---- #125 review, items 1f and 1g -----------------------------------------
+
+test("1g. each student is re-asked only for the questions THEY were short on, and only those pairs are taken back", () => {
+  const three = { ...assessment, questions: [q("q1", 1, "a; b", 2), q("q2", 2, "c; d", 2), q("q3", 3, "e; f", 2)] };
+  const b = scan.planScanBatches([[0], [1], [2]], ["p0", "p1", "p2"], 3)[0];
+  const shorts = [
+    { group: 0, questionId: "q1", expected: 2, got: 1 },
+    { group: 1, questionId: "q2", expected: 2, got: 1 },
+    { group: 2, questionId: "q1", expected: 2, got: 1 },
+  ];
+  const reasks = scan.planPartsReask(b, shorts);
+  // Students 0 and 2 share {q1}; student 1 is asked q2 alone.
+  assert.equal(reasks.length, 2);
+  const forQ1 = reasks.find((r) => r.onlyQuestionIds.join() === "q1");
+  const forQ2 = reasks.find((r) => r.onlyQuestionIds.join() === "q2");
+  assert.deepEqual(forQ1.groupIndexes, [0, 2]);
+  assert.deepEqual(forQ2.groupIndexes, [1]);
+  void three;
+
+  // The q1 request answers q1 for both students AND (unasked) q2 for student 0:
+  // only the asked pairs are absorbed.
+  const best = new Map([
+    [0, { group: 0, responses: [answer("q1", "a; ?"), answer("q2", "c; ?", "unsure")] }],
+    [2, { group: 2, responses: [answer("q1", "a; ?")] }],
+  ]);
+  scan.absorbPartsReask(best, forQ1, [
+    { group: 0, responses: [answer("q1", "a; b"), answer("q2", "c; d")] },
+    { group: 1, responses: [answer("q1", "a; b")] },
+  ]);
+  assert.equal(best.get(0).responses.find((r) => r.questionId === "q1").finalAnswer, "a; b", "asked pair taken");
+  assert.equal(best.get(0).responses.find((r) => r.questionId === "q2").finalAnswer, "c; ?", "unasked pair left alone");
+  assert.equal(best.get(2).responses.find((r) => r.questionId === "q1").finalAnswer, "a; b");
+});
+
+test("1g. a re-ask never turns a short (Unsure-bound) answer into a blank", () => {
+  const b = scan.planScanBatches([[0]], ["p0"], 1)[0];
+  const [reask] = scan.planPartsReask(b, [{ group: 0, questionId: "q2", expected: 3, got: 1 }]);
+  // Before: no answer at all for q2 in this student's result (left out).
+  const best = new Map([[0, { group: 0, responses: [answer("q1", "2", "match")] }]]);
+  scan.absorbPartsReask(best, reask, [{ group: 0, responses: [{ questionId: "q2", answer: "", verdict: "blank", finalAnswer: "" }] }]);
+  assert.equal(best.get(0).responses.find((r) => r.questionId === "q2"), undefined, "the blank was not taken");
+  // And with a short answer present, a blank does not replace it either.
+  const best2 = new Map([[0, { group: 0, responses: [answer("q2", "Shift right; ?; ?")] }]]);
+  scan.absorbPartsReask(best2, reask, [{ group: 0, responses: [{ questionId: "q2", answer: "", verdict: "blank", finalAnswer: "" }] }]);
+  assert.equal(best2.get(0).responses[0].verdict, "other");
+  // What is still short then goes to Unsure, never blank.
+  scan.settleShortParts(best2, [0], assessment);
+  assert.equal(best2.get(0).responses[0].verdict, "unsure");
+});
+
+test("1f. answerParts follows a key edit on a multi-part question, and is never inferred on a single one", () => {
+  const multi = q("m", 1, "x=2; y=3", 2);
+  const single = q("s", 2, "4");
+  const edited = workflow.applyAnswerKey({ ...assessment, questions: [multi, single] }, { m: "x=2; y=3; z=1", s: "15/2; x = 5 is excluded" });
+  assert.equal(edited.questions[0].answerParts, 3, "follows the key to 3 parts");
+  assert.equal(edited.questions[1].answerParts, undefined, "a note after ';' does not make a question multi-part");
+  const back = workflow.applyAnswerKey(edited, { m: "x=2" });
+  assert.equal(back.questions[0].answerParts, undefined, "edited down to one answer: no longer multi-part");
+  // An unchanged key leaves the count alone.
+  const same = workflow.applyAnswerKey({ ...assessment, questions: [multi] }, { m: "x=2; y=3" });
+  assert.equal(same.questions[0].answerParts, 2);
+});

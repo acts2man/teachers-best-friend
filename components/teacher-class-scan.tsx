@@ -43,6 +43,7 @@ import {
   gradeInBatches,
   keepOtherClassStudents,
   mapLimit,
+  matchRosterStudent,
   mergeNameReads,
   NAME_CONCURRENCY,
   planNameBatches,
@@ -637,7 +638,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         pages.map((p) => p.stripId),
         explicit ? groupPagesByCapture(explicit) : null,
       );
-      const reads = await mapLimit(slices, NAME_CONCURRENCY, async (slice) => {
+      const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
         const read = await analyzeRequest({
           mode: "name_strip",
           uploadIds: slice.map((s) => s.id),
@@ -652,7 +653,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         // teacher picks the student on the matching screen -- rather than
         // stopping the whole class. All of them failing still stops it.
         logAppEvent("ai_failure", { message: "name read failed: " + ((error as Error)?.message ?? ""), assessmentId: a.id, detail: { mode: "name_strip", kind: "error" } });
-        return {};
+        // Marked failed, not read as "no name": a page with no name joins the
+        // student before it, and a failed read must never do that.
+        return { failed: true };
       });
       // Each request numbered its answers within the strips it was shown; map
       // them back to the page each strip was cut from.
@@ -660,7 +663,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
-      const pageGroups = explicit ? groupPagesByCapture(explicit) : groupPagesByName(names);
+      const pageGroups = explicit
+        ? groupPagesByCapture(explicit)
+        : groupPagesByName(names, (name) => {
+            const m = matchRosterStudent(name, students);
+            return !!(m.student || m.candidates?.length);
+          });
+      const failedReads = names.filter((n) => n.failed).length;
+      if (failedReads)
+        toast.warning(
+          failedReads +
+            (failedReads === 1 ? " page's name" : " pages' names") +
+            " could not be read (the connection dropped). Those pages are left unmatched — pick the student for each on the next screen.",
+        );
       // The pages are grouped now, so a failure from here on releases only the
       // groups that never graded rather than the whole reserved stack.
       runGroups = pageGroups;

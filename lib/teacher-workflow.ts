@@ -8,7 +8,7 @@ import type {
   StudentResponse,
 } from "./teacher-types";
 import { provablyDifferent } from "./math-answer";
-import { expectedParts, partsRead } from "./answer-parts";
+import { expectedParts, partsAfterKeyEdit, partsRead, withParts } from "./answer-parts";
 import {
   cognitiveReportLines,
   costaBreakdown,
@@ -401,9 +401,14 @@ export function applyAnswerKey(
   return {
     ...a,
     answerKeyVerified: changed.size ? false : a.answerKeyVerified,
-    questions: a.questions.map((q) =>
-      answers[q.id] === undefined ? q : { ...q, answer: answers[q.id].trim() },
-    ),
+    questions: a.questions.map((q) => {
+      if (answers[q.id] === undefined) return q;
+      const answer = answers[q.id].trim();
+      // A multi-part question's part count follows its key, so editing the
+      // key can never leave it asking for parts the key no longer has (which
+      // sent every student on it to Unsure for good).
+      return withParts({ ...q, answer }, answer === q.answer.trim() ? q.answerParts : partsAfterKeyEdit(q, answer));
+    }),
     responses: a.responses.map((r) =>
       changed.has(r.questionId)
         ? { ...r, verified: false, confidence: 0, match: 0, errorType: "" }
@@ -469,10 +474,12 @@ export function normalizeRecognizedResponses(
     // left out, reported twice, or was not sure about is UNSURE -- for the
     // teacher, not scored zero. (A model skipping questions in a long batch is
     // what put Michael's students with work in a "blank" group on 8 Oct.)
-    // A multi-part question read with fewer parts than it asks for (a "?" is a
-    // part not found) is for the teacher, whatever the verdict said.
+    // A multi-part question read with a different number of parts than it
+    // asks for -- fewer (a "?" is a part not found) or MORE (an extra part
+    // would hide a wrong one behind the comparison) -- is for the teacher,
+    // whatever the verdict said.
     const partsShort =
-      !!response && response.verdict !== "blank" && expectedParts(q) > 1 && partsRead(final) < expectedParts(q);
+      !!response && response.verdict !== "blank" && expectedParts(q) > 1 && partsRead(final) !== expectedParts(q);
     const unsure = !response || response.verdict === "unsure" || contradictsKey || partsShort;
     const isMatch = response?.verdict === "match" && !contradictsKey && !partsShort;
     const isBlank = !unsure && response?.verdict === "blank";
