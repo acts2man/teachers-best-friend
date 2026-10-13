@@ -219,7 +219,8 @@ test("2a review: a read the AI DID score -- the second choice still gets no scor
 test("2b review: fails safe -- if the field is lost (code before the migration), the note still marks the guess", () => {
   const { confirmAllQuestions, confirmQuestion, alignmentIsStrong } = bundle("lib/teacher-workflow.ts");
   const settled = settleStandards([q(1, "F-IF.9", "F-BF.3")], hs).questions.map((x) => ({ ...x, id: "q0", text: "", passage: "", answer: "", skill: "s", dok: 1, verified: false, excluded: false }));
-  const { secondChoice: _lost, ...dropped } = settled[0];
+  const dropped = { ...settled[0] };
+  delete dropped.secondChoice;
   assert.ok(isSecondChoice(dropped));
   assert.equal(alignmentIsStrong(dropped), false, "never green 'You chose it'");
   assert.equal(confirmAllQuestions({ questions: [dropped], status: "Needs review" }).secondChoice, 1);
