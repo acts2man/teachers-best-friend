@@ -1,8 +1,16 @@
 // PR 3 item 2 (Ricky, 11 Oct): the green "Confirm N answers that match the key".
 //
-// Proven when, at 390px: the button is visible without scrolling right after
-// partial credit is given, one tap confirms them, and class analysis cannot be
-// reached while matches are unconfirmed.
+// Proven when, at 390px: right after partial credit is given the step is one
+// tap away, one tap confirms them, and class analysis cannot be reached while
+// matches are unconfirmed.
+//
+// Round 3 (#126, item 1b) changed the first part. The pinned bar now tucks
+// itself away whenever ANY control would sit under it, and right after credit
+// the next group's controls usually do. So "the bar is on screen without
+// scrolling" no longer holds on a phone; what this checks instead is that the
+// step is still one tap away: the same button at the top of the question, or
+// the bar at the first scroll position where it shows. That trade is Ricky's
+// call and is put to him in the retest note.
 //
 // Real screens and real grading code; only the network is stood in for. The
 // workspace is the demo one, with question 1 of the math demo left ungraded:
@@ -69,6 +77,25 @@ async function open(browser, opts) {
   return { ...f, ctx, page, saves };
 }
 
+/** Tap the pinned bar the way a teacher would: at the first scroll position
+ * where it is showing (a tucked bar cannot be tapped). */
+async function tapBar(page) {
+  const total = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  for (let y = 0; y <= total + 40; y += 40) {
+    await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(60);
+    const showing = await page.evaluate(() => {
+      const w = document.querySelector(".confirm-matches-bar");
+      return !!w && !w.classList.contains("is-tucked");
+    });
+    if (showing) {
+      await page.locator(".confirm-matches-bar .confirm-matches").click();
+      return true;
+    }
+  }
+  return false;
+}
+
 const browser = await chromium.launch({ executablePath: CHROMIUM });
 
 // 1. Give partial credit to the group that needs it; the green button must be
@@ -85,8 +112,12 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   const button = page.locator(".confirm-matches-bar .confirm-matches");
   await button.waitFor({ timeout: 10000 });
   await page.waitForTimeout(400);
+  const tucked = await page.evaluate(() => document.querySelector(".confirm-matches-bar")?.classList.contains("is-tucked"));
   const box = await button.boundingBox();
-  check(!!box && box.y >= 0 && box.y + box.height <= H && box.x >= 0 && box.x + box.width <= W, `right after partial credit the green button is fully on screen without scrolling (y=${box && Math.round(box.y)}, height ${box && Math.round(box.height)}, viewport ${H})`);
+  const onScreen = !tucked && !!box && box.y >= 0 && box.y + box.height <= H;
+  const inline = page.locator("#grade-by-question .confirm-matches-inline");
+  check(onScreen || (await inline.count()) === 1, `right after partial credit the step is one tap away: the bar ${onScreen ? "is on screen" : "is tucked (a control is under its spot)"}${(await inline.count()) ? ", and the same button is at the top of the question" : ""}`);
+  console.log(`  INFO ${W}x${H}: right after partial credit the pinned bar is ${onScreen ? "showing" : "tucked away"}`);
   const label = await button.innerText();
   check(new RegExp(`Confirm ${matches.length} answers? that\\s+match the key`).test(label.replace(/\s+/g, " ")), `it says "Confirm ${matches.length} answers that match the key" (got "${label.replace(/\s+/g, " ")}")`);
   await page.mouse.move(1, 1); // the colour at rest, not the hover shade
@@ -95,7 +126,7 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   check(bg === "rgb(31, 138, 76)", `it is green (${bg})`);
   await page.screenshot({ path: join(OUT, `confirm-matches-after-partial-${W}x${H}.png`) });
   const before = saves.length;
-  await button.click();
+  check(await tapBar(page), "the bar can be tapped where it shows");
   await page.waitForTimeout(800);
   check(saves.length === before + 1, "one tap, one save");
   const saved = saves.at(-1)?.assessments.find((x) => x.id === "math-demo");
@@ -139,17 +170,18 @@ const browser = await chromium.launch({ executablePath: CHROMIUM });
   await points.waitFor({ timeout: 10000 });
   await points.fill(String((Number(await points.getAttribute("max")) || 1) / 2));
   await page.locator("#grade-by-question .gbq-credit").first().getByRole("button", { name: /^Give/ }).click();
-  await page.locator(".confirm-matches-bar .confirm-matches").click({ timeout: 10000 });
+  await page.locator(".confirm-matches-bar .confirm-matches").waitFor({ timeout: 10000 });
+  await tapBar(page);
   const onQ2 = await page.locator("#grade-by-question").getByText(new RegExp("^Q" + q2.number + " ·")).first().waitFor({ timeout: 10000 }).then(() => true, () => false);
   check(onQ2, `after Q1, the app moves on to Q${q2.number}, where every student matched the key`);
   const bar = page.locator(".confirm-matches-bar .confirm-matches");
   const shown = await bar.waitFor({ timeout: 5000 }).then(() => true, () => false);
-  const box = shown ? await bar.boundingBox() : null;
-  check(shown && !!box && box.y + box.height <= H, "there, with nothing to decide, the green button is on screen (no dead end)");
+  const inlineQ2 = await page.locator("#grade-by-question .confirm-matches-inline").count();
+  check(shown && inlineQ2 === 1, "there, with nothing to decide, the green button is there (no dead end): pinned, and at the top of the question");
   await page.screenshot({ path: join(OUT, `confirm-matches-all-match-${W}x${H}.png`) });
   if (shown) {
     const before = saves.length;
-    await bar.click();
+    await tapBar(page);
     await page.waitForTimeout(900);
     const saved = saves.at(-1)?.assessments.find((x) => x.id === "math-demo");
     check(saves.length === before + 1 && saved.responses.filter((r) => r.questionId === q2.id).every((r) => r.verified && r.correct), `one tap confirms all of Q${q2.number}`);

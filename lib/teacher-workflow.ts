@@ -120,6 +120,9 @@ export function responseFlag(
   if (!question || question.excluded) return null;
   if (!question.verified || !question.answer.trim())
     return "Check the assignment or answer key";
+  // Pulled out in Grade by question: the teacher's to decide, never counted or
+  // confirmed in bulk until they do (#126 round 3).
+  if (response.gradedAlone && !response.verified) return "Pulled out to grade on its own";
   if (!response.answer.trim()) return "Missing answer";
   if (response.confidence < CLEAN_READ)
     return "Reading or interpretation needs a check";
@@ -873,6 +876,8 @@ export function forgetUploads(a: Assessment, released: string[]): Assessment {
 export const UNSURE_KEY = "\u0000unsure";
 /** Appended to the group key of reads made at 50-89% confidence. */
 const SHAKY_SUFFIX = "\u0000check";
+const ALONE_PREFIX = "\u0000alone:";
+const WRITTEN_PREFIX = "\u0000written:";
 
 export type AnswerGroup = {
   key: string;
@@ -882,6 +887,9 @@ export type AnswerGroup = {
   /** Reads of this answer the model was only fairly sure of (50-89%): kept
    * apart from confident reads of the same answer, and always a decision. */
   lowConfidence?: boolean;
+  /** One student the teacher pulled out to grade on their own (gradedAlone):
+   * always a group of one, showing what that student wrote. */
+  alone?: boolean;
   answer: string;
   responseIds: string[];
   studentIds: string[];
@@ -994,6 +1002,34 @@ export function groupAnswers(
     // writing it differently are one decision. Answers graded before the final
     // answer existed fall back to their written text, as before.
     const final = r.finalAnswer?.trim() || r.answer;
+    // Pulled out by the teacher: its own group for good, keyed to the answer
+    // itself so no credit it is given can fold it back into another (#126
+    // round 3: given the same credit, it merged back and "Change" on the
+    // group regraded it too).
+    if (r.gradedAlone) {
+      groups.set(ALONE_PREFIX + r.id, {
+        key: ALONE_PREFIX + r.id,
+        alone: true,
+        // What THIS student wrote, not the group's normalized answer.
+        answer: r.answer.trim() || final.trim(),
+        responseIds: [r.id],
+        studentIds: [r.studentId],
+        correct: r.correct,
+        verified: r.verified,
+        match: responseMatch(r),
+        needsDecision: false,
+        errorType: r.errorType || "",
+        suggestedErrorType: r.suggestedErrorType || "",
+        written: r.answer.trim() ? [r.answer.trim()] : [],
+      });
+      continue;
+    }
+    // A blank is an answer with nothing read at all. Text that normalizes to
+    // nothing (a lone "." or ",") is still something the student wrote, and
+    // must never land in the "(blank)" group (Ricky's question 8).
+    const normalized = answerKey(final);
+    const written = (r.answer.trim() || final.trim()).toLowerCase();
+    const answerPart = normalized || (written ? WRITTEN_PREFIX + written : "");
     // Not yet decided and the model was unsure (or skipped it): one Unsure
     // group per question, whatever was written, for the teacher to look at.
     const unsure = !r.verified && r.confidence < 50;
@@ -1011,7 +1047,7 @@ export function groupAnswers(
     const shaky = !r.verified && !unsure && r.confidence < CLEAN_READ && r.correct && responseMatch(r) >= 100;
     const key = unsure
       ? UNSURE_KEY
-      : answerKey(final) + (r.verified ? "|" + Math.round(responseMatch(r)) : shaky ? SHAKY_SUFFIX : "");
+      : answerPart + (r.verified ? "|" + Math.round(responseMatch(r)) : shaky ? SHAKY_SUFFIX : "");
     if (r.suggestedErrorType) {
       const tally = suggestions.get(key) ?? new Map<string, number>();
       tally.set(r.suggestedErrorType, (tally.get(r.suggestedErrorType) ?? 0) + 1);
@@ -1033,7 +1069,7 @@ export function groupAnswers(
     }
     groups.set(key, {
       key,
-      answer: final,
+      answer: normalized ? final : final.trim() || r.answer.trim(),
       responseIds: [r.id],
       studentIds: [r.studentId],
       correct: r.correct,
@@ -1063,11 +1099,13 @@ export function groupAnswers(
       // A group of reads made with less than full confidence (50-89; under 50
       // is the Unsure group) is not a clean match (isCleanAiMatch wants >=90),
       // so it is the teacher's call, not something the green button confirms.
+      // A student pulled out to grade on their own is a decision until the
+      // teacher gives them credit, even when the read matches the key.
       needsDecision:
         !!question &&
         !question.excluded &&
         !g.verified &&
-        !(g.correct && g.match >= 100 && g.key !== UNSURE_KEY && !g.key.endsWith(SHAKY_SUFFIX)),
+        (!!g.alone || !(g.correct && g.match >= 100 && g.key !== UNSURE_KEY && !g.key.endsWith(SHAKY_SUFFIX))),
       unsure: g.key === UNSURE_KEY,
       lowConfidence: g.key.endsWith(SHAKY_SUFFIX),
       answer: g.key === UNSURE_KEY ? "" : g.answer,
@@ -1157,6 +1195,8 @@ export function autoGradedToConfirm(a: Assessment): string[] {
   return a.responses
     .filter((r) => {
       if (r.verified || !active.has(r.questionId)) return false;
+      // Pulled out to grade on their own: the teacher's call, never the bar's.
+      if (r.gradedAlone) return false;
       // Clean matches only. A blank is no longer confirmed in bulk: the
       // teacher sees the photo of an empty answer first (Ricky: never marked
       // blank when the page shows work), and an unsure answer is never a match.
@@ -1182,6 +1222,23 @@ export function answersToDecide(a: Assessment): string[] {
 export function matchesToConfirm(a: Assessment, questionId?: string): string[] {
   const ids = new Set(autoGradedToConfirm(a));
   return a.responses.filter((r) => ids.has(r.id) && (!questionId || r.questionId === questionId)).map((r) => r.id);
+}
+
+/** Pulls one answer out of its group to be graded on its own (alone=true),
+ * or puts it back (false). Stored, so the separation survives a regroup, a
+ * reload and the green bar. Pulled out of a group that was already graded,
+ * the answer goes back to "to decide": that is why the teacher pulled it out. */
+export function setGradedAlone(a: Assessment, responseId: string, alone: boolean): Assessment {
+  return {
+    ...a,
+    responses: a.responses.map((r) => {
+      if (r.id !== responseId) return r;
+      if (alone) return { ...r, gradedAlone: true, verified: false };
+      const { gradedAlone: _dropped, ...rest } = r;
+      void _dropped;
+      return rest;
+    }),
+  };
 }
 
 /** Confirm (verify) responses at their current score, without changing it. */
