@@ -20,9 +20,12 @@ Every claim carries one of these tags:
   it.
 - **[INFERRED]**: our best explanation. It is not proven yet.
 
-Some plans lean on work that is **built but not yet live**. Pull requests
-#123–#126 are open and waiting for review. Until they merge and deploy, nothing
-in them is on the app you use. Each mention below says so.
+Status as of 13 Oct 2026. #123 and #124 are **live**: merged and deployed
+[REPORTED by Troy, 13 Oct]. #125 and #126 are **built, not yet live**: open and
+waiting for review. Nothing in an open pull request is on the app you use, and
+each mention below says which state it is in. The standards fix in plan 1 is now
+**built, not yet live**, as #129. That was done without waiting for your
+approval, because it is a bug fix, not a feature.
 
 ### Costs
 
@@ -138,11 +141,17 @@ The AI is choosing a standard. The app is then throwing it away.
   - It also never reuses when you press "Read again", or once 48 hours have
     passed.
   - So the tests with empty standards are read fresh every time, and drift.
-  - Also built, not yet live: PR 1 (#124) makes a change to the AI settings
-    count as a different test for reuse. Today, on the live app, a read made
-    before a settings change can be reused after it.
+  - Live since 13 Oct: PR 1 (#124) makes a change to the AI settings
+    count as a different test for reuse. Before it went live, a read made
+    before a settings change could be reused after it.
 
 ### Proposed fix (in this order)
+*Steps 1, 2, 3 and 5 are built, not yet live, in #129. One part of step 3 is
+not built: an unconfirmed fallback still counts toward the alignment average, at
+its capped 60%. Step 4 is not built. #129 lists what its replay could and could
+not show. It counted 85 of 138 empty, a later and wider 48-hour window than the
+75 of 100 above.*
+
 1. **Keep what the AI actually wrote.** Store the AI's raw first-choice code
    next to the result, server side only. It would sit in the same `scans.result`
    row that already holds everything else, and be deleted with it after 48
@@ -179,7 +188,7 @@ The AI is choosing a standard. The app is then throwing it away.
 6. **Measure it.** See below.
 
 ### Measuring the before and after
-PR 1 (#124, built, not yet live) adds a regression replay with a `standards`
+PR 1 (#124, live) adds a regression replay with a `standards`
 case type. That case type scores the share of questions where the app's
 standard equals the teacher's saved one.
 
