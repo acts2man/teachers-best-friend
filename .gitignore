@@ -46,3 +46,6 @@ next-env.d.ts
 
 # vinext (Sites) build cache
 .vinext/
+
+# scripts/admin/orphan-photos.mjs writes storage paths here; local only.
+orphan-photos-manifest.json
