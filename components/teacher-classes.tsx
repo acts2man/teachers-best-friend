@@ -700,6 +700,12 @@ function TextButton({
   );
 }
 
+/** Where a standard already in the library sits, for a message: its framework,
+ * and its grade when the framework is the one being worked on. */
+export function heldUnder(s: Standard, framework: string) {
+  return frameworkLabel(s.framework) + (s.framework === framework ? ", " + (s.grade === 0 ? "Kindergarten" : "grade " + s.grade) : "");
+}
+
 // Retrieve a state's standards for a grade and subject with the AI service
 // and save them to the teacher's library for reuse.
 export function StandardsLoader({
@@ -740,7 +746,7 @@ export function StandardsLoader({
         ? elsewhere.length +
           (elsewhere.length === 1 ? " code was" : " codes were") +
           " already in your library under " +
-          [...new Set(elsewhere.map((s) => frameworkLabel(s.framework)))].join(", ") +
+          [...new Set(elsewhere.map((s) => heldUnder(s, framework)))].join(", ") +
           ", so " +
           (elsewhere.length === 1 ? "it was" : "they were") +
           " not added again."

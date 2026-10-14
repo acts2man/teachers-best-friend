@@ -79,7 +79,7 @@ import {
   ensureDistinctNames,
   removeStudent,
 } from "@/lib/teacher-classes";
-import { RosterScanner, StandardsLoader } from "./teacher-classes";
+import { RosterScanner, StandardsLoader, heldUnder } from "./teacher-classes";
 import { MAX_PER_ADD } from "@/lib/roster-import";
 import {
   performanceBands,
@@ -160,7 +160,7 @@ export function StandardsView() {
     const held = w.customStandards.find((s) => s.code === code.trim());
     if (held) {
       toast.error(
-        code.trim() + " is already in your library under " + held.framework +
+        code.trim() + " is already in your library under " + heldUnder(held, customFramework.trim()) +
           ". Each code can be in your library once, so use a different code.",
       );
       return;

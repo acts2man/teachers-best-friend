@@ -73,9 +73,17 @@ test("a code already held under the same framework and grade is skipped silently
   assert.equal(heldElsewhere.length, 0);
 });
 
+test("a code held elsewhere and listed twice is reported once", () => {
+  const { heldElsewhere } = addableStandards([std("4.OA.A.1", "Ohio")], [std("4.OA.A.1", "Utah"), std("4.OA.A.1", "Utah")]);
+  assert.equal(heldElsewhere.length, 1);
+});
+
 test("both places that add custom standards go through the one-per-code rule", () => {
   const loader = readFileSync("components/teacher-classes.tsx", "utf8");
-  assert.match(loader, /addableStandards\(\[\.\.\.w\.customStandards, \.\.\.added\], d\.result\.standards as Standard\[\]\)/);
+  assert.match(loader, /const fit = addableStandards\(\[\.\.\.w\.customStandards, \.\.\.added\], d\.result\.standards as Standard\[\]\);/);
+  // What is saved is what the rule let through, not the raw answer.
+  assert.match(loader, /added = \[\.\.\.added, \.\.\.fit\.added\];/);
+  assert.doesNotMatch(loader, /d\.result\.standards as Standard\[\]\)\.filter/);
   const add = readFileSync("components/teacher-insights.tsx", "utf8");
   assert.match(add, /w\.customStandards\.find\(\(s\) => s\.code === code\.trim\(\)\)/);
 });

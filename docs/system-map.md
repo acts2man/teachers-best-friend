@@ -189,9 +189,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
      hitting the same key fail the entire save** (rule R14).
    - Custom standards upsert `on conflict (teacher_id, code)` (`:283`), one row per code: since
      `20261014160000` the insert is `distinct on (code)`, keeping the first copy in the saved
-     list (gap G8, closed once applied). It also writes the extras (skills, prerequisites,
-     next, vocabulary, misconception, example, dok, source) into `standards.meta`, which
-     `get_workspace_json` reads back (gap G11).
+     list (gap G8, closed once applied). It also writes the extras the teacher's copy adds over
+     the shared catalog into `standards.meta`, which `get_workspace_json` merges over the
+     catalog's key by key (gap G11).
    - The function then bumps `teacher_workspaces.revision` (`:301-306`).
 
 ### 1.9 Reload
@@ -313,7 +313,7 @@ deletes anything the payload leaves out.
 - **Known exception:** `Standard.officialCode` is not saved: it belongs to the built-in
   California catalog, which ships with the app and is never saved. The other Standard extras
   were allow-listed here as lost until `20261014160000` (gap G11) saved them in
-  `standards.meta`.
+  `standards.meta` (the values the teacher's copy adds over the shared catalog).
 
 **R3. One student's pages and answers never land under another student.** Leaving a page
 unassigned is always allowed.
@@ -577,18 +577,22 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G7. Overlapping saves are dropped with no message** (`components/teacher-app.tsx:330`).
   `save()` returns `false`; Grade by question returns early on `false` with nothing shown
   (`components/teacher-review.tsx:446`, `:458`). A fast second click can look saved and not be.
-- **G8. Two custom standards with the same code failed every save** (R14). **Closed** by the
-  G8+G11 PR once `20261014160000` is applied; reproduced on a copy of the production functions
-  14 Oct ("ON CONFLICT DO UPDATE command cannot affect row a second time").
+- **G8. Two custom standards with the same code failed the save that added the second**
+  (R14). **Closed** by the G8+G11 PR (the client half at once, the SQL half once
+  `20261014160000` is applied); reproduced on a copy of the production functions 14 Oct ("ON
+  CONFLICT DO UPDATE command cannot affect row a second time").
   - Custom standards are unique on `(teacher_id, code)`
     (`20260909214251_tbf_21_workspace_facade_columns.sql:20-21`); the app keys them by
     framework, grade and code.
   - Ways in: two AI-loaded frameworks that share codes (states that use the Common Core codes),
     the same code added by hand under another framework (Standards > Add checked only the same
-    framework), or one catalog answer listing a code twice.
-  - Now `sync_workspace` keeps the first copy of each code, and `addableStandards` stops both
-    add paths from creating a second; the loader says how many codes were already in the
-    library and under which framework.
+    framework and grade), or one catalog answer listing a code twice.
+  - The failed save never reached the database or the screen (`save()` keeps the old
+    workspace), so the change was lost with "Changes couldn't be saved", and no workspace can
+    hold a duplicate today.
+  - Now `addableStandards` stops both add paths from creating a second copy and the loader
+    says how many codes were already in the library and where; `sync_workspace` keeps the
+    first copy of each code, so any future writer cannot fail a save this way.
   - **Residual, by design for now:** a teacher cannot hold one code under two custom
     frameworks. Keeping both needs a per-framework key, which means dropping
     `custom_standards_key`; rule R9 does not allow a drop in a migration, so it is proposed in
@@ -604,11 +608,19 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - No student data is involved, but a wrong key grades everyone wrong. Today this is limited
     to async scans (§1.10).
 - **G11. Custom standards lost their skills, misconception, example and DOK on reload** (R2).
-  **Closed** by the G8+G11 PR once `20261014160000` is applied: `sync_workspace` writes skills,
-  prerequisites, next, vocabulary, misconception, example, dok (1-4) and source into
-  `standards.meta`, and `get_workspace_json` reads all of them back (prerequisites, next and
-  vocabulary were hard-coded to `[]`). A custom standard with no extras still falls back to
-  the shared catalog's meta. Proof: `supabase/checks/custom-standards-round-trip.sql`.
+  **Closed** by the G8+G11 PR once `20261014160000` is applied.
+  - `sync_workspace` writes into `standards.meta` only the values a teacher's copy adds: a
+    value equal to the shared catalog's (same code, framework and grade), equal to the default
+    the read fills in (DOK 2, the two default sentences), or empty is left out.
+  - `get_workspace_json` merges key by key, catalog first and the teacher's values on top, and
+    now reads prerequisites, next and vocabulary too (they were hard-coded to `[]`). A catalog
+    refresh still reaches every value the teacher did not change.
+  - Residuals: a page loaded **before** a catalog refresh and saved after it stores the old
+    catalog values as the teacher's own (they then stop following the catalog). A DOK of 2 set
+    on purpose against a catalog DOK of 3 reads back as 3; teachers cannot set a standard's DOK
+    in the app today. A save that sends a standard without its extras clears what was stored
+    (today's client always sends them).
+  - Proof: `supabase/checks/custom-standards-round-trip.sql`.
 - **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
   that child** (R3; reproduced 14 Oct).
   - `matchRosterStudent`'s fuzzy tier scores "Christina Lee" against "Chris Lee" at 0.947, and

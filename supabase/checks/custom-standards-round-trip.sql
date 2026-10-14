@@ -2,19 +2,25 @@
 -- supabase/migrations/20261014160000_custom_standards_one_per_code_and_extras.sql
 -- has been applied. Safe on production: no DDL, and every write is inside a DO
 -- block that raises at the end, so the transaction rolls back and nothing it
--- saved survives. The final ERROR line IS the result -- read it, it is not a
--- failure.
+-- saved survives -- the made-up catalog row it adds included. The final ERROR
+-- line IS the result -- read it, it is not a failure.
 --
 -- What it proves:
 --   G8  -- a save holding the same custom-standard code twice (two frameworks)
---          goes through instead of failing, and keeps the FIRST copy;
---   G11 -- a custom standard's skills, prerequisites, next, vocabulary,
+--          goes through instead of failing, and keeps the FIRST copy; an entry
+--          without a code no longer stops removed standards being deleted;
+--   G11 -- a custom standard's own skills, prerequisites, next, vocabulary,
 --          misconception, example, dok and source survive a save and a
---          reload; a dok outside 1-4 and a non-array skills are dropped rather
---          than failing the save; the teacher's other rows are untouched.
+--          reload; a dok outside 1-4 and a non-list skills are dropped rather
+--          than failing the save;
+--   and the shared catalog still reaches a custom copy: values the teacher's
+--   copy did not change are not frozen by a save (a catalog refresh shows
+--   through), and a copy with only some values of its own keeps the catalog's
+--   other values. The teacher's other rows are untouched.
 --
--- Uses made-up codes (ZZ.CHECK.*) that no real standard has. Set the teacher
--- below -- ideally your own test account, not a pilot teacher's.
+-- Uses made-up codes (ZZ.CHECK.*) and frameworks ("Check A/B") that no real
+-- standard has. Set the teacher below -- ideally your own test account, not a
+-- pilot teacher's.
 
 set lock_timeout = '5s';
 set statement_timeout = '30s';
@@ -24,9 +30,14 @@ declare
   tid uuid := '00000000-0000-0000-0000-000000000000'; -- <-- set this
   ws jsonb;
   back jsonb;
+  later jsonb;
   one jsonb;
   two jsonb;
+  three jsonb;
+  four jsonb;
+  stored3 jsonb;
   dup_count int;
+  two_after int;
   before_counts jsonb;
   after_counts jsonb;
   counts text := $q$
@@ -36,9 +47,17 @@ declare
       'students',  (select count(*) from public.students where teacher_id = $1),
       'responses', (select count(*) from public.student_responses where teacher_id = $1))
   $q$;
+  std text := $s$ select s from jsonb_array_elements($1->'customStandards') s where s->>'code' = $2 limit 1 $s$;
 begin
   ws := public.get_workspace_json(tid);
   if ws is null then raise exception 'NO_WORKSPACE for %', tid; end if;
+  -- A made-up shared-catalog row for ZZ.CHECK.3 and ZZ.CHECK.4.
+  insert into public.standards (teacher_id, framework, subject, grade, code, description, meta)
+  values (null, 'Check A', 'Math', '3', 'ZZ.CHECK.3', 'catalog wording',
+          '{"skills":["catalog skill"],"misconception":"catalog misconception","example":"catalog example","dok":3}'),
+         (null, 'Check A', 'Math', '3', 'ZZ.CHECK.4', 'catalog wording',
+          '{"misconception":"catalog misconception","source":"catalog source"}');
+
   ws := jsonb_set(ws, '{customStandards}', coalesce(ws->'customStandards', '[]') || jsonb_build_array(
     jsonb_build_object('code', 'ZZ.CHECK.1', 'title', 'Check one', 'subject', 'Math', 'grade', 3,
       'framework', 'Check A', 'summary', 'first copy',
@@ -48,20 +67,48 @@ begin
     jsonb_build_object('code', 'ZZ.CHECK.1', 'title', 'Check one', 'subject', 'Math', 'grade', 3,
       'framework', 'Check B', 'summary', 'second copy'),
     jsonb_build_object('code', 'ZZ.CHECK.2', 'title', 'Check two', 'subject', 'Math', 'grade', 3,
-      'framework', 'Check A', 'summary', 'bad extras', 'dok', 9, 'skills', '"not a list"')));
+      'framework', 'Check A', 'summary', 'bad extras', 'dok', 9, 'skills', '"not a list"'),
+    -- What the app sends back for a catalog copy: every catalog value, plus one of its own.
+    jsonb_build_object('code', 'ZZ.CHECK.3', 'title', 'Check three', 'subject', 'Math', 'grade', 3,
+      'framework', 'Check A', 'summary', 'catalog copy', 'skills', jsonb_build_array('catalog skill'),
+      'misconception', 'catalog misconception', 'example', 'own example', 'dok', 3),
+    -- Only some values of its own; the defaults the read fills in for the rest.
+    jsonb_build_object('code', 'ZZ.CHECK.4', 'title', 'Check four', 'subject', 'Math', 'grade', 3,
+      'framework', 'Check A', 'summary', 'partial', 'skills', jsonb_build_array('own skill'), 'dok', 2,
+      'misconception', 'Use the student''s written reasoning to identify the step that needs support.')));
 
   execute counts into before_counts using tid;
   perform public.sync_workspace(tid, ws);
   back := public.get_workspace_json(tid);
   execute counts into after_counts using tid;
+  select meta into stored3 from public.standards where teacher_id = tid and code = 'ZZ.CHECK.3';
 
   select count(*) into dup_count from jsonb_array_elements(back->'customStandards') s where s->>'code' = 'ZZ.CHECK.1';
-  select s into one from jsonb_array_elements(back->'customStandards') s where s->>'code' = 'ZZ.CHECK.1' limit 1;
-  select s into two from jsonb_array_elements(back->'customStandards') s where s->>'code' = 'ZZ.CHECK.2' limit 1;
+  execute std into one using back, 'ZZ.CHECK.1';
+  execute std into two using back, 'ZZ.CHECK.2';
+  execute std into four using back, 'ZZ.CHECK.4';
 
-  raise exception 'ROLLED_BACK expect copies=1 framework="Check A" skills=["arrays"] prerequisites=["ZZ.CHECK.0"] next=["ZZ.CHECK.2"] vocabulary=["factor"] misconception="adds instead of multiplying" example="three rows of four" dok=3 source="check" | two: dok=2 skills=[] | equal counts | got copies=% framework=% skills=% prerequisites=% next=% vocabulary=% misconception=% example=% dok=% source=% | two: dok=% skills=% | counts before=% after=%',
+  -- The catalog is refreshed; the next reload shows it through the copy, and
+  -- a save from that reload does not freeze it. (A page loaded BEFORE the
+  -- refresh and saved after it does store the old values as the teacher's --
+  -- a residual, see docs/system-map.md G11.)
+  update public.standards set meta = meta || '{"misconception":"refreshed misconception","dok":4}'
+   where teacher_id is null and code = 'ZZ.CHECK.3' and framework = 'Check A';
+  later := public.get_workspace_json(tid);
+  -- And a save with one entry missing its code, and ZZ.CHECK.2 removed.
+  perform public.sync_workspace(tid, jsonb_set(later, '{customStandards}',
+    (select jsonb_agg(s) from jsonb_array_elements(later->'customStandards') s where s->>'code' <> 'ZZ.CHECK.2')
+      || '[{"title":"no code","subject":"Math","grade":3,"framework":"Check A","summary":"x"}]'::jsonb));
+  later := public.get_workspace_json(tid);
+  execute std into three using later, 'ZZ.CHECK.3';
+  select count(*) into two_after from public.standards where teacher_id = tid and code = 'ZZ.CHECK.2';
+
+  raise exception E'ROLLED_BACK\n  one: expect copies=1 framework="Check A" skills=["arrays"] prerequisites=["ZZ.CHECK.0"] next=["ZZ.CHECK.2"] vocabulary=["factor"] misconception="adds instead of multiplying" example="three rows of four" dok=3 source="check"\n       got    copies=% framework=% skills=% prerequisites=% next=% vocabulary=% misconception=% example=% dok=% source=%\n  two: expect dok=2 skills=[]  got dok=% skills=%  | removed later: expect 0 rows, got %\n  three: expect stored {"example": "own example"}, got %; after the catalog refresh expect misconception="refreshed misconception" dok=4 example="own example" skills=["catalog skill"], got % % % %\n  four: expect skills=["own skill"] misconception="catalog misconception" source="catalog source" dok=2, got % % % %\n  counts: expect equal, before=% after=%',
     dup_count, one->'framework', one->'skills', one->'prerequisites', one->'next', one->'vocabulary',
     one->'misconception', one->'example', one->'dok', one->'source',
-    two->'dok', two->'skills', before_counts, after_counts;
+    two->'dok', two->'skills', two_after,
+    stored3, three->'misconception', three->'dok', three->'example', three->'skills',
+    four->'skills', four->'misconception', four->'source', four->'dok',
+    before_counts, after_counts;
 end
 $check$;

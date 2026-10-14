@@ -147,7 +147,7 @@ export function allStandards(
  * cannot because the library already holds that code under ANOTHER framework
  * or grade (gap G8, docs/system-map.md). The database keeps one custom
  * standard per code for each teacher (custom_standards_key), so a second copy
- * either failed every save or, since 20261014160000, is dropped on the save.
+ * failed the save that added it or, since 20261014160000, is dropped on save.
  * A code already held under the same framework and grade, or listed twice in
  * `incoming`, is simply not added again.
  */
@@ -160,7 +160,7 @@ export function addableStandards(library: Standard[], incoming: Standard[]) {
     if (!h) {
       held.set(s.code, s);
       added.push(s);
-    } else if (h.framework !== s.framework || h.grade !== s.grade) heldElsewhere.push(h);
+    } else if ((h.framework !== s.framework || h.grade !== s.grade) && !heldElsewhere.includes(h)) heldElsewhere.push(h);
   }
   return { added, heldElsewhere };
 }
