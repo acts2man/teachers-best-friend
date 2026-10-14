@@ -1449,3 +1449,67 @@ export function defaultFocusFor(student: Student | undefined, fallback: string) 
     .sort((a, b) => b.date.localeCompare(a.date))[0];
   return latest?.standard || fallback;
 }
+
+/**
+ * What re-reading or revising a test would throw away. A re-read replaces the
+ * questions with new ones (new ids), and saving a revision rebuilds the
+ * assessment, so every student answer graded against the old questions -- or,
+ * on a writing assessment, every rubric score -- is cleared, along with what it
+ * added to the students' standards progress. On 13 Oct a pilot teacher re-read
+ * a test and its 10 graded answers went without a word. Every such action asks
+ * first when this is not zero.
+ *
+ * Counts only rows that belong to a question or rubric trait the assessment
+ * still has, so the number matches what the teacher can see.
+ */
+export function gradesClearedByReread(a: Assessment | undefined) {
+  const writing = a?.elaArea === "writing";
+  const ids = new Set([
+    ...(a?.questions ?? []).map((q) => q.id),
+    ...(a && writing ? rubricDimensions(a).map((d) => d.id) : []),
+  ]);
+  const responses = (a?.responses ?? []).filter((r) => ids.has(r.questionId));
+  return {
+    answers: responses.length,
+    students: new Set(responses.map((r) => r.studentId)).size,
+    confirmed: responses.filter((r) => r.verified).length,
+    writing,
+  };
+}
+
+/** The confirm step's wording, in one place so every path says the same.
+ * `action` is what the teacher pressed: a re-read, or a save of a revision. */
+export function rereadWarning(
+  risk: ReturnType<typeof gradesClearedByReread>,
+  action: "read" | "save" = "read",
+) {
+  const plural = (n: number, one: string, many: string) => n + " " + (n === 1 ? one : many);
+  const lead =
+    action === "read"
+      ? "Reading the test again replaces its questions"
+      : risk.writing
+        ? "Saving this replaces the writing assessment and its rubric"
+        : "Saving this revision replaces the test's questions";
+  const what = risk.writing
+    ? "the essay scores for " + plural(risk.students, "student", "students")
+    : "the " +
+      plural(risk.answers, "graded answer", "graded answers") +
+      " from " +
+      plural(risk.students, "student", "students");
+  return {
+    title: risk.writing
+      ? "Clear the essay scores for " + plural(risk.students, "student", "students") + "?"
+      : "Clear " + plural(risk.answers, "graded answer", "graded answers") + "?",
+    body:
+      lead +
+      ", so " +
+      what +
+      // Rubric rows are students x traits, so a count of them beside a count of
+      // students would read as a contradiction; essays say students only.
+      (risk.confirmed && !risk.writing ? " (" + risk.confirmed + " confirmed by you)" : "") +
+      " will be cleared, along with what they added to those students' standards progress." +
+      " That work would need to be graded again, and any photos already deleted would need to be scanned again.",
+    keep: "Keep my grades",
+    go: action === "read" ? "Clear grades and read again" : "Clear grades and save",
+  };
+}

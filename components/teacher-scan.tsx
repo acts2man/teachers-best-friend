@@ -35,7 +35,9 @@ import {
   mergeStudentResponses,
   parseAnswerKey,
   preparationGaps,
+  gradesClearedByReread,
 } from "@/lib/teacher-workflow";
+import { ConfirmReread } from "./confirm-reread";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
@@ -107,6 +109,11 @@ export function ScanView() {
   const editId =
     (mode === "assignment" && (params.get("assessment") || createdId)) || "";
   const editing = editId ? assessments.find((a) => a.id === editId) : undefined;
+  // Re-reading or re-saving a test that already has graded answers clears
+  // them (makeAssessment starts responses afresh), so it asks first. Holds
+  // which button the teacher pressed while the confirm step is open.
+  const [confirmingReread, setConfirmingReread] = useState<"read" | "save" | "writing" | null>(null);
+  const clearsGrades = mode === "assignment" && gradesClearedByReread(editing).answers > 0;
   const catalog = catalogFor(w, Number(grade), framework, subject).filter(
     (s) => !/not applicable/i.test(s.summary),
   );
@@ -591,6 +598,19 @@ export function ScanView() {
   const hasRead = !!createdId || (editing?.questions?.length ?? 0) > 0;
   return (
     <>
+      <ConfirmReread
+        assessment={editing}
+        action={confirmingReread === "read" ? "read" : "save"}
+        open={!!confirmingReread}
+        onCancel={() => setConfirmingReread(null)}
+        onConfirm={() => {
+          const pressed = confirmingReread;
+          setConfirmingReread(null);
+          if (pressed === "save") saveManual();
+          else if (pressed === "writing") createWriting();
+          else analyze(undefined, true, true);
+        }}
+      />
       <button
         className="back-link"
         onClick={() =>
@@ -849,7 +869,10 @@ export function ScanView() {
                   : "Your selections guide alignment and coverage."}
               </span>
               {isWriting ? (
-                <Action disabled={busy} onClick={createWriting}>
+                <Action
+                  disabled={busy}
+                  onClick={() => (clearsGrades ? setConfirmingReread("writing") : createWriting())}
+                >
                   {editing ? "Save writing assessment" : "Create writing assessment"}
                   <ArrowRight size={17} />
                 </Action>
@@ -1270,7 +1293,7 @@ export function ScanView() {
                 {mode === "assignment" && !autoReads && (
                   <Action
                     disabled={busy || uploading || analyzing || !contentReady}
-                    onClick={saveManual}
+                    onClick={() => (clearsGrades ? setConfirmingReread("save") : saveManual())}
                   >
                     Save assessment
                     <ArrowRight size={17} />
@@ -1286,7 +1309,11 @@ export function ScanView() {
                       !contentReady ||
                       (mode === "responses" && (!prepared || !studentId))
                     }
-                    onClick={() => analyze(undefined, true, true)}
+                    onClick={() =>
+                      clearsGrades
+                        ? setConfirmingReread("read")
+                        : analyze(undefined, true, true)
+                    }
                   >
                     {analyzing ? (
                       <LoaderCircle size={17} className="spin" />
