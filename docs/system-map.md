@@ -106,11 +106,18 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   - It re-asks short groups, and re-asks multi-part answers that came back with too few
     parts (`partsShortfall` `:1341`, `settleShortParts` `:1417`, which sends the leftovers to
     Unsure).
-- **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId}`
-  (`components/teacher-class-scan.tsx:774`, `:785`), keyed by **whole-scan group index**.
-  See gaps G1 and G3.
-- **Resume.** A rerun accepts the saved progress if `nextBatch <= batches.length`
-  (`components/teacher-class-scan.tsx:724`).
+- **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId,
+  layout}` (`setProgress` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
+  **whole-scan group index**. `layout` is the body upload ids of every group those indexes
+  refer to (`groupLayout`, `lib/scan-session.ts`).
+- **Resume.** `gradeCaptured` asks `planResume(progress, pageIds)` (`lib/scan-session.ts`):
+  - `resume` only when the pages on screen are exactly the layout's pages in the same
+    order; the run then uses the **saved** grouping, never one re-derived from the piles;
+  - `changed` (pages added, removed, reordered, merged in, or progress saved before layouts
+    existed) stops and asks the teacher to grade again (`askToRegrade`). Nothing is
+    guessed; already-paid pages cost nothing the second time.
+  - A whole-stack upload marks its pages `stack: true`; its single pile is never graded as
+    one declared student (G3, fixed in the G3 PR).
 
 ### 1.7 Matching screen (teacher review)
 
@@ -542,8 +549,9 @@ reading the code, as marked. None has a test in the suite, because each test wou
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop
   whole-stack upload and Import from Photos with no split do not.
-- **G3. A failed whole-stack upload resumes as ONE student, wearing the wrong name** (R3;
-  reproduced with the lib functions, 14 Oct).
+- **G3. FIXED in code (G3 PR, awaiting review). A failed whole-stack upload resumed as ONE
+  student, wearing the wrong name** (R3; reproduced with the lib functions, 14 Oct; guarded by
+  `tests/invariants/scan-resume-layout.test.mjs`). What it was:
   - `startStackScan` grades by name (`components/teacher-class-scan.tsx:992-993`). If it fails
     partway, its progress survives, and the auto-resume (`:401-408`) runs `gradeCaptured`,
     which passes the single pile `[N]` (`:926-929`).

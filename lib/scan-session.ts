@@ -24,6 +24,10 @@ export type ScanPage = {
   /** Size of the body upload, so a grading request stays under the route's
    * 12 MB limit. Absent on pages scanned before it was recorded. */
   bytes?: number;
+  /** Uploaded as part of a whole stack at once (the desktop "upload a stack"
+   * path), so the pile it sits in is NOT a student the teacher declared: the
+   * names on the pages split it. Absent on camera and per-pile pages. */
+  stack?: true;
 };
 
 /** How far grading got: batches done, the next to send, one still running. */
@@ -31,7 +35,74 @@ export type ScanProgress = {
   graded: GradedGroup[];
   nextBatch: number;
   scanId: string | null;
+  /**
+   * What `graded[].group` and `nextBatch` are numbered against: the body
+   * upload ids of every student group the run graded, in group order.
+   * Without it a resume re-planned the groups from the piles as they are NOW
+   * and laid the saved answers on them by index -- a whole-stack upload that
+   * failed came back as ONE student holding every page, wearing the first
+   * student's answers and another child's name (G3, docs/system-map.md); a
+   * page added before resuming shifted every later student (G1). Absent on
+   * progress saved before it existed, which therefore cannot be resumed.
+   */
+  layout?: string[][];
 };
+
+/** The layout a run's progress is numbered against: each group's body ids. */
+export function groupLayout(pageGroups: number[][], ids: string[]): string[][] {
+  return pageGroups.map((g) => g.map((p) => ids[p]));
+}
+
+/**
+ * Whether saved grading progress can be picked up for the pages on screen.
+ *
+ *   - `fresh`: nothing saved; grade from the start.
+ *   - `resume`: the pages are exactly the ones the progress was graded
+ *     against, in the same order. `pageGroups` is the saved grouping -- NOT
+ *     one re-derived from the current piles -- so every banked answer lands on
+ *     the group it was read from.
+ *   - `changed`: the pages differ (added, removed, reordered, merged in from
+ *     another device), the progress predates layouts, or it names a group the
+ *     layout does not have. The banked answers cannot be put back on the
+ *     right children, so nothing is guessed: the teacher is asked to grade
+ *     again (pages already paid for cost nothing a second time).
+ */
+export type ResumePlan =
+  | { kind: "fresh" }
+  | { kind: "resume"; pageGroups: number[][] }
+  | { kind: "changed" };
+
+export function planResume(progress: ScanProgress | null | undefined, ids: string[]): ResumePlan {
+  if (!progress) return { kind: "fresh" };
+  const layout = progress.layout;
+  if (!Array.isArray(layout) || !layout.length) return { kind: "changed" };
+  if (layout.some((g) => !Array.isArray(g) || !g.length)) return { kind: "changed" };
+  const flat = layout.flat();
+  // The same pages in the same order, each once. Anything else is a stack
+  // whose group numbers no longer mean what they meant.
+  if (flat.length !== ids.length || flat.some((id, i) => id !== ids[i])) return { kind: "changed" };
+  if (new Set(ids).size !== ids.length) return { kind: "changed" };
+  if (progress.graded.some((g) => !Number.isInteger(g.group) || g.group < 0 || g.group >= layout.length))
+    return { kind: "changed" };
+  let page = 0;
+  return { kind: "resume", pageGroups: layout.map((g) => g.map(() => page++)) };
+}
+
+/** Saved progress as it came back from storage, or null when unusable. */
+export function parseProgress(raw: unknown): ScanProgress | null {
+  const p = raw as Partial<ScanProgress> | null | undefined;
+  if (!p || !Array.isArray(p.graded) || !Number.isInteger(p.nextBatch) || (p.nextBatch as number) < 0) return null;
+  const layout =
+    Array.isArray(p.layout) && p.layout.every((g) => Array.isArray(g) && g.every((id) => typeof id === "string"))
+      ? (p.layout as string[][])
+      : undefined;
+  return {
+    graded: p.graded,
+    nextBatch: p.nextBatch as number,
+    scanId: typeof p.scanId === "string" ? p.scanId : null,
+    ...(layout ? { layout } : {}),
+  };
+}
 
 export type ScanSession = {
   v: 1;
@@ -123,20 +194,11 @@ export function parseSession(raw: unknown): ScanSession | null {
             stripId: typeof p.stripId === "string" ? p.stripId : null,
             pages: Number.isInteger(p.pages) && p.pages > 0 ? p.pages : 1,
             ...(typeof p.bytes === "number" && p.bytes > 0 ? { bytes: p.bytes } : {}),
+            ...(p.stack === true ? { stack: true as const } : {}),
           })),
         )
     : [];
-  const progress =
-    r.progress &&
-    Array.isArray(r.progress.graded) &&
-    Number.isInteger(r.progress.nextBatch) &&
-    r.progress.nextBatch >= 0
-      ? {
-          graded: r.progress.graded,
-          nextBatch: r.progress.nextBatch,
-          scanId: typeof r.progress.scanId === "string" ? r.progress.scanId : null,
-        }
-      : null;
+  const progress = parseProgress(r.progress);
   const groups = Array.isArray(r.groups)
     ? r.groups.filter(
         (g): g is ResolvedGroup =>
