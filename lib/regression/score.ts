@@ -6,16 +6,23 @@
  *   pre-fills with the WRONG student is the failure that matters most -- it
  *   rides through unless spotted -- so it is counted on its own and any one of
  *   them fails the case.
- * Answer reading: the final answer read matches what the teacher confirmed.
+ * Answer reading: the final answer read matches what the teacher confirmed --
+ *   by value, not by spelling (judgeAnswer, ./compare-answers): labels,
+ *   spacing, Unicode minus, thousands separators and computation chains are
+ *   normalised away. A read that kept only some parts of a multi-part answer
+ *   is faithful but listed as missing parts; prose that cannot be compared is
+ *   listed for a person to check, and is not counted as a miss.
  * Grouping: each student's answer lands in the group the teacher confirmed --
  *   the same final answer, not sent to Unsure. Misses are split into the
  *   categories the founders asked about. Marked correct when the teacher gave
  *   less than full credit, and marked blank where the teacher saw an answer,
  *   are each counted and each fail the case outright.
  * Answer key / standards: per question, against the confirmed key and tags.
+ *   The key is judged the same way as reading (judgeAnswer); a wrong number
+ *   (no rounding tolerance) or a different unit is a miss.
  */
 import { answerKey } from "@/lib/teacher-workflow";
-import { compareAnswers } from "@/lib/math-answer";
+import { judgeAnswer, type ReadVerdict } from "./compare-answers";
 import type { StudentResponse } from "@/lib/teacher-types";
 import type { ExpectedAnswer, ExpectedPile } from "./types";
 
@@ -87,7 +94,14 @@ export type AnswerMiss =
   | "wrong_final"
   | "equivalent_not_grouped"
   | "wrongly_blank"
-  | "not_returned";
+  | "not_returned"
+  /** Not a miss: prose that cannot be compared, for a person to check. Kept
+   * here so every answer outside the right group is accounted for. */
+  | "needs_human_check";
+
+/** One answer shown side by side on the replay page: what the replay read,
+ * and what was expected. */
+export type SideBySide = { studentId: string; questionId: string; read: string; expected: string };
 
 export type AnswersScore = {
   answers: number;
@@ -118,6 +132,12 @@ export type AnswersScore = {
    * against parts in the confirmed answer, summed. */
   partsReturned: number;
   partsExpected: number;
+  /** Read faithfully but with fewer parts than the confirmed answer: counted
+   * in readRight, listed here. */
+  partsMissing: SideBySide[];
+  /** Prose that cannot be compared: not counted as a miss, listed here for a
+   * person to judge. */
+  needsHumanCheck: SideBySide[];
   passed: boolean;
 };
 
@@ -138,7 +158,10 @@ export function scoreAnswers(
     equivalent_not_grouped: 0,
     wrongly_blank: 0,
     not_returned: 0,
+    needs_human_check: 0,
   };
+  const partsMissing: SideBySide[] = [];
+  const needsHumanCheck: SideBySide[] = [];
   let readRight = 0;
   let inGroup = 0;
   let unsure = 0;
@@ -207,8 +230,14 @@ export function scoreAnswers(
     if (!isMatch && (e.match ?? 0) >= 100) missedCorrect++;
     if (unsureHere) unsure++;
     const sameFinal = answerKey(g) === answerKey(w);
-    const equivalent = !sameFinal && !!g.trim() && !wantedBlank && compareAnswers(g, w) === "same";
+    const verdict: ReadVerdict = sameFinal ? "same" : !g.trim() || wantedBlank ? "different" : judgeAnswer(g, w);
+    // Faithful: the same value, or the parts it kept are right.
+    const equivalent = !sameFinal && (verdict === "same" || verdict === "parts_missing");
+    const side = { studentId: e.studentId, questionId: e.questionId, read: g, expected: w };
+    const humanCheck = !unsureHere && verdict === "needs_human_check";
     if (!unsureHere && (sameFinal || equivalent)) readRight++;
+    if (!unsureHere && verdict === "parts_missing") partsMissing.push(side);
+    if (humanCheck) needsHumanCheck.push(side);
 
     // Grouped right when this student's replay group and teacher group are
     // each the other's majority: the replay group is mostly this teacher
@@ -230,6 +259,7 @@ export function scoreAnswers(
     else if (isBlank && !wantedBlank) misses.wrongly_blank++;
     // Read right (or equivalently) but grouped apart from its classmates.
     else if (equivalent || sameFinal) misses.equivalent_not_grouped++;
+    else if (humanCheck) misses.needs_human_check++;
     else misses.wrong_final++;
   }
   // Per question and final answer: answers whose credit differs from the most
@@ -246,8 +276,9 @@ export function scoreAnswers(
     creditSplits += keys.length - Math.max(...counts.values());
   }
   const n = expected.length;
-  const readAccuracy = ratio(readRight, n);
-  const groupAccuracy = ratio(inGroup, n);
+  // An answer waiting on a human check is not a miss, in either measure.
+  const readAccuracy = ratio(readRight + needsHumanCheck.length, n);
+  const groupAccuracy = ratio(inGroup + misses.needs_human_check, n);
   const decisive = kind === "grouping" ? groupAccuracy : readAccuracy;
   return {
     answers: n,
@@ -263,27 +294,58 @@ export function scoreAnswers(
     misses,
     partsReturned,
     partsExpected,
+    partsMissing,
+    needsHumanCheck,
+    // The hard-fail rules are unchanged: any wrongly-correct or wrongly-blank
+    // answer fails the case whatever the accuracy.
     passed: decisive >= PASS.answers && wronglyCorrect === 0 && misses.wrongly_blank === 0,
   };
 }
 
 export type ListScore = { items: number; right: number; accuracy: number; missing: number; passed: boolean };
 
-/** Answer key: the read key matches the confirmed one by value
- * (compareAnswers), question by question number. */
+/** A key answer shown side by side on the replay page. */
+export type KeyItem = { number: number; read: string; expected: string };
+
+export type KeyScore = ListScore & {
+  /** Question numbers the read key got wrong: the real misses. */
+  wrong: number[];
+  /** Read faithfully but missing parts of the confirmed answer: not wrong,
+   * not counted in `right`. */
+  partsMissing: KeyItem[];
+  /** Prose that cannot be compared: not a miss, for a person to judge. */
+  needsHumanCheck: KeyItem[];
+};
+
+/** Answer key: the read key against the confirmed one, question by question
+ * number, by value (judgeAnswer). Accuracy is the share NOT wrong: an answer
+ * waiting on a human check does not count against it. */
 export function scoreKey(
   expected: { number: number; answer: string }[],
   read: { number: number; answer: string }[],
-): ListScore {
+): KeyScore {
   let right = 0;
   let missing = 0;
+  const wrong: number[] = [];
+  const partsMissing: KeyItem[] = [];
+  const needsHumanCheck: KeyItem[] = [];
   for (const e of expected) {
     const r = read.find((q) => q.number === e.number);
-    if (!r) missing++;
-    else if (compareAnswers(r.answer, e.answer) === "same") right++;
+    if (!r) {
+      missing++;
+      continue;
+    }
+    const item = { number: e.number, read: r.answer, expected: e.answer };
+    const verdict = judgeAnswer(r.answer, e.answer);
+    // An incomplete key answer is not "right": the app would grade against
+    // it. It is not wrong either -- listed apart, as reading's are.
+    if (verdict === "same") right++;
+    else if (verdict === "parts_missing") partsMissing.push(item);
+    else if (verdict === "needs_human_check") needsHumanCheck.push(item);
+    else wrong.push(e.number);
   }
-  const accuracy = ratio(right, expected.length);
-  return { items: expected.length, right, accuracy, missing, passed: accuracy >= PASS.key };
+  const accuracy = ratio(expected.length - wrong.length - missing, expected.length);
+  return { items: expected.length, right, accuracy, missing, wrong, partsMissing, needsHumanCheck, passed: accuracy >= PASS.key };
 }
 
 /** Standards: the read standard equals the teacher's tag, by question number. */

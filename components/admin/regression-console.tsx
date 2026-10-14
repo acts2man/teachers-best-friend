@@ -3,7 +3,11 @@
  * The replay page: run the test cases, copy an allow-listed set's photos, make
  * cases from it, and check that old assessments still open. It drives the
  * server one step at a time (see lib/regression/runner.ts) and shows anonymised
- * case codes and numbers only.
+ * case codes and numbers -- plus, for answers the scorer cannot settle (prose
+ * for a human check) or that are missing parts, the read and the expected
+ * text side by side. For reading cases that text is a student's answer: this
+ * page is admin-only (regression_admins), and the text comes from the private
+ * regression_run_cases.metrics. See docs/student-data-flow.md section 8.
  */
 import { useEffect, useState } from "react";
 
@@ -53,12 +57,72 @@ function headline(m: Record<string, Record<string, unknown>> | null): string {
   if (m.names) return `${m.names.correct}/${Number(m.names.piles) - Number(m.names.noStrip ?? 0)} names right, ${m.names.wrongConfident} filled in wrongly, ${m.names.unassigned} left to choose` + (Number(m.names.noStrip) ? `, ${m.names.noStrip} with no name photo` : "");
   if (m.answers) {
     const a = m.answers;
-    return `grouped ${pct(a.groupAccuracy)}, same read as accepted ${pct(a.readAccuracy)}, wrongly correct ${a.wronglyCorrect}, wrongly blank ${a.wronglyBlank}, full credit not pre-marked ${a.missedCorrect}, unsure ${a.unsure}` +
+    const checks = listOf(a.needsHumanCheck).length;
+    const short = listOf(a.partsMissing).length;
+    return `grouped ${pct(a.groupAccuracy)}, ${a.readRight}/${a.answers} read faithfully` +
+      (short ? ` (${short} multi-part ${short === 1 ? "answer" : "answers"} missing a part)` : "") +
+      (checks ? `, ${checks} ${checks === 1 ? "needs" : "need"} a human check` : "") +
+      `, wrongly correct ${a.wronglyCorrect}, wrongly blank ${a.wronglyBlank}, full credit not pre-marked ${a.missedCorrect}, unsure ${a.unsure}` +
       (Number(a.partsExpected) ? `, multi-part ${a.partsReturned}/${a.partsExpected} parts returned` : "") +
       (Number(a.creditSplits) ? `, ${a.creditSplits} given different credit by the teacher for the same answer (not counted against grouping)` : "");
   }
-  const k = m.answer_key ?? m.standards;
+  if (m.answer_key) {
+    const k = m.answer_key;
+    const checks = listOf(k.needsHumanCheck).length;
+    const short = listOf(k.partsMissing).length;
+    const wrong = Array.isArray(k.wrong) ? (k.wrong as number[]) : [];
+    const notWrong = Number(k.items) - wrong.length - Number(k.missing ?? 0);
+    return `${notWrong}/${k.items} not wrong (${k.right} confirmed` +
+      (short ? `, ${short} missing ${short === 1 ? "a part" : "parts"}` : "") +
+      (checks ? `, ${checks} ${checks === 1 ? "needs" : "need"} a human check` : "") +
+      `)` +
+      (wrong.length ? `; wrong: ${wrong.map((n) => "Q" + n).join(", ")}` : "") +
+      (Number(k.missing) ? `; ${k.missing} not read` : "");
+  }
+  const k = m.standards;
   return k ? `${k.right}/${k.items} right (${pct(k.accuracy)})` : "";
+}
+
+type Side = { read: string; expected: string; number?: number; questionId?: string };
+const listOf = (v: unknown): Side[] => (Array.isArray(v) ? (v as Side[]) : []);
+
+/** The answers a person should look at, read and expected side by side. */
+function SideBySide({ metrics }: { metrics: Record<string, Record<string, unknown>> | null }) {
+  const m = metrics?.answers ?? metrics?.answer_key;
+  if (!m) return null;
+  const groups = [
+    { title: "Needs a human check (not counted as a miss)", items: listOf(m.needsHumanCheck) },
+    { title: "Read faithfully, but missing parts", items: listOf(m.partsMissing) },
+  ].filter((g) => g.items.length);
+  if (!groups.length) return null;
+  const cell: React.CSSProperties = { padding: "6px 8px", borderTop: "1px solid #d8e2dc", verticalAlign: "top", overflowWrap: "anywhere" };
+  return (
+    <>
+      {groups.map((g) => (
+        <div key={g.title} style={{ margin: "6px 0 10px" }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{g.title}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ ...cell, width: "3.5em", textAlign: "left" }}>Q</th>
+                <th style={{ ...cell, textAlign: "left" }}>Replay read</th>
+                <th style={{ ...cell, textAlign: "left" }}>Expected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {g.items.map((it, i) => (
+                <tr key={i}>
+                  <td style={cell}>{it.number ? "Q" + it.number : "–"}</td>
+                  <td style={cell}>{it.read}</td>
+                  <td style={cell}>{it.expected}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </>
+  );
 }
 
 export function RegressionConsole() {
@@ -194,7 +258,7 @@ export function RegressionConsole() {
     <main style={{ maxWidth: 880, margin: "0 auto", padding: "24px 16px", fontFamily: "system-ui, sans-serif", color: "#1c2b24" }}>
       <h1 style={{ fontSize: 24, margin: "0 0 4px" }}>Test cases</h1>
       <p style={{ margin: "0 0 20px", color: "#4b5d55" }}>
-        Real, teacher-confirmed cases replayed through the live AI settings. Case codes only — no names or answers are shown here.
+        Real, teacher-confirmed cases replayed through the live AI settings. Case codes, not names. Answers appear only where the scorer needs a person to look (a human check, or a read missing parts), shown side by side.
       </p>
 
       <section style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
@@ -220,6 +284,7 @@ export function RegressionConsole() {
             {last.perCase.map((c) => (
               <li key={c.code} style={{ marginBottom: 4, overflowWrap: "anywhere" }}>
                 <strong>{c.code}</strong> {c.kind}: {c.status} — {headline(c.metrics)}
+                <SideBySide metrics={c.metrics} />
               </li>
             ))}
           </ul>

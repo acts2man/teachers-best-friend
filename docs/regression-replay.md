@@ -34,8 +34,48 @@ groups (same answer *and* same credit), so a group the teacher had to split coun
 a miss. `answer_reading` and `grouping` on the same assessment share one grading pass
 in a run.
 
+**How an answer is judged** (`lib/regression/compare-answers.ts`, since 14 Oct 2026).
+The question is whether the replay got it right, not whether it spelled it like the
+teacher. Before comparing, each `;`-separated part has these removed:
+
+- spacing;
+- a Unicode minus;
+- `$` and thousands separators;
+- labels such as `x=`, `A(t)=`, `domain=` or `y-intercept:`. A label that carries meaning
+  still has to match when both sides have one: `max` against `min`, `vertex` against
+  `x-intercept`, `P(5)` against `P(6)`. Its wording does not have to match: `y-int` is
+  `y-intercept`. A bare variable or function name is not compared;
+- the working before the final value of a labelled chain (`A(8) = 1200(1.02)^8 =
+  1405.99`). An unlabelled equation (`2x+3y=6`) stays whole.
+
+Each part is then compared with the same code grading uses (`lib/math-answer.ts`). Rules
+that keep the comparison strict:
+
+- **No rounding tolerance.** Where both sides give an exact form before `≈`, the exact
+  forms must agree too, so `22/7 ≈ 3.14` is not `π ≈ 3.14`. One side's exact form may
+  match the other's single value (`ln(7)/2` against `ln(7)/2 ≈ 0.97`).
+- **Several solutions** are compared item by item, never cut to the last one. One
+  variable's solutions (`x=5 or x=-5`, `±3`) may come in any order. A system's
+  (`x=2, y=3`) pair up by variable, so swapped values are wrong.
+- **An extra value in a read** (`-5; 5` for `5`) is wrong; only extra description is allowed.
+- **Anything with words in it** is compared as text, never by value. Words that read
+  differently are a human check when the numbers in them agree (`all reals` against
+  `(-∞,∞)`), and wrong when they do not.
+- **Units.** When both sides name units, they must name the same ones.
+
+Each answer gets one of four results:
+
+| Result | When | How it counts |
+|---|---|---|
+| **Right** | The same answer | Right |
+| **Parts missing** | A multi-part read kept only some parts, each one right | Read faithfully, listed separately as missing parts |
+| **Needs a human check** | Prose (a description, a sketch) that reads differently but has the same numbers in it | Not counted as a miss; both texts shown side by side on the replay page. Prose with different numbers is wrong |
+| **Wrong** | Anything else | A miss |
+
 Pass marks (`lib/regression/score.ts`): names 92% (24 of 26) with **zero** pre-filled
-wrongly; answers 95% with **zero** wrongly-correct and **zero** wrongly-blank.
+wrongly; answers 95% with **zero** wrongly-correct and **zero** wrongly-blank. Accuracy
+counts everything that is not a miss, so an answer waiting on a human check does not
+lower it. The page always says how many are waiting.
 
 ## What it shares with production
 
