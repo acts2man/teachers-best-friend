@@ -89,10 +89,10 @@ test("a resume over different pages starts over instead of reusing banked answer
   assert.deepEqual(plan.explicit, [7]);
 });
 
-test("progress saved before this change resumes as it did", () => {
+test("progress saved before this change is not resumed (gap G1: nothing says which pages its answers belong to)", () => {
   const legacy = { graded: banked.graded, nextBatch: 1, scanId: null };
   const plan = resumePlan(legacy, ids, [2, 2, 2]);
-  assert.equal(plan.resume, legacy);
+  assert.equal(plan.resume, null);
   assert.equal(plan.pageGroups, null);
   assert.deepEqual(plan.explicit, [2, 2, 2]);
 });

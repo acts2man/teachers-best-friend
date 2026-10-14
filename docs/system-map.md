@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.6 "Resume" and G3 re-checked 2026-10-14 against the G3 branch (from `a183f93`). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.6 "Resume", G1 and G3 re-checked 2026-10-14 against the G1 branch (on the G3 branch, from `a183f93`). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -109,15 +109,18 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 - **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId}`
   plus the run's grouping, `{pageIds, pageGroups, byName}` (`components/teacher-class-scan.tsx`
   `gradePages`), keyed by **whole-scan group index**. The server copy and the local draft
-  read it through one function, `parseProgress` (`lib/scan-session.ts`). See gap G1.
+  read it through one function, `parseProgress` (`lib/scan-session.ts`). Gap G1 (closed).
 - **Resume.** Saved progress records the run's page ids and page groups, and whether it
   grouped by name. `resumePlan` (`lib/teacher-class-scan.ts`) hands back the same groups
   for the same pages, or starts over when the pages differ. A rerun then accepts the
   saved progress if `nextBatch <= batches.length` (`components/teacher-class-scan.tsx`
   `gradePages`).
-  - Progress saved before the record existed (still live in 7-day sessions and drafts from
-    before the deploy) resumes as before. For a whole-stack run that is still the G3 bug,
-    until those records expire.
+  - Progress saved with no record (before the G3 PR) is not resumed: the run starts over
+    (G1 PR).
+  - `gradeInBatches` skips a batch only when all its students are already graded, and
+    sends just the unbanked students of a partly graded one, so a changed batch plan
+    (questions edited) never skips a student. A running job is picked up only under the
+    same batch plan (`inFlightJob`; `batchPlan` is recorded with the progress).
   - Starting over on different pages drops a still-running AI job (`scanId`) for those
     pages. It is not charged twice to the teacher (pages are paid once), but the AI cost
     is paid twice. That is the deliberate trade-off against reusing answers on the wrong
@@ -244,7 +247,7 @@ computer can share one scan. They are separate from the workspace.
     unconditional upsert (`:193-212`).
 - **Client.** `components/use-scan-session.ts`:
   - debounced 800 ms (`:12`) and polled (`:196-218`);
-  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1);
+  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1, closed: the grading run keeps its own pages, and a later resume checks them);
   - merging is in `mergeSessions` (`lib/scan-session.ts:203-240`).
 - **Local draft.** `localStorage['tbf.scan-draft.<assessmentId>']` holds piles and progress.
   It is read by `parseDraft` (`lib/scan-session.ts`), whose 7-day lifetime is checked only
@@ -344,7 +347,7 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1, G2 and G12 are ways this rule breaks today (G3 closed: `tests/stack-resume.test.mjs`).
+- **Open:** gaps G2 and G12 are ways this rule breaks today (G1 and G3 closed: `tests/resume-guard.test.mjs`, `tests/stack-resume.test.mjs`).
 
 **R4. Never mark an answer correct when it is wrong; never mark it blank when the student wrote something; uncertain goes to Unsure.**
 - **Why:**
@@ -513,7 +516,7 @@ Where a small change has the widest effect, roughly in order.
    - Grouping, name matching and batching all join on **array positions and group numbers**:
      `slice[r.page]`, `groupIndexes[g.group]`, `gradedByGroup.get(i)`, `"group-" + i`.
    - An off-by-one, or anything that renumbers groups between the grading and the matching
-     screen, moves answers between children with no error (R3; G1).
+     screen, moves answers between children with no error (R3; G1 closed).
 4. **`lib/teacher-workflow.ts` `normalizeRecognizedResponses`, `groupAnswers`, `applyGroupScore`
    and `mergeStudentResponses`.** Every grade passes through these four. They decide credit
    (R4), isolation (R5) and what a re-scan keeps (G5).
@@ -524,7 +527,7 @@ Where a small change has the widest effect, roughly in order.
    - It must stay one-directional: it may take credit away, never grant it.
 6. **`components/teacher-class-scan.tsx` resume and sync** (`:401-408`, `:715-760`;
    `components/use-scan-session.ts`; `lib/scan-session.ts` `mergeSessions`). Progress is saved
-   as group indexes and reused after the piles may have changed (G1; G3 closed).
+   as group indexes; a resume checks the pages and batch plan first (G1 and G3 closed).
 7. **`app/api/workspace/route.ts` schema.** It is deliberately loose for assessments
    (`z.any()`). It will accept any field, and that field is then dropped by the database (R2).
 8. **Migrations applied by hand.** Merging a PR does not apply its SQL. The app can ship ahead
@@ -539,27 +542,25 @@ These are ways the code breaks the rules today. Each one is reproduced or confir
 reading the code, as marked. None has a test in the suite, because each test would fail on
 `main`; a fix should land together with its test.
 
-- **G1. Resuming after the piles changed re-maps saved answers by index** (R3; from reading
-  the code).
-  - Banked `progress.graded` is keyed by whole-scan group index. A resume accepts it if
-    `nextBatch <= batches.length` (`components/teacher-class-scan.tsx:724`), against the
-    **current** piles.
-  - `addPages`, `addCameraGroups` and `undoLast` change the piles without clearing progress
-    (`:501`, `:548`, `:576-584`).
-  - `mergeSessions` can add another device's pages or piles (`lib/scan-session.ts:212-229`),
-    including during a 409 retry mid-grade (`components/use-scan-session.ts:116-124`).
-  - **Partly closed** by the G3 PR: progress saved since then records its page ids, and a
-    resume over different pages starts over instead of re-mapping. Progress saved before
-    then records nothing and is still re-mapped by index.
+- **G1. Resuming after the piles changed re-mapped saved answers by index** (R3). **Closed**
+  by the G3 and G1 PRs (`tests/stack-resume.test.mjs`, `tests/resume-guard.test.mjs`):
+  - progress records its page ids, groups and batch plan; a resume over different pages,
+    or with no record, starts over;
+  - a changed batch plan is resumed by which students are banked, not by batch number;
+  - a running job is only picked up under the same plan.
+
+  What it was: banked `progress.graded`, keyed by whole-scan group index, was accepted if
+  `nextBatch <= batches.length`, against the **current** piles, after `addPages`,
+  `addCameraGroups`, `undoLast` or a `mergeSessions` from another device had changed
+  them.
 - **G2. A front page with no name, in a stack without declared piles, joins the student before
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop
   whole-stack upload and Import from Photos with no split do not.
 - **G3. A failed whole-stack upload resumed as ONE student, wearing the wrong name.**
-  **Closed** by the `resumePlan` PR, for every scan whose progress was saved after it: the
-  progress carries the run's own grouping through the account copy and the local draft
-  (`tests/stack-resume.test.mjs`, including a reload). Records from before the deploy
-  still resume the old way until they expire (7 days). What it was:
+  **Closed** by the `resumePlan` PR: the progress carries the run's own grouping through
+  the account copy and the local draft (`tests/stack-resume.test.mjs`, including a
+  reload). Records from before the deploy are not resumed at all (G1 PR). What it was:
   - `startStackScan` grades by name. If it failed partway, its progress survived, and the
     auto-resume ran `gradeCaptured`, which passes the single pile `[N]`.
   - The resume was accepted. Group 0's saved answers (the first student's) then attached

@@ -358,7 +358,7 @@ export function sameFirstNameSplit(pageIndexes: number[], names: PageName[]): nu
  * groups come back as they were, and a by-name run reads names one page per
  * request again (explicit null) even though the caller passes the panel's one
  * pile. Over different pages the banked answers belong to other pages, so the
- * run starts over. Progress saved before this was recorded resumes as before.
+ * run starts over, and so does progress with no record at all (gap G1).
  */
 export function resumePlan(
   resume: {
@@ -368,12 +368,15 @@ export function resumePlan(
     pageIds?: string[];
     pageGroups?: number[][];
     byName?: boolean;
+    batchPlan?: number[][];
   } | null,
   ids: string[],
   explicit: number[] | null,
 ): { resume: typeof resume; pageGroups: number[][] | null; explicit: number[] | null } {
   if (!resume) return { resume: null, pageGroups: null, explicit };
-  if (!resume.pageIds || !resume.pageGroups) return { resume, pageGroups: null, explicit };
+  // No record of which pages its answers belong to (saved before the record
+  // existed): not trusted. Re-mapping it by index is gap G1.
+  if (!resume.pageIds || !resume.pageGroups) return { resume: null, pageGroups: null, explicit };
   const same = resume.pageIds.length === ids.length && resume.pageIds.every((id, i) => id === ids[i]);
   if (!same) return { resume: null, pageGroups: null, explicit };
   return {
@@ -381,6 +384,24 @@ export function resumePlan(
     pageGroups: resume.pageGroups,
     explicit: resume.byName ? null : resume.pageGroups.map((g) => g.length),
   };
+}
+
+/**
+ * The grading job a resume may pick up and wait on, or null. Its answers are
+ * numbered within the batch it was sent for, so it is only safe when the batch
+ * plan is exactly the one it was sent under (gap G1): a different plan would
+ * lay them on other students. A job not picked up still finishes; its pages
+ * are already paid for, so only the model's time is spent twice.
+ */
+export function inFlightJob(
+  resume: { scanId: string | null; batchPlan?: number[][] } | null,
+  batches: { groupIndexes: number[] }[],
+): string | null {
+  if (!resume?.scanId || !resume.batchPlan) return null;
+  const same =
+    resume.batchPlan.length === batches.length &&
+    resume.batchPlan.every((g, i) => g.length === batches[i].groupIndexes.length && g.every((x, j) => x === batches[i].groupIndexes[j]));
+  return same ? resume.scanId : null;
 }
 
 /**
@@ -1478,9 +1499,20 @@ export async function gradeInBatches(
   onShortParts?: (info: { batch: number; reasked: number; unsure: number }) => void,
 ): Promise<GradedGroup[]> {
   const graded: GradedGroup[] = [...already];
+  const banked = new Set(already.map((g) => g.group));
 
-  for (const [index, batch] of batches.entries()) {
-    if (index < startAt) continue;
+  for (const [index, planned] of batches.entries()) {
+    // Skipped only when every student in it is already graded. `startAt` alone
+    // is not enough: if the plan changed since the answers were banked (the
+    // questions were edited, so batches regroup), "batch 1" of the new plan is
+    // not batch 1 of the old one, and skipping by number left students
+    // ungraded (gap G1).
+    const unbanked = planned.groupIndexes.filter((g) => !banked.has(g));
+    if (planned.groupIndexes.length && !unbanked.length) continue;
+    if (index < startAt && !already.length) continue;
+    // A batch some of whose students are already banked sends only the rest:
+    // a banked answer is never graded again or listed twice.
+    const batch = unbanked.length < planned.groupIndexes.length ? subBatch(planned, unbanked) : planned;
 
     // Keep the best answer seen for each of this batch's groups across attempts:
     // a retry that still comes up short never loses a fuller earlier answer.

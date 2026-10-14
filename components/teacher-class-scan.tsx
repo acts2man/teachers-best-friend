@@ -41,6 +41,7 @@ import {
   applyScannedGroups,
   groupPagesByCapture,
   resumePlan,
+  inFlightJob,
   groupPagesByName,
   sameFirstNameSplit,
   withRetry,
@@ -675,7 +676,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // Resume where an interrupted run stopped rather than grading, and paying,
       // from the top again.
       const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
-      let inFlight = resuming?.scanId ?? null;
+      // Recorded with every save, so a resume can tell whether a running job
+      // was sent under this same plan before waiting on it (gap G1).
+      const batchPlan = batches.map((b) => b.groupIndexes);
+      let inFlight = inFlightJob(resuming, batches);
       const graded = await gradeInBatches(
         batches,
         async (batch, index) => {
@@ -724,7 +728,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             // numbered against its own smaller request, and resuming it as the
             // whole batch would put one student's answers on another.
             batch === batches[index]
-              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, ...grouping }) }
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, ...grouping, batchPlan }) }
               : undefined,
           );
           return d.result;
@@ -735,7 +739,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           // Kept on the ref as well as in state: a failure is handled in the
           // same tick, where the state from this run has not landed yet.
           if (partial.current) partial.current.graded = soFar;
-          setProgress({ graded: soFar, nextBatch, scanId: null, ...grouping });
+          setProgress({ graded: soFar, nextBatch, scanId: null, ...grouping, batchPlan });
         },
         resuming?.nextBatch ?? 0,
         resuming?.graded ?? [],

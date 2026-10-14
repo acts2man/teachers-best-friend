@@ -39,6 +39,9 @@ export type ScanProgress = {
   pageGroups?: number[][];
   /** Whether the run grouped by the names read (no piles declared). */
   byName?: boolean;
+  /** Each batch's whole-scan group numbers, as the run planned them. A
+   * running job is only picked up under the same plan (gap G1). */
+  batchPlan?: number[][];
 };
 
 export type ScanSession = {
@@ -113,14 +116,16 @@ function isPage(x: unknown): x is ScanPage {
 }
 
 /** A saved progress's grouping record, if it is well formed; {} otherwise. */
-function runGrouping(p: Partial<ScanProgress>): Pick<ScanProgress, "pageIds" | "pageGroups" | "byName"> {
+function runGrouping(p: Partial<ScanProgress>): Pick<ScanProgress, "pageIds" | "pageGroups" | "byName" | "batchPlan"> {
   const ids = p.pageIds;
   const groups = p.pageGroups;
   if (!Array.isArray(ids) || !ids.every((x) => typeof x === "string")) return {};
   if (!Array.isArray(groups)) return {};
   const inRange = (x: unknown) => Number.isInteger(x) && (x as number) >= 0 && (x as number) < ids.length;
   if (!groups.every((g) => Array.isArray(g) && g.every(inRange))) return {};
-  return { pageIds: ids, pageGroups: groups, byName: p.byName === true };
+  const plan = p.batchPlan;
+  const planOk = Array.isArray(plan) && plan.every((b) => Array.isArray(b) && b.every((g) => Number.isInteger(g) && g >= 0 && g < groups.length));
+  return { pageIds: ids, pageGroups: groups, byName: p.byName === true, ...(planOk ? { batchPlan: plan } : {}) };
 }
 
 /**
