@@ -110,6 +110,8 @@ import {
   writingScored,
   writingConfirmed,
   replaceWritingResponses,
+  writingReplaceWarning,
+  confirmedGradesAtRisk,
   setWritingScore,
   confirmWritingScores,
   answersToDecide,
@@ -117,7 +119,7 @@ import {
   confirmResponses,
   gradesClearedByReread,
 } from "@/lib/teacher-workflow";
-import { ConfirmReread } from "./confirm-reread";
+import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
@@ -2226,6 +2228,25 @@ function WritingReview({
   const student = students.find((s) => s.id === selected);
   const rows = selected ? writingRows(a, selected) : [];
   const hasScores = selected ? writingScored(a, selected) : false;
+  // G18: new writing for a student with confirmed trait scores asks first --
+  // keep them, replace them, or cancel -- before anything is uploaded or
+  // scored. The choice rides to replaceWritingResponses through this ref (the
+  // file picker opens straight after it, before a state update would land).
+  const risk = confirmedGradesAtRisk(a, selected ? [selected] : []);
+  const [askReplace, setAskReplace] = useState(false);
+  const replaceConfirmed = useRef(false);
+  function chooseWriting() {
+    if (risk.answers > 0) setAskReplace(true);
+    else {
+      replaceConfirmed.current = false;
+      input.current?.click();
+    }
+  }
+  function pickFiles(replace: boolean) {
+    setAskReplace(false);
+    replaceConfirmed.current = replace;
+    input.current?.click();
+  }
 
   async function gradeEssay(list: FileList | null) {
     if (!list || !selected) return;
@@ -2282,12 +2303,20 @@ function WritingReview({
         assessmentId: a.id,
         studentId: selected,
       });
+      const keep = !replaceConfirmed.current && confirmedGradesAtRisk(withFiles, [selected]).answers > 0;
       const scored = replaceWritingResponses(
         withFiles,
         selected,
         d.result.responses as import("@/lib/teacher-types").StudentResponse[],
+        replaceConfirmed.current,
       );
-      await onSave(scored, "Suggested scores ready — confirm or change each one");
+      replaceConfirmed.current = false;
+      await onSave(
+        scored,
+        keep
+          ? "Suggested scores ready for the traits you have not confirmed — your confirmed scores are kept"
+          : "Suggested scores ready — confirm or change each one",
+      );
     } catch (e) {
       await onSave(withFiles, "Writing saved");
       toast.error(
@@ -2337,10 +2366,18 @@ function WritingReview({
               hidden
               onChange={(e) => gradeEssay(e.target.files)}
             />
-            <Action disabled={uploading || busy} onClick={() => input.current?.click()}>
+            <Action disabled={uploading || busy} onClick={chooseWriting}>
               {uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}
               {hasScores ? "Replace writing" : "Add writing"}
             </Action>
+            <ConfirmRescan
+              risk={risk}
+              open={askReplace}
+              wording={writingReplaceWarning}
+              onCancel={() => setAskReplace(false)}
+              onKeep={() => pickFiles(false)}
+              onReplace={() => pickFiles(true)}
+            />
             {hasScores && !writingConfirmed(a, selected) && (
               <Action
                 variant="secondary"

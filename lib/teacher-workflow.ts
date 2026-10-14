@@ -633,22 +633,48 @@ export function writingConfirmed(a: Assessment, studentId: string): boolean {
   return rows.length > 0 && rows.every((r) => r.response?.verified);
 }
 
-/** Swaps in a fresh set of AI-suggested scores for one student, dropping any it
- * had before for this assessment's rubric. */
+/** Swaps in a fresh set of AI-suggested scores for one student. A trait score
+ * the teacher already confirmed is KEPT -- the new scores fill only the traits
+ * they have not confirmed -- unless the teacher chose "Replace" after being
+ * told how many confirmed scores that discards (writingReplaceWarning, G18). */
 export function replaceWritingResponses(
   a: Assessment,
   studentId: string,
   incoming: StudentResponse[],
+  replaceConfirmed = false,
 ): Assessment {
   const dimIds = new Set(rubricDimensions(a).map((d) => d.id));
+  const mine = (r: StudentResponse) => r.studentId === studentId && dimIds.has(r.questionId);
+  const kept = replaceConfirmed ? [] : a.responses.filter((r) => mine(r) && r.verified);
+  const keptIds = new Set(kept.map((r) => r.questionId));
   return {
     ...a,
     responses: [
-      ...a.responses.filter(
-        (r) => !(r.studentId === studentId && dimIds.has(r.questionId)),
-      ),
-      ...incoming,
+      ...a.responses.filter((r) => !mine(r)),
+      ...kept,
+      ...incoming.filter((r) => !keptIds.has(r.questionId)),
     ],
+  };
+}
+
+/** The "Replace writing" question's wording (G18): how many confirmed trait
+ * scores a new scoring of this student's writing would discard. */
+export function writingReplaceWarning(risk: ReturnType<typeof confirmedGradesAtRisk>) {
+  const n = risk.answers;
+  const scores = n + " trait " + (n === 1 ? "score" : "scores");
+  return {
+    title: "Replace " + n + " confirmed trait " + (n === 1 ? "score" : "scores") + "?",
+    body:
+      "You already confirmed " +
+      scores +
+      " for this student. New writing can replace " +
+      (n === 1 ? "it" : "them") +
+      " with fresh suggested scores, unconfirmed, for you to check again — or keep your confirmed " +
+      (n === 1 ? "score" : "scores") +
+      " and use the new writing only for traits you have not confirmed.",
+    keep: "Keep my confirmed scores",
+    replace: "Replace with new scores",
+    cancel: "Cancel",
   };
 }
 

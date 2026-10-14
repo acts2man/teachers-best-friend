@@ -62,14 +62,17 @@ export function ConfirmRescan({
   onCancel,
   onKeep,
   onReplace,
+  wording = rescanWarning,
 }: {
   risk: ReturnType<typeof confirmedGradesAtRisk>;
   open: boolean;
   onCancel: () => void;
   onKeep: () => void;
   onReplace: () => void;
+  /** The question's words: re-scanning answers (default) or re-scoring writing. */
+  wording?: (risk: ReturnType<typeof confirmedGradesAtRisk>) => ReturnType<typeof rescanWarning>;
 }) {
-  const text = rescanWarning(risk);
+  const text = wording(risk);
   return (
     <AlertDialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <AlertDialogContent>

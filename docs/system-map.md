@@ -7,7 +7,8 @@ claim cites `file:line` as of that commit. Line numbers drift; the function name
 search by name when a line has moved. Anything not checked against the running system says
 so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
 G4 fix (atomic revision check). R4 and G14 re-checked 2026-10-14 on `main` at `6ab8606` for the
-G14 fix (#143). Migrations listed here are the repo's copies; production is applied **by hand**
+G14 fix (#143). R6 and G18 re-checked 2026-10-14 on `main` at `ed58f7a` for the G18 fix.
+Migrations listed here are the repo's copies; production is applied **by hand**
 (`supabase/migrations/README.md`), so "in the repo" is not proof it is live.
 
 Contents:
@@ -441,6 +442,12 @@ unassigned is always allowed.
   (`confirmedGradesAtRisk`, `rescanWarning`, `ConfirmRescan` in `components/confirm-reread.tsx`):
   keep my confirmed grades / replace with the new scan / cancel. Guarded by
   `tests/invariants/rescan-keeps-confirmed.test.mjs`.
+- **Re-scoring writing** (G18, fixed in code): "Replace writing" / "Add writing" in
+  `components/teacher-assessments.tsx` (`WritingReview`) asks first when the student has
+  confirmed trait scores -- keep my confirmed scores / replace with new scores / cancel, with
+  the count (`writingReplaceWarning`, through `ConfirmRescan`) -- before anything is uploaded
+  or scored. `replaceWritingResponses` keeps verified trait scores unless told
+  `replaceConfirmed`. Guarded by `tests/invariants/writing-replace-keeps-confirmed.test.mjs`.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
@@ -787,8 +794,8 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G17. FIXED in code (#140). A stack upload followed by camera piles lost the camera piles'
   boundaries** (R3; #140 review). Now only the stack pile is split by names
   (`groupMixedPiles`); guarded by `tests/invariants/scan-resume-layout.test.mjs`.
-- **G18. "Replace writing" discards confirmed rubric scores with no count or confirmation**
-  (R6; #147 review). `components/teacher-assessments.tsx` re-scores an essay through
-  `replaceWritingResponses`. The button says "Replace", but a teacher's confirmed trait scores
-  go without the #134/#147-style question. Manual answer entry in `components/teacher-scan.tsx`
-  also overwrites confirmed answers with what the teacher types (deliberate, noted).
+- **G18. FIXED in code (G18 PR). "Replace writing" discarded confirmed rubric scores with no
+  count or confirmation** (R6; #147 review). It now asks Keep / Replace / Cancel with the count
+  of confirmed trait scores, and keeps them unless the teacher chooses Replace (see R6). Manual
+  answer entry in `components/teacher-scan.tsx` still overwrites confirmed answers with what the
+  teacher types (deliberate, noted).
