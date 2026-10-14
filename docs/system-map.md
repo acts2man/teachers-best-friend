@@ -620,10 +620,21 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - **FIXED IN CODE, MIGRATION PENDING APPLICATION:** `20261014130000` writes skills,
     prerequisites, next, vocabulary, misconception, example, dok, source and officialCode into
     the row's `meta` jsonb, and `get_workspace_json` reads all of them back (prerequisites,
-    next and vocabulary were hard-coded `[]`). An all-empty `meta` is stored as NULL so the
-    shared catalog's copy still fills it in.
-  - Side effect: once a teacher row has `meta`, the shared catalog's later enrichment of the
-    same standard no longer reaches it -- the teacher's saved copy wins, defaults included.
+    next and vocabulary were hard-coded `[]`).
+  - **The defaults are not frozen.** The reader and `normalizeStandard` fill every missing
+    extra (skills `[]`, DOK 2, a stock misconception and example) and the client sends them
+    back. So the save stores only what the reader would not fill in: lists only when non-empty,
+    misconception and example only when they differ from the stock texts (both apostrophe
+    forms), DOK only when it is not 2 (no screen edits a standard's DOK; it comes from the
+    catalog). A row with nothing else stores `meta` NULL. The reader merges per key,
+    `catalog || teacher`: the teacher's own values win, the shared catalog fills every key the
+    teacher has not set, including enrichment added later.
+  - Guarded by `tests/invariants/custom-standards-key.test.mjs` (the merge, and that the
+    save's stock texts and DOK match `normalizeStandard` and `get_workspace_json`); proven on
+    the database by `supabase/checks/custom-standards-round-trip.sql` steps 5-6.
+  - Remaining edge: a teacher who types a skill list into Standards > Add and later clears it
+    to empty gets the catalog's list back on reload, if the shared catalog has that standard.
+    Hand-added district standards have no catalog row, so in practice this does not arise.
 - **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
   that child** (R3; reproduced 14 Oct).
   - `matchRosterStudent`'s fuzzy tier scores "Christina Lee" against "Chris Lee" at 0.947, and

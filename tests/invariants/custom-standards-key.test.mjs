@@ -79,3 +79,61 @@ test("the client's catalog loader de-duplicates on the same identity", () => {
     /x\.framework === framework && x\.grade === grade && x\.subject === s\)\s*\.map\(\(x\) => x\.code\)/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// G11 follow-up: the teacher's saved extras must not freeze the defaults.
+//
+// get_workspace_json and lib/teacher-server.ts normalizeStandard fill every
+// missing extra (skills [], dok 2, a stock misconception and example), and the
+// client sends them straight back. If the save stored them, the first save
+// after 20261014130000 would write the defaults into every teacher row, and a
+// row with meta never saw the shared catalog's later enrichment again.
+const defs = currentDefinitions(files);
+const stdCte = (() => {
+  const body = defs.get_workspace_json;
+  const i = body.indexOf("std as (");
+  return body.slice(i, body.indexOf("ws as (", i));
+})();
+const sqlLit = (s) => `'${s.replace(/'/g, "''")}'`;
+
+test("the reload merges the catalog's meta under the teacher's, key by key", () => {
+  // catalog || teacher: the teacher's keys win, the catalog fills the rest. A
+  // plain coalesce(teacher, catalog) hides the whole catalog once the teacher
+  // row has any meta at all.
+  assert.match(
+    stdCte,
+    /\(select g\.meta from public\.standards g[\s\S]*?limit 1\),\s*'\{\}'::jsonb\)\s*\|\|\s*coalesce\(s\.meta,\s*'\{\}'::jsonb\)/,
+    "get_workspace_json does not merge the shared catalog's meta under the teacher's",
+  );
+});
+
+test("the save keeps no empty list: an empty one would hide the catalog's", () => {
+  for (const k of ["skills", "prerequisites", "next", "vocabulary"])
+    assert.ok(
+      save.sql.includes(`jsonb_array_length(cs->'${k}') > 0`),
+      `sync_workspace stores an empty ${k} list in meta`,
+    );
+});
+
+test("the save drops the stock texts and DOK the reader fills in itself", () => {
+  const server = readFileSync("lib/teacher-server.ts", "utf8");
+  const normalize = server.slice(server.indexOf("function normalizeStandard"), server.indexOf("export function normalizeWorkspace"));
+  const fromClient = {
+    misconception: /misconception:\s*item\.misconception\s*\?\?\s*"([^"]+)"/.exec(normalize)?.[1],
+    example: /example:\s*item\.example\s*\?\?\s*"([^"]+)"/.exec(normalize)?.[1],
+  };
+  const unquote = (s) => s.replace(/''/g, "'");
+  const fromReader = {
+    misconception: /'misconception', coalesce\(m\.meta ->> 'misconception',\s*'((?:[^']|'')*)'\)/.exec(stdCte)?.[1],
+    example: /'example', coalesce\(m\.meta ->> 'example',\s*'((?:[^']|'')*)'\)/.exec(stdCte)?.[1],
+  };
+  for (const k of ["misconception", "example"]) {
+    assert.ok(fromClient[k] && fromReader[k], `could not read the default ${k} from normalizeStandard and get_workspace_json`);
+    for (const text of new Set([fromClient[k], unquote(fromReader[k])]))
+      assert.ok(save.sql.includes(sqlLit(text)), `sync_workspace stores the stock ${k} "${text}" in meta`);
+  }
+  // DOK: the reader's default is 2 (both places); the save leaves a 2 out.
+  assert.match(stdCte, /'dok', coalesce\(public\.safe_int\(m\.meta ->> 'dok'\), 2\)/);
+  assert.match(normalize, /typeof item\.dok === "number" \? item\.dok : 2/);
+  assert.ok(save.sql.includes("nullif(public.safe_int(cs->>'dok'), 2)"), "sync_workspace stores the default DOK 2 in meta");
+});

@@ -37,9 +37,25 @@
 -- default. They now go into the row's existing `meta` jsonb column (the same
 -- column the shared catalog uses, so no new column), and get_workspace_json
 -- reads prerequisites/next/vocabulary/officialCode from meta too instead of
--- hard-coding '[]'. An all-empty meta is stored as NULL so the shared-catalog
--- fallback still applies. Every value is type-checked (arrays only, safe_int
--- for dok), so no value a save sends can fail it (R13).
+-- hard-coding '[]'. Every value is type-checked (arrays only, safe_int for
+-- dok), so no value a save sends can fail it (R13).
+--
+-- The teacher's meta does not freeze the defaults. The reader fills every
+-- missing extra (skills [], dok 2, a stock misconception and example), the
+-- client sends those back, and a naive save would store them in every row on
+-- its first save -- after which the shared catalog's later enrichment of the
+-- same standard could never reach it. So:
+--   * the save stores only what the reader would NOT fill in anyway: arrays
+--     only when non-empty; misconception and example only when they differ
+--     from the stock texts, exactly as get_workspace_json and
+--     lib/teacher-server.ts normalizeStandard write them (both apostrophes);
+--     dok only when it is not 2. A standard's DOK comes only from the catalog
+--     (no screen edits it), so a 2 is either the default or the same value
+--     the catalog would give; storing it would only stop a catalog 3 showing.
+--     A meta left with nothing in it is stored as NULL;
+--   * the reader merges per key, catalog first and the teacher's row on top
+--     (`catalog || teacher`): the teacher's own values win, the catalog fills
+--     every key the teacher has not set.
 --
 -- Also: a payload that somehow holds two rows for the SAME new key keeps the
 -- last one instead of failing the save (R14), and the delete of custom
@@ -71,13 +87,16 @@ declare
       'nullif(cs->>''domain'',''''), nullif(cs->>''cluster'','''')',
       'nullif(cs->>''domain'',''''), nullif(cs->>''cluster'',''''),
          nullif(jsonb_strip_nulls(jsonb_build_object(
-           ''skills'', case when jsonb_typeof(cs->''skills'') = ''array'' then cs->''skills'' end,
-           ''prerequisites'', case when jsonb_typeof(cs->''prerequisites'') = ''array'' then cs->''prerequisites'' end,
-           ''next'', case when jsonb_typeof(cs->''next'') = ''array'' then cs->''next'' end,
-           ''vocabulary'', case when jsonb_typeof(cs->''vocabulary'') = ''array'' then cs->''vocabulary'' end,
-           ''misconception'', nullif(cs->>''misconception'', ''''),
-           ''example'', nullif(cs->>''example'', ''''),
-           ''dok'', public.safe_int(cs->>''dok''),
+           ''skills'', case when jsonb_typeof(cs->''skills'') = ''array'' then case when jsonb_array_length(cs->''skills'') > 0 then cs->''skills'' end end,
+           ''prerequisites'', case when jsonb_typeof(cs->''prerequisites'') = ''array'' then case when jsonb_array_length(cs->''prerequisites'') > 0 then cs->''prerequisites'' end end,
+           ''next'', case when jsonb_typeof(cs->''next'') = ''array'' then case when jsonb_array_length(cs->''next'') > 0 then cs->''next'' end end,
+           ''vocabulary'', case when jsonb_typeof(cs->''vocabulary'') = ''array'' then case when jsonb_array_length(cs->''vocabulary'') > 0 then cs->''vocabulary'' end end,
+           ''misconception'', case when cs->>''misconception'' in ('''',
+               ''Use the student''''s written reasoning to identify the step that needs support.'',
+               ''Use the student’s written reasoning to identify the step that needs support.'')
+             then null else cs->>''misconception'' end,
+           ''example'', nullif(nullif(cs->>''example'', ''''), ''Choose a task that directly demonstrates this standard.''),
+           ''dok'', nullif(public.safe_int(cs->>''dok''), 2),
            ''source'', nullif(cs->>''source'', ''''),
            ''officialCode'', nullif(cs->>''officialCode'', ''''))), ''{}''::jsonb)'],
     array['sync_workspace',
@@ -112,7 +131,20 @@ declare
                           then m.meta -> ''vocabulary'' else ''[]''::jsonb end,'],
     array['get_workspace_json',
       '''source'', coalesce(m.meta ->> ''source'', '''')',
-      '''source'', coalesce(m.meta ->> ''source'', '''')) || jsonb_strip_nulls(jsonb_build_object(''officialCode'', m.meta ->> ''officialCode'')']
+      '''source'', coalesce(m.meta ->> ''source'', '''')) || jsonb_strip_nulls(jsonb_build_object(''officialCode'', m.meta ->> ''officialCode'')'],
+    array['get_workspace_json',
+      'coalesce(
+        s.meta,
+        (select g.meta from public.standards g
+          where g.teacher_id is null and g.active
+            and g.code = s.code and g.framework = s.framework and g.grade = s.grade
+          limit 1)
+      ) as meta',
+      'coalesce(
+        (select g.meta from public.standards g
+          where g.teacher_id is null and g.active
+            and g.code = s.code and g.framework = s.framework and g.grade = s.grade
+          limit 1), ''{}''::jsonb) || coalesce(s.meta, ''{}''::jsonb) as meta']
   ];
   fn text;
   i int;
