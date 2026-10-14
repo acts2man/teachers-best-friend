@@ -133,7 +133,10 @@ test("all three scan paths ask before a re-scan can replace confirmed grades", (
   // The review screen's "Upload pages" / "Take a photo" for one student too.
   const review = strip("components/teacher-review.tsx");
   const upload = review.slice(review.indexOf("async function uploadPages("));
-  assert.match(upload.slice(0, upload.indexOf("setUploading(true)")), /confirmedGradesAtRisk\(a, \[selected\]\)\.answers > 0[\s\S]*setAskRescan\(incoming\);[\s\S]*return;/, "the review screen asks before uploading");
+  assert.match(upload.slice(0, upload.indexOf("setUploading(true)")), /confirmedGradesAtRisk\(a, \[selected\]\)\.answers > 0[\s\S]*setAskRescan\(\{ studentId: selected, files: incoming \}\);[\s\S]*return;/, "the review screen asks before uploading");
+  // The waiting pages carry the student they were picked for (#147 review 2).
+  assert.match(upload, /if \(forStudent && forStudent !== selected\)[\s\S]*?return;/);
+  assert.match(review, /uploadPages\(waiting\.files, false, waiting\.studentId\)/);
   assert.match(upload, /mergeStudentResponses\(\s*a\.responses\.filter\(\(r\) => r\.studentId === selected\),\s*d\.result\.responses as StudentResponse\[\],\s*replaceConfirmed === true,?\s*\)/);
   assert.match(one, /mergeStudentResponses\(\s*chosen!\.responses\.filter\(\(r\) => r\.studentId === studentId\),\s*d\.result\.responses,\s*replaceConfirmedGrades,?\s*\)/);
 });

@@ -754,7 +754,7 @@ export function rescanWarning(risk: ReturnType<typeof confirmedGradesAtRisk>) {
       (risk.students > 1 ? " for " + plural(risk.students, "student", "students") : " for this student") +
       ". The new scan can replace " +
       (risk.answers === 1 ? "it" : "them") +
-      " with what it reads now -- unconfirmed, for you to check again -- or keep your confirmed " +
+      " with what it reads now -- unconfirmed, for you to check again; a confirmed grade on a question it does not read is removed -- or keep your confirmed " +
       (risk.answers === 1 ? "grade" : "grades") +
       " and use the new scan only for answers you have not confirmed.",
     keep: "Keep my confirmed grades",

@@ -1146,7 +1146,7 @@ export function StudentResponseReview({
   const [filter, setFilter] = useState("flagged");
   const [limit, setLimit] = useState(12);
   // Pages waiting while the teacher is asked about their confirmed grades (G5).
-  const [askRescan, setAskRescan] = useState<File[] | null>(null);
+  const [askRescan, setAskRescan] = useState<{ studentId: string; files: File[] } | null>(null);
   const [uploading, setUploading] = useState(false),
     [status, setStatus] = useState(""),
     [notice, setNotice] = useState(""),
@@ -1267,21 +1267,32 @@ export function StudentResponseReview({
   /** `replaceConfirmed`: the teacher's answer when this student already has
    * confirmed grades (G5); undefined until asked. Asked before anything is
    * uploaded or read, so cancelling costs nothing. */
-  async function uploadPages(list: FileList | File[] | null, replaceConfirmed?: boolean) {
+  async function uploadPages(
+    list: FileList | File[] | null,
+    replaceConfirmed?: boolean,
+    /** The student the pages were picked for, when they waited on the
+     * question below: a re-render can change `selected` meanwhile, and the
+     * pages must never be read as another child's work. */
+    forStudent?: string,
+  ) {
     if (!list?.length || !selected || uploading) return;
+    if (forStudent && forStudent !== selected) {
+      toast.error("The student changed while you were deciding, so those pages were not added. Choose the student and add the pages again.");
+      return;
+    }
     if (!prep.ready) {
       toast.error("Confirm the standards and answer key before adding student work.");
       return;
     }
     const incoming = Array.from(list);
-    if (replaceConfirmed === undefined && confirmedGradesAtRisk(a, [selected]).answers > 0) {
-      setAskRescan(incoming);
-      if (input.current) input.current.value = "";
-      if (camera.current) camera.current.value = "";
-      return;
-    }
     if (incoming.length > 6) {
       toast.error("Add up to six pages for one student at a time.");
+      return;
+    }
+    if (replaceConfirmed === undefined && confirmedGradesAtRisk(a, [selected]).answers > 0) {
+      setAskRescan({ studentId: selected, files: incoming });
+      if (input.current) input.current.value = "";
+      if (camera.current) camera.current.value = "";
       return;
     }
     setUploading(true);
@@ -1545,18 +1556,18 @@ export function StudentResponseReview({
               Take a photo
             </Action>
             <ConfirmRescan
-              risk={confirmedGradesAtRisk(a, selected ? [selected] : [])}
+              risk={confirmedGradesAtRisk(a, askRescan ? [askRescan.studentId] : [])}
               open={!!askRescan}
               onCancel={() => setAskRescan(null)}
               onKeep={() => {
-                const files = askRescan;
+                const waiting = askRescan;
                 setAskRescan(null);
-                void uploadPages(files, false);
+                if (waiting) void uploadPages(waiting.files, false, waiting.studentId);
               }}
               onReplace={() => {
-                const files = askRescan;
+                const waiting = askRescan;
                 setAskRescan(null);
-                void uploadPages(files, true);
+                if (waiting) void uploadPages(waiting.files, true, waiting.studentId);
               }}
             />
             <input
