@@ -107,8 +107,9 @@ test("mapLimit keeps order and never runs more than the limit at once", async ()
 
 test("the class scan and the replay both plan names per declared pile, and the route labels each image", () => {
   // A resume reads names per saved group (G3: the groups the progress was
-  // graded against), otherwise per declared pile, otherwise per page.
-  assert.match(readFileSync("components/teacher-class-scan.tsx", "utf8"), /planNameBatches\(\s*pages\.map\(\(p\) => p\.stripId\),\s*resumeGroups \?\? \(explicit \? groupPagesByCapture\(explicit\) : null\),?\s*\)/);
+  // graded against), otherwise per declared pile (a stack pile beside them
+  // page by page, G17), otherwise per page.
+  assert.match(readFileSync("components/teacher-class-scan.tsx", "utf8"), /planNameBatches\(\s*pages\.map\(\(p\) => p\.stripId\),\s*resumeGroups \?\? \(explicit \? \(mixed \? namePilesFor\(explicit, stackPiles!\) : groupPagesByCapture\(explicit\)\) : null\),?\s*\)/);
   assert.match(readFileSync("lib/regression/runner.ts", "utf8"), /planNameBatches\(strips, declared \? groupPagesByCapture\(/);
   assert.match(readFileSync("app/api/analyze/route.ts", "utf8"), /labelledContent\(p\.mode, content\)/);
 });

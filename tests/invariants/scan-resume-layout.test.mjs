@@ -110,7 +110,7 @@ test("the panel resumes only through planResume and never grades a stack upload 
   const src = readFileSync("components/teacher-class-scan.tsx", "utf8").replace(/\/\/.*$/gm, "");
   const captured = src.slice(src.indexOf("async function gradeCaptured("));
   const body = captured.slice(0, captured.indexOf("setScanning(true)"));
-  assert.match(body, /captured\.some\(\(p\) => p\.stack\) \? null : piles\.map/, "a stack upload is split by names, not graded as one pile");
+  assert.match(body, /const stackPiles = piles\.map\(\(pile\) => pile\.some\(\(p\) => p\.stack\)\)/, "a stack pile is marked, so it is split by names");
   assert.match(body, /planResume\(progress,/);
   assert.match(body, /plan\?\.kind === "changed"[\s\S]*askToRegrade\(\)[\s\S]*return;/, "a changed stack stops and asks");
   // Banked progress always carries the layout it is numbered against.
@@ -191,4 +191,25 @@ test("the panel plans only the ungraded students and never skips by nextBatch", 
   const ask = src.slice(src.indexOf("function askToRegrade("), src.indexOf("async function gradeCaptured("));
   assert.match(ask, /id: "scan-regrade-" \+ a\.id/, "the prompt replaces itself instead of stacking");
   assert.match(ask, /gradeCapturedRef\.current\(true\)/, "the button runs the latest panel state");
+});
+
+// ---- #140 review, round 2 ----
+
+test("a stack upload beside declared piles: only the stack is split by names (G17)", () => {
+  // Pile 0: a stack of 4 pages (two students by name); pile 1: a camera pile
+  // the teacher declared, whose front page has no legible name.
+  const names = [["Ana Torres", 99], ["", 0], ["Ben Okafor", 99], ["", 0], ["", 0], ["", 0]].map(([name, confidence], page) => ({ page, name, confidence }));
+  const groups = C.groupMixedPiles([4, 2], [true, false], names, (n) => C.rosterMatchCount(n, roster));
+  assert.deepEqual(groups, [[0, 1], [2, 3], [4, 5]], "the declared pile stays its own student, not Ben's back pages");
+  assert.deepEqual(C.namePilesFor([4, 2], [true, false]), [[0], [1], [2], [3], [4, 5]]);
+  // The old rule: any stack page sent the whole scan to the names.
+  assert.deepEqual(C.groupPagesByName(names, (n) => C.rosterMatchCount(n, roster)), [[0, 1], [2, 3, 4, 5]]);
+});
+
+test("the Grade again prompt is dismissed when a run starts and never re-grades over rows on screen", () => {
+  const src = readFileSync("components/teacher-class-scan.tsx", "utf8").replace(/\/\/.*$/gm, "");
+  const run = src.slice(src.indexOf("async function gradePages("));
+  assert.match(run.slice(0, run.indexOf("let banked")), /toast\.dismiss\("scan-regrade-" \+ a\.id\)/);
+  const ask = src.slice(src.indexOf("function askToRegrade("), src.indexOf("async function gradeCaptured("));
+  assert.match(ask, /if \(scanningRef\.current \|\| groupsRef\.current\) return;/);
 });

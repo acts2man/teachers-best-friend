@@ -107,17 +107,21 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
     parts (`partsShortfall` `:1341`, `settleShortParts` `:1417`, which sends the leftovers to
     Unsure).
 - **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId,
-  layout}` (`setProgress` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
+  layout, inFlight}` (`setProgress` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
   **whole-scan group index**. `layout` is the body upload ids of every group those indexes
   refer to (`groupLayout`, `lib/scan-session.ts`).
 - **Resume.** `gradeCaptured` asks `planResume(progress, pageIds)` (`lib/scan-session.ts`):
   - `resume` only when the pages on screen are exactly the layout's pages in the same
-    order; the run then uses the **saved** grouping, never one re-derived from the piles;
+    order; the run then uses the **saved** grouping, never one re-derived from the piles,
+    plans only the students not yet graded (`planRemainingBatches`, whole-scan numbering),
+    and waits on an in-flight job only if it was sent for exactly those students
+    (`inFlightMatches`);
   - `changed` (pages added, removed, reordered, merged in, or progress saved before layouts
     existed) stops and asks the teacher to grade again (`askToRegrade`). Nothing is
     guessed; already-paid pages cost nothing the second time.
-  - A whole-stack upload marks its pages `stack: true`; its single pile is never graded as
-    one declared student (G3, fixed in the G3 PR).
+  - A whole-stack upload marks its pages `stack: true`; its pile is split by names, never
+    graded as one declared student, and declared piles beside it stay one student each
+    (`groupMixedPiles`, `namePilesFor`; G3, G17).
 
 ### 1.7 Matching screen (teacher review)
 
@@ -240,7 +244,8 @@ computer can share one scan. They are separate from the workspace.
     unconditional upsert (`:193-212`).
 - **Client.** `components/use-scan-session.ts`:
   - debounced 800 ms (`:12`) and polled (`:196-218`);
-  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1);
+  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1); the merge
+    keeps the progress with more students graded (`mergeSessions`);
   - merging is in `mergeSessions` (`lib/scan-session.ts:203-240`).
 - **Local draft.** `localStorage['tbf.scan-draft.<assessmentId>']` holds piles and progress
   (`components/teacher-class-scan.tsx:83`, `:410-421`). Its 7-day lifetime is checked only
@@ -340,7 +345,7 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1 (pages merged in mid-grade), G2, G12 and G17 are ways this rule breaks
+- **Open:** gaps G1 (pages merged in mid-grade), G2 and G12 are ways this rule breaks
   today. G3 is fixed in code (#140); the resume is guarded by
   `tests/invariants/scan-resume-layout.test.mjs` (`planResume`, `planRemainingBatches`,
   `inFlightMatches` in `lib/scan-session.ts` / `lib/teacher-class-scan.ts`).
@@ -626,8 +631,6 @@ reading the code, as marked. None has a test in the suite, because each test wou
   `class_scan_sessions` keeps transcribed answers and names read for 7 days; the localStorage
   draft is expired only when it is read; camera shots in IndexedDB never expire. All of them
   sit on shared school devices. Check `docs/student-data-flow.md` against this.
-- **G17. A stack upload followed by camera piles loses the camera piles' boundaries** (R3;
-  #140 review). If any page is `stack: true`, the whole scan is split by names, so a later
-  "Next student" pile whose front page has no legible name joins the last stack student (the
-  G2 mechanism). Rare; the fix is declared groups for non-stack piles plus a name split for the
-  stack pile, or no "Next student" after a stack upload.
+- **G17. FIXED in code (#140). A stack upload followed by camera piles lost the camera piles'
+  boundaries** (R3; #140 review). Now only the stack pile is split by names
+  (`groupMixedPiles`); guarded by `tests/invariants/scan-resume-layout.test.mjs`.
