@@ -329,3 +329,29 @@ export function mergeSessions(server: ScanSession, local: ScanSession): ScanSess
 export function sessionFingerprint(s: ScanSession): string {
   return JSON.stringify(s);
 }
+
+/**
+ * The scanned pages no SAVED row covers, in their piles.
+ *
+ * A row is saved only when it has answers and a name (saveAll /
+ * applyScannedGroups skip the rest). Pages without such a row are a run that
+ * stopped part-way ("confirm those, then press Done for the rest"), pages the
+ * other device added while this one was grading, or rows that came back with
+ * no answers or had their name cleared (G1). Saving the class used to clear
+ * every pile, so those pages -- uploaded, never saved -- vanished with no
+ * message. They are kept for the next grading instead. Pages of a row the
+ * teacher DISCARDED are covered: they set them aside on purpose.
+ */
+export function pagesWithoutRow(
+  piles: ScanPage[][],
+  groups: Pick<ResolvedGroup, "key" | "pageUploadIds" | "responses" | "name">[] | null,
+  discarded: Set<string> = new Set(),
+): ScanPage[][] {
+  if (!groups) return [];
+  const covered = new Set(
+    groups
+      .filter((g) => discarded.has(g.key) || (g.responses.length > 0 && g.name.trim() !== ""))
+      .flatMap((g) => g.pageUploadIds),
+  );
+  return piles.map((pile) => pile.filter((p) => !covered.has(p.bodyId))).filter((pile) => pile.length);
+}
