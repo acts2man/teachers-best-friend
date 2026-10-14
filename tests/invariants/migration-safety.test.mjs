@@ -38,7 +38,7 @@ export const ALLOWED_DROPS = {
   // California and Common Core. A unique index cannot be made non-unique
   // except by dropping it. The file builds the wider unique index and
   // re-points sync_workspace at it first, in the same transaction.
-  "20261014120000_custom_standards_per_framework.sql": ["drop index if exists public.custom_standards_key"],
+  "20261014130000_custom_standards_per_framework.sql": ["drop index if exists public.custom_standards_key"],
 };
 
 const normal = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();

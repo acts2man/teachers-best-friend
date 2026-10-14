@@ -1,5 +1,5 @@
 -- Not a migration. Run by hand AFTER
--- supabase/migrations/20261014120000_custom_standards_per_framework.sql has
+-- supabase/migrations/20261014130000_custom_standards_per_framework.sql has
 -- been applied. Safe on production: no DDL, and every write is inside a DO
 -- block that raises at the end, so the transaction rolls back and nothing it
 -- saved survives. The final ERROR line IS the result -- read it, it is not a

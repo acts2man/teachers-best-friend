@@ -36,7 +36,7 @@ const read = jsonReads(defs.get_workspace_json);
  * docs/system-map.md. "I forgot the migration" is not a reason.
  */
 const NOT_PERSISTED = {
-  // Empty since 20261014120000_custom_standards_per_framework.sql: Standard's
+  // Empty since 20261014130000_custom_standards_per_framework.sql: Standard's
   // skills, prerequisites, next, vocabulary, misconception, example, dok,
   // source and officialCode were dropped on save (gap G11) and now ride the
   // row's `meta` column.

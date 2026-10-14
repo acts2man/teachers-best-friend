@@ -165,7 +165,7 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
    patches in `20261012200000` (answerParts), `20261013120000` (gradedAlone),
-   `20261013130000` (secondChoice) and `20261014120000` (custom standards keyed per framework,
+   `20261013130000` (secondChoice) and `20261014130000` (custom standards keyed per framework,
    their extras saved in `meta`; **in the repo, not yet applied to production**). For each table it **upserts the rows it is sent and deletes
    every row it is not sent**:
 
@@ -181,7 +181,7 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    | lessons | `:244` |
    | resources | `:253` |
    | student_groups and student_group_members | `:265-268` |
-   | standards (custom) | `:288`, replaced by `20261014120000`: deletes a row only when no payload row has its framework, grade, subject **and** code |
+   | standards (custom) | `:288`, replaced by `20261014130000`: deletes a row only when no payload row has its framework, grade, subject **and** code |
 
    - Responses are inserted through **inner joins** on the question and the student
      (`:188-189`). A response whose question or student is missing from the payload is
@@ -189,7 +189,7 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - Responses upsert `on conflict (question_id, student_id)` (`:191`). **Two payload rows
      hitting the same key fail the entire save** (rule R14). Custom standards upserted
      `on conflict (teacher_id, code)` (`:283`), which failed every save of a teacher with one
-     code in two frameworks (gap G8); `20261014120000` upserts them on
+     code in two frameworks (gap G8); `20261014130000` upserts them on
      `(teacher_id, framework, grade, subject, code)` from a `distinct on` over the same four
      fields, so a repeated row keeps the last copy instead of failing.
    - The function then bumps `teacher_workspaces.revision` (`:301-306`).
@@ -312,7 +312,7 @@ deletes anything the payload leaves out.
   - `tests/workspace-persistence-guard.test.mjs`: the hand-kept list.
 - **Known exception:** none. `Standard`'s skills, prerequisites, next, vocabulary,
   misconception, example, dok, source and officialCode were not saved (gap G11); since
-  `20261014120000` they ride the row's `meta` column and the allow-list in the test is empty.
+  `20261014130000` they ride the row's `meta` column and the allow-list in the test is empty.
   **That migration is in the repo, not yet applied to production**: until it is, the loss is
   still live.
 
@@ -440,7 +440,7 @@ unassigned is always allowed.
     `lock_timeout` and may not drop a table, column, function, view, type, schema or index; a
     dropped policy or trigger must be re-created in the same file. Exceptions are named one
     statement at a time in `ALLOWED_DROPS` in that test, and only an index may be listed;
-  - **the one exception so far:** `20261014120000_custom_standards_per_framework.sql` drops the
+  - **the one exception so far:** `20261014130000_custom_standards_per_framework.sql` drops the
     index `custom_standards_key` on `(teacher_id, code)` (gap G8). A unique index cannot be made
     non-unique except by dropping it, and it rejected the same code in two frameworks. An index
     holds no data; the file builds the wider unique index and re-points `sync_workspace` at it
@@ -491,7 +491,7 @@ fails the whole save if one statement touches the same row twice.
   (`lib/teacher-workflow.ts:501`); `mergeSplitGroups` merges two rows for one student
   (`lib/teacher-class-scan.ts:973`). Custom standards: the database key is the key the app
   uses, `(teacher_id, framework, grade, subject, code)`, and `sync_workspace` reads them through
-  a `distinct on` that key (`20261014120000`, **not yet applied to production**).
+  a `distinct on` that key (`20261014130000`, **not yet applied to production**).
 - **Guarded by:** `tests/invariants/no-wrong-student.test.mjs` (no student and question pair
   saved twice); `tests/invariants/custom-standards-key.test.mjs` (the upsert's target, the
   live unique indexes on `public.standards` after replaying every migration, the payload
@@ -596,7 +596,7 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - Reproduced 14 Oct on a full replay of `supabase/migrations` (PGlite): "ON CONFLICT DO
     UPDATE command cannot affect row a second time".
   - **FIXED IN CODE, MIGRATION PENDING APPLICATION:**
-    `20261014120000_custom_standards_per_framework.sql` keys custom standards on
+    `20261014130000_custom_standards_per_framework.sql` keys custom standards on
     `(teacher_id, framework, grade, subject, code)` and drops the old index (the one R9
     exception). Not live until it is applied by hand; then run
     `supabase/checks/custom-standards-round-trip.sql`.
@@ -617,7 +617,7 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G11. Custom standards lose their skills, misconception, example and DOK on reload** (R2).
   `sync_workspace` writes none of them (`20261008190000…:278-288`). The teacher's own "skills"
   field in Standards > Add (`components/teacher-insights.tsx:167`) is gone after a refresh.
-  - **FIXED IN CODE, MIGRATION PENDING APPLICATION:** `20261014120000` writes skills,
+  - **FIXED IN CODE, MIGRATION PENDING APPLICATION:** `20261014130000` writes skills,
     prerequisites, next, vocabulary, misconception, example, dok, source and officialCode into
     the row's `meta` jsonb, and `get_workspace_json` reads all of them back (prerequisites,
     next and vocabulary were hard-coded `[]`). An all-empty `meta` is stored as NULL so the

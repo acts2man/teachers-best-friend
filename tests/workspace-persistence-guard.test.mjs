@@ -50,7 +50,7 @@ const PERSISTED = {
     "assignmentUploadIds", "studentUploadIds", "answerKeyVerified", "classIds",
     "pointsPossible", "studentOrder",
   ],
-  // Custom standards (20261014120000): the columns, plus everything else in
+  // Custom standards (20261014130000): the columns, plus everything else in
   // the row's `meta` jsonb. Unlisted until then because half of it was lost.
   Standard: [
     "code", "title", "subject", "grade", "domain", "cluster", "summary",
