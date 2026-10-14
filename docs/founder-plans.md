@@ -508,3 +508,38 @@ and the key check (**$0.0023**) [VERIFIED: averages over 9 and 7 requests in
   fix that. It would make the reading score in PR 2 real instead of circular.
 - **What it needs.** It is a new saved field, so it needs the migration and the
   save-and-reload proof.
+
+## 6. The automatic camera and the page guide (your decision; nothing changed yet)
+
+### What exists today [VERIFIED in `components/scan-camera.tsx` and `lib/auto-snap.ts`]
+- **Auto capture.** When the camera sees a whole page and the phone is held
+  steady for about half a second, it takes the picture by itself, then waits for
+  the page to change before it can take another. It is **on by default** (Ricky's
+  request) and has an **Auto / Manual** button; the choice is remembered on that
+  phone. The shutter button always works too.
+- **The page guide.** The outline drawn around the page while you aim. It is what
+  tells auto capture a page is there. It does **not** crop the photo: what is saved
+  is exactly what the screen shows.
+- Both are covered by tests (`tests/auto-snap.test.mjs` and eight camera tests).
+
+### The options
+
+| | What you would see | Effort |
+|---|---|---|
+| **A. Keep it as it is** | Auto on, with the button to switch to Manual. | None. |
+| **B. Auto off by default** | The camera opens in Manual: nothing is taken until you tap. The Auto button stays, and a teacher who turns it on keeps it on. | About half a day: one default and the tests that assume Auto. Teachers who already chose keep their choice; to reset everyone, a little more. |
+| **C. Remove auto capture** | Tap the shutter for every page. The page guide stays, as an aiming aid only, or goes too (C2). | About a day: the auto-snap code and its tests come out and the camera tests are reworked; the "Hold steady or tap the shutter" hint goes with it. C2 adds about half a day to remove the outline. The "too blurry -- move a little farther" check stays either way: it comes from the sharpness check, not the outline. |
+
+### Risks
+- **Auto on (A):** a page snapped while still moving, or the same page twice when
+  the outline loses the page and finds it again. Blurry shots are already caught
+  and retaken. [INFERRED] We have no count of how often either happens.
+- **Auto off (B, C):** one tap per page. On a 30-student, 2-page class set that is
+  60 taps, which auto capture was asked for to save.
+- Neither choice changes what is saved or what it costs: a page is a page.
+- Not tested on a real iPhone (Safari); every camera check here runs in Chrome.
+
+### What we need from you
+- Which of A, B or C, and for C whether the page guide stays.
+- If you have seen a double or a mid-movement snap, roughly how often -- that is
+  the number that decides between A and B.
