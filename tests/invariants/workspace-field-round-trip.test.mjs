@@ -37,23 +37,11 @@ const read = jsonReads(defs.get_workspace_json);
  */
 const NOT_PERSISTED = {
   Standard: {
-    // KNOWN DATA LOSS, not a design choice -- see docs/system-map.md, "Known
-    // risky areas". sync_workspace's custom-standards insert keeps only
-    // code/title/subject/grade/domain/cluster/wording/summary/framework.
-    // get_workspace_json refills these from the shared catalog's meta or a
-    // fixed default (lib/teacher-server.ts normalizeStandard), so the teacher's
-    // own "skills" typed in Standards > Add (components/teacher-insights.tsx)
-    // and the AI catalog's enrichment are gone after a reload. Listed so the
-    // suite is green while the loss is visible; remove each line once a
-    // migration persists it.
-    skills: "write",
-    prerequisites: "write",
-    next: "write",
-    vocabulary: "write",
-    misconception: "write",
-    example: "write",
-    dok: "write",
-    source: "write",
+    // skills, prerequisites, next, vocabulary, misconception, example, dok and
+    // source were listed here as KNOWN DATA LOSS until 20261014160000 (gap
+    // G11) saved them in standards.meta. officialCode is the California
+    // catalog's own code for a built-in standard; built-ins are never saved
+    // (they ship with the app), and a custom standard has no official code.
     officialCode: "both",
   },
 };

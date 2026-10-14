@@ -35,6 +35,7 @@ import { ScanCamera } from "./scan-camera";
 import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill, downloadText } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
+import { addableStandards } from "@/lib/teacher-catalog";
 import {
   assignShortNames,
   classSummary,
@@ -719,6 +720,7 @@ export function StandardsLoader({
     setLoading(true);
     try {
       let added: Standard[] = [];
+      const elsewhere: Standard[] = [];
       for (const s of subjects) {
         const d = await analyzeRequest({
           mode: "catalog",
@@ -727,20 +729,29 @@ export function StandardsLoader({
           subject: s,
           text: "",
         });
-        const existing = new Set(
-          [...w.customStandards, ...added]
-            .filter((x) => x.framework === framework && x.grade === grade && x.subject === s)
-            .map((x) => x.code),
-        );
-        added = [...added, ...(d.result.standards as Standard[]).filter((x) => !existing.has(x.code))];
+        // One copy of each code in the library (gap G8): a code already there
+        // under another framework is not added again, and neither is a code
+        // the answer lists twice.
+        const fit = addableStandards([...w.customStandards, ...added], d.result.standards as Standard[]);
+        added = [...added, ...fit.added];
+        elsewhere.push(...fit.heldElsewhere);
       }
+      const already = elsewhere.length
+        ? elsewhere.length +
+          (elsewhere.length === 1 ? " code was" : " codes were") +
+          " already in your library under " +
+          [...new Set(elsewhere.map((s) => frameworkLabel(s.framework)))].join(", ") +
+          ", so " +
+          (elsewhere.length === 1 ? "it was" : "they were") +
+          " not added again."
+        : "";
       if (!added.length) {
-        toast.info("No new standards were found for this grade and subject.");
+        toast.info(already || "No new standards were found for this grade and subject.");
         return;
       }
       await save(
         { ...w, customStandards: [...w.customStandards, ...added] },
-        added.length + " " + frameworkLabel(framework) + " standards added to your library",
+        added.length + " " + frameworkLabel(framework) + " standards added to your library" + (already ? ". " + already : ""),
       );
     } catch (e) {
       toast.error(describeFailure(e, "The standards couldn’t be retrieved."));

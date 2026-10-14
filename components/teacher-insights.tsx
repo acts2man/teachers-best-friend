@@ -155,6 +155,16 @@ export function StandardsView() {
       toast.error("That standard already exists in this framework.");
       return;
     }
+    // Your library holds each code once (gap G8): a second copy under another
+    // framework could not be saved.
+    const held = w.customStandards.find((s) => s.code === code.trim());
+    if (held) {
+      toast.error(
+        code.trim() + " is already in your library under " + held.framework +
+          ". Each code can be in your library once, so use a different code.",
+      );
+      return;
+    }
     const standard: Standard = {
       code: code.trim(),
       title: title.trim(),

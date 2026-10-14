@@ -142,6 +142,29 @@ export function allStandards(
   return [...standards, ...californiaStandards, ...w.customStandards, ...shared];
 }
 
+/**
+ * The custom standards that can join the teacher's library, and the ones that
+ * cannot because the library already holds that code under ANOTHER framework
+ * or grade (gap G8, docs/system-map.md). The database keeps one custom
+ * standard per code for each teacher (custom_standards_key), so a second copy
+ * either failed every save or, since 20261014160000, is dropped on the save.
+ * A code already held under the same framework and grade, or listed twice in
+ * `incoming`, is simply not added again.
+ */
+export function addableStandards(library: Standard[], incoming: Standard[]) {
+  const held = new Map(library.map((s) => [s.code, s] as const));
+  const added: Standard[] = [];
+  const heldElsewhere: Standard[] = [];
+  for (const s of incoming) {
+    const h = held.get(s.code);
+    if (!h) {
+      held.set(s.code, s);
+      added.push(s);
+    } else if (h.framework !== s.framework || h.grade !== s.grade) heldElsewhere.push(h);
+  }
+  return { added, heldElsewhere };
+}
+
 export function catalogFor(w: Pick<Workspace, "customStandards" | "sharedStandards">, grade: number, framework: string, subject?: string) {
   const seen = new Set<string>();
   return allStandards(w).filter(s => {
