@@ -1,0 +1,46 @@
+# Every pull request runs the same checks CLAUDE.md requires before anything is
+# called done: typecheck, lint at 0 errors, and the full test suite, including
+# the rule tests in tests/invariants/ (see docs/system-map.md, section 2).
+#
+# Until this existed nothing ran the tests on GitHub at all; a red suite was
+# only ever noticed by whoever ran it locally.
+
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint (0 errors)
+        # eslint exits non-zero on any error; warnings do not fail the job.
+        run: npm run lint
+
+      - name: Test (build + tests/*.test.mjs + tests/invariants/*.test.mjs)
+        run: npm test

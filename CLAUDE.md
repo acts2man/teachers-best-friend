@@ -1,3 +1,5 @@
+**Before any change, read `docs/system-map.md`; when behaviour changes, update it in the same PR.**
+
 # Working agreements
 
 ## Push means ship. Never leave finished work sitting on a branch
