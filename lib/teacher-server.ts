@@ -516,14 +516,22 @@ export async function replaceWorkspace(id: string, workspace: Workspace) {
     // child tables first and the workspace row last, the opposite order from
     // sync_workspace_if_revision, so the two running together for one teacher
     // can deadlock. The reset is unconditional, so it carries the revision it
-    // just read; if a save lands in between, it reads again once. Only with no
-    // row yet, the function missing, or two lost races does it sync directly.
+    // just read; if a save lands in between, it reads again once. It syncs
+    // directly only with no row yet or the function missing (PGRST202).
+    // Losing twice is a retryable 409, never an unlocked sync: that would
+    // re-open the deadlock and could let a concurrently saved student survive
+    // the reset.
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await workspaceRevision(id);
       if (current === null) break;
       const saved = await syncWorkspaceIfRevision(id, workspace, current);
       if (saved === "missing") break;
       if (saved !== null) return;
+      if (attempt === 1)
+        throw new HttpError(
+          409,
+          "Your classroom changed while it was being reset. Try again.",
+        );
     }
     await syncWorkspace(id, workspace);
     return;

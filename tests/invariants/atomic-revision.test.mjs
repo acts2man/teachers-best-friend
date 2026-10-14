@@ -169,6 +169,17 @@ test("a reset racing a save: both land, one after the other, through the lock", 
   assert.ok(!db.calls.includes("sync_workspace"), `a direct sync_workspace ran: ${db.calls}`);
 });
 
+test("a reset that loses the race twice is a retryable 409, never an unlocked direct sync", async () => {
+  const db = fakeDatabase(3);
+  // Another save lands between every read and every locked call.
+  db.from = () => ({
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { revision: db.revision++ }, error: null }) }) }),
+  });
+  await assert.rejects(S.replaceWorkspace("t", workspace("reset")), (e) => e.status === 409 && /changed while it was being reset/.test(e.message));
+  assert.deepEqual(db.calls, ["sync_workspace_if_revision", "sync_workspace_if_revision"], `a direct sync_workspace ran: ${db.calls}`);
+  assert.deepEqual(db.syncs, []);
+});
+
 test("a reset with no workspace row, or before the migration, syncs directly", async () => {
   const fresh = fakeDatabase(null);
   fresh.revision = null;

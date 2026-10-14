@@ -41,12 +41,12 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 - `uploadFile` (`lib/upload-client.ts:35-52`) POSTs to `/api/uploads`
   (`app/api/uploads/route.ts:32-87`). The route checks the size (8 MB), the MIME type and the
   magic bytes, then calls `saveDocument`.
-- `saveDocument` (`lib/teacher-server.ts:540-606`):
+- `saveDocument` (`lib/teacher-server.ts:548-614`):
   - stores the file in bucket **`teacher-documents`** at `<ownerId>/<id>`;
   - inserts a **`teacher_uploads`** row with `page_count` and `content_sha256`.
 - An insert trigger refuses a row with no hash
   (`supabase/migrations/20260923170000_a_scan_cannot_exist_uncharged.sql:158-178`).
-- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:672-695`). It does
+- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:680-703`). It does
   **not** filter out purged rows; see gap G9.
 
 ### 1.3 Charging
@@ -172,10 +172,11 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
      `console.error` **on every such save** and falls back to the old check-then-write
      (`:494-501`; RPC at `:325-334`), where gap G4 is still open. Only PGRST202 falls back;
      any other error, a 42883 raised inside the function included, is a 500.
-   - The reset (`replaceWorkspace`, `:513-537`) goes through the same function, carrying the
-     revision it has just read, and reads again once if a save lands in between. It calls
-     `sync_workspace` directly only when there is no row yet, the function is missing, or it
-     loses the race twice. Reason: a direct `sync_workspace` writes the child tables first and
+   - The reset (`replaceWorkspace`, `:513-545`) goes through the same function, carrying the
+     revision it has just read, and reads again once if a save lands in between. If it loses
+     twice it throws a 409 ("Your classroom changed while it was being reset. Try again.");
+     it never falls back to an unlocked sync. It calls `sync_workspace` directly only when
+     there is no row yet or the function is missing (PGRST202). Reason: a direct `sync_workspace` writes the child tables first and
      the workspace row last, the opposite lock order, so the two together can deadlock.
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
@@ -625,7 +626,7 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - Loading two frameworks that share codes (California and Common Core both use `3.OA.A.1`)
     puts two rows with one code into the payload, and `ON CONFLICT` raises.
 - **G9. Upload recovery can return a purged file.** `findUploadByHash` ignores `purged_at`
-  (`lib/teacher-server.ts:672-695`), so the scan later fails with a 404. The purge also
+  (`lib/teacher-server.ts:680-703`), so the scan later fails with a 404. The purge also
   handles only 200 rows per table per run, and each class-scan page creates two rows.
 - **G10. The reuse cache key is looser than the read it caches.**
   - The page hashes are sorted and de-duplicated, so a reordered set gets the old order.
