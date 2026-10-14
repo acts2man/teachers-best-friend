@@ -323,11 +323,30 @@ async function workspaceRevision(id: string) {
  * fallback to the blob: if the RPC fails the request fails with a 500.
  */
 async function syncWorkspace(id: string, workspace: Workspace) {
+  // Row lock first, then the write, the same order as sync_workspace_checked,
+  // so a reset racing a save cannot deadlock (gap G4).
+  const locked = await createServiceClient().rpc("sync_workspace_locked", {
+    p_teacher: id,
+    p_data: workspace,
+  });
+  if (!locked.error) return;
+  if (locked.error.code !== "PGRST202") throw rpcFailure("sync_workspace_locked", locked.error);
+  warnMissing("sync_workspace_locked");
   const { error } = await createServiceClient().rpc("sync_workspace", {
     p_teacher: id,
     p_data: workspace,
   });
   if (error) throw rpcFailure("sync_workspace", error);
+}
+
+/** Said once per server process: the G4 migration is not on this database yet,
+ * so saves take the old path (where two can race). Visible in the function
+ * logs, so "G4 is closed" can be checked against the running system. */
+const warned = new Set<string>();
+function warnMissing(fn: string) {
+  if (warned.has(fn)) return;
+  warned.add(fn);
+  console.warn(`Workspace RPC ${fn} is not on this database (PGRST202): using the unlocked path. Apply supabase/migrations/20261014150000_sync_workspace_checked.sql.`);
 }
 
 /**
@@ -347,7 +366,10 @@ async function syncWorkspaceChecked(
     p_expected_revision: revision,
   });
   if (error) {
-    if (error.code === "PGRST202") return "missing";
+    if (error.code === "PGRST202") {
+      warnMissing("sync_workspace_checked");
+      return "missing";
+    }
     throw rpcFailure("sync_workspace_checked", error);
   }
   return data === null || data === undefined ? null : Number(data);

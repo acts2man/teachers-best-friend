@@ -156,14 +156,18 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - clamps titles to 200 characters (`:165-166`);
    - calls `updateWorkspace(id, workspace, revision)` and returns **409 when it returns null**
      (`:170-175`).
-6. `updateWorkspace` (`lib/teacher-server.ts:450-469`). On Supabase:
+6. `updateWorkspace` (`lib/teacher-server.ts:495-521`). On Supabase:
    - call `sync_workspace_checked(teacher, data, expected revision)`
      (`supabase/migrations/20261014150000_sync_workspace_checked.sql`). It locks the
      `teacher_workspaces` row, compares the revision, and runs `sync_workspace` in the same
      transaction. A stale save gets null, which becomes a 409 (G4, closed once that
      migration is applied);
    - on a database without that function (PGRST202) it falls back to the old two-call
-     path, where the check and the write are separate round trips.
+     path, where the check and the write are separate round trips, and logs once per
+     server process that it did (`warnMissing`).
+   - every other whole-workspace write (`syncWorkspace`: first save, replace) goes through
+     `sync_workspace_locked`, which takes the same row lock first, so it cannot deadlock
+     a checked save.
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
@@ -396,14 +400,19 @@ unassigned is always allowed.
   tab's save would delete what that save added. No incident is recorded: the guard predates
   this repository's history (23 Sep 2026).
 - **Enforced by:**
-  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:456-457`) and the 409 in
+  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:495-521`, inside
+    `sync_workspace_checked`; the old two-call check at `:508-509` is the fallback) and the 409 in
     the route (`app/api/workspace/route.ts:170-175`);
-  - `readWorkspace` reads the revision before the data (`lib/teacher-server.ts:413-424`).
+  - `readWorkspace` reads the revision before the data (`lib/teacher-server.ts:458-470`).
 - **Guarded by:** `tests/invariants/stale-revision.test.mjs`, which runs the real
   `updateWorkspace` against an in-memory database.
 - Two saves carrying the same current revision at the same moment: exactly one is written
-  (gap G4, closed by `sync_workspace_checked`; tested in the same file, and against a real
-  Postgres in the G4 PR).
+  (gap G4, closed by `sync_workspace_checked` once its migration is applied). The unit tests
+  in the same file use an in-memory stand-in; the SQL itself was run once by hand on a local
+  Postgres 16 holding the repo's schema (two sessions saving at the same revision: the second
+  waited on the row lock and was refused, final revision 2; then 20 rounds of a checked save
+  racing a `sync_workspace_locked` save: no deadlock, no error, the checked save refused 11
+  times when the other landed first). That run is not in CI.
 
 **R8. No student data in the public repo, CI logs, `app_events` or screenshots.**
 - **Why:** CLAUDE.md and `docs/student-data-flow.md`. These are published commitments in
@@ -558,7 +567,13 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G4. The revision check was not atomic on Supabase** (R7). **Closed** by the G4 PR once
   its migration is applied: `sync_workspace_checked` checks the revision under a row lock and
   writes in the same transaction. Until the migration is applied, `updateWorkspace` falls back
-  to the old two-call path (PGRST202), where the race still exists.
+  to the old two-call path (PGRST202), where the race still exists, and says so once per
+  server process in the function logs.
+  - **Residual:** `delete_teacher_account` (and `reset_teacher_data`, which no app code calls
+    today) still take the child tables before the `teacher_workspaces` row (the old order). An
+    account deletion racing a checked save can still deadlock; Postgres aborts one of them with an error
+    rather than writing anything wrong. Not changed here: re-creating those functions belongs in
+    its own PR (R9).
 - **G5. Re-scanning a student replaces their teacher-confirmed grades with no warning** (R6;
   confirmed by reading the code).
   - `mergeStudentResponses` keeps a prior response only when the new answer is blank

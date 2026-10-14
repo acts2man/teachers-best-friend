@@ -63,7 +63,9 @@ function fakeDatabase(revision, { checked = true } = {}) {
       await tick();
       return { data: db.revision, error: null };
     }
-    assert.equal(fn, "sync_workspace");
+    if (fn === "sync_workspace_locked" && !checked)
+      return { data: null, error: { code: "PGRST202", message: "Could not find the function public.sync_workspace_locked" } };
+    assert.ok(fn === "sync_workspace" || fn === "sync_workspace_locked", fn);
     await tick();
     db.syncs.push(args.p_data);
     db.revision += 1;
@@ -146,4 +148,15 @@ test("G4: the checked function locks the row before comparing, and writes in the
   assert.ok(body.indexOf("for update") < body.indexOf("p_expected_revision then"), "lock before compare");
   assert.ok(body.indexOf("p_expected_revision then") < body.indexOf("perform public.sync_workspace(p_teacher, p_data)"), "compare before write");
   assert.match(sql, /revoke execute on function public\.sync_workspace_checked\(uuid, jsonb, integer\) from public, anon, authenticated/);
+});
+
+test("G4: every other writer takes the row lock first too, so a reset cannot deadlock a save", () => {
+  const sql = readFileSync("supabase/migrations/20261014150000_sync_workspace_checked.sql", "utf8");
+  const locked = sql.slice(sql.indexOf("create or replace function public.sync_workspace_locked"));
+  assert.ok(locked.indexOf("for update") > 0 && locked.indexOf("for update") < locked.indexOf("public.sync_workspace(p_teacher, p_data)"));
+  assert.match(sql, /grant execute on function public\.sync_workspace_checked\(uuid, jsonb, integer\) to service_role/);
+  assert.match(sql, /grant execute on function public\.sync_workspace_locked\(uuid, jsonb\) to service_role/);
+  const server = readFileSync("lib/teacher-server.ts", "utf8");
+  const sync = server.slice(server.indexOf("async function syncWorkspace("), server.indexOf("const warned"));
+  assert.ok(sync.indexOf('"sync_workspace_locked"') < sync.indexOf('"sync_workspace"'), "the locked call is tried first");
 });

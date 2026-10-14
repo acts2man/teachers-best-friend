@@ -1,5 +1,9 @@
 set lock_timeout = '5s';
 
+-- NOT applied by the author. Apply by hand before merging the PR that adds it
+-- (supabase/migrations/README.md); until then the app falls back to the old
+-- path (PGRST202) and logs that it did.
+
 -- Gap G4 (docs/system-map.md, rule R7): a save checked the workspace revision
 -- and then called sync_workspace in a SECOND round trip. Two saves carrying
 -- the same current revision that arrived together could both pass the check;
@@ -44,5 +48,25 @@ begin
 end;
 $function$;
 
--- The same access as sync_workspace: the server's service role only.
+-- The other writers (a reset, the first save) go through this, so EVERY write
+-- takes the teacher_workspaces row lock first and the child tables after. A
+-- plain sync_workspace takes them the other way round (it upserts the row
+-- last), and a reset racing a checked save deadlocked (review of the G4 PR).
+create or replace function public.sync_workspace_locked(p_teacher uuid, p_data jsonb)
+ returns jsonb
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+begin
+  perform 1 from public.teacher_workspaces where owner_id = p_teacher for update;
+  return public.sync_workspace(p_teacher, p_data);
+end;
+$function$;
+
+-- The server's service role only, granted explicitly rather than left to the
+-- default privileges of whoever applies this.
 revoke execute on function public.sync_workspace_checked(uuid, jsonb, integer) from public, anon, authenticated;
+revoke execute on function public.sync_workspace_locked(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.sync_workspace_checked(uuid, jsonb, integer) to service_role;
+grant execute on function public.sync_workspace_locked(uuid, jsonb) to service_role;
