@@ -1064,7 +1064,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         " student" +
         (result.studentCount === 1 ? "" : "s") +
         " graded from the scanned stack" +
-        (result.newStudents.length ? " (" + result.newStudents.length + " new)" : ""),
+        (result.newStudents.length ? " (" + result.newStudents.length + " new)" : "") +
+        // A re-scan never replaces a grade the teacher confirmed (gap G5).
+        (result.keptConfirmed
+          ? " · " +
+            result.keptConfirmed +
+            (result.keptConfirmed === 1 ? " answer you had confirmed was" : " answers you had confirmed were") +
+            " kept — change them in Grade by question to use the new scan"
+          : ""),
     );
     setSaving(false);
     if (ok) {

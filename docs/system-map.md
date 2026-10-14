@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.8, R6 and G5 re-checked 2026-10-14 against the G5 branch (from `a183f93`). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -138,9 +138,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
      since (`:1013`, `:1022-1041`);
    - maps verdicts through `normalizeRecognizedResponses` (`lib/teacher-workflow.ts:496-556`);
    - the first row for a student is merged with **previously saved** responses through
-     `mergeStudentResponses` (`lib/teacher-workflow.ts:712-721`). **A re-read answer replaces
-     a teacher-confirmed one** (gap G5). Two rows of one scan are merged with `mergeSplitGroups`
-     (`:973-995`);
+     `mergeStudentResponses` (`lib/teacher-workflow.ts`). A confirmed answer is kept, never
+     replaced by the re-read (G5, closed). Two rows of one scan are merged with
+     `mergeSplitGroups`, which also leaves a confirmed answer alone;
    - `studentOrder` is appended (`:1074-1075`).
 3. The payload is the **whole workspace**:
    `{...w, students: reconcileEvidence(keepOtherClassStudents(w.students, students, result.students), result.assessment), assessments: w.assessments.map(...)}`
@@ -385,8 +385,9 @@ unassigned is always allowed.
     `components/teacher-assessments.tsx` (dialog near `:709`).
 - **Guarded by:** `tests/reread-confirm.test.mjs`, which also scans the source: every
   re-read button must go through the confirmation.
-- **NO TEST YET:** re-**scanning** students' work replaces teacher-confirmed grades with no
-  confirmation (gap G5).
+- Re-**scanning** a student never replaces a grade the teacher confirmed (gap G5, closed):
+  `mergeStudentResponses` and `mergeSplitGroups` keep it, and the save says how many were
+  kept. Guarded by `tests/rescan-keeps-confirmed.test.mjs`.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
@@ -505,7 +506,7 @@ Where a small change has the widest effect, roughly in order.
      screen, moves answers between children with no error (R3; G1, G3).
 4. **`lib/teacher-workflow.ts` `normalizeRecognizedResponses`, `groupAnswers`, `applyGroupScore`
    and `mergeStudentResponses`.** Every grade passes through these four. They decide credit
-   (R4), isolation (R5) and what a re-scan keeps (G5).
+   (R4), isolation (R5) and what a re-scan keeps (confirmed answers, G5 closed).
 5. **`lib/math-answer.ts`.**
    - It is the only thing standing between a model's mistaken "match" and full credit.
    - It folds case, strips spaces and cuts at words such as "is", "for" and "because"
@@ -555,13 +556,16 @@ reading the code, as marked. None has a test in the suite, because each test wou
   Two saves carrying the current revision that arrive together both pass; the second
   whole-workspace replace wins, and whatever the first added is deleted. The fix is for
   `sync_workspace` to take the expected revision and check it under a row lock.
-- **G5. Re-scanning a student replaces their teacher-confirmed grades with no warning** (R6;
-  confirmed by reading the code).
-  - `mergeStudentResponses` keeps a prior response only when the new answer is blank
-    (`lib/teacher-workflow.ts:719`).
-  - The new response is unverified, has a new id, and drops `errorType`, `gradedAlone` and
-    the teacher's credit. `tests/teacher-class-scan.test.mjs` asserts this as intended.
-  - #134's confirmation covers re-reading questions, not re-scanning student work.
+- **G5. Re-scanning a student replaced their teacher-confirmed grades with no warning.**
+  **Closed** by the G5 PR (`tests/rescan-keeps-confirmed.test.mjs`).
+  - A confirmed answer is now kept as the teacher left it: credit, error type and
+    `gradedAlone` included. Unconfirmed answers still take the new read.
+  - The class-scan save message says how many were kept. To use a new read for a confirmed
+    answer, the teacher changes it in Grade by question.
+  - What it was: `mergeStudentResponses` kept a prior response only when the new answer was
+    blank, so a re-read replaced it with a new id, unverified, without `errorType`,
+    `gradedAlone` or the teacher's credit. `tests/teacher-class-scan.test.mjs` asserted
+    that as intended; it now covers both cases.
 - **G6. A matching-screen row with an empty name is silently not saved**
   (`components/teacher-class-scan.tsx:1021`).
   - It is reachable: the second half of a split is named `two.detectedName || ""` (`:1131`).

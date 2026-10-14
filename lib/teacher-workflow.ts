@@ -707,7 +707,12 @@ export function confirmWritingScores(a: Assessment, studentId: string): Assessme
  * not visible. Replacing outright threw page 1's answers away and showed the
  * teacher half a blank test. Keeping the earlier answer where the new pass is
  * empty joins the pages instead. Re-scanning the same page still overwrites
- * it, because that pass does find those questions.
+ * an answer the teacher has NOT confirmed, because that pass does find it.
+ *
+ * An answer the teacher HAS confirmed is never replaced by a scan (gap G5):
+ * the new read is unconfirmed, and replacing it silently threw away the
+ * teacher's credit, error type and "grade on its own". To use a new read for
+ * a confirmed answer, the teacher changes it in Grade by question.
  */
 export function mergeStudentResponses(
   existing: StudentResponse[],
@@ -716,8 +721,16 @@ export function mergeStudentResponses(
   const before = new Map(existing.map((r) => [r.questionId, r]));
   return incoming.map((r) => {
     const prior = before.get(r.questionId);
+    if (prior?.verified) return prior;
     return !r.answer.trim() && prior?.answer.trim() ? prior : r;
   });
+}
+
+/** How many of a student's confirmed answers a scan's responses would have
+ * replaced, and mergeStudentResponses kept instead. */
+export function confirmedKept(existing: StudentResponse[], incoming: StudentResponse[]): number {
+  const asked = new Set(incoming.map((r) => r.questionId));
+  return existing.filter((r) => r.verified && asked.has(r.questionId)).length;
 }
 
 /**

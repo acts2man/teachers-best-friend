@@ -197,6 +197,19 @@ test("applyScannedGroups grades a matched student and creates a record for an un
 });
 
 test("applyScannedGroups replaces a student's prior responses for this assessment rather than duplicating them",()=>{
+  // An answer the teacher had NOT confirmed. (A confirmed one is kept, never
+  // replaced by a scan -- gap G5; next test, and tests/rescan-keeps-confirmed.)
+  const a=assessment();
+  a.responses=[{id:"old",studentId:"s1",questionId:"q1",answer:"1",correct:false,match:0,misconception:"",confidence:80,verified:false}];
+  const students=[student("s1","Maria Gonzalez")];
+  const result=applyScannedGroups(a,students,"c1",[
+    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
+  ]);
+  assert.equal(result.assessment.responses.length,1);
+  assert.equal(result.assessment.responses[0].correct,true);
+});
+
+test("applyScannedGroups keeps a confirmed prior response, still without duplicating it (gap G5)",()=>{
   const a=assessment();
   a.responses=[{id:"old",studentId:"s1",questionId:"q1",answer:"1",correct:false,match:0,misconception:"",confidence:80,verified:true}];
   const students=[student("s1","Maria Gonzalez")];
@@ -204,7 +217,9 @@ test("applyScannedGroups replaces a student's prior responses for this assessmen
     {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
   ]);
   assert.equal(result.assessment.responses.length,1);
-  assert.equal(result.assessment.responses[0].correct,true);
+  assert.equal(result.assessment.responses[0].id,"old");
+  assert.equal(result.assessment.responses[0].correct,false);
+  assert.equal(result.keptConfirmed,1);
 });
 
 test("a group with no pages or no responses is skipped entirely",()=>{

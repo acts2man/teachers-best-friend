@@ -1,6 +1,7 @@
 import type { AnswerRegion, Assessment, Student, StudentResponse } from "./teacher-types";
 import {
   mergeStudentResponses,
+  confirmedKept,
   normalizeRecognizedResponses,
 } from "./teacher-workflow";
 import { classroomColors } from "./teacher-data";
@@ -977,6 +978,9 @@ export function mergeSplitGroups(first: StudentResponse[], second: StudentRespon
     const b = byQuestion.get(a.questionId);
     byQuestion.delete(a.questionId);
     if (!b) return a;
+    // Confirmed by the teacher before this scan (kept by mergeStudentResponses):
+    // a scan's read never replaces or unconfirms it (gap G5).
+    if (a.verified) return a;
     const ra = read(a);
     const rb = read(b);
     if (!rb) return a;
@@ -1003,6 +1007,7 @@ export function applyScannedGroups(
   const newStudents: Student[] = [];
   const responsesByStudent = new Map<string, StudentResponse[]>();
   const studentUploadIds: Record<string, string[]> = {};
+  let keptConfirmed = 0;
   let colorOffset = students.length;
   // The review list is matched when the scan finishes and saved when the
   // teacher is ready, which can be a while later and need not be the same tab.
@@ -1056,6 +1061,9 @@ export function applyScannedGroups(
           mergeSplitGroups(earlier, incoming)
         : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming),
     );
+    // Confirmed answers are kept, not replaced (gap G5); counted once per
+    // student, against what was saved before this scan.
+    if (!earlier) keptConfirmed += confirmedKept(a.responses.filter((r) => r.studentId === studentId), incoming);
     studentUploadIds[studentId] = [
       ...new Set([
         ...(a.studentUploadIds?.[studentId] || []),
@@ -1085,6 +1093,8 @@ export function applyScannedGroups(
     assessment,
     newStudents,
     studentCount: touchedIds.size,
+    /** Confirmed answers this scan would have replaced, kept instead (G5). */
+    keptConfirmed,
   };
 }
 
