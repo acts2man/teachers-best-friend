@@ -550,10 +550,13 @@ reading the code, as marked. None has a test in the suite, because each test wou
     covers are kept on screen for the next grading (`pagesWithoutRow`, `keepForNextGrading`)
     instead of cleared with the rest: pages the other device merged in mid-grade, the rest of
     a run that stopped part-way, and rows the save skips (no answers, a cleared name). A row
-    the teacher discarded counts as handled. Guarded by
+    the teacher discarded counts as handled. Like `reset()`, it clears the account copy first
+    (`sync.clear()`), so the saved rows cannot be merged back; the kept pages are saved as a
+    new scan. Guarded by
     `tests/invariants/scan-pages-not-dropped.test.mjs`.
-  - Still open: the 409 retry in `components/use-scan-session.ts` applies the other device's
-    state mid-run (unchanged; holding it back was tried and removed after review, because it
+  - Still open (as on main): the other device writing a stale copy just after the save's
+    DELETE can bring the saved rows back on both devices. And the 409 retry in
+    `components/use-scan-session.ts` applies the other device's state mid-run (unchanged; holding it back was tried and removed after review, because it
     could resurrect a just-saved class and drop the other device's pages from the server).
   - Reproduced 14 Oct: the wrong-student part of G1 was the name-split path (G3's
     mechanism). With the teacher's own camera piles, group numbers follow the piles in

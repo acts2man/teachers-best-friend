@@ -96,4 +96,10 @@ test("the save keeps pages no saved row covers, and the note counts the same pag
   const ok = save.slice(save.indexOf("if (ok) {"), save.indexOf("requestAnimationFrame"));
   assert.match(ok, /const left = pagesWithoutRow\(piles, groups, discarded\);\s*if \(left\.length\) keepForNextGrading\(left\);\s*else reset\(\);/);
   assert.match(panel, /const notGraded = pagesWithoutRow\(piles, groups, discarded\)/, "the note counts what the save keeps");
+  // The saved scan is finished like reset() finishes it: the account copy is
+  // cleared, so a stale copy on either device cannot merge the saved rows
+  // back (#144 review, round 2).
+  const keep = panel.slice(panel.indexOf("function keepForNextGrading("), panel.indexOf("function reset()"));
+  assert.match(keep, /void sync\.clear\(\);/);
+  assert.match(keep, /setGroups\(null\)/);
 });

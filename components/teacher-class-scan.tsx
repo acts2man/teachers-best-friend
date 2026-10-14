@@ -587,10 +587,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * They stay on screen as the next scan to grade; nothing else carries over. */
   function keepForNextGrading(left: Page[][]) {
     const count = left.flat().length;
+    const keptIds = new Set(left.flat().map((p) => p.bodyId));
+    // The saved scan is finished, exactly as reset() finishes it: give back
+    // what the run reserved and never graded (except the kept pages), and
+    // clear the account copy so neither device can merge the saved rows back
+    // in (#144 review, round 2). The kept pages are then saved as a NEW scan
+    // by the next session save.
+    void releaseStack(pageUploadIds.filter((id) => !keptIds.has(id)));
+    void sync.clear();
     setRemoteGrading(null);
     // Pages already paid for stay marked so: the cost shown for grading the
     // rest must not price them again.
-    const keptIds = new Set(left.flat().map((p) => p.bodyId));
     setPaidIds((paid) => new Set([...paid].filter((id) => keptIds.has(id))));
     setProgress(null);
     setEdited([...left, []]);
