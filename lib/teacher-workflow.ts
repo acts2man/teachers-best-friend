@@ -712,12 +712,55 @@ export function confirmWritingScores(a: Assessment, studentId: string): Assessme
 export function mergeStudentResponses(
   existing: StudentResponse[],
   incoming: StudentResponse[],
+  /** Let the new read replace answers the teacher already CONFIRMED. Off by
+   * default: a re-scan used to overwrite a teacher's decision with an
+   * unconfirmed AI read, with no warning (G5). The screens ask first
+   * (rescanWarning) and pass true only when the teacher chose "Replace". */
+  replaceConfirmed = false,
 ): StudentResponse[] {
   const before = new Map(existing.map((r) => [r.questionId, r]));
-  return incoming.map((r) => {
+  const merged = incoming.map((r) => {
     const prior = before.get(r.questionId);
+    if (prior?.verified && !replaceConfirmed) return prior;
     return !r.answer.trim() && prior?.answer.trim() ? prior : r;
   });
+  if (replaceConfirmed) return merged;
+  // Kept means kept: a confirmed grade on a question the new read does not
+  // cover (an excluded question, a rubric trait) is not dropped either.
+  const covered = new Set(incoming.map((r) => r.questionId));
+  return [...merged, ...existing.filter((r) => r.verified && !covered.has(r.questionId))];
+}
+
+/**
+ * The confirmed grades a re-scan of these students could replace on this
+ * assessment: the teacher's own decisions (verified), on questions or rubric
+ * traits that still exist. Asked about before anything is replaced (G5).
+ */
+export function confirmedGradesAtRisk(a: Assessment | undefined, studentIds: string[]) {
+  const who = new Set(studentIds);
+  const ids = new Set([...(a?.questions ?? []).map((q) => q.id), ...(a ? rubricDimensions(a).map((d) => d.id) : [])]);
+  const at = (a?.responses ?? []).filter((r) => r.verified && who.has(r.studentId) && ids.has(r.questionId));
+  return { answers: at.length, students: new Set(at.map((r) => r.studentId)).size };
+}
+
+/** The re-scan question's wording, in one place for both scan screens. */
+export function rescanWarning(risk: ReturnType<typeof confirmedGradesAtRisk>) {
+  const plural = (n: number, one: string, many: string) => n + " " + (n === 1 ? one : many);
+  return {
+    title: "Replace " + plural(risk.answers, "grade", "grades") + " you already confirmed?",
+    body:
+      "You already confirmed " +
+      plural(risk.answers, "grade", "grades") +
+      (risk.students > 1 ? " for " + plural(risk.students, "student", "students") : " for this student") +
+      ". The new scan can replace " +
+      (risk.answers === 1 ? "it" : "them") +
+      " with what it reads now -- unconfirmed, for you to check again; a confirmed grade on a question it does not read is removed -- or keep your confirmed " +
+      (risk.answers === 1 ? "grade" : "grades") +
+      " and use the new scan only for answers you have not confirmed.",
+    keep: "Keep my confirmed grades",
+    replace: "Replace with the new scan",
+    cancel: "Cancel",
+  };
 }
 
 /**

@@ -35,9 +35,10 @@ import {
   mergeStudentResponses,
   parseAnswerKey,
   preparationGaps,
+  confirmedGradesAtRisk,
   gradesClearedByReread,
 } from "@/lib/teacher-workflow";
-import { ConfirmReread } from "./confirm-reread";
+import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
@@ -114,6 +115,11 @@ export function ScanView() {
   // which button the teacher pressed while the confirm step is open.
   const [confirmingReread, setConfirmingReread] = useState<"read" | "save" | "writing" | null>(null);
   const clearsGrades = mode === "assignment" && gradesClearedByReread(editing).answers > 0;
+  // Checking a student's work again when the teacher already confirmed some
+  // of their grades on this test: ask whether the new read may replace them,
+  // before anything is read or charged (G5).
+  const rescanRisk = confirmedGradesAtRisk(mode === "responses" ? chosen : undefined, studentId ? [studentId] : []);
+  const [askRescan, setAskRescan] = useState(false);
   const catalog = catalogFor(w, Number(grade), framework, subject).filter(
     (s) => !/not applicable/i.test(s.summary),
   );
@@ -465,7 +471,7 @@ export function ScanView() {
    * inside upload(), where the files it just stored are not in React state
    * yet, so reading `files` there would analyse the previous batch.
    */
-  async function analyze(ids?: string[], navigate = false, fresh = false) {
+  async function analyze(ids?: string[], navigate = false, fresh = false, replaceConfirmedGrades = false) {
     // These used to be bare returns. When one of them fired -- on upload, or on
     // the teacher pressing "Read it again" -- the reading simply did not happen
     // and nothing on screen changed: no spinner, no error, no explanation. A
@@ -556,6 +562,7 @@ export function ScanView() {
             ...mergeStudentResponses(
               chosen!.responses.filter((r) => r.studentId === studentId),
               d.result.responses,
+              replaceConfirmedGrades,
             ),
           ],
           uploadIds: [...chosen!.uploadIds, ...uploadIds],
@@ -598,6 +605,19 @@ export function ScanView() {
   const hasRead = !!createdId || (editing?.questions?.length ?? 0) > 0;
   return (
     <>
+      <ConfirmRescan
+        risk={rescanRisk}
+        open={askRescan}
+        onCancel={() => setAskRescan(false)}
+        onKeep={() => {
+          setAskRescan(false);
+          void analyze(undefined, true, true, false);
+        }}
+        onReplace={() => {
+          setAskRescan(false);
+          void analyze(undefined, true, true, true);
+        }}
+      />
       <ConfirmReread
         assessment={editing}
         action={confirmingReread === "read" ? "read" : "save"}
@@ -1312,7 +1332,9 @@ export function ScanView() {
                     onClick={() =>
                       clearsGrades
                         ? setConfirmingReread("read")
-                        : analyze(undefined, true, true)
+                        : mode === "responses" && rescanRisk.answers > 0
+                          ? setAskRescan(true)
+                          : analyze(undefined, true, true)
                     }
                   >
                     {analyzing ? (

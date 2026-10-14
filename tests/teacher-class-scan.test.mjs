@@ -196,15 +196,23 @@ test("applyScannedGroups grades a matched student and creates a record for an un
   assert.equal(result.studentCount,2);
 });
 
+// CHANGED for G5 (docs/system-map.md): this test used to assert that a re-scan
+// silently REPLACES a response the teacher had confirmed (verified:true) -- it
+// pinned the bug as intended behaviour. A re-scan now keeps confirmed grades
+// unless the teacher chose "Replace with the new scan" when asked (the panel
+// passes replaceConfirmed only then). Both halves are asserted: never a
+// duplicate, and a confirmed grade is replaced only on that explicit choice.
 test("applyScannedGroups replaces a student's prior responses for this assessment rather than duplicating them",()=>{
   const a=assessment();
   a.responses=[{id:"old",studentId:"s1",questionId:"q1",answer:"1",correct:false,match:0,misconception:"",confidence:80,verified:true}];
   const students=[student("s1","Maria Gonzalez")];
-  const result=applyScannedGroups(a,students,"c1",[
-    {studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]},
-  ]);
-  assert.equal(result.assessment.responses.length,1);
-  assert.equal(result.assessment.responses[0].correct,true);
+  const groups=[{studentId:"s1",name:"Maria Gonzalez",pageUploadIds:["u1"],responses:[{questionId:"q1",answer:"2",verdict:"match"}]}];
+  const kept=applyScannedGroups(a,students,"c1",groups);
+  assert.equal(kept.assessment.responses.length,1);
+  assert.equal(kept.assessment.responses[0].id,"old","the teacher's confirmed grade stays by default");
+  const replaced=applyScannedGroups(a,students,"c1",groups,{replaceConfirmed:true});
+  assert.equal(replaced.assessment.responses.length,1);
+  assert.equal(replaced.assessment.responses[0].correct,true);
 });
 
 test("a group with no pages or no responses is skipped entirely",()=>{
