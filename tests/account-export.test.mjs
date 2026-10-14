@@ -4,9 +4,8 @@
 // promise -- so the test is that everything in the workspace comes back out.
 //
 // The other half is what must NOT come out: upload ids and object paths.
-// Those images are already deleted, by design, when the teacher confirms a
-// student's grading and at 30 days regardless. Naming files that no longer
-// exist would be worse than saying plainly that there are none.
+// Those images are deleted, by design, 14 days after upload. Naming files that
+// will soon not exist would be worse than saying plainly that they are left out.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

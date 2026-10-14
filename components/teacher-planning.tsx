@@ -2288,8 +2288,8 @@ export function SettingsView() {
               <br />
               <br />
               Neither one contains photographs or PDFs of student work. Those
-              are deleted when you confirm a student’s grading, and 30 days
-              after upload in any case, so there are none left to include.
+              are deleted automatically 14 days after upload, so they are not
+              part of the download.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="data-actions">

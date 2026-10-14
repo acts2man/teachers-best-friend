@@ -15,7 +15,7 @@
  * older assessments opened with pages missing. It does NOT see a field that
  * sync_workspace/get_workspace_json themselves drop (it starts from their
  * output); that path is checked against the relational columns in SQL, see the
- * PR. Pages purged by the 30-day retention window are not counted here.
+ * PR. Pages purged by the 14-day retention window are not counted here.
  *
  * Read-only, and reports counts and anonymised ids only.
  */

@@ -3,7 +3,7 @@
 **A Teacher's Best Friend**
 
 Effective date: [EFFECTIVE DATE]
-Last updated: [EFFECTIVE DATE]
+Last updated: October 14, 2026
 
 > **DRAFT — not for publication.** Placeholders in brackets must be filled in, the
 > commitments in this document must be true of the running system before it goes
@@ -130,7 +130,7 @@ rather than claiming any of it is anonymous.
 
 | Data | Retention |
 |---|---|
-| Uploaded images of student work | Deleted once the teacher confirms that student's grading, and automatically 30 days after upload in any case |
+| Uploaded images of student work | Deleted automatically 14 days after upload. Deleting the account deletes them all straight away; deleting an assessment deletes the pages recorded against it |
 | Grading results held for delivery | Cleared 48 hours after the scan |
 | Derived results and mastery records | Retained while the account is active |
 | Teacher notes about a student | Retained while the account is active, or until a teacher-set expiry |

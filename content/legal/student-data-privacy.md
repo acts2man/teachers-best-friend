@@ -3,7 +3,7 @@
 **A Teacher's Best Friend**
 California SOPIPA Compliance Statement
 
-Effective date: [EFFECTIVE DATE]
+Effective date: October 14, 2026
 
 > **DRAFT — not for publication.** Every commitment below must be verifiably true of
 > the running system before this is posted. An attorney experienced in student data
@@ -141,15 +141,15 @@ agency's retention of ownership and control of pupil records.
 
 | Data | Retention |
 |---|---|
-| Uploaded worksheet images | Deleted once the teacher confirms that student's grading, and automatically 30 days after upload in any case |
+| Uploaded worksheet images | Deleted automatically 14 days after upload. Deleting the account deletes them all straight away; deleting an assessment deletes the pages recorded against it |
 | Roster photographs | Deleted immediately after processing |
 | Grading results held for delivery | Cleared 48 hours after the scan |
 | Extracted answers, scores, misconception records | Held while the account is active |
 | Standards mastery records | Held while the account is active |
 | Teacher notes about a student | Held while active, or until a teacher-set expiry |
 
-Automatic image deletion runs on a scheduled job, not on request. Worksheet photographs
-are the highest-risk item we hold and we do not keep them indefinitely.
+Automatic image deletion runs on a scheduled job once a day, not on request. Worksheet
+photographs are the highest-risk item we hold and we do not keep them indefinitely.
 
 ### Deletion at a school's request
 

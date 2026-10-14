@@ -5,7 +5,7 @@ import "server-only";
  *
  * Both refuse any assessment that is not on regression_fixture_allowlist: a set
  * is kept only after its teacher has said yes, and the allow-list row records
- * that. The copies are not teacher_uploads rows, so the 30-day upload purge
+ * that. The copies are not teacher_uploads rows, so the 14-day upload purge
  * never touches them; removing the allow-list row (the "revoke" action) deletes
  * the files and, by cascade, the fixture rows and cases. Account deletion
  * removes them too (lib/account-deletion-server.ts).
