@@ -20,7 +20,7 @@ function bundle(path) {
   new Function("module", "exports", r.outputFiles[0].text)(m, m.exports);
   return m.exports;
 }
-const { resolveScannedGroups } = bundle("lib/teacher-class-scan.ts");
+const { resolveScannedGroups, groupPagesByName, rosterMatchCount } = bundle("lib/teacher-class-scan.ts");
 
 const student = (name, i) => ({ id: "s" + i, classId: "c1", name, color: "#000", evidence: [], notes: "" });
 const roster = ["Chris Lee", "Jose Ruiz", "Daniel Kim", "Michael Smith", "Ana Gonzalez", "Sam Patel"].map(student);
@@ -64,4 +64,37 @@ test("a real misspelling of a rostered name still pre-fills", () => {
 test("exact names and surname fits still pre-fill", () => {
   assert.equal(rowFor("Chris Lee").studentId, idOf("Chris Lee"));
   assert.equal(rowFor("Jose R.").studentId, idOf("Jose Ruiz"));
+});
+
+// From the review of this change: capping before the close-call check let a
+// SECOND near-miss become the lone leader and be pre-filled.
+test("two close roster children: neither is pre-filled", () => {
+  for (const [read, names] of [
+    ["Danielle Kim", ["Daniel Kim", "Daniela Kim"]],
+    ["Christina Lee", ["Chris Lee", "Christian Lee"]],
+    ["Christina Lee", ["Chris Lee", "Cristina Lee"]],
+    ["Gabriela Ortiz", ["Gabriel Ortiz", "Gabriella Ortiz"]],
+  ]) {
+    const two = names.map(student);
+    const [row] = resolveScannedGroups([[0]], [{ page: 0, name: read, confidence: 99 }], [], ["p0"], two);
+    assert.equal(row.studentId, null, `${read} against ${names.join(" / ")}`);
+    assert.deepEqual([...row.candidateIds].sort(), two.map((s) => s.id).sort(), "both offered");
+  }
+});
+
+test("a misspelt first name against a roster that abbreviates surnames still pre-fills", () => {
+  const namesakes = [student("Michael Go.", 0), student("Michael Ga.", 1)];
+  const [row] = resolveScannedGroups([[0]], [{ page: 0, name: "Micheal Gonzalez", confidence: 99 }], [], ["p0"], namesakes);
+  assert.equal(row.studentId, "s0");
+});
+
+test("how many roster students a name could be is unchanged, so a stack without piles groups as before", () => {
+  const two = [student("Alan Lee", 0), student("Daniel Lee", 1)];
+  assert.equal(rosterMatchCount("Dan Lee", two), 1);
+  const pages = [
+    { page: 0, name: "Dan Lee", confidence: 95 },
+    { page: 1, name: "Dan Lee", confidence: 95 },
+    { page: 2, name: "Alan Lee", confidence: 95 },
+  ];
+  assert.deepEqual(groupPagesByName(pages, (n) => rosterMatchCount(n, two)), [[0, 1], [2]]);
 });

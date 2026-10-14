@@ -595,12 +595,23 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - **Closed for given names that extend one another** by the G12 PR
     (`tests/name-near-miss.test.mjs`). `matchRosterStudent`'s fuzzy tier scored "Christina
     Lee" against "Chris Lee" at 0.947, "Josefina Ruiz" against "Jose Ruiz" at 0.940 and
-    "Danielle Kim" against "Daniel Kim" at 0.970, all above `PREFILL_SCORE` (0.9). A fit
-    where one name is the other with letters added (`extendsName`) is now capped below the
-    pre-fill line: a one-tap suggestion, never a choice. Misspellings ("Micheal", "Gonzales")
-    still pre-fill.
-  - **Still open:** a first name alone ("Maria") pre-fills the only rostered Maria at 0.9.
-    An unrostered Maria (a new student, a sibling) lands on her.
+    "Danielle Kim" against "Daniel Kim" at 0.970, all above `PREFILL_SCORE` (0.9). Now a
+    winning fit where one given name is the other with letters added (`extendsName`) is
+    capped below the pre-fill line: a one-tap suggestion, never a choice.
+    - The cap applies after the close-call check, so two close roster children still both
+      go to the teacher.
+    - It does not change how many roster students a name could be, so stacks without piles
+      group as before.
+    - Misspellings ("Micheal", "Gonzales") still pre-fill, including against a roster that
+      abbreviates surnames ("Michael Go.").
+  - **Still open:**
+    - A first name alone ("Maria") pre-fills the only rostered Maria at 0.9.
+    - Close variants that are not prefixes pre-fill a different child at 0.93–0.97:
+      Mario→Maria, Julio→Julia, Carla→Carlos, Erik→Eric, Kristina→Christina,
+      Daniela→Danielle. Siblings who differ by one vowel are as likely as Christina/Chris.
+    - The `NICKNAMES` table treats some different people as one name
+      (alexander/alexandra; sam for samuel and samantha), so Alexandra Vega pre-fills
+      Alexander Vega.
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.

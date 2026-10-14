@@ -639,18 +639,23 @@ const FUZZY_FLOOR = 0.8;
 const FUZZY_LEAD = 0.06;
 /** A roster match is pre-filled (chosen for the teacher) only at or above this
  * fit score: exact names (1), a confident surname fit (1) and a unique
- * first-name (0.9) pre-fill; a looser fuzzy fit (a misspelling or nickname that
- * scored 0.8-0.89) is only ever a suggestion. */
+ * first-name (0.9) pre-fill. A fuzzy fit pre-fills when it scores this high
+ * and leads the next roster name clearly -- a misspelling ("Micheal") or a
+ * listed nickname ("Mike") -- EXCEPT where one given name is the other with
+ * letters added ("Christina"/"Chris", "Dan"/"Daniel"): that is only ever a
+ * suggestion (gap G12). */
 const PREFILL_SCORE = 0.9;
 /** The highest score a fit may keep when it can only ever be a suggestion. */
 const SUGGEST_ONLY = PREFILL_SCORE - 0.01;
 
-/** One name is the other with letters added: "christina"/"chris",
- * "dan"/"daniel". Different given names (or surnames), not a misspelling. An
- * initial ("r") is an abbreviation, not another name, and is left alone. */
+/** One given name is the other with letters added: "christina"/"chris",
+ * "dan"/"daniel". Different given names, not a misspelling. Surnames are not
+ * compared here: the roster abbreviates them itself ("Michael Go."), and a
+ * written surname always extends its abbreviation (review of the G12 PR). */
 function extendsName(a: NameParts, b: NameParts): boolean {
-  const ext = (x: string, y: string) => x.length > 1 && y.length > 1 && x !== y && (x.startsWith(y) || y.startsWith(x));
-  return ext(a.first, b.first) || (!!a.last && !!b.last && ext(a.last, b.last));
+  const x = a.first;
+  const y = b.first;
+  return x.length > 1 && y.length > 1 && x !== y && (x.startsWith(y) || y.startsWith(x));
 }
 
 /** ...and only when the model read the handwriting this confidently (0-100). A
@@ -736,17 +741,19 @@ export function matchRosterStudent(
   // high but is another child as often as not -- a sibling, a new student, a
   // twin missing from the roster (gap G12). It stays a suggestion, one tap,
   // never a choice made for the teacher. A misspelling ("Micheal") still fits.
+  // The cap applies only to the winner, after the close-call check on the raw
+  // scores: capping first let a SECOND near-miss become the lone leader and be
+  // pre-filled (Danielle Kim against Daniel Kim and Daniela Kim; review of the
+  // G12 PR), and changed how many roster students a name could be, which
+  // splits pages in a stack with no piles.
   const scored = roster
-    .map((r) => {
-      const fit = rosterFit(name, r.student.name);
-      return { student: r.student, score: extendsName(wanted, r.parts) ? Math.min(fit, SUGGEST_ONLY) : fit };
-    })
+    .map((r) => ({ student: r.student, score: rosterFit(name, r.student.name), capped: extendsName(wanted, r.parts) }))
     .filter((r) => r.score >= FUZZY_FLOOR)
     .sort((x, y) => y.score - x.score);
   if (!scored.length) return {};
   const best = scored[0];
   const close = scored.filter((r) => best.score - r.score < FUZZY_LEAD);
-  if (close.length === 1) return { student: best.student, score: best.score };
+  if (close.length === 1) return { student: best.student, score: best.capped ? Math.min(best.score, SUGGEST_ONLY) : best.score };
   return { candidates: close.map((r) => r.student), score: best.score };
 }
 
