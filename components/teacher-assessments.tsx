@@ -115,7 +115,9 @@ import {
   answersToDecide,
   autoGradedToConfirm,
   confirmResponses,
+  gradesClearedByReread,
 } from "@/lib/teacher-workflow";
+import { ConfirmReread } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
@@ -181,7 +183,10 @@ export function AssessmentView() {
     [editMeta, setEditMeta] = useState<{ title: string; points: string } | null>(
       null,
     ),
-    [deleting, setDeleting] = useState(false);
+    [deleting, setDeleting] = useState(false),
+    // "Read document again" on a test that already has graded answers waits
+    // here for the teacher to say the grades may go (see ConfirmReread).
+    [confirmingReread, setConfirmingReread] = useState(false);
   const autoRead = useRef<string | null>(null);
   useEffect(() => {
     setSelected(params.get("id"));
@@ -701,6 +706,15 @@ export function AssessmentView() {
               </form>
             )}
           </Modal>
+          <ConfirmReread
+            assessment={a}
+            open={confirmingReread}
+            onCancel={() => setConfirmingReread(false)}
+            onConfirm={() => {
+              setConfirmingReread(false);
+              readDocument(a, true);
+            }}
+          />
           <AlertDialog
             open={deleting}
             onOpenChange={(v) => !v && setDeleting(false)}
@@ -1023,7 +1037,11 @@ export function AssessmentView() {
                       <Action
                         variant="secondary small"
                         disabled={reading || busy}
-                        onClick={() => readDocument(a, a.questions.length > 0)}
+                        onClick={() =>
+                          gradesClearedByReread(a).answers > 0
+                            ? setConfirmingReread(true)
+                            : readDocument(a, a.questions.length > 0)
+                        }
                       >
                         {reading ? (
                           <LoaderCircle className="spin" size={15} />
@@ -1219,7 +1237,11 @@ export function AssessmentView() {
                     {documents.length > 0 && (
                       <Action
                         disabled={reading || busy}
-                        onClick={() => readDocument()}
+                        onClick={() =>
+                          gradesClearedByReread(a).answers > 0
+                            ? setConfirmingReread(true)
+                            : readDocument()
+                        }
                       >
                         <ScanLine size={16} />
                         Read questions from document
