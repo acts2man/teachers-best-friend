@@ -603,15 +603,18 @@ reading the code, as marked. None has a test in the suite, because each test wou
       `SHORT_FORMS` that belongs to **exactly one** full name (so "Sam" never pre-fills
       Samantha: it may be her brother Samuel). Forms that are given names in their own right
       (Liam, Leo, Jack, Bella, Nathan…) are not short forms here;
-    - and, when both carry a family name, the surnames fit as they do for an exact match
-      (`surnamesFit`), so "Maria Garza" is not pre-filled as Maria Garcia.
+    - and, when both carry a family name, the surnames are the same, or the shorter is an
+      initial or a dotted abbreviation ("C.", "Ga."): "Maria Garza" is not Maria Garcia, and
+      "Amy Lin" is not Amy Li;
+    - and a short form never pre-fills when the class holds a sibling it could stand for
+      ("Danny Kim" with Daniel and Daniela Kim).
     - `SHORT_FORMS` is narrower than `NICKNAMES` (translations, misspellings), which still
       drives suggestions. Anything else is a suggestion, one tap away.
   - Still open:
     - a first name alone ("Maria") pre-fills the only rostered Maria (an exact given name
       by Troy's rule);
-    - a written surname that EXTENDS the stored one pre-fills at 1.0 by design of the
-      abbreviation rule ("Daniel Kimball" → Daniel Kim, "Mia Cheng" → Mia Chen);
+    - reversed names ("Garcia, Maria") are a suggestion: one tap per child where a school
+      teaches "Last, First" -- a tradeoff to put to the teachers;
     - a roster entry that is only a first name ("Maria") fits any "Maria …" at 1.0.
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the

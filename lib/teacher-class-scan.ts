@@ -638,17 +638,36 @@ function onlyShortFormOf(short: string, full: string): boolean {
  * reversed name, a misspelling, a translation or a look-alike ("Christina" for
  * "Chris", "Danielle" for "Daniel") is not -- it is offered as a suggestion.
  */
-export function givenNameMayPrefill(written: string, roster: string): boolean {
+export function givenNameMayPrefill(written: string, roster: string, others: string[] = []): boolean {
   const w = nameParts(written);
   const r = nameParts(roster);
   if (!w || !r) return false;
   // The family name too, when both carry one: the fuzzy tier also forgives a
   // surname ("Maria Garza" fits "Maria Garcia" at 0.95), and a different
-  // surname is a different child. A prefix of the stored abbreviation still
-  // fits (surnamesFit), as it does for an exact match.
-  if (w.last && r.last && !surnamesFit(w.last, r.last)) return false;
+  // surname is a different child. A prefix fits only when the shorter one is
+  // an abbreviation -- an initial, or written with a dot ("Ga.", "C.") -- not
+  // a whole surname that happens to start another ("Li" / "Lin", "Lee" /
+  // "Leeds": different families) (#141 review, round 2).
+  if (w.last && r.last && w.last !== r.last) {
+    if (!surnamesFit(w.last, r.last)) return false;
+    const [shortName, shortLast] = w.last.length <= r.last.length ? [written, w.last] : [roster, r.last];
+    if (shortLast.length > 1 && !/\.\s*$/.test(shortName.trim())) return false;
+  }
   if (w.first === r.first) return true;
-  return onlyShortFormOf(w.first, r.first) || onlyShortFormOf(r.first, w.first);
+  if (!(onlyShortFormOf(w.first, r.first) || onlyShortFormOf(r.first, w.first))) return false;
+  // A short form names one full name in the list, but the class may hold a
+  // sibling it fits as well ("Danny Kim" with Daniel and Daniela Kim): then
+  // the teacher picks (#141 review, round 2).
+  // A sibling is anyone else whose surname fits and whose given name the
+  // short form could also stand for: it fits the written name, or it shares
+  // the full name's first three letters (Antonia beside Anthony for "Tony").
+  return !others.some((o) => {
+    const p = nameParts(o);
+    if (!p) return false;
+    if (rosterFit(written, o) >= FUZZY_FLOOR) return true;
+    const sameFamily = !r.last || !p.last || surnamesFit(p.last, r.last);
+    return sameFamily && p.first.slice(0, 3) === r.first.slice(0, 3);
+  });
 }
 
 /** Whether two given names are written forms of the same name. */
@@ -940,7 +959,11 @@ export function resolveScannedGroups(
       !!match.student &&
       (match.score ?? 0) >= PREFILL_SCORE &&
       readConfidence >= PREFILL_READ &&
-      givenNameMayPrefill(detectedName, match.student.name);
+      givenNameMayPrefill(
+        detectedName,
+        match.student.name,
+        students.filter((st) => st.id !== match.student!.id).map((st) => st.name),
+      );
     // A single roster student that wasn't strong enough to pre-fill still rides
     // along as the suggestion, so the teacher confirms with one tap.
     const weakSingle = !!match.student && !strongMatch ? [match.student.id] : [];

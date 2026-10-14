@@ -107,6 +107,26 @@ test("a short form of exactly one name still pre-fills, either way round", () =>
   }
 });
 
+test("round 2: a short form with a sibling it also fits asks; a surname that only starts another asks", () => {
+  for (const [rosterNames, written] of [
+    [["Daniel Kim", "Daniela Kim"], "Danny Kim"],
+    [["Anthony Ruiz", "Antonia Ruiz"], "Tony Ruiz"],
+    [["Joseph Ruiz", "Josephine Ruiz"], "Joey Ruiz"],
+    [["Amy Li"], "Amy Lin"],
+    [["Ana Lee"], "Ana Leeds"],
+    [["Maria Garcia"], "Maria Garcia-Lopez"],
+  ]) {
+    const roster = rosterNames.map((n, i) => student("x" + i, n));
+    const r = C.resolveScannedGroups([[0]], [{ page: 0, name: written, confidence: 95 }], [], ["p"], roster)[0];
+    assert.equal(r.studentId, null, `${written} was pre-filled as ${r.studentId} with ${rosterNames.join(" + ")}`);
+  }
+  // An initial, or the roster's own dotted abbreviation, still pre-fills.
+  for (const [rostered, written] of [["Maria Chen", "Maria C."], ["Chris Lee", "Chris L"], ["Maria Ga.", "Maria Garcia"]]) {
+    const r = C.resolveScannedGroups([[0]], [{ page: 0, name: written, confidence: 95 }], [], ["p"], [student("x", rostered)])[0];
+    assert.equal(r.studentId, "x", `${written} should pre-fill ${rostered}`);
+  }
+});
+
 test("a shaky read is still never pre-filled, whatever the name", () => {
   assert.equal(row("Ana Lee", 50).studentId, null);
 });
