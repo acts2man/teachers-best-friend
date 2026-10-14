@@ -385,9 +385,11 @@ unassigned is always allowed.
     `components/teacher-assessments.tsx` (dialog near `:709`).
 - **Guarded by:** `tests/reread-confirm.test.mjs`, which also scans the source: every
   re-read button must go through the confirmation.
-- Re-**scanning** a student never replaces a grade the teacher confirmed (gap G5, closed):
-  `mergeStudentResponses` and `mergeSplitGroups` keep it, and the save says how many were
-  kept. Guarded by `tests/rescan-keeps-confirmed.test.mjs`.
+- Re-**scanning** a student never replaces a grade the teacher confirmed (gap G5, closed),
+  except a confirmed blank that a later page fills. `mergeStudentResponses` and
+  `mergeSplitGroups` keep it, and both scans say how many were kept. Guarded by
+  `tests/rescan-keeps-confirmed.test.mjs`. **Still open:** an essay's "Replace writing"
+  replaces confirmed rubric scores.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
@@ -560,12 +562,21 @@ reading the code, as marked. None has a test in the suite, because each test wou
   **Closed** by the G5 PR (`tests/rescan-keeps-confirmed.test.mjs`).
   - A confirmed answer is now kept as the teacher left it: credit, error type and
     `gradedAlone` included. Unconfirmed answers still take the new read.
-  - The class-scan save message says how many were kept. To use a new read for a confirmed
-    answer, the teacher changes it in Grade by question.
+  - **Exception:** a confirmed **blank** ("read as blank, no credit" on a question the first
+    pages could not show) is filled by a later page that shows the answer, unconfirmed, for
+    the teacher to grade.
+  - Both the class scan and the single-student scan say how many confirmed answers the scan
+    read **differently** and kept. To use the new read, the teacher changes it in Grade by
+    question.
   - What it was: `mergeStudentResponses` kept a prior response only when the new answer was
     blank, so a re-read replaced it with a new id, unverified, without `errorType`,
-    `gradedAlone` or the teacher's credit. `tests/teacher-class-scan.test.mjs` asserted
-    that as intended; it now covers both cases.
+    `gradedAlone` or the teacher's credit. `tests/teacher-class-scan.test.mjs` asserted that
+    as intended; it now covers both cases.
+  - **Still open:**
+    - A writing assessment's explicit "Replace writing" still replaces confirmed rubric
+      scores (`replaceWritingResponses`).
+    - A re-scan rebuilds a student's responses from the active questions only, so a
+      confirmed answer on an excluded question is dropped. That is unchanged from before.
 - **G6. A matching-screen row with an empty name is silently not saved**
   (`components/teacher-class-scan.tsx:1021`).
   - It is reachable: the second half of a split is named `two.detectedName || ""` (`:1131`).

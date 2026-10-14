@@ -978,10 +978,11 @@ export function mergeSplitGroups(first: StudentResponse[], second: StudentRespon
     const b = byQuestion.get(a.questionId);
     byQuestion.delete(a.questionId);
     if (!b) return a;
-    // Confirmed by the teacher before this scan (kept by mergeStudentResponses):
-    // a scan's read never replaces or unconfirms it (gap G5).
-    if (a.verified) return a;
     const ra = read(a);
+    // Confirmed by the teacher before this scan (kept by mergeStudentResponses):
+    // a scan's read never replaces or unconfirms it (gap G5) -- unless it was a
+    // confirmed blank, which a page that shows the answer may fill.
+    if (a.verified && ra) return a;
     const rb = read(b);
     if (!rb) return a;
     if (!ra) return b;
@@ -1007,7 +1008,7 @@ export function applyScannedGroups(
   const newStudents: Student[] = [];
   const responsesByStudent = new Map<string, StudentResponse[]>();
   const studentUploadIds: Record<string, string[]> = {};
-  let keptConfirmed = 0;
+  const readsByStudent = new Map<string, StudentResponse[][]>();
   let colorOffset = students.length;
   // The review list is matched when the scan finishes and saved when the
   // teacher is ready, which can be a while later and need not be the same tab.
@@ -1061,9 +1062,9 @@ export function applyScannedGroups(
           mergeSplitGroups(earlier, incoming)
         : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming),
     );
-    // Confirmed answers are kept, not replaced (gap G5); counted once per
-    // student, against what was saved before this scan.
-    if (!earlier) keptConfirmed += confirmedKept(a.responses.filter((r) => r.studentId === studentId), incoming);
+    // Every pile's reads for this student, to count the confirmed answers a
+    // pile read differently and that were kept (gap G5).
+    readsByStudent.set(studentId, [...(readsByStudent.get(studentId) ?? []), incoming]);
     studentUploadIds[studentId] = [
       ...new Set([
         ...(a.studentUploadIds?.[studentId] || []),
@@ -1072,6 +1073,9 @@ export function applyScannedGroups(
     ];
   }
   const touchedIds = new Set(responsesByStudent.keys());
+  let keptConfirmed = 0;
+  for (const [studentId, reads] of readsByStudent)
+    keptConfirmed += confirmedKept(a.responses.filter((r) => r.studentId === studentId), reads);
   const responses = [
     ...a.responses.filter((r) => !touchedIds.has(r.studentId)),
     ...[...responsesByStudent.values()].flat(),

@@ -33,6 +33,7 @@ import { ScanCamera } from "./scan-camera";
 import {
   activeQuestions,
   mergeStudentResponses,
+  confirmedKept,
   parseAnswerKey,
   preparationGaps,
   gradesClearedByReread,
@@ -549,6 +550,12 @@ export function ScanView() {
         // test, not a replacement for the first. Layer it over what is already
         // there so questions this pass could not see keep the answers an
         // earlier page supplied, instead of coming back blank.
+        // Confirmed answers this scan read differently are kept (gap G5); the
+        // save says so, so a deliberate re-scan is not met with silence.
+        const kept = confirmedKept(
+          chosen!.responses.filter((r) => r.studentId === studentId),
+          [d.result.responses],
+        );
         const a = {
           ...chosen!,
           responses: [
@@ -576,7 +583,13 @@ export function ScanView() {
               assessments: w.assessments.map((x) => (x.id === a.id ? a : x)),
               students: reconcileEvidence(w.students, a),
             },
-            "Student work is ready to review",
+            "Student work is ready to review" +
+              (kept
+                ? " · " +
+                  kept +
+                  (kept === 1 ? " answer you had confirmed was" : " answers you had confirmed were") +
+                  " kept — change them in Grade by question to use the new scan"
+                : ""),
           )
         )
           go("/assessments?id=" + a.id + "&tab=responses&student=" + studentId);

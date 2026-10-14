@@ -10,6 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
+import { readFileSync } from "node:fs";
 
 function bundle(path) {
   const r = buildSync({ entryPoints: [path], bundle: true, platform: "node", format: "cjs", write: false });
@@ -80,4 +81,40 @@ test("a re-scan in two piles for the same student (fronts, then backs) still kee
   const q1 = result.assessment.responses.find((r) => r.studentId === "s1" && r.questionId === "q1");
   assert.equal(q1, confirmed, "not replaced, and not turned into a two-pages conflict");
   assert.equal(result.keptConfirmed, 1, "counted once");
+});
+
+// From the review of this PR.
+test("a confirmed BLANK is filled by a later page that shows the answer", () => {
+  // The fronts were scanned first; q2 lives on the back, came back blank, and
+  // the teacher graded it "read as blank, no credit".
+  const confirmedBlank = { id: "r-q2", studentId: "s1", questionId: "q2", answer: "", finalAnswer: "", correct: false, match: 0, misconception: "", confidence: 0, verified: true };
+  const a = { ...assessment, responses: [confirmed, confirmedBlank] };
+  const backs = [{ studentId: "s1", name: "Ana Ruiz", pageUploadIds: ["back"], responses: [
+    { questionId: "q1", answer: "", finalAnswer: "", verdict: "blank" },
+    { questionId: "q2", answer: "20", finalAnswer: "20", verdict: "match" },
+  ] }];
+  const result = applyScannedGroups(a, [student], "c1", backs);
+  const q2 = result.assessment.responses.find((r) => r.questionId === "q2");
+  assert.equal(q2.answer, "20", "the real answer from the back page");
+  assert.equal(q2.verified, false, "for the teacher to grade");
+  assert.equal(result.assessment.responses.find((r) => r.questionId === "q1"), confirmed, "q1 kept as confirmed");
+  assert.equal(result.keptConfirmed, 0, "nothing the scan read was held back from the teacher");
+});
+
+test("the kept count counts only confirmed answers the scan read DIFFERENTLY", () => {
+  // Re-scanning only the back page: the front's confirmed answer is not seen.
+  const backOnly = [{ studentId: "s1", name: "Ana Ruiz", pageUploadIds: ["back"], responses: [
+    { questionId: "q1", answer: "", finalAnswer: "", verdict: "blank" },
+    { questionId: "q2", answer: "20", finalAnswer: "20", verdict: "match" },
+  ] }];
+  assert.equal(applyScannedGroups(assessment, [student], "c1", backOnly).keptConfirmed, 0);
+  // The same answer read again: nothing was held back either.
+  const same = [{ ...rescan[0], responses: [{ questionId: "q1", answer: "12", finalAnswer: "12", verdict: "other" }, rescan[0].responses[1]] }];
+  assert.equal(applyScannedGroups(assessment, [student], "c1", same).keptConfirmed, 0);
+});
+
+test("the single-student scan says how many confirmed answers it kept", () => {
+  const src = readFileSync("components/teacher-scan.tsx", "utf8");
+  assert.match(src, /confirmedKept\(\s*chosen!\.responses\.filter\(\(r\) => r\.studentId === studentId\),\s*\[d\.result\.responses\],?\s*\)/);
+  assert.match(src, /"Student work is ready to review" \+\s*\(kept/);
 });

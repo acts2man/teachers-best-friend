@@ -8,7 +8,7 @@ import type {
   Student,
   StudentResponse,
 } from "./teacher-types";
-import { provablyDifferent } from "./math-answer";
+import { provablyDifferent, sameReading } from "./math-answer";
 import { expectedParts, partsAfterKeyEdit, partsRead, withParts } from "./answer-parts";
 import {
   cognitiveReportLines,
@@ -713,6 +713,10 @@ export function confirmWritingScores(a: Assessment, studentId: string): Assessme
  * the new read is unconfirmed, and replacing it silently threw away the
  * teacher's credit, error type and "grade on its own". To use a new read for
  * a confirmed answer, the teacher changes it in Grade by question.
+ *
+ * Except a confirmed BLANK: "read as blank, no credit" on a question the
+ * first pages could not show. A later page that does show it brings the real
+ * answer, which takes its place, unconfirmed, for the teacher to grade.
  */
 export function mergeStudentResponses(
   existing: StudentResponse[],
@@ -721,16 +725,29 @@ export function mergeStudentResponses(
   const before = new Map(existing.map((r) => [r.questionId, r]));
   return incoming.map((r) => {
     const prior = before.get(r.questionId);
-    if (prior?.verified) return prior;
+    if (prior?.verified && readOf(prior)) return prior;
     return !r.answer.trim() && prior?.answer.trim() ? prior : r;
   });
 }
 
-/** How many of a student's confirmed answers a scan's responses would have
- * replaced, and mergeStudentResponses kept instead. */
-export function confirmedKept(existing: StudentResponse[], incoming: StudentResponse[]): number {
-  const asked = new Set(incoming.map((r) => r.questionId));
-  return existing.filter((r) => r.verified && asked.has(r.questionId)).length;
+const readOf = (r: StudentResponse) => r.finalAnswer?.trim() || r.answer.trim();
+
+/**
+ * How many of a student's confirmed answers a scan read DIFFERENTLY -- the
+ * ones it would have replaced, and that were kept instead. A question the
+ * scan read the same way, or could not see, is not counted: nothing was kept
+ * from the teacher there. `scans` is every pile of this scan for the student.
+ */
+export function confirmedKept(existing: StudentResponse[], scans: StudentResponse[][]): number {
+  return existing.filter((r) => {
+    const kept = r.verified ? readOf(r) : "";
+    if (!kept) return false;
+    return scans.some((scan) => {
+      const read = scan.find((x) => x.questionId === r.questionId);
+      const text = read ? readOf(read) : "";
+      return !!text && text !== kept && !sameReading(text, kept);
+    });
+  }).length;
 }
 
 /**
