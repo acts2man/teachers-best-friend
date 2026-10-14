@@ -89,6 +89,21 @@ test("answer key score: a key answer missing a part is listed apart, not counted
   assert.deepEqual(s.wrong, []);
 });
 
+test("answer key score: a key answer missing a part counts AGAINST the pass mark", () => {
+  // The app would grade every student against that incomplete key, so it is
+  // as bad as a wrong one for the pass -- still listed apart, not as wrong.
+  const s = score.scoreKey([{ number: 1, answer: "y=-1; (0,7/2)" }], [{ number: 1, answer: "(0,7/2)" }]);
+  assert.equal(s.accuracy, 0);
+  assert.equal(s.passed, false);
+  const ten = score.scoreKey(
+    Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? "y=-1; (0,7/2)" : String(i + 1) })),
+    Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? "(0,7/2)" : String(i + 1) })),
+  );
+  assert.equal(ten.accuracy, 0.9, "9 of 10 count toward the pass");
+  assert.deepEqual(ten.wrong, [], "and it is not listed as wrong");
+  assert.deepEqual(ten.partsMissing.map((x) => x.number), [1]);
+});
+
 // ------------------------------------------------------------------ normalisation
 test("labels, Unicode minus, thousands separators and chains are normalised away", () => {
   assert.equal(partFinal("domain=(-∞,∞)"), "(-∞,∞)");

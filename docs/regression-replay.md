@@ -68,7 +68,7 @@ Each answer gets one of four results:
 | Result | When | How it counts |
 |---|---|---|
 | **Right** | The same answer | Right |
-| **Parts missing** | A multi-part read kept only some parts, each one right | Read faithfully, listed separately as missing parts |
+| **Parts missing** | A multi-part read kept only some parts, each one right | Answer reading: read faithfully, listed separately as missing parts. **Answer key: counted against the pass mark like a wrong answer** (the app would grade every student against an incomplete key), and listed separately |
 | **Needs a human check** | Prose (a description, a sketch) that reads differently but has the same numbers in it | Not counted as a miss; both texts shown side by side on the replay page. Prose with different numbers is wrong |
 | **Wrong** | Anything else | A miss |
 

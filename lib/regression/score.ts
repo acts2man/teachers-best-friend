@@ -310,16 +310,18 @@ export type KeyItem = { number: number; read: string; expected: string };
 export type KeyScore = ListScore & {
   /** Question numbers the read key got wrong: the real misses. */
   wrong: number[];
-  /** Read faithfully but missing parts of the confirmed answer: not wrong,
-   * not counted in `right`. */
+  /** Read faithfully but missing parts of the confirmed answer: listed apart
+   * from `wrong`, but counted against the accuracy like it (the app would
+   * grade students against an incomplete key). Not counted in `right`. */
   partsMissing: KeyItem[];
   /** Prose that cannot be compared: not a miss, for a person to judge. */
   needsHumanCheck: KeyItem[];
 };
 
 /** Answer key: the read key against the confirmed one, question by question
- * number, by value (judgeAnswer). Accuracy is the share NOT wrong: an answer
- * waiting on a human check does not count against it. */
+ * number, by value (judgeAnswer). Accuracy is the share that is neither wrong
+ * nor missing parts: an answer waiting on a human check does not count against
+ * it, an incomplete one does. */
 export function scoreKey(
   expected: { number: number; answer: string }[],
   read: { number: number; answer: string }[],
@@ -344,7 +346,9 @@ export function scoreKey(
     else if (verdict === "needs_human_check") needsHumanCheck.push(item);
     else wrong.push(e.number);
   }
-  const accuracy = ratio(expected.length - wrong.length - missing, expected.length);
+  // An incomplete key answer counts against the pass like a wrong one: the app
+  // would grade every student against it. It is still listed apart.
+  const accuracy = ratio(expected.length - wrong.length - missing - partsMissing.length, expected.length);
   return { items: expected.length, right, accuracy, missing, wrong, partsMissing, needsHumanCheck, passed: accuracy >= PASS.key };
 }
 

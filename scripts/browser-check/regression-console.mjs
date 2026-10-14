@@ -58,12 +58,13 @@ const readingScore = scoreMod.scoreAnswers(expected, expected.map((e, i) => resp
 // correct -- a wrongly-correct, which fails the rule whatever the accuracy.
 const halfCredit = expected.map((e, i) => (i === 5 ? { ...e, match: 50 } : e));
 const groupingScore = scoreMod.scoreAnswers(halfCredit, expected.map((e) => response(e)), "grouping");
-// Key: one wrong number, and one made-up description in other words -- a
-// human check, shown side by side (the widest thing on the page).
+// Key: one wrong number, one answer missing a part (counted against the pass),
+// and one made-up description in other words -- a human check, shown side by
+// side (the widest thing on the page).
 const DESCRIBED = "Increasing curve that passes through (0,1) and (1,3); domain all reals; horizontal asymptote along the x-axis";
 const keyScore = scoreMod.scoreKey(
-  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? DESCRIBED : String(i + 1) })),
-  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? "Sketch a rising curve through (0,1) and (1,3); the domain is all real numbers and it never touches the x-axis" : String(i === 3 ? 99 : i + 1) })),
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? DESCRIBED : i === 1 ? "y=-1; (0,7/2)" : String(i + 1) })),
+  Array.from({ length: 10 }, (_, i) => ({ number: i + 1, answer: i === 0 ? "Sketch a rising curve through (0,1) and (1,3); the domain is all real numbers and it never touches the x-axis" : i === 1 ? "(0,7/2)" : String(i === 3 ? 99 : i + 1) })),
 );
 const standardsScore = scoreMod.scoreStandards(
   Array.from({ length: 10 }, (_, i) => ({ number: i + 1, standard: "7.RP.3" })),
@@ -105,7 +106,8 @@ for (const [w, h] of [[390, 844], [412, 915], [1366, 768]]) {
   await page.getByText(new RegExp(`Last run: ${passedCount}\\/5 passed`)).waitFor({ timeout: 15000 });
   const text = await page.locator("body").innerText();
   check(!/\bundefined\b|\bNaN\b/.test(text), `${w}x${h}: no "undefined" or "NaN" on the page`);
-  check(text.includes("9/10 not wrong (8 confirmed, 1 needs a human check); wrong: Q4"), `${w}x${h}: the key line names the human check and the miss`);
+  check(text.includes("8/10 count toward the pass (7 confirmed, 1 needs a human check); wrong: Q4; missing parts: Q2"), `${w}x${h}: the key line names the human check, the miss and the incomplete answer`);
+  check(text.includes("Missing parts (counted against the pass)"), `${w}x${h}: the incomplete key answer is shown side by side`);
   check(text.includes("Needs a human check (not counted as a miss)") && text.includes(DESCRIBED), `${w}x${h}: the human check is shown side by side`);
   await page.screenshot({ path: join(OUT, `regression-console-${w}x${h}.png`), fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);

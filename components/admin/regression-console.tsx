@@ -71,12 +71,14 @@ function headline(m: Record<string, Record<string, unknown>> | null): string {
     const checks = listOf(k.needsHumanCheck).length;
     const short = listOf(k.partsMissing).length;
     const wrong = Array.isArray(k.wrong) ? (k.wrong as number[]) : [];
-    const notWrong = Number(k.items) - wrong.length - Number(k.missing ?? 0);
-    return `${notWrong}/${k.items} not wrong (${k.right} confirmed` +
-      (short ? `, ${short} missing ${short === 1 ? "a part" : "parts"}` : "") +
+    // Wrong and incomplete answers both count against the pass: the app would
+    // grade students against either.
+    const counted = Number(k.items) - wrong.length - short - Number(k.missing ?? 0);
+    return `${counted}/${k.items} count toward the pass (${k.right} confirmed` +
       (checks ? `, ${checks} ${checks === 1 ? "needs" : "need"} a human check` : "") +
       `)` +
       (wrong.length ? `; wrong: ${wrong.map((n) => "Q" + n).join(", ")}` : "") +
+      (short ? `; missing parts: ${listOf(k.partsMissing).map((x) => "Q" + x.number).join(", ")}` : "") +
       (Number(k.missing) ? `; ${k.missing} not read` : "");
   }
   const k = m.standards;
@@ -92,7 +94,10 @@ function SideBySide({ metrics }: { metrics: Record<string, Record<string, unknow
   if (!m) return null;
   const groups = [
     { title: "Needs a human check (not counted as a miss)", items: listOf(m.needsHumanCheck) },
-    { title: "Read faithfully, but missing parts", items: listOf(m.partsMissing) },
+    {
+      title: metrics?.answer_key ? "Missing parts (counted against the pass)" : "Read faithfully, but missing parts",
+      items: listOf(m.partsMissing),
+    },
   ].filter((g) => g.items.length);
   if (!groups.length) return null;
   const cell: React.CSSProperties = { padding: "6px 8px", borderTop: "1px solid #d8e2dc", verticalAlign: "top", overflowWrap: "anywhere" };
