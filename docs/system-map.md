@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); R4 and G14 re-checked 2026-10-14 against the G14 branch. Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -359,7 +359,8 @@ unassigned is always allowed.
 - **NO TEST YET:**
   - "never blank when written": a model `blank` verdict on an answer that has text still wipes
     the text (gap G13);
-  - the guard is off for keys with units, %, °, ± or parts (gap G14).
+  - (G14, units, %, °, $, ±, extra parts, thousands commas and a variable on one side only, is
+    guarded by `tests/sign-guard-units-and-parts.test.mjs`.)
 
 **R5. Grading one student or group never changes another's grade.**
 - **Why:** 12 Oct 2026 (#126 round 3, Ricky's question 8). "Grade on their own" lived only in
@@ -599,13 +600,20 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.
-- **G14. The sign guard is off for keys with units, %, °, ±, `$`, a second part, or a
-  different variable** (reproduced 14 Oct).
-  - `provablyDifferent("-12", "12 cm³")`, `("-50%", "50%")`, `("±3", "3")` and `("2; -3", "2")`
-    are all `false`, so a model's wrong "match" stands.
-  - The comment at `lib/math-answer.ts:440-441` claims "5 vs 5/x" is caught; it is not.
-  - `compareAnswers` (the answer-key check) says "same" for `"x is 5"` vs `"x is 6"` and for
-    `"x = 3, x = -3"` vs `"x = 3"`.
+- **G14. The sign guard was off for keys with units, %, °, ±, `$`, a second part, thousands
+  commas, or a variable on one side only** (R4). **Closed** by the G14 PR.
+  - `provablyDifferent` now reads a number with a one-word unit, `%`, `°` or `$`; a `±` or
+    "x = 3, x = -3" as a list of values; "9,487" as a number; and a constant against an
+    expression that changes with its variable ("5" for "5/x").
+  - A unit left off is caught only as an exact sign flip ("-12" for "12 cm"), never as a
+    different number (it may be another unit); different units are never compared.
+  - Words, multiple-choice letters ("D", "D. 8,662"), key notes ("x = 15/2; x = 5 is
+    excluded") and restrictions ("x = 2; x ≠ 0") are left to the model's verdict, as before.
+  - `compareAnswers` (the answer-key check) no longer calls "x is 5" and "x is 6", or
+    "x = 3, x = -3" and "x = 3", the same.
+  - Measured on 14 Oct against production's saved answers (read-only): of 53 distinct answers
+    marked correct, 0 are newly sent to Unsure; of 5 sampled wrong ones, the guard would
+    catch 5 (it caught 1).
 - **G15. Camera shots are deleted from the device before they upload**
   (`components/scan-camera.tsx:671`, then upload in `components/teacher-class-scan.tsx:544-573`).
   An upload failing partway loses the remaining pages.

@@ -89,6 +89,9 @@ function canonical(raw: string): string {
  */
 export function finalAnswer(raw: string): string {
   let s = canonical(raw);
+  // "x is 5" names the answer the way "x = 5" does; without this the note
+  // split below cut it at "is", and "x is 5" and "x is 6" were both "x" (G14).
+  s = s.replace(/^([a-z])\s+(is|equals)\s+/, "$1 = ");
   // Notes after a separator: "; x=5 is excluded", ", with x ≠ 0", "(x ≠ 2)".
   s = s.split(/;|\bwith\b|\bwhere\b|\bfor\b|\bno extraneous\b|\bexcluded\b|\bextraneous\b|\bis\b|\bbecause\b|\bequivalently\b|,\s*or\b|\brestrictions?\b/)[0];
   // A second clause naming another value: "x = 2, x = 0 is extraneous".
@@ -101,6 +104,10 @@ export function finalAnswer(raw: string): string {
   // Longer chains are left to collapseChain, which checks they agree.
   const sides = s.split("=").map((p) => p.trim()).filter(Boolean);
   if (sides.length > 1 && /^[a-z]$/.test(sides[0])) s = sides.slice(1).join("=");
+  // A thousands comma ("9,487") is part of the number: without this the
+  // evaluator could not read it, and "9,587" for "9,487" stood (G14). Only a
+  // comma followed by exactly three digits; "24, 20, 16" keeps its commas.
+  s = s.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
   return s.replace(/[.,]\s*$/, "").replace(/\s+/g, "").trim();
 }
 
@@ -409,6 +416,112 @@ export function sameReading(a: string, b: string): boolean {
   return fa === fb || sameValue(fa, fb) === true;
 }
 
+/** Plainly math: a digit, and no run of letters other than sqrt/pi -- so
+ * "5 apples" or "no solution" is never evaluated as a product of variables. */
+const plainMath = (s: string) => /\d/.test(s) && !/[a-z]{2,}/.test(s.replace(/sqrt|pi/g, ""));
+
+/** A key note ("is extraneous", "x = 5 is excluded"): such text is never a
+ * list of answers. */
+const NOTE = /\b(is|are|extraneous|excluded|rejected|because|for|where|with|when|restrictions?|not|no)\b/;
+
+/**
+ * "x = 3, x = -3", "-3 or 3", "x = ±3", "2 ± √5": an answer that is a LIST of
+ * values, as its values (± written out as both). Null for a single value, for
+ * anything with a note, and for a pair or interval ("(1, -3)"), which
+ * bracketed() reads instead. A thousands comma ("1,200") is not a list.
+ */
+function solutionList(raw: string): string[] | null {
+  if (bracketed(raw)) return null;
+  const s = canonical(raw)
+    .replace(/\+\s*\/\s*-|\+\s*-(?=\s*[\d(a-z])/g, "±")
+    .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
+    .trim();
+  if (NOTE.test(s) || /[<>≤≥≠!;]/.test(s)) return null;
+  const value = (p: string) => p.replace(/^[a-z]\s*=\s*/, "").replace(/\s+/g, "");
+  const pm = s.split("±");
+  if (pm.length === 2 && !/,|\bor\b|\band\b/.test(s)) {
+    const base = value(pm[0]);
+    const off = pm[1].replace(/\s+/g, "");
+    if (!off || /=/.test(base + off)) return null;
+    return base ? [`${base}+(${off})`, `${base}-(${off})`] : [`(${off})`, `-(${off})`];
+  }
+  if (pm.length > 1) return null;
+  const parts = s.split(/,|\bor\b|\band\b/).map((p) => value(p.trim()));
+  if (parts.length < 2 || parts.some((p) => !p || p.includes("=") || !plainMath(p))) return null;
+  return parts;
+}
+
+/** Two lists of values are the same answer: the same values, in any order. */
+function sameList(la: string[], lb: string[]) {
+  if (la.length !== lb.length) return false;
+  const left = [...lb];
+  return la.every((x) => {
+    const i = left.findIndex((y) => compareSingle(x, y) === "same");
+    return i >= 0 && left.splice(i, 1).length === 1;
+  });
+}
+
+/**
+ * "12 cm³", "-50%", "$4.50", "-$4.50", "90°", "3.5 m/s", "30.14 years": a
+ * signed number and the one-word unit written with it. Null for anything else (a plain number included:
+ * the evaluator handles those). Read off finalAnswer(), so spaces are gone.
+ */
+function quantity(f: string): { value: number; unit: string } | null {
+  let s = f;
+  let unit = "";
+  const money = s.match(/^([+-]?)([$€£])/);
+  if (money) {
+    s = money[1] + s.slice(money[0].length);
+    unit = money[2];
+  }
+  const m = s.match(/^([+-]?)(\d+(?:\.\d+)?|\.\d+)(?:\/(\d+(?:\.\d+)?))?(.*)$/);
+  if (!m) return null;
+  const rest = m[4];
+  if (unit ? rest : !/^(%|°[cf]?|[a-z]{1,8}(\^[23])?(\/[a-z]{1,3}(\^[23])?)?)$/.test(rest)) return null;
+  if (!unit && !rest) return null;
+  const value = (m[1] === "-" ? -1 : 1) * Number(m[2]) / (m[3] ? Number(m[3]) : 1);
+  return Number.isFinite(value) ? { value, unit: unit || rest } : null;
+}
+
+/** true / false when two numbers-with-units provably differ or not; null when
+ * that cannot be told this way. Same unit: by value. One side without its
+ * unit: only an exact sign flip is provable ("-12" for "12 cm" -- "120" for
+ * "12 cm" may be a different unit). Different units: never (120 mm is 12 cm). */
+function quantitiesDiffer(fa: string, fb: string): boolean | null {
+  const qa = quantity(fa);
+  const qb = quantity(fb);
+  const plain = (f: string) => (/^[+-]?(\d+(?:\.\d+)?|\.\d+)(\/\d+)?$/.test(f) ? Number(eval0(f)) : null);
+  const close = (x: number, y: number) => Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  if (qa && qb) return qa.unit === qb.unit ? !close(qa.value, qb.value) : null;
+  const q = qa || qb;
+  const n = qa ? plain(fb) : qb ? plain(fa) : null;
+  if (!q || n === null || !Number.isFinite(n)) return null;
+  return q.value !== 0 && close(q.value, -n) ? true : null;
+}
+
+/** A plain number or fraction ("-3", "15/2") as a number. */
+function eval0(f: string): number {
+  const t = tokenize(f);
+  return t ? evaluate(t, {}) : NaN;
+}
+
+/** Whether an expression takes more than one value as its variables change
+ * ("5/x" does; "x/x" and "5" do not). */
+function varies(f: string): boolean {
+  const t = tokenize(f);
+  if (!t) return false;
+  const names = [...new Set(t.filter((x) => x.t === "id" && x.v !== "pi" && x.v !== "sqrt").map((x) => x.v))];
+  if (!names.length) return false;
+  const seen: number[] = [];
+  for (const [k, x] of SAMPLE_POINTS.entries()) {
+    const vars: Record<string, number> = {};
+    names.forEach((n, j) => (vars[n] = x + j * 0.53 + k * 0.01));
+    const v = evaluate(t, vars);
+    if (Number.isFinite(v)) seen.push(v);
+  }
+  return seen.some((v) => Math.abs(v - seen[0]) > 1e-9 * Math.max(1, Math.abs(v), Math.abs(seen[0])));
+}
+
 export function compareAnswers(a: string, b: string): Verdict {
   const parts = pairedParts(a, b);
   if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
@@ -423,6 +536,11 @@ function compareOne(a: string, b: string): Verdict {
   const ia = inequality(a);
   const ib = inequality(b);
   if (ia && ib) return ia.v === ib.v && ia.op === ib.op && itemSame(ia.rhs, ib.rhs) ? "same" : "different";
+  // A list of values ("x = 3, x = -3", "±3") is the same answer only as the
+  // same list; it used to be cut to its first value (G14).
+  const la = solutionList(a);
+  const lb = solutionList(b);
+  if (la || lb) return la && lb && sameList(la, lb) ? "same" : "different";
   return compareSingle(a, b);
 }
 
@@ -455,6 +573,20 @@ export function provablyDifferent(a: string, b: string): boolean {
     const pb = splitParts(b);
     return pa.slice(0, pb.length).some((x, i) => provablyDifferentOne(x, pb[i]));
   }
+  // Only one side has parts: "2; -3" against "2" is an answer with a value
+  // the other does not have (G14). A key's NOTE after ";" ("x = 15/2; x = 5
+  // is excluded") is words, not a value, and stays a single answer.
+  if (multiPart(a) !== multiPart(b)) {
+    const [many, one] = multiPart(a) ? [splitParts(a), b] : [splitParts(b), a];
+    if (provablyDifferentOne(many[0], one)) return true;
+    // A value, "-3" or "y = -3" -- not a restriction ("x ≠ 0") or a relation.
+    const value = (p: string) => {
+      const c = canonical(p).replace(/^[a-z]\s*=\s*/, "");
+      return plainMath(c) && !NOTE.test(c) && !/[=<>≠!≤≥]/.test(c);
+    };
+    if (value(one) && many.slice(1).every(value)) return true;
+    return false;
+  }
   return provablyDifferentOne(a, b);
 }
 
@@ -466,6 +598,19 @@ function provablyDifferentOne(a: string, b: string): boolean {
   // A different letter ("t >= 2" for "x >= 2") is not a provable difference
   // in value; the model's verdict and the teacher decide that one.
   if (ia && ib) return ia.v === ib.v && (ia.op !== ib.op || itemProvablyDifferent(ia.rhs, ib.rhs));
+  // "3" for "±3", or "x = 3, x = 5" for "x = ±3": a value missing or a value
+  // that is not in the key's list (G14). A list against a single value is
+  // only provable when the single side is plainly a value.
+  const la = solutionList(a);
+  const lb = solutionList(b);
+  if (la && lb) {
+    if (la.length !== lb.length) return true;
+    return la.some((x) => lb.every((y) => provablyDifferentSingle(x, y)));
+  }
+  if (la || lb) {
+    const single = la ? b : a;
+    return plainMath(canonical(single)) && !NOTE.test(canonical(single)) && finalAnswer(single) !== "";
+  }
   return provablyDifferentSingle(a, b);
 }
 
@@ -473,5 +618,23 @@ function provablyDifferentSingle(a: string, b: string): boolean {
   const fa = collapseChain(finalAnswer(a));
   const fb = collapseChain(finalAnswer(b));
   if (!fa || !fb || fa === fb) return false;
-  return sameValue(fa, fb) === false;
+  // A multiple-choice answer ("D", "D. 8,662", "b)") is a choice, not
+  // arithmetic: "d.8662" would otherwise read as d times 0.8662.
+  if (/^[a-e]$|^[a-z][.)]/.test(fa) || /^[a-e]$|^[a-z][.)]/.test(fb)) return false;
+  // Units, %, °, $: "-12" for "12 cm³" (G14). The evaluator reads "cm" as
+  // two variables and gave up.
+  const units = quantitiesDiffer(fa, fb);
+  if (units !== null) return units;
+  const same = sameValue(fa, fb);
+  if (same !== null) return same === false;
+  // A variable on one side only: "5" for "5/x" (G14). A constant never equals
+  // an expression that changes with its variable; one that cancels ("x/x")
+  // is a constant and is left alone, and so is anything with words.
+  if (plainMath(fa) && plainMath(fb)) {
+    const ta = tokenize(fa);
+    const tb = tokenize(fb);
+    const constant = (f: string) => !!tokenize(f) && Number.isFinite(eval0(f));
+    if (ta && tb && ((constant(fa) && varies(fb)) || (constant(fb) && varies(fa)))) return true;
+  }
+  return false;
 }
