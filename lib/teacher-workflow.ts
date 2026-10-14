@@ -1,3 +1,4 @@
+import { isSecondChoice, withoutStandardNote } from "./standard-match";
 import type {
   AnswerRegion,
   Assessment,
@@ -42,7 +43,7 @@ export function assignStandardToUntagged(a: Assessment, code: string): Assessmen
   return {
     ...a,
     questions: a.questions.map((q) =>
-      !q.excluded && !q.standard ? { ...q, standard: code } : q,
+      !q.excluded && !q.standard ? { ...q, standard: code, reasoning: withoutStandardNote(q.reasoning) } : q,
     ),
   };
 }
@@ -68,7 +69,7 @@ export function assignStandardToRange(
     ...a,
     questions: a.questions.map((q) =>
       !q.excluded && q.number >= lo && q.number <= hi
-        ? { ...q, standard: code, alignment: 0 }
+        ? { ...withoutSecondChoice(q), standard: code, alignment: 0, reasoning: withoutStandardNote(q.reasoning) }
         : q,
     ),
   };
@@ -169,7 +170,29 @@ export function countsAsGraded(a: Assessment, r: StudentResponse): boolean {
  */
 export const STRONG_ALIGNMENT = 80;
 export function alignmentIsStrong(q: Question): boolean {
+  // The AI's unchecked second choice is never a strong fit: nobody scored it.
+  if (isSecondChoice(q) && !q.verified) return false;
   return !(q.alignment > 0) || q.alignment >= STRONG_ALIGNMENT;
+}
+
+/** A question without the second-choice mark. */
+function withoutSecondChoice(q: Question): Question {
+  const { secondChoice: _mark, ...rest } = q;
+  void _mark;
+  return rest;
+}
+
+/**
+ * The teacher confirms a question's standard. Its notes have done their job,
+ * and an AI second choice becomes the teacher's own pick. It arrives with no AI
+ * score (the AI scored its first choice; settleStandards leaves it 0), so it is
+ * shown as "You chose it" and left out of the alignment average like any
+ * standard the teacher assigns -- it used to keep a made-up score (60, or 50
+ * where the read had none) (#129 round
+ * 3). A score the teacher typed in themselves is kept.
+ */
+export function confirmQuestion(q: Question): Question {
+  return { ...withoutSecondChoice(q), verified: true, reasoning: withoutStandardNote(q.reasoning) };
 }
 
 /**
@@ -177,23 +200,31 @@ export function alignmentIsStrong(q: Question): boolean {
  * which is what the readiness check asks for. A question with no standard
  * cannot be confirmed -- readiness needs one -- and is left for the teacher.
  */
-export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number } {
+export function confirmAllQuestions(a: Assessment): { assessment: Assessment; confirmed: number; missingStandard: number; secondChoice: number } {
   let confirmed = 0;
   let missingStandard = 0;
+  let secondChoice = 0;
   const questions = a.questions.map((q) => {
     if (q.excluded || q.verified) return q;
     if (!q.standard) {
       missingStandard++;
       return q;
     }
+    // The AI's second choice is for the teacher to look at, one by one -- not
+    // swept in with the rest (standards review, 13 Oct 2026).
+    if (isSecondChoice(q)) {
+      secondChoice++;
+      return q;
+    }
     confirmed++;
-    return { ...q, verified: true };
+    return confirmQuestion(q);
   });
   const allReviewed = questions.every((q) => q.excluded || (q.verified && q.standard));
   return {
     assessment: { ...a, questions, status: allReviewed ? "Ready" : a.status },
     confirmed,
     missingStandard,
+    secondChoice,
   };
 }
 

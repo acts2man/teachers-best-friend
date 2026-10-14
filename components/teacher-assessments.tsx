@@ -1,5 +1,6 @@
 "use client";
 import { clampParts, partsAfterKeyEdit, withParts } from "@/lib/answer-parts";
+import { isSecondChoice } from "@/lib/standard-match";
 import { useEffect, useRef, useState } from "react";
 import { REQUIRE_CONFIRM_MATCHES } from "@/lib/grading-settings";
 import { useSearchParams } from "next/navigation";
@@ -95,6 +96,7 @@ import {
   alignmentIsStrong,
   assignStandardToRange,
   confirmAllQuestions,
+  confirmQuestion,
   pointsText,
   questionPoints,
   setQuestionPoints,
@@ -203,7 +205,9 @@ export function AssessmentView() {
         q.confidence >= 90 &&
         q.alignment >= 80 &&
         q.level === "On grade" &&
-        a.targetStandards.includes(q.standard),
+        a.targetStandards.includes(q.standard) &&
+        // Never the AI's unchecked second choice (it also has no score).
+        !isSecondChoice(q),
     ) || [];
   async function saveAssessment(next: Assessment, message: string) {
     return save(
@@ -367,9 +371,10 @@ export function AssessmentView() {
       previous.answer.trim() !== edit.answer.trim() && edit.answerParts === previous.answerParts
         ? withParts(edit, partsAfterKeyEdit(previous, edit.answer))
         : edit;
-    const questions = a.questions.map((q) =>
-      q.id === edit.id ? { ...saved, verified: true } : q,
-    );
+    // Confirming a question settles its standard: the AI's "second choice" or
+    // "not in your list" note has done its job, and a second choice becomes
+    // the teacher's own pick (confirmQuestion).
+    const questions = a.questions.map((q) => (q.id === edit.id ? confirmQuestion(saved) : q));
     const contentChanged =
       previous.answer !== edit.answer ||
       previous.text !== edit.text ||
@@ -960,13 +965,16 @@ export function AssessmentView() {
                       <Action
                         disabled={busy}
                         onClick={async () => {
-                          const { assessment: next, confirmed, missingStandard } =
+                          const { assessment: next, confirmed, missingStandard, secondChoice } =
                             confirmAllQuestions(a);
                           const saved = await saveAssessment(
                             next,
                             confirmed +
                               (confirmed === 1 ? " question" : " questions") +
                               " confirmed" +
+                              (secondChoice
+                                ? " · " + secondChoice + " are the AI's second choice — open each to check"
+                                : "") +
                               (missingStandard
                                 ? " · " + missingStandard + " still need a standard"
                                 : ""),
@@ -986,7 +994,7 @@ export function AssessmentView() {
                         onClick={async () => {
                           const ids = new Set(clearQuestions.map((q) => q.id));
                           const questions = a.questions.map((q) =>
-                            ids.has(q.id) ? { ...q, verified: true } : q,
+                            ids.has(q.id) ? confirmQuestion(q) : q,
                           );
                           const allReviewed = questions.every(
                             (q) => q.verified || q.excluded,
@@ -1074,9 +1082,11 @@ export function AssessmentView() {
                                     (alignmentIsStrong(q) ? "align-strong" : "align-weak-score")
                                   }
                                 >
-                                  {questionAlignment(q) === null
-                                    ? "You chose it"
-                                    : questionAlignment(q) + "%"}
+                                  {!q.verified && isSecondChoice(q)
+                                    ? "Not scored · AI’s 2nd choice — check"
+                                    : questionAlignment(q) === null
+                                      ? "You chose it"
+                                      : questionAlignment(q) + "%"}
                                 </span>
                               )}
                             </button>
@@ -1088,6 +1098,9 @@ export function AssessmentView() {
                             <span className="cell-meta">
                               {q.standard || "Not assigned"}
                             </span>
+                            {!q.verified && isSecondChoice(q) && (
+                              <Pill tone="amber">AI&rsquo;s 2nd choice — check</Pill>
+                            )}
                           </TableCell>
                           <TableCell data-label="Depth">
                             <Pill>DOK {q.dok}</Pill>
@@ -1101,6 +1114,19 @@ export function AssessmentView() {
                                 value={questionAlignment(q)}
                                 title="Assigned by you"
                               />
+                            ) : !q.verified && isSecondChoice(q) ? (
+                              // The AI scored its first choice, not this one:
+                              // no score to show, and nothing to average.
+                              <span className="align-weak">
+                                <span className="cell-meta">Not scored</span>
+                                <button
+                                  type="button"
+                                  className="align-strengthen"
+                                  onClick={() => setEdit({ ...q })}
+                                >
+                                  Check it
+                                </button>
+                              </span>
                             ) : alignmentIsStrong(q) ? (
                               <span
                                 className="align-strong"
@@ -1540,7 +1566,22 @@ export function AssessmentView() {
                 </span>
                 <p>{edit.reasoning}</p>
               </div>
-              {edit.alignment < 80 && (
+              {!edit.verified && isSecondChoice(edit) && (
+                // Said here from the field, so the reason survives the
+                // teacher editing the note out of the reasoning (#129 round 3).
+                <div className="alignment-improvement">
+                  <Lightbulb size={17} />
+                  <div>
+                    <strong>The AI&rsquo;s second choice — check it</strong>
+                    <p>
+                      The AI&rsquo;s first choice isn&rsquo;t in your standards list, so this is
+                      its runner-up. It has no alignment score: the AI scored its first choice,
+                      not this one. Keep it if it fits, or choose another.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {edit.alignment < 80 && !(!edit.verified && isSecondChoice(edit)) && (
                 <div className="alignment-improvement">
                   <Lightbulb size={17} />
                   <div>

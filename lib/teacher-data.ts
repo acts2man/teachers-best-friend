@@ -1,3 +1,4 @@
+import { isSecondChoice } from "./standard-match";
 import type {
   Workspace,
   Standard,
@@ -618,8 +619,10 @@ export function questionAlignment(q: Question): number | null {
  * -- that is a real "measures something off-target", not a missing score.
  */
 export function alignment(a: Assessment): number | null {
+  // The AI's unchecked second choice has no score and never counts (#129
+  // round 3); it carries alignment 0, so this is belt and braces.
   const qs = a.questions.filter(
-    (q) => !q.excluded && questionAlignment(q) !== null,
+    (q) => !q.excluded && !(isSecondChoice(q) && !q.verified) && questionAlignment(q) !== null,
   );
   if (!qs.length) return null;
   return Math.round(

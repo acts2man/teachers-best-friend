@@ -1,3 +1,4 @@
+import { settleStandards } from "./standard-match";
 import { z } from "zod";
 import { HttpError } from "@/lib/teacher-server";
 import { allStandards } from "@/lib/teacher-catalog";
@@ -781,16 +782,18 @@ export function finalizeAnalysis(
     // to the save path, where it would fail the assessments_title_check
     // constraint (1-200 chars) and read to the teacher as a generic error.
     output.title = parsed.data.title.trim().slice(0, 120);
-    output.questions = parsed.data.questions.map(({ parts, ...q }) => ({
+    // Each standard is matched to the teacher's catalog by what it means, not
+    // character for character (see lib/standard-match.ts): the exact-only
+    // check blanked 85 of 138 questions in the two days before 12 Oct 2026.
+    // What the AI wrote and what was used are kept with the read.
+    const settled = settleStandards(parsed.data.questions, catalog);
+    output.standardMatches = settled.records;
+    output.questions = settled.questions.map(({ parts, ...q }) => ({
       ...q,
       ...(parts && parts > 1 ? { answerParts: parts } : {}),
       id: crypto.randomUUID(),
       verified: false,
       excluded: false,
-      ...(!catalog.some((s) => s.code === q.standard)
-        ? { standard: "", alignment: 0, confidence: 0 }
-        : {}),
-      secondary: catalog.some((s) => s.code === q.secondary) ? q.secondary : "",
     }));
   }
   if (p.mode === "responses") {

@@ -376,6 +376,10 @@ export async function reusablePriorResult(
       );
     });
     if (anyUntagged) return null;
+    // Nor one whose standards include the AI's second choice: a fresh read may
+    // well find its first choice, and serving the guess again hides that.
+    const matches = (result as { standardMatches?: { how?: string }[] }).standardMatches;
+    if (Array.isArray(matches) && matches.some((m) => m?.how === "second-choice")) return null;
   }
   return result;
 }
