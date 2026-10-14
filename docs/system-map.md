@@ -5,7 +5,8 @@
 Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
-so. Migrations listed here are the repo's copies; production is applied **by hand**
+so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
+G4 fix (atomic revision check). Migrations listed here are the repo's copies; production is applied **by hand**
 (`supabase/migrations/README.md`), so "in the repo" is not proof it is live.
 
 Contents:
@@ -40,12 +41,12 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 - `uploadFile` (`lib/upload-client.ts:35-52`) POSTs to `/api/uploads`
   (`app/api/uploads/route.ts:32-87`). The route checks the size (8 MB), the MIME type and the
   magic bytes, then calls `saveDocument`.
-- `saveDocument` (`lib/teacher-server.ts:485-551`):
+- `saveDocument` (`lib/teacher-server.ts:519-585`):
   - stores the file in bucket **`teacher-documents`** at `<ownerId>/<id>`;
   - inserts a **`teacher_uploads`** row with `page_count` and `content_sha256`.
 - An insert trigger refuses a row with no hash
   (`supabase/migrations/20260923170000_a_scan_cannot_exist_uncharged.sql:158-178`).
-- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:617-640`). It does
+- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:651-674`). It does
   **not** filter out purged rows; see gap G9.
 
 ### 1.3 Charging
@@ -156,11 +157,19 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - clamps titles to 200 characters (`:165-166`);
    - calls `updateWorkspace(id, workspace, revision)` and returns **409 when it returns null**
      (`:170-175`).
-6. `updateWorkspace` (`lib/teacher-server.ts:450-469`). On Supabase:
-   - read the revision (`:456`);
-   - refuse if it differs (`:457`);
-   - otherwise call `sync_workspace` (`:458`, RPC at `:322-331`).
-   - **The check and the write are separate round trips**: gap G4.
+6. `updateWorkspace` (`lib/teacher-server.ts:468-503`). On Supabase it makes **one** call,
+   `sync_workspace_if_revision(p_teacher, p_data, p_expected_revision)` (`:478-482`;
+   `supabase/migrations/20261014120000_atomic_workspace_revision.sql`). In one transaction
+   that function:
+   - locks the `teacher_workspaces` row (`select ... for update`), so a second save for the
+     same teacher waits;
+   - returns null when there is no row or the revision differs, which the route turns into the
+     409. It does not raise, so a stale save is never a 500;
+   - otherwise calls `sync_workspace(p_teacher, p_data)` and returns the new revision.
+   - **Until that migration is applied** (it is applied by hand), the call fails with
+     "function does not exist" (PGRST202 / 42883). `updateWorkspace` then logs that once with
+     `console.error` and falls back to the old check-then-write (`:485-493`; RPC at
+     `:322-331`), where gap G4 is still open. Any other error is a 500, with no fallback.
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
@@ -193,11 +202,11 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 ### 1.9 Reload
 
 - `GET /api/workspace` (`app/api/workspace/route.ts:90-115`) calls `readWorkspace`
-  (`lib/teacher-server.ts:413-432`). It reads the **revision first, then the data**, so a save
+  (`lib/teacher-server.ts:431-450`). It reads the **revision first, then the data**, so a save
   in between shows up as a 409 on the next PUT.
 - `get_workspace_json` (`20261008190000…:320-468` plus the three patches) builds the JSON from
   a **fixed list of columns**. `jsonb_strip_nulls` removes null keys.
-- `normalizeWorkspace` (`lib/teacher-server.ts:378-411`) and `withAssessmentDefaults`
+- `normalizeWorkspace` (`lib/teacher-server.ts:396-429`) and `withAssessmentDefaults`
   (`lib/workspace-safety.ts:24-32`) put back the defaults a stripped key loses.
 - The client copy is refreshed when it is older than 2 minutes or the tab becomes visible
   again (`components/teacher-app.tsx:94`, `:198-245`).
@@ -393,13 +402,20 @@ unassigned is always allowed.
   tab's save would delete what that save added. No incident is recorded: the guard predates
   this repository's history (23 Sep 2026).
 - **Enforced by:**
-  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:456-457`) and the 409 in
-    the route (`app/api/workspace/route.ts:170-175`);
-  - `readWorkspace` reads the revision before the data (`lib/teacher-server.ts:413-424`).
-- **Guarded by:** `tests/invariants/stale-revision.test.mjs`, which runs the real
-  `updateWorkspace` against an in-memory database.
-- **NO TEST YET:** two saves carrying the same current revision at the same moment can both
-  pass (gap G4).
+  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:478-482`), made under a
+    row lock inside `sync_workspace_if_revision`
+    (`supabase/migrations/20261014120000_atomic_workspace_revision.sql`), and the 409 in the
+    route (`app/api/workspace/route.ts:170-175`);
+  - `readWorkspace` reads the revision before the data (`lib/teacher-server.ts:431-442`).
+- **Guarded by:**
+  - `tests/invariants/stale-revision.test.mjs`, which runs the real `updateWorkspace` against
+    an in-memory database;
+  - `tests/invariants/atomic-revision.test.mjs`: two (and five) saves carrying the same
+    revision at the same moment, against a database that models the row lock, write exactly
+    once; the fallback before the migration is applied; and the migration locks the row and
+    compares before it syncs. Proof on the database: `supabase/checks/atomic-revision-round-trip.sql`
+    (two-session race script included).
+- **Open until the migration is applied:** gap G4.
 
 **R8. No student data in the public repo, CI logs, `app_events` or screenshots.**
 - **Why:** CLAUDE.md and `docs/student-data-flow.md`. These are published commitments in
@@ -551,10 +567,16 @@ reading the code, as marked. None has a test in the suite, because each test wou
     row holding **every page**.
   - `pickRead` names that row after the **most confidently read name in the whole stack**. In
     the reproduction, Ana's answers were pre-filled under Ben.
-- **G4. The revision check is not atomic on Supabase** (R7; `lib/teacher-server.ts:456-458`).
-  Two saves carrying the current revision that arrive together both pass; the second
-  whole-workspace replace wins, and whatever the first added is deleted. The fix is for
-  `sync_workspace` to take the expected revision and check it under a row lock.
+- **G4. The revision check is not atomic on Supabase** (R7). **Fixed in code; migration pending
+  application.** Two saves carrying the current revision that arrived together both passed; the
+  second whole-workspace replace won, and whatever the first added was deleted.
+  - The fix: `sync_workspace_if_revision` checks the revision under a row lock and syncs in
+    the same transaction (`supabase/migrations/20261014120000_atomic_workspace_revision.sql`;
+    `lib/teacher-server.ts:478-482`). Guarded by `tests/invariants/atomic-revision.test.mjs`.
+  - **Still open on production until that migration is applied by hand.** Until then
+    `updateWorkspace` logs "sync_workspace_if_revision is missing" once per server instance
+    and uses the old check-then-write (`lib/teacher-server.ts:485-493`). Remove this line once
+    `supabase/checks/atomic-revision-round-trip.sql` has been run against production.
 - **G5. Re-scanning a student replaces their teacher-confirmed grades with no warning** (R6;
   confirmed by reading the code).
   - `mergeStudentResponses` keeps a prior response only when the new answer is blank
@@ -578,7 +600,7 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - Loading two frameworks that share codes (California and Common Core both use `3.OA.A.1`)
     puts two rows with one code into the payload, and `ON CONFLICT` raises.
 - **G9. Upload recovery can return a purged file.** `findUploadByHash` ignores `purged_at`
-  (`lib/teacher-server.ts:617-640`), so the scan later fails with a 404. The purge also
+  (`lib/teacher-server.ts:651-674`), so the scan later fails with a 404. The purge also
   handles only 200 rows per table per run, and each class-scan page creates two rows.
 - **G10. The reuse cache key is looser than the read it caches.**
   - The page hashes are sorted and de-duplicated, so a reordered set gets the old order.

@@ -330,6 +330,24 @@ async function syncWorkspace(id: string, workspace: Workspace) {
   if (error) throw rpcFailure("sync_workspace", error);
 }
 
+/**
+ * True when PostgREST (PGRST202) or Postgres (42883) says the function does
+ * not exist -- i.e. its migration has not been applied yet.
+ */
+function isMissingFunction(error: { code?: string }) {
+  return error.code === "PGRST202" || error.code === "42883";
+}
+
+let atomicSaveMissingLogged = false;
+function warnAtomicSaveMissing() {
+  if (atomicSaveMissingLogged) return;
+  atomicSaveMissingLogged = true;
+  console.error(
+    "sync_workspace_if_revision is missing: saves are using the NON-atomic revision check (gap G4). " +
+      "Apply supabase/migrations/20261014120000_atomic_workspace_revision.sql.",
+  );
+}
+
 function numeric(value: unknown) {
   if (typeof value === "number") return value;
   if (
@@ -453,6 +471,22 @@ export async function updateWorkspace(
   revision: number,
 ) {
   if (hasSupabaseConfig()) {
+    // Gap G4 / rule R7: the revision check and the write are ONE step. The
+    // database function locks the teacher_workspaces row, compares the
+    // revision, and only then runs sync_workspace, all in one transaction --
+    // so two saves carrying the same revision can no longer both pass.
+    const { data, error } = await createServiceClient().rpc(
+      "sync_workspace_if_revision",
+      { p_teacher: id, p_data: workspace, p_expected_revision: revision },
+    );
+    if (!error) return data === null || data === undefined ? null : Number(data);
+    if (!isMissingFunction(error))
+      throw rpcFailure("sync_workspace_if_revision", error);
+    // Deploy order: the migration that creates sync_workspace_if_revision is
+    // applied by hand, so this code may reach production before it. Until
+    // then, fall back to the old check-then-write (gap G4 is still open on
+    // that path) rather than fail every save, and say so in the logs.
+    warnAtomicSaveMissing();
     const current = await workspaceRevision(id);
     if (current === null || current !== revision) return null;
     await syncWorkspace(id, workspace);

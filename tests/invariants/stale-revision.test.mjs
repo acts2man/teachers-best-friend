@@ -7,14 +7,13 @@
 // if let through, delete everything that save added.
 //
 // Runs the real lib/teacher-server.ts updateWorkspace against an in-memory
-// stand-in for the Supabase service client (teacher_workspaces.revision plus
-// the sync_workspace RPC, which bumps it, as the real function does).
+// stand-in for the Supabase service client: teacher_workspaces.revision, the
+// sync_workspace RPC (which bumps it, as the real function does) and
+// sync_workspace_if_revision (supabase/migrations/20261014120000_atomic_
+// workspace_revision.sql), which checks the revision and syncs in one step.
 //
-// KNOWN GAP (docs/system-map.md, rule R7): on Supabase the check and the write
-// are two round trips, not one statement, so two saves carrying the SAME
-// current revision that arrive together can both pass. That race is not
-// covered here because it fails today; the fix is a revision argument to
-// sync_workspace that it checks under a row lock.
+// The race -- two saves carrying the SAME current revision at the same moment
+// (gap G4) -- is covered by tests/invariants/atomic-revision.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -38,6 +37,14 @@ function fakeDatabase(revision) {
     };
   };
   db.rpc = async (fn, args) => {
+    // The atomic save: refuse (null) on a missing row or a revision mismatch,
+    // otherwise sync and return the new revision.
+    if (fn === "sync_workspace_if_revision") {
+      if (db.revision === null || db.revision !== args.p_expected_revision) return { data: null, error: null };
+      db.syncs.push(args.p_data);
+      db.revision += 1;
+      return { data: db.revision, error: null };
+    }
     assert.equal(fn, "sync_workspace");
     db.syncs.push(args.p_data);
     db.revision += 1;
