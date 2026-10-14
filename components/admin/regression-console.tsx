@@ -71,9 +71,9 @@ function headline(m: Record<string, Record<string, unknown>> | null): string {
     const checks = listOf(k.needsHumanCheck).length;
     const short = listOf(k.partsMissing).length;
     const wrong = Array.isArray(k.wrong) ? (k.wrong as number[]) : [];
-    const notWrong = Number(k.items) - wrong.length - Number(k.missing ?? 0);
-    return `${notWrong}/${k.items} not wrong (${k.right} confirmed` +
-      (short ? `, ${short} missing ${short === 1 ? "a part" : "parts"}` : "") +
+    const counted = Number(k.items) - wrong.length - Number(k.missing ?? 0) - short;
+    return `${counted}/${k.items} count toward the pass mark (${k.right} confirmed` +
+      (short ? `, ${short} missing ${short === 1 ? "a part" : "parts"}, counted against it` : "") +
       (checks ? `, ${checks} ${checks === 1 ? "needs" : "need"} a human check` : "") +
       `)` +
       (wrong.length ? `; wrong: ${wrong.map((n) => "Q" + n).join(", ")}` : "") +

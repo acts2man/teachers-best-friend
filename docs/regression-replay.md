@@ -68,14 +68,15 @@ Each answer gets one of four results:
 | Result | When | How it counts |
 |---|---|---|
 | **Right** | The same answer | Right |
-| **Parts missing** | A multi-part read kept only some parts, each one right | Read faithfully, listed separately as missing parts |
+| **Parts missing** | A multi-part read kept only some parts, each one right | Answer reading: read faithfully, listed separately as missing parts. **Answer key: counted against the pass mark** (the app would grade every student against the short key), still listed separately from the wrong ones |
 | **Needs a human check** | Prose (a description, a sketch) that reads differently but has the same numbers in it | Not counted as a miss; both texts shown side by side on the replay page. Prose with different numbers is wrong |
 | **Wrong** | Anything else | A miss |
 
 Pass marks (`lib/regression/score.ts`): names 92% (24 of 26) with **zero** pre-filled
 wrongly; answers 95% with **zero** wrongly-correct and **zero** wrongly-blank. Accuracy
 counts everything that is not a miss, so an answer waiting on a human check does not
-lower it. The page always says how many are waiting.
+lower it. The page always says how many are waiting. Answer key 95%: a key answer missing a
+part counts against it like a wrong one (since 14 Oct 2026).
 
 ## What it shares with production
 

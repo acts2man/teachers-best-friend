@@ -19,7 +19,8 @@
  *   are each counted and each fail the case outright.
  * Answer key / standards: per question, against the confirmed key and tags.
  *   The key is judged the same way as reading (judgeAnswer); a wrong number
- *   (no rounding tolerance) or a different unit is a miss.
+ *   (no rounding tolerance) or a different unit is a miss, and so is a key
+ *   answer missing a part (listed separately).
  */
 import { answerKey } from "@/lib/teacher-workflow";
 import { judgeAnswer, type ReadVerdict } from "./compare-answers";
@@ -310,16 +311,20 @@ export type KeyItem = { number: number; read: string; expected: string };
 export type KeyScore = ListScore & {
   /** Question numbers the read key got wrong: the real misses. */
   wrong: number[];
-  /** Read faithfully but missing parts of the confirmed answer: not wrong,
-   * not counted in `right`. */
+  /** Read faithfully but missing parts of the confirmed answer: not counted
+   * in `right`, and counted AGAINST the pass mark (the app would grade every
+   * student against the short key). Listed apart from `wrong` so a person
+   * sees which misses are a dropped part. */
   partsMissing: KeyItem[];
   /** Prose that cannot be compared: not a miss, for a person to judge. */
   needsHumanCheck: KeyItem[];
 };
 
 /** Answer key: the read key against the confirmed one, question by question
- * number, by value (judgeAnswer). Accuracy is the share NOT wrong: an answer
- * waiting on a human check does not count against it. */
+ * number, by value (judgeAnswer). Accuracy is the share neither wrong, unread,
+ * nor missing a part: a key answer short of a part fails every student who
+ * writes the whole answer, so it counts against the pass mark like a wrong
+ * one. An answer waiting on a human check does not count against it. */
 export function scoreKey(
   expected: { number: number; answer: string }[],
   read: { number: number; answer: string }[],
@@ -338,13 +343,13 @@ export function scoreKey(
     const item = { number: e.number, read: r.answer, expected: e.answer };
     const verdict = judgeAnswer(r.answer, e.answer);
     // An incomplete key answer is not "right": the app would grade against
-    // it. It is not wrong either -- listed apart, as reading's are.
+    // it. Listed apart from the wrong ones, but counted against the pass mark.
     if (verdict === "same") right++;
     else if (verdict === "parts_missing") partsMissing.push(item);
     else if (verdict === "needs_human_check") needsHumanCheck.push(item);
     else wrong.push(e.number);
   }
-  const accuracy = ratio(expected.length - wrong.length - missing, expected.length);
+  const accuracy = ratio(expected.length - wrong.length - missing - partsMissing.length, expected.length);
   return { items: expected.length, right, accuracy, missing, wrong, partsMissing, needsHumanCheck, passed: accuracy >= PASS.key };
 }
 
