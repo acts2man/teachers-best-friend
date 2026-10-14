@@ -105,7 +105,7 @@ for (const [w, h] of [[390, 844], [412, 915], [1366, 768]]) {
   await page.getByText(new RegExp(`Last run: ${passedCount}\\/5 passed`)).waitFor({ timeout: 15000 });
   const text = await page.locator("body").innerText();
   check(!/\bundefined\b|\bNaN\b/.test(text), `${w}x${h}: no "undefined" or "NaN" on the page`);
-  check(text.includes("9/10 not wrong (8 confirmed, 1 needs a human check); wrong: Q4"), `${w}x${h}: the key line names the human check and the miss`);
+  check(text.includes("9/10 count toward the pass mark (8 confirmed, 1 needs a human check); wrong: Q4"), `${w}x${h}: the key line names the human check and the miss`);
   check(text.includes("Needs a human check (not counted as a miss)") && text.includes(DESCRIBED), `${w}x${h}: the human check is shown side by side`);
   await page.screenshot({ path: join(OUT, `regression-console-${w}x${h}.png`), fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
