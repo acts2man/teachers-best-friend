@@ -999,6 +999,10 @@ export function applyScannedGroups(
   students: Student[],
   classId: string,
   groups: ConfirmedGroup[],
+  /** Let this scan replace grades the teacher already confirmed (G5): only
+   * after the teacher chose "Replace" (confirmedGradesAtRisk / rescanWarning).
+   * Off, a confirmed grade stays and the new read fills the rest. */
+  { replaceConfirmed = false }: { replaceConfirmed?: boolean } = {},
 ) {
   const newStudents: Student[] = [];
   const responsesByStudent = new Map<string, StudentResponse[]>();
@@ -1054,7 +1058,7 @@ export function applyScannedGroups(
           // scan: the last group used to win, so a correct front-page answer
           // became a blank from the back page (#125 review).
           mergeSplitGroups(earlier, incoming)
-        : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming),
+        : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming, replaceConfirmed),
     );
     studentUploadIds[studentId] = [
       ...new Set([

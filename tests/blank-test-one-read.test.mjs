@@ -37,7 +37,9 @@ test("a single read button reads the whole set at once", () => {
   // The button reads with no ids, so analyze reads every uploaded page together.
   // (Behind the confirm step when a revision would clear grades: the read it
   // runs is still the whole set, with no ids.)
-  assert.match(scan, /onClick=\{\(\) =>\s*clearsGrades\s*\?\s*setConfirmingReread\("read"\)\s*:\s*analyze\(undefined, true, true\)\s*\}/);
+  // G5: checking a student's work again asks first when it could replace
+  // grades the teacher confirmed (setAskRescan); otherwise it reads as before.
+  assert.match(scan, /onClick=\{\(\) =>\s*clearsGrades\s*\?\s*setConfirmingReread\("read"\)\s*:\s*mode === "responses" && rescanRisk\.answers > 0\s*\?\s*setAskRescan\(true\)\s*:\s*analyze\(undefined, true, true\)\s*\}/);
   assert.match(scan, /else analyze\(undefined, true, true\);/);
   assert.match(scan, /const uploadIds = ids \?\? files\.map\(\(f\) => f\.id\)/);
   // Label is "Read the assessment" before the first read, "Read it again" after.

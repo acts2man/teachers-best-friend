@@ -34,7 +34,8 @@ import {
 } from "@/lib/scan-session";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
-import { activeQuestions, preparationGaps } from "@/lib/teacher-workflow";
+import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
+import { ConfirmRescan } from "./confirm-reread";
 import { reconcileEvidence } from "@/lib/teacher-data";
 import {
   applyScannedGroups,
@@ -398,6 +399,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // split and re-graded there (#125 follow-up a).
   const [shownRun, setShownRun] = useState<{ names: PageName[]; ids: string[]; nameIds: (string | null)[] } | null>(null);
   const [splitting, setSplitting] = useState<string | null>(null);
+  // The students whose confirmed grades this save would replace, while the
+  // teacher is asked what to do (G5); null when not asking.
+  const [askRescan, setAskRescan] = useState<string[] | null>(null);
   useEffect(() => {
     // Not while the other device is grading this same stack: it would read the
     // names and send the pages a second time. Once its note goes stale (the
@@ -1016,7 +1020,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     });
   }
 
-  async function saveAll() {
+  /** `replaceConfirmed`: the teacher's answer to the re-scan question (G5);
+   * undefined until asked. */
+  async function saveAll(replaceConfirmed?: boolean) {
     if (!groups || saving || splitting) return;
     const kept = groups.filter((g) => !discarded.has(g.key) && g.name.trim());
     if (!kept.length) {
@@ -1036,6 +1042,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       );
       return;
     }
+    // Students this scan would re-grade who already have grades the teacher
+    // confirmed: ask before replacing any of them (G5).
+    if (replaceConfirmed === undefined) {
+      const onRoster = new Set(students.map((s) => s.id));
+      const scannedIds = kept.map((g) => g.studentId).filter((id): id is string => !!id && onRoster.has(id));
+      if (confirmedGradesAtRisk(a, scannedIds).answers > 0) {
+        setAskRescan(scannedIds);
+        return;
+      }
+    }
     setSaving(true);
     const result = applyScannedGroups(
       a,
@@ -1047,6 +1063,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         pageUploadIds: g.pageUploadIds,
         responses: g.responses,
       })),
+      { replaceConfirmed: replaceConfirmed === true },
     );
     const ok = await save(
       {
@@ -1634,6 +1651,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             </div>
             );
           })}
+          <ConfirmRescan
+            risk={confirmedGradesAtRisk(a, askRescan ?? [])}
+            open={!!askRescan}
+            onCancel={() => setAskRescan(null)}
+            onKeep={() => {
+              setAskRescan(null);
+              void saveAll(false);
+            }}
+            onReplace={() => {
+              setAskRescan(null);
+              void saveAll(true);
+            }}
+          />
           {undecided.length > 0 && (
             <p className="key-notice" role="status">
               {undecided.length} paper{undecided.length === 1 ? " needs" : "s need"} you to say
@@ -1642,7 +1672,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             </p>
           )}
           <div className="review-heading-actions">
-            <Action disabled={saving || busy || !!splitting || undecided.length > 0} onClick={saveAll}>
+            <Action disabled={saving || busy || !!splitting || undecided.length > 0} onClick={() => void saveAll()}>
               {saving ? <LoaderCircle className="spin" size={16} /> : <Users size={16} />}
               Confirm &amp; save {groups.length - discarded.size} student
               {groups.length - discarded.size === 1 ? "" : "s"}

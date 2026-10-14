@@ -138,7 +138,8 @@ test("the scan flow re-reads the whole set into one assessment instead of one pe
   assert.ok(/setCreatedId\(a\.id\)/.test(s), "the created assessment id is remembered");
   // Auto-read stays on the page (navigate is gated); it does not leave after page 1.
   assert.ok(/if \(navigate\) go\("\/assessments\?id=" \+ a\.id\)/.test(s), "assignment navigation is gated behind navigate");
-  assert.ok(/async function analyze\(ids\?: string\[\], navigate = false, fresh = false\)/.test(s), "analyze defaults to staying");
+  // G5 added a fourth parameter (whether a re-scan may replace confirmed grades).
+  assert.ok(/async function analyze\(ids\?: string\[\], navigate = false, fresh = false(, replaceConfirmedGrades = false)?\)/.test(s), "analyze defaults to staying");
   // The read covers every uploaded page, not just the latest: with no ids
   // passed, analyze reads the whole current set. (The blank test now collects
   // all pages and reads once on the button, rather than auto-reading per upload.)

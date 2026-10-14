@@ -385,8 +385,12 @@ unassigned is always allowed.
     `components/teacher-assessments.tsx` (dialog near `:709`).
 - **Guarded by:** `tests/reread-confirm.test.mjs`, which also scans the source: every
   re-read button must go through the confirmation.
-- **NO TEST YET:** re-**scanning** students' work replaces teacher-confirmed grades with no
-  confirmation (gap G5).
+- **Re-scanning** students' work (G5, fixed in code by the G5 PR): `mergeStudentResponses` and
+  `applyScannedGroups` keep confirmed (verified) grades unless told `replaceConfirmed`; the class
+  scan's `saveAll` and the one-student "Check student work" ask first with the exact count
+  (`confirmedGradesAtRisk`, `rescanWarning`, `ConfirmRescan` in `components/confirm-reread.tsx`):
+  keep my confirmed grades / replace with the new scan / cancel. Guarded by
+  `tests/invariants/rescan-keeps-confirmed.test.mjs`.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
@@ -555,13 +559,10 @@ reading the code, as marked. None has a test in the suite, because each test wou
   Two saves carrying the current revision that arrive together both pass; the second
   whole-workspace replace wins, and whatever the first added is deleted. The fix is for
   `sync_workspace` to take the expected revision and check it under a row lock.
-- **G5. Re-scanning a student replaces their teacher-confirmed grades with no warning** (R6;
-  confirmed by reading the code).
-  - `mergeStudentResponses` keeps a prior response only when the new answer is blank
-    (`lib/teacher-workflow.ts:719`).
-  - The new response is unverified, has a new id, and drops `errorType`, `gradedAlone` and
-    the teacher's credit. `tests/teacher-class-scan.test.mjs` asserts this as intended.
-  - #134's confirmation covers re-reading questions, not re-scanning student work.
+- **G5. FIXED in code (G5 PR, awaiting review). Re-scanning a student replaced their
+  teacher-confirmed grades with no warning** (R6). Confirmed grades are now kept by default;
+  both scan screens ask before replacing them. `tests/teacher-class-scan.test.mjs`, which had
+  pinned the silent replacement as intended, was changed with a note.
 - **G6. A matching-screen row with an empty name is silently not saved**
   (`components/teacher-class-scan.tsx:1021`).
   - It is reachable: the second half of a split is named `two.detectedName || ""` (`:1131`).
