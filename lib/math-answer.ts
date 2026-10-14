@@ -89,6 +89,9 @@ function canonical(raw: string): string {
  */
 export function finalAnswer(raw: string): string {
   let s = canonical(raw);
+  // "x is 5" says "x = 5": cut at "is" below, it was just "x", so "x is 5"
+  // and "x is 6" read as the same answer (gap G14).
+  s = s.replace(/^\s*([a-z])\s+is\s+(?=[-+\d.($])/, "$1 = ");
   // Notes after a separator: "; x=5 is excluded", ", with x ≠ 0", "(x ≠ 2)".
   s = s.split(/;|\bwith\b|\bwhere\b|\bfor\b|\bno extraneous\b|\bexcluded\b|\bextraneous\b|\bis\b|\bbecause\b|\bequivalently\b|,\s*or\b|\brestrictions?\b/)[0];
   // A second clause naming another value: "x = 2, x = 0 is extraneous".
@@ -410,6 +413,12 @@ export function sameReading(a: string, b: string): boolean {
 }
 
 export function compareAnswers(a: string, b: string): Verdict {
+  // Two lists of values ("x = 3, x = -3", "±3", "2; -3"): the same values,
+  // and as many of them. finalAnswer below keeps only the first one, so
+  // "x = 3, x = -3" and "x = 3" used to be "same" (gap G14).
+  const sa = valueList(a);
+  const sb = valueList(b);
+  if (sa && sb) return listsDiffer(sa, sb) ? "different" : "same";
   const parts = pairedParts(a, b);
   if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
   // Both multi-part, but a different number of parts: not the same answer.
@@ -438,10 +447,31 @@ function compareSingle(a: string, b: string): Verdict {
  * True only when both answers evaluate as numbers or expressions and their
  * values PROVABLY differ (checked at several points). Used to catch a
  * grading model's "match" on an answer that is not the key's value -- a sign
- * off, 5 for 5/x -- without second-guessing answers that are words or choices,
+ * off, 5 for 6 -- without second-guessing answers that are words or choices,
  * where this returns false and the model's verdict stands.
+ *
+ * Also true (gap G14) when a key's unit, label or list hid the difference
+ * from the evaluator: "-12" for "12 cm³", "12 m" for "12 cm", "2; -3" or "3"
+ * for "x = ±3". Anything this cannot read is NOT a difference: a key's label
+ * ("Select:", "B."), a unit or noun the student left off, a thousands comma,
+ * prose around the number -- the model's match stands.
+ *
+ * When both sides read as a list of numbers, or both as a lone number, that
+ * reading decides: it sees past the label and the unit, which the evaluator
+ * below reads as variables ("(C) 1,250 cm" is c·1250·c·m to it, and "y = -1;
+ * x = 2" is only its first part).
  */
 export function provablyDifferent(a: string, b: string): boolean {
+  const la = valueList(a);
+  const lb = valueList(b);
+  if (la && lb) return listsDiffer(la, lb);
+  const qa = quantity(a);
+  const qb = quantity(b);
+  if (qa && qb) return quantitiesDiffer(qa, qb);
+  return provablyDifferentByValue(a, b);
+}
+
+function provablyDifferentByValue(a: string, b: string): boolean {
   // Part by part when both are multi-part with the same count: a sign flip in
   // the second part ("y=4; (0,-10/3)" for "y=4; (0,10/3)") is a difference,
   // not hidden behind an equal first part.
@@ -474,4 +504,195 @@ function provablyDifferentSingle(a: string, b: string): boolean {
   const fb = collapseChain(finalAnswer(b));
   if (!fa || !fb || fa === fb) return false;
   return sameValue(fa, fb) === false;
+}
+
+// ---- What a key's label, unit or list hid from the evaluator (gap G14) -----
+//
+// Each reading below is narrow on purpose: it returns null for anything it
+// cannot read with certainty, and null is never a difference. Measured on 14
+// Oct 2026 against teacher-confirmed-correct answers, a rule that demanded
+// proof of EQUALITY sent 130 of 216 right answers in one class to Unsure;
+// these only ever add a proof of DIFFERENCE.
+
+/** Plain text: Unicode minus and dashes as "-", superscripts as ^2/^3, lower case. */
+function plain(raw: string): string {
+  return fromLatex(raw)
+    .replace(/\\pm(?![a-zA-Z])/g, "±")
+    .replace(/\^\s*\\circ|\\circ|\\degree/g, "°")
+    .replace(/\\%/g, "%")
+    .replace(/\\\$/g, "$")
+    .replace(/²/g, "^2")
+    .replace(/³/g, "^3")
+    .normalize("NFKC")
+    .replace(/[−‒–—‐﹣－]/g, "-")
+    .replace(/\+\/-|\+-(?=\s*\d)/g, "±")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * The answer without the label a key puts in front of it -- "Correct
+ * statements:", "Select:", "Answer:", "B.", "(B)", "B)" -- without "the
+ * answer is" / "x is" / "x =", and without a closing full stop. These are how
+ * a key is written, not part of what the student has to write.
+ */
+function unlabelled(raw: string): string {
+  return plain(raw)
+    .replace(/^[a-z][a-z ]{0,40}:\s+/, "")
+    .replace(/^\(?[a-e]\)\s+|^[a-e]\.\s+/, "")
+    .replace(/^(the )?(final )?(answer|value|solution|result|total) (is|=)\s*/, "")
+    .replace(/\.+$/, "")
+    .trim();
+}
+
+/** One spelling per unit: "centimeters" and "cm" are one unit, "°" and
+ * "degrees" are one. Only these are units; any other word is a noun ("30.14
+ * years" is a unit, "11,163 people" is not), and a noun is never compared. */
+const UNIT_WORDS: Record<string, string> = {
+  mm: "mm", millimeter: "mm", millimetre: "mm",
+  cm: "cm", centimeter: "cm", centimetre: "cm",
+  m: "m", meter: "m", metre: "m",
+  km: "km", kilometer: "km", kilometre: "km",
+  in: "in", inch: "in", ft: "ft", foot: "ft", feet: "ft", yd: "yd", yard: "yd", mi: "mi", mile: "mi",
+  mg: "mg", milligram: "mg", g: "g", gram: "g", kg: "kg", kilogram: "kg",
+  lb: "lb", lbs: "lb", pound: "lb", oz: "oz", ounce: "oz", ton: "ton",
+  ml: "ml", milliliter: "ml", millilitre: "ml", l: "l", liter: "l", litre: "l",
+  gal: "gal", gallon: "gal", qt: "qt", quart: "qt", pint: "pt", cup: "cup",
+  s: "s", sec: "s", second: "s", min: "min", minute: "min", h: "h", hr: "h", hour: "h",
+  day: "day", week: "week", month: "month", yr: "year", year: "year",
+  "°": "°", degree: "°", deg: "°", "°c": "°c", "°f": "°f", rad: "rad", radian: "rad",
+  "%": "%", percent: "%", $: "$", dollar: "$", "¢": "¢", cent: "¢",
+  unit: "unit", mph: "mi/h",
+};
+
+function unitWord(w: string): string | undefined {
+  return UNIT_WORDS[w] ?? (w.length > 3 ? (UNIT_WORDS[w.replace(/es$/, "")] ?? UNIT_WORDS[w.replace(/s$/, "")]) : undefined);
+}
+
+/** "cm^2", "square centimeters", "sq cm", "km/h", "miles per hour" -> one
+ * spelling; "" when the words are not all units (a noun, or nothing). */
+function unitOf(words: string): string {
+  const r = words.trim();
+  if (!r) return "";
+  const per = r.split(/\s*\/\s*|\s+per\s+/);
+  if (per.length > 2) return "";
+  const parts: string[] = [];
+  for (const side of per) {
+    let power = "";
+    let w = side.trim();
+    const sq = w.match(/^(square|sq\.?|cubic|cu\.?)\s+(.+)$/);
+    if (sq) {
+      power = sq[1].startsWith("s") ? "^2" : "^3";
+      w = sq[2];
+    }
+    const pw = w.match(/^(.+?)\s*(?:\^\s*([23])|\s+(squared|cubed))$/);
+    if (pw) {
+      power = pw[2] ? "^" + pw[2] : pw[3] === "squared" ? "^2" : "^3";
+      w = pw[1];
+    }
+    const u = unitWord(w.trim());
+    if (!u) return "";
+    parts.push(u + power);
+  }
+  return parts.join("/");
+}
+
+/** Words that make a number part of a sentence or expression, never a lone
+ * quantity: "5 more than x", "3 times as many", "2 and 3". */
+const NOT_A_QUANTITY = /\b(than|more|less|fewer|times|plus|minus|of|or|and|is|are|was|were|equals?|over|by|to|from|each|not|no|between|remainder|r)\b/;
+
+/** A number with thousands commas, a decimal, or a fraction "3/4". */
+const NUMBER = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:/\d+)?|\.\d+`;
+
+function numberValue(text: string): number {
+  const [n, d] = text.replace(/,/g, "").split("/");
+  return d === undefined ? Number(n) : Number(n) / Number(d);
+}
+
+type Quantity = { value: number; unit: string };
+
+/**
+ * A lone number with what is written round it: "-12 cm³", "$4.50", "-50%",
+ * "B. 11,163 people", "about 30.14 years", "x = -3". Null for anything else --
+ * an expression, a second number, a sentence -- which this never compares.
+ */
+function quantity(raw: string): Quantity | null {
+  const s = unlabelled(raw)
+    .replace(/^[a-z] ?(=|is) ?/, "")
+    .replace(/^(about|approximately|approx\.?|around|roughly|≈|~) ?/, "");
+  const m = s.match(new RegExp(String.raw`^([-+]?)\s?(\$?)\s?([-+]?)\s?(${NUMBER})(?:\s?(%|°[cf]?|¢))?(?:\s?(.*))?$`));
+  if (!m) return null;
+  const [, sign1, dollar, sign2, num, symbol, after = ""] = m;
+  if (sign1 && sign2) return null;
+  // Words only after the number: no digits, operators or brackets.
+  if (/[\d=<>+*()[\]±,;:]|(^|\s)-/.test(after.replace(/\^\s*[23]\b/g, "")) || NOT_A_QUANTITY.test(after)) return null;
+  // "5x", "5ab": a variable, not a unit.
+  if (/^[a-z]{1,2}$/.test(after) && !unitWord(after)) return null;
+  const value = (sign1 === "-" || sign2 === "-" ? -1 : 1) * numberValue(num);
+  if (!Number.isFinite(value)) return null;
+  const unit = dollar ? "$" : symbol ? (UNIT_WORDS[symbol] ?? symbol) : unitOf(after);
+  return { value, unit };
+}
+
+const near = (x: number, y: number) => Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+
+/** "°" on its own says degrees without saying which: it never conflicts with °C, °F or degrees. */
+const unitsConflict = (u: string, v: string) =>
+  !!u && !!v && u !== v && !((u === "°" && /^°[cf]$/.test(v)) || (v === "°" && /^°[cf]$/.test(u)));
+
+/**
+ * Both are a lone number, and either the numbers differ -- the key's unit no
+ * longer hides a sign, so "-12" for "12 cm³" is checked the way "-12" for
+ * "12" always was -- or both name a unit and the units differ ("12 m" for
+ * "12 cm"). A unit or noun written on one side only is not a difference, and
+ * "0.5" for "50%" is the same number.
+ */
+function quantitiesDiffer(qa: Quantity, qb: Quantity): boolean {
+  if (unitsConflict(qa.unit, qb.unit)) return true;
+  if (near(qa.value, qb.value)) return false;
+  const pct = (p: Quantity, o: Quantity) => p.unit === "%" && o.unit !== "%" && near(p.value / 100, o.value);
+  return !pct(qa, qb) && !pct(qb, qa);
+}
+
+type Listed = { label: string; value: number };
+
+/**
+ * An answer that is only a list of numbers: "x = 3, x = -3", "x = ±3",
+ * "2; -3", "7, 14, 21 and 3, 10, 17", "x = 3 or x = -3". ± counts as both
+ * values. Null for anything else -- a word, an expression, a unit, a note --
+ * and for "2 or 3" with no "x =", which is as often "either is right" as a
+ * list of two.
+ */
+function valueList(raw: string): Listed[] | null {
+  const s = unlabelled(raw);
+  if (!/\d/.test(s)) return null;
+  const items = s.split(/\s*(?:;|,(?!\d{3}(?!\d))|\band\b|\bor\b)\s*/).filter(Boolean);
+  const out: Listed[] = [];
+  let labelled = 0;
+  for (const item of items) {
+    const m = item.match(new RegExp(String.raw`^(?:([a-z])\s?=\s?)?(±|[-+]?)\s?(${NUMBER})$`));
+    if (!m) return null;
+    const [, label = "", sign, num] = m;
+    if (label) labelled++;
+    const v = numberValue(num);
+    if (!Number.isFinite(v)) return null;
+    if (sign === "±") out.push({ label, value: v }, { label, value: -v });
+    else out.push({ label, value: sign === "-" ? -v : v });
+  }
+  if (/\bor\b/.test(s) && labelled !== items.length && !s.includes("±")) return null;
+  return out;
+}
+
+/** Different values, or a different number of them. Compared by label
+ * ("x = 2, y = 3" is not "x = 3, y = 2") when both label every value, and
+ * in any order otherwise. */
+function listsDiffer(a: Listed[], b: Listed[]): boolean {
+  if (a.length !== b.length) return true;
+  const byLabel = a.every((x) => x.label) && b.every((x) => x.label);
+  const key = (x: Listed) => (byLabel ? x.label + ":" : "") + x.value;
+  const sort = (l: Listed[]) => [...l].sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : 0));
+  const sa = sort(a);
+  const sb = sort(b);
+  return sa.some((x, i) => (byLabel && x.label !== sb[i].label) || !near(x.value, sb[i].value));
 }

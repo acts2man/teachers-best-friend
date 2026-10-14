@@ -6,7 +6,8 @@ Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
-G4 fix (atomic revision check). Migrations listed here are the repo's copies; production is applied **by hand**
+G4 fix (atomic revision check). R4 and G14 re-checked 2026-10-14 on `main` at `6ab8606` for the
+G14 fix (#143). Migrations listed here are the repo's copies; production is applied **by hand**
 (`supabase/migrations/README.md`), so "in the repo" is not proof it is live.
 
 Contents:
@@ -385,8 +386,13 @@ unassigned is always allowed.
 - **Enforced by:**
   - Credit comes **only** from the model's `match`, mapped in `normalizeRecognizedResponses`
     (`lib/teacher-workflow.ts:496-556`).
-  - A match is taken away when `provablyDifferent` says so (`lib/math-answer.ts:444`, used at
-    `teacher-workflow.ts:508-509`).
+  - A match is taken away when `provablyDifferent` says so (`lib/math-answer.ts:464`, used at
+    `teacher-workflow.ts:508-509`). The direction is fixed: a match **stands unless the answer
+    provably differs**. Requiring proof of equality instead was measured on 14 Oct against
+    teacher-confirmed right answers and would have sent 130 of 216 in one class to Unsure.
+    A key's label, a unit or noun the student left off, a thousands comma or prose around the
+    answer is never a difference; a different value behind a unit/%/°/$, a different unit, a
+    different number of values (± counts as two) or "x is 5" vs "x is 6" is.
   - A question that is missing, reported twice, or short of parts becomes Unsure
     (`teacher-workflow.ts:518-520`).
   - The verdict rules are in `lib/analyze-shared.ts:187-188`.
@@ -397,11 +403,12 @@ unassigned is always allowed.
     fractions, LaTeX `\frac`/`\dfrac`/mixed numbers, Unicode minus and `x =` prefixes, plus a
     check that skipped answers go to Unsure;
   - `tests/sign-flip-latex.test.mjs`, `tests/grading-verdicts.test.mjs`,
-    `tests/confirm-matches-confidence.test.mjs`.
+    `tests/confirm-matches-confidence.test.mjs`;
+  - `tests/invariants/sign-guard-units-parts.test.mjs` (G14): the hidden differences are
+    caught, and 50 right-but-differently-worded answers keep their match.
 - **NO TEST YET:**
   - "never blank when written": a model `blank` verdict on an answer that has text still wipes
-    the text (gap G13);
-  - the guard is off for keys with units, %, °, ± or parts (gap G14).
+    the text (gap G13).
 
 **R5. Grading one student or group never changes another's grade.**
 - **Why:** 12 Oct 2026 (#126 round 3, Ricky's question 8). "Grade on their own" lived only in
@@ -762,13 +769,14 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.
-- **G14. The sign guard is off for keys with units, %, °, ±, `$`, a second part, or a
-  different variable** (reproduced 14 Oct).
-  - `provablyDifferent("-12", "12 cm³")`, `("-50%", "50%")`, `("±3", "3")` and `("2; -3", "2")`
-    are all `false`, so a model's wrong "match" stands.
-  - The comment at `lib/math-answer.ts:440-441` claims "5 vs 5/x" is caught; it is not.
-  - `compareAnswers` (the answer-key check) says "same" for `"x is 5"` vs `"x is 6"` and for
-    `"x = 3, x = -3"` vs `"x = 3"`.
+- **G14. FIXED in code (#143). The sign guard was off for keys with units, %, °, ±, `$`, a
+  second part, or "x is"** (reproduced 14 Oct). `provablyDifferent("-12", "12 cm³")`,
+  `("-50%", "50%")`, `("±3", "3")` and `("2; -3", "2")` were all `false`, and `compareAnswers`
+  said "same" for `"x is 5"` vs `"x is 6"`. Now a lone number or a list of numbers is read past
+  its label and unit (`quantity`, `valueList` in `lib/math-answer.ts`); anything those cannot
+  read falls back to the old check, never to "different". Guarded by
+  `tests/invariants/sign-guard-units-parts.test.mjs`. Still not caught: "5" for "5/x" (a
+  different variable is not a provable difference in value).
 - **G15. Camera shots are deleted from the device before they upload**
   (`components/scan-camera.tsx:671`, then upload in `components/teacher-class-scan.tsx:544-573`).
   An upload failing partway loses the remaining pages.
