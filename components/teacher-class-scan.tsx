@@ -13,7 +13,7 @@ import {
   Undo2,
   ZoomIn,
 } from "lucide-react";
-import { analyzeRequest, resumeScan } from "@/lib/analyze-client";
+import { analyzeRequest, resumeScan, isRetryableAnalyzeError } from "@/lib/analyze-client";
 import { uploadFile } from "@/lib/upload-client";
 import { readJson } from "@/lib/utils";
 import { splitForClassScan, uprightPage } from "@/lib/image-prep";
@@ -40,6 +40,8 @@ import {
   applyScannedGroups,
   groupPagesByCapture,
   groupPagesByName,
+  sameFirstNameSplit,
+  withRetry,
   gradeInBatches,
   keepOtherClassStudents,
   mapLimit,
@@ -392,6 +394,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     nameIds: (string | null)[];
     graded: GradedGroup[];
   } | null>(null);
+  // The name reads behind the rows on the matching screen, so a row can be
+  // split and re-graded there (#125 follow-up a).
+  const [shownRun, setShownRun] = useState<{ names: PageName[]; ids: string[]; nameIds: (string | null)[] } | null>(null);
+  const [splitting, setSplitting] = useState<string | null>(null);
   useEffect(() => {
     // Not while the other device is grading this same stack: it would read the
     // names and send the pages a second time. Once its note goes stale (the
@@ -589,6 +595,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setEdited(EMPTY);
     setPageUploadIds([]);
     setGroups(null);
+    setShownRun(null);
     setDiscarded(new Set());
   }
 
@@ -639,14 +646,33 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         explicit ? groupPagesByCapture(explicit) : null,
       );
       const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
-        const read = await analyzeRequest({
-          mode: "name_strip",
-          uploadIds: slice.map((s) => s.id),
-          grade: a.grade,
-          subject: a.subject,
-          framework: a.framework,
-          assessmentId: a.id,
-        });
+        // Tried again, with backoff, before a page is left for the teacher:
+        // name reads are free to the teacher, a missed one costs them a tap
+        // (#125 follow-up c).
+        const read = await withRetry(
+          () =>
+            analyzeRequest({
+              mode: "name_strip",
+              uploadIds: slice.map((s) => s.id),
+              grade: a.grade,
+              subject: a.subject,
+              framework: a.framework,
+              assessmentId: a.id,
+            }),
+          {
+            // Only a passing fault: never a refusal, a spending cap or the
+            // poll deadline (isRetryableAnalyzeError).
+            retryable: isRetryableAnalyzeError,
+            // Every retried failure is logged, so the per-page failure rate
+            // can be measured even when the retry recovers it.
+            onRetry: (error, attempt) =>
+              logAppEvent("ai_failure", {
+                message: "name read failed; retrying: " + ((error as Error)?.message ?? ""),
+                assessmentId: a.id,
+                detail: { mode: "name_strip", kind: "error", attempt, retried: true },
+              }),
+          },
+        );
         return read.result as { pages?: PageName[] };
       }, (error) => {
         // One pile's name read failing leaves that pile unnamed -- the
@@ -833,6 +859,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       nameIds,
     ).filter((_, i) => done.has(i));
     setPageUploadIds(ids);
+    setShownRun({ names, ids, nameIds });
     if (!resolved.length)
       toast.error(
         "No student work could be identified on these pages. The pages are saved — try re-scanning them more clearly.",
@@ -990,7 +1017,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   async function saveAll() {
-    if (!groups || saving) return;
+    if (!groups || saving || splitting) return;
     const kept = groups.filter((g) => !discarded.has(g.key) && g.name.trim());
     if (!kept.length) {
       toast.error("Nothing to save — every group was discarded.");
@@ -999,13 +1026,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // The button is disabled for this, but the check lives here too: a saved
     // ambiguity is a child's grades on another child, and that is not
     // something to leave resting on one piece of UI state.
-    const open = kept.filter((g) => g.candidateIds.length > 0);
+    const open = kept.filter((g) => g.candidateIds.length > 0 || g.unassigned);
     if (open.length) {
       toast.error(
         open.length === 1
-          ? "One paper could belong to more than one student. Choose whose it is, or discard it."
+          ? "One paper still needs you to say whose it is. Choose a student, or discard it."
           : open.length +
-              " papers could belong to more than one student. Choose whose they are, or discard them.",
+              " papers still need you to say whose they are. Choose a student for each, or discard them.",
       );
       return;
     }
@@ -1053,6 +1080,87 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     }
   }
 
+  /**
+   * "These are 2 different students" (#125 follow-up a): a row whose pages
+   * read the same first name one after the other was graded as one student.
+   * Split it at the second reading and grade the two halves again, each as its
+   * own student. The pages are already paid for, so this costs the teacher
+   * nothing (the page ledger charges a page once); it is one more request on
+   * our side. The first half keeps the row's match; the second is the
+   * teacher's to match before saving.
+   */
+  async function splitGroup(g: ResolvedGroup, at: number) {
+    const run = shownRun;
+    if (!run || splitting || busyScanning || !belongsToRun(g, run)) return;
+    const first = g.pageIndexes.slice(0, at);
+    const second = g.pageIndexes.slice(at);
+    setSplitting(g.key);
+    try {
+      const batches = planScanBatches([first, second], run.ids, activeQuestions(a).length);
+      const graded = await gradeInBatches(
+        batches,
+        async (batch, index) =>
+          (
+            await analyzeRequest({
+              mode: "class_scan",
+              uploadIds: batch.uploadIds,
+              pageGroups: batch.groups,
+              onlyQuestionIds: batch.onlyQuestionIds ?? [],
+              batchIndex: index,
+              grade: a.grade,
+              subject: a.subject,
+              framework: a.framework,
+              assessmentId: a.id,
+            })
+          ).result,
+        () => {},
+        0,
+        [],
+        activeQuestions(a).length,
+        undefined,
+        undefined,
+        a,
+      );
+      const [one, two] = resolveScannedGroups([first, second], run.names, graded, run.ids, students, run.nameIds);
+      // A half that came back with no answers would be dropped on save, and that
+      // student's paper with it: keep the row as it was instead (review).
+      if (!one?.responses.length || !two?.responses.length)
+        throw new Error("One of the two papers came back with no answers.");
+      const rows: ResolvedGroup[] = [
+        { ...one, key: g.key + "-1", studentId: g.studentId, name: g.name, candidateIds: g.candidateIds, suggestedId: g.suggestedId, matchConfidence: g.matchConfidence, unassigned: g.unassigned },
+        { ...two, key: g.key + "-2", studentId: null, candidateIds: [], suggestedId: null, matchConfidence: 0, unassigned: "split", name: two.detectedName || "" },
+      ];
+      // Only onto the same row: if the screen moved on while this graded (a new
+      // scan, another device), nothing is replaced.
+      const same = (x: ResolvedGroup) => x.key === g.key && x.pageUploadIds.join() === g.pageUploadIds.join();
+      setGroups((prev) => (prev ? prev.flatMap((x) => (same(x) ? rows : [x])) : prev));
+      setDiscarded((d) => {
+        if (!d.has(g.key)) return d;
+        const next = new Set(d);
+        next.add(g.key + "-1").add(g.key + "-2");
+        return next;
+      });
+      toast.success("Split into two students and graded again. Choose who the second one is.");
+    } catch (e) {
+      toast.error(describeFailure(e, "Couldn't grade the two papers separately. Nothing was changed — try again."));
+    } finally {
+      setSplitting(null);
+    }
+  }
+
+  /** The row's pages, looked up in the run behind the screen, are exactly the
+   * row's own uploads -- so a split never reads another run's names or grades
+   * another run's pages (review: a stale run after a save or another device's
+   * scan). */
+  function belongsToRun(g: ResolvedGroup, run: NonNullable<typeof shownRun>) {
+    return (
+      g.pageIndexes.length === g.pageUploadIds.length &&
+      g.pageIndexes.every((p, i) => run.ids[p] === g.pageUploadIds[i])
+    );
+  }
+  const splitAt = (g: ResolvedGroup) =>
+    shownRun && belongsToRun(g, shownRun) ? sameFirstNameSplit(g.pageIndexes, shownRun.names) : -1;
+
   const openPile = piles[piles.length - 1];
   // Where the teacher is on the guided path: scanning, matching names, or
   // (once the class is saved) grading by question further down the page.
@@ -1062,7 +1170,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const live = (groups ?? []).filter((g) => !discarded.has(g.key));
   // Papers the roster could not narrow to one student. The teacher answers
   // these; nothing is chosen for them, and nothing is saved until they have.
-  const undecided = live.filter((g) => g.candidateIds.length > 0);
+  const undecided = live.filter((g) => g.candidateIds.length > 0 || g.unassigned);
   // Two papers on one student. Not blocked -- a child really can hand in two
   // sheets -- but it is the shape a misread name makes, so it is said plainly
   // on both rows rather than left for the teacher to spot in the results.
@@ -1082,6 +1190,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // Answered. The row stops being a question, including when the answer
       // is "add as a new student".
       candidateIds: [],
+      unassigned: false,
       // The teacher chose; how sure the app was no longer matters.
       matchConfidence: 100,
       suggestedId: null,
@@ -1413,13 +1522,15 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   label={
                     g.candidateIds.length
                       ? "Which " + (firstNameRead(g) || "student") + "?"
-                      : "Match to a student"
+                      : g.unassigned
+                        ? "Whose paper is this?"
+                        : "Match to a student"
                   }
                   // Nothing preselected while the question is open. An empty
                   // value cannot be saved, so a teacher who scrolls past this
                   // row is stopped rather than silently agreeing to a guess.
                   value={
-                    g.candidateIds.length
+                    g.candidateIds.length || g.unassigned
                       ? ""
                       : g.studentId
                         ? "existing:" + g.studentId
@@ -1430,6 +1541,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     chooseStudent(g, v);
                   }}
                   options={[
+                    ...(g.unassigned && !g.candidateIds.length ? [{ value: "", label: "Choose a student…" }] : []),
                     ...(g.candidateIds.length
                       ? [
                           { value: "", label: "Choose a student…" },
@@ -1454,7 +1566,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                       })),
                   ]}
                 />
-                {!g.studentId && !g.candidateIds.length && (
+                {!g.studentId && !g.candidateIds.length && !g.unassigned && (
                   <input
                     className="class-scan-name-input"
                     aria-label="New student name"
@@ -1484,6 +1596,25 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     class. Choose whose paper this is before saving.
                   </p>
                 )}
+                {g.unassigned && (
+                  <p className="key-notice" role="status">
+                    {g.unassigned === "split"
+                      ? "You split this paper off from the one above. "
+                      : "“" + g.detectedName + "” was read on several papers, each after a different student. It may be printed on the sheet, or a student who isn’t on your roster. "}
+                    Choose whose paper this is before saving.
+                  </p>
+                )}
+                {splitAt(g) > 0 && !discarded.has(g.key) && (
+                  <Action
+                    variant="secondary small"
+                    className="name-match-split"
+                    disabled={busy || busyScanning || saving || !!splitting}
+                    onClick={() => splitGroup(g, splitAt(g))}
+                  >
+                    {splitting === g.key ? <LoaderCircle className="spin" size={14} /> : <Users size={14} />}{" "}
+                    These are 2 different students
+                  </Action>
+                )}
                 {sharedWith(g) > 1 && (
                   <p className="key-notice" role="status">
                     {sharedWith(g) === 2 ? "Two" : sharedWith(g)} papers matched to{" "}
@@ -1495,6 +1626,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                 type="button"
                 className="icon-button"
                 aria-label={discarded.has(g.key) ? "Keep this group" : "Discard this group"}
+                disabled={!!splitting}
                 onClick={() => toggleDiscard(g.key)}
               >
                 {discarded.has(g.key) ? <Check size={16} /> : <X size={16} />}
@@ -1504,13 +1636,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           })}
           {undecided.length > 0 && (
             <p className="key-notice" role="status">
-              {undecided.length} paper{undecided.length === 1 ? "" : "s"} could belong to
-              more than one student. Choose whose {undecided.length === 1 ? "it is" : "they are"},
-              or discard {undecided.length === 1 ? "it" : "them"}, and then save.
+              {undecided.length} paper{undecided.length === 1 ? " needs" : "s need"} you to say
+              whose {undecided.length === 1 ? "it is" : "they are"}. Choose a student for{" "}
+              {undecided.length === 1 ? "it" : "each"}, or discard {undecided.length === 1 ? "it" : "them"}, and then save.
             </p>
           )}
           <div className="review-heading-actions">
-            <Action disabled={saving || busy || undecided.length > 0} onClick={saveAll}>
+            <Action disabled={saving || busy || !!splitting || undecided.length > 0} onClick={saveAll}>
               {saving ? <LoaderCircle className="spin" size={16} /> : <Users size={16} />}
               Confirm &amp; save {groups.length - discarded.size} student
               {groups.length - discarded.size === 1 ? "" : "s"}

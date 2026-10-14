@@ -64,8 +64,11 @@ export function answerPartsInKey(key: string): number {
 /** A parts count as stored: 2-20, or undefined for a single answer. Same
  * bounds the database keeps (it clamps rather than rejecting the save). */
 export function clampParts(n: unknown): number | undefined {
-  const v = Math.trunc(Number(n));
-  if (!Number.isFinite(v) || v < 2) return undefined;
+  // A whole number only, as the database keeps it (safe_int('2.7') is NULL,
+  // one answer) and as expectedParts reads it -- truncating 2.7 to 2 made the
+  // three disagree (#125 follow-up).
+  const v = Number(n);
+  if (!Number.isInteger(v) || v < 2) return undefined;
   return Math.min(v, 20);
 }
 
