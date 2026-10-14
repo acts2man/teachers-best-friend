@@ -77,8 +77,10 @@ end
 $check$;
 
 -- =====================================================================
--- PART 2: the race, two sessions (e.g. two SQL editor tabs or two psql
--- windows). Run the steps in order, switching windows where it says.
+-- PART 2: the race, two sessions. Run it in psql, in TWO TERMINALS -- not the
+-- Supabase SQL editor, which may not keep a transaction open between runs
+-- (session A's BEGIN must still hold the lock when session B calls).
+-- Run the steps in order, switching terminals where it says.
 -- Replace <TEACHER> with the same teacher id as above. Session B ends in
 -- ROLLBACK; session A commits a re-save of the unchanged workspace.
 --
@@ -100,6 +102,7 @@ $check$;
 -- SESSION A, step A1
 -- ---------------------------------------------------------------------
 -- set lock_timeout = '5s';
+-- set idle_in_transaction_session_timeout = '60s';  -- never hold the lock long
 -- begin;
 -- select revision as n from public.teacher_workspaces where owner_id = '<TEACHER>';
 -- -- use that N below

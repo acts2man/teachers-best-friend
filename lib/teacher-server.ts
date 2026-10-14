@@ -331,21 +331,36 @@ async function syncWorkspace(id: string, workspace: Workspace) {
 }
 
 /**
- * True when PostgREST (PGRST202) or Postgres (42883) says the function does
- * not exist -- i.e. its migration has not been applied yet.
+ * One atomic save: sync_workspace_if_revision locks the teacher_workspaces
+ * row, compares the revision and runs sync_workspace in one transaction
+ * (supabase/migrations/20261014120000_atomic_workspace_revision.sql; gap G4).
+ * Returns the new revision, null when the revision is stale or there is no
+ * row, or "missing" when the migration has not been applied yet.
  */
-function isMissingFunction(error: { code?: string }) {
-  return error.code === "PGRST202" || error.code === "42883";
-}
-
-let atomicSaveMissingLogged = false;
-function warnAtomicSaveMissing() {
-  if (atomicSaveMissingLogged) return;
-  atomicSaveMissingLogged = true;
-  console.error(
-    "sync_workspace_if_revision is missing: saves are using the NON-atomic revision check (gap G4). " +
-      "Apply supabase/migrations/20261014120000_atomic_workspace_revision.sql.",
+async function syncWorkspaceIfRevision(
+  id: string,
+  workspace: Workspace,
+  revision: number,
+): Promise<number | null | "missing"> {
+  const { data, error } = await createServiceClient().rpc(
+    "sync_workspace_if_revision",
+    { p_teacher: id, p_data: workspace, p_expected_revision: revision },
   );
+  if (!error) return data === null || data === undefined ? null : Number(data);
+  // PGRST202 is PostgREST saying the function does not exist -- the migration
+  // is not applied. Only that falls back. Anything else (including a 42883
+  // raised INSIDE the function, which the direct sync would hit too) fails
+  // the save.
+  if (error.code === "PGRST202") {
+    // Every time, not once: each fallback is a save made with gap G4 open.
+    console.error(
+      "GAP G4 OPEN: sync_workspace_if_revision does not exist, so this workspace save used the NON-atomic " +
+        "revision check (two simultaneous saves can both be written). Apply " +
+        "supabase/migrations/20261014120000_atomic_workspace_revision.sql.",
+    );
+    return "missing";
+  }
+  throw rpcFailure("sync_workspace_if_revision", error);
 }
 
 function numeric(value: unknown) {
@@ -471,22 +486,15 @@ export async function updateWorkspace(
   revision: number,
 ) {
   if (hasSupabaseConfig()) {
-    // Gap G4 / rule R7: the revision check and the write are ONE step. The
-    // database function locks the teacher_workspaces row, compares the
-    // revision, and only then runs sync_workspace, all in one transaction --
-    // so two saves carrying the same revision can no longer both pass.
-    const { data, error } = await createServiceClient().rpc(
-      "sync_workspace_if_revision",
-      { p_teacher: id, p_data: workspace, p_expected_revision: revision },
-    );
-    if (!error) return data === null || data === undefined ? null : Number(data);
-    if (!isMissingFunction(error))
-      throw rpcFailure("sync_workspace_if_revision", error);
-    // Deploy order: the migration that creates sync_workspace_if_revision is
-    // applied by hand, so this code may reach production before it. Until
-    // then, fall back to the old check-then-write (gap G4 is still open on
-    // that path) rather than fail every save, and say so in the logs.
-    warnAtomicSaveMissing();
+    // Gap G4 / rule R7: the revision check and the write are ONE step, made
+    // under a row lock -- two saves carrying the same revision can no longer
+    // both pass.
+    const saved = await syncWorkspaceIfRevision(id, workspace, revision);
+    if (saved !== "missing") return saved;
+    // Deploy order: the migration is applied by hand, so this code may reach
+    // production before it. Until then, fall back to the old check-then-write
+    // (gap G4 open, logged on every save above) rather than fail every save.
+    // REMOVE this fallback once the migration is confirmed applied.
     const current = await workspaceRevision(id);
     if (current === null || current !== revision) return null;
     await syncWorkspace(id, workspace);
@@ -504,6 +512,19 @@ export async function updateWorkspace(
 
 export async function replaceWorkspace(id: string, workspace: Workspace) {
   if (hasSupabaseConfig()) {
+    // Lock-first, like updateWorkspace: a direct sync_workspace touches the
+    // child tables first and the workspace row last, the opposite order from
+    // sync_workspace_if_revision, so the two running together for one teacher
+    // can deadlock. The reset is unconditional, so it carries the revision it
+    // just read; if a save lands in between, it reads again once. Only with no
+    // row yet, the function missing, or two lost races does it sync directly.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = await workspaceRevision(id);
+      if (current === null) break;
+      const saved = await syncWorkspaceIfRevision(id, workspace, current);
+      if (saved === "missing") break;
+      if (saved !== null) return;
+    }
     await syncWorkspace(id, workspace);
     return;
   }

@@ -34,10 +34,18 @@
 -- takes any teacher id, so only the service role (the server) may call it.
 --
 -- Deploy order: apply before or after the code ships -- the code tolerates
--- both. Until this is applied, updateWorkspace gets "function does not exist"
--- (PGRST202 / 42883), logs it once with console.error, and falls back to the
--- old non-atomic check-then-write, so saves keep working with gap G4 still
--- open. Once applied, every save takes the atomic path.
+-- both. Until this is applied, updateWorkspace gets PostgREST's "function
+-- does not exist" (PGRST202), logs it with console.error on EVERY save, and
+-- falls back to the old non-atomic check-then-write, so saves keep working
+-- with gap G4 still open. Once applied, every save takes the atomic path, and
+-- the fallback in lib/teacher-server.ts should be removed.
+--
+-- Lock order: this function locks teacher_workspaces FIRST; a direct
+-- sync_workspace call writes the child tables first and that row LAST. Run
+-- together for one teacher, the two can deadlock (Postgres aborts one). The
+-- app's reset (replaceWorkspace) therefore goes through this function too.
+-- Still direct: initializeWorkspace (first load, no row yet) and the SQL
+-- reset_teacher_data().
 --
 -- NOT applied by the author -- apply by hand. Proof:
 -- supabase/checks/atomic-revision-round-trip.sql, run by hand AFTER this file;

@@ -34,7 +34,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
  * missing and PostgREST answers PGRST202.
  */
 function fakeDatabase(revision, { atomic = true } = {}) {
-  const db = { revision, syncs: [], calls: [] };
+  const db = { revision, syncs: [], calls: [], reads: 0 };
   let lock = Promise.resolve();
   const sync = async (args) => {
     await tick(); // the sync takes time: a second request can arrive meanwhile
@@ -47,6 +47,7 @@ function fakeDatabase(revision, { atomic = true } = {}) {
       select: () => ({
         eq: () => ({
           maybeSingle: async () => {
+            db.reads += 1;
             await tick();
             return { data: db.revision === null ? null : { revision: db.revision }, error: null };
           },
@@ -114,7 +115,7 @@ test("the save goes through the atomic function, carrying the revision", async (
   assert.deepEqual(db.syncs, ["A"]);
 });
 
-test("before the migration is applied, saves fall back to the old check (and log it once)", async () => {
+test("before the migration is applied, saves fall back to the old check, and EVERY fallback is logged", async () => {
   const errors = [];
   const original = console.error;
   console.error = (...args) => errors.push(args.join(" "));
@@ -123,17 +124,74 @@ test("before the migration is applied, saves fall back to the old check (and log
     assert.equal(await S.updateWorkspace("t", workspace("A"), 7), 8, "a current save must still be written");
     assert.equal(await S.updateWorkspace("t", workspace("B"), 7), null, "a stale save must still be refused");
     assert.deepEqual(db.syncs, ["A"]);
-    const missing = errors.filter((e) => e.includes("sync_workspace_if_revision"));
-    assert.equal(missing.length, 1, `expected one log line about the missing function, got ${missing.length}`);
+    const missing = errors.filter((e) => e.includes("sync_workspace_if_revision") && e.includes("G4"));
+    assert.equal(missing.length, 2, `expected a log line for each of the 2 fallback saves, got ${missing.length}`);
   } finally {
     console.error = original;
   }
 });
 
-test("any other database error is a failed save, not a silent fallback", async () => {
-  const db = fakeDatabase(1);
-  db.rpc = async () => ({ data: null, error: { code: "IMPERSONATION", message: "IMPERSONATION_ACTIVE" } });
-  await assert.rejects(S.updateWorkspace("t", workspace("A"), 1), (e) => e.status === 500);
+for (const [code, message] of [
+  ["P0001", "IMPERSONATION_ACTIVE"],
+  // A 42883 raised INSIDE the function: the direct sync would hit it too, so
+  // it is a failure, not a reason to take the non-atomic path.
+  ["42883", "function public.safe_int(text) does not exist"],
+]) {
+  test(`any other database error (${code}) is a failed save, not a fallback to the non-atomic path`, async () => {
+    const db = fakeDatabase(1);
+    const calls = [];
+    db.rpc = async (fn) => {
+      calls.push(fn);
+      return { data: null, error: { code, message } };
+    };
+    await assert.rejects(S.updateWorkspace("t", workspace("A"), 1), (e) => e.status === 500);
+    assert.deepEqual(calls, ["sync_workspace_if_revision"], "fell back to a direct sync_workspace call");
+    assert.equal(db.reads, 0, "fell back to reading the revision separately (the non-atomic check)");
+  });
+}
+
+test("the reset (replaceWorkspace) takes the same lock-first path, with the revision it read", async () => {
+  const db = fakeDatabase(3);
+  await S.replaceWorkspace("t", workspace("reset"));
+  assert.deepEqual(db.calls, ["sync_workspace_if_revision"], "a direct sync_workspace can deadlock with a locked save");
+  assert.deepEqual(db.syncs, ["reset"]);
+  assert.equal(db.revision, 4);
+});
+
+test("a reset racing a save: both land, one after the other, through the lock", async () => {
+  const db = fakeDatabase(3);
+  const [saved] = await Promise.all([
+    S.updateWorkspace("t", workspace("save"), 3),
+    S.replaceWorkspace("t", workspace("reset")),
+  ]);
+  assert.equal(saved, 4);
+  assert.deepEqual(db.syncs, ["save", "reset"], "the reset must win, after the save");
+  assert.ok(!db.calls.includes("sync_workspace"), `a direct sync_workspace ran: ${db.calls}`);
+});
+
+test("a reset with no workspace row, or before the migration, syncs directly", async () => {
+  const fresh = fakeDatabase(null);
+  fresh.revision = null;
+  // No row: the locked function would refuse, so the reset syncs directly.
+  fresh.rpc = async (fn) => {
+    fresh.calls.push(fn);
+    assert.equal(fn, "sync_workspace");
+    fresh.syncs.push("reset");
+    return { data: null, error: null };
+  };
+  await S.replaceWorkspace("t", workspace("reset"));
+  assert.deepEqual(fresh.calls, ["sync_workspace"]);
+
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const db = fakeDatabase(2, { atomic: false });
+    await S.replaceWorkspace("t", workspace("reset"));
+    assert.deepEqual(db.calls, ["sync_workspace_if_revision", "sync_workspace"]);
+    assert.deepEqual(db.syncs, ["reset"]);
+  } finally {
+    console.error = original;
+  }
 });
 
 test("the migration locks the row and compares the revision BEFORE it syncs, and refuses without raising", () => {
