@@ -20,6 +20,10 @@ Every claim carries one of these tags:
   it.
 - **[INFERRED]**: our best explanation. It is not proven yet.
 
+Update, 14 Oct 2026: section 3 now folds in Ricky's 13 Oct class analysis spec
+(mastery bands, the standards × DOK grid, the standards tracker and a
+tested-only standards report). It is still a plan: nothing in it is built.
+
 Status as of 13 Oct 2026. #123 and #124 are **live**: merged and deployed
 [REPORTED by Troy, 13 Oct]. #125 and #126 are **built, not yet live**: open and
 waiting for review. Nothing in an open pull request is on the app you use, and
@@ -408,6 +412,234 @@ Another test? We need Ricky to tell us.
 ### What we need from you
 - **Ricky:** what is 27/40 in your example?
 - **Both:** which columns, in what order?
+
+### Ricky's spec of 13 Oct, folded in (plan only; nothing below is built)
+
+Ricky posted this in #app-ideas on 13 Oct, between 4:15 and 6:10 pm PT, with two
+mockups made from sample data [REPORTED, read from Slack 14 Oct]. In his words,
+shortened:
+
+- **Mastery bands.** 90–100% Exceeding ("we recommend an extension lesson");
+  80–89% Proficient (no recommendation); 70–79% Approaching (no recommendation);
+  69% or below Developing ("we recommend support … and reteach lessons"). He
+  restated these at 6:10 pm, so they replace the 80 / 60–79 / under-60 colours
+  in his earlier grid mockup.
+- **A standards × DOK grid.** One row per standard, one column per DOK level,
+  each cell the class score, coloured by band; "when you hover over the boxes,
+  you get most common errors". His mockup also outlines one cell per row as the
+  standard's *required* DOK, and judges the standard there "so the overall
+  average can't hide a gap".
+- **A per-student "standards tracker".** Not just a score per standard, but how
+  it changed each time that standard was tested again. His mockup shows each
+  attempt as a bar, with its date, test, item count, DOK and main error.
+- **A standards report showing only tested standards.** Tap a standard to see
+  the students tested on it, and each of their attempts.
+
+#### What the app has today
+
+Some of this already exists, and the plan builds on it rather than starting
+over:
+
+- **The reteach recommendation already exists.** [VERIFIED
+  `components/teacher-assessments.tsx`, class analysis] Each standard lists the
+  students under 70% as needing reteaching, with "Reteach this group" or
+  "Reteach whole class" buttons that open the lesson planner for that standard.
+  It also lists the error types per standard, with the students. Under 70% is
+  exactly Ricky's Developing band. **What is new** is splitting today's "70% and
+  up" group into Approaching, Proficient and Exceeding, and recommending an
+  extension lesson for Exceeding.
+- **A per-student progress view already exists.** [VERIFIED
+  `components/teacher-insights.tsx`, "Progress over time" on a student's page]
+  Pick a standard and it shows each result as a bar, with the date, the test's
+  name and the score. **What is new** for the tracker: only standards the
+  student was tested on, the band on each bar, the change between attempts,
+  and the main error.
+- **A per-test DOK breakdown already exists.** [VERIFIED `CognitiveBreakdown` /
+  `dokBreakdown`] It shows the percent correct at each DOK level, for the class
+  or one student. The grid splits that by standard.
+- **Three different cut-offs today, none of them Ricky's.**
+  - [VERIFIED `lib/teacher-class-analysis.ts`, `MASTERY_THRESHOLD = 70`] Class
+    analysis counts a student as "strong" on a standard at 70%+. Writing rubric
+    traits use the same 70.
+  - [VERIFIED `lib/teacher-data.ts` `masteryStatus`] The Insights map says
+    "Mastered" at 80%+, "Developing" at 65–79%, "Needs support" below that. It
+    averages a student's last three results on the standard, and shows
+    "Building evidence" until there are three. Note that its "Developing"
+    (65–79%) is not Ricky's Developing (69% or below).
+  - [VERIFIED `components/teacher-assessments.tsx`] In class analysis, the bar
+    for "% of students who mastered this" is green at 80%+ and orange under 65%.
+    That is a share of students, not a student's score.
+- **Results per standard per test are saved, but their dates are not
+  reliable.** [VERIFIED `reconcileEvidence` in `lib/teacher-data.ts`] Confirming
+  grading gives every student one record per standard per test. But each record
+  is stamped with *today's* date, and is rewritten every time the test is saved
+  for any reason (even ticking a standard). Touching an old test moves its
+  results to "today": they jump to the end of a tracker and change which
+  results count as Insights' "last three". **This must be fixed before a
+  tracker is trustworthy** (date each result from the test, not the save). No
+  new saved field is needed for that.
+- **Almost no test results yet, and no retests.** [VERIFIED, read-only query on
+  production, 14 Oct] 1,451 standard records are on file. Only 107 of them come
+  from a graded test, and those come from 2 tests; none is a second attempt at
+  the same standard. The other 1,344 are not tied to a test [INFERRED: the
+  app's sample data and records added by hand]. A tracker built today would
+  show one bar per standard.
+- **Each question has a DOK, read by the AI.** [VERIFIED, read-only query on
+  production, `assessment_questions`] Of 126 questions on file, 52 are DOK 1
+  and 74 are DOK 2. **None is DOK 3 or 4**, so those grid columns would be
+  empty for every test so far. The teacher can change a question's DOK when
+  reviewing it.
+- **There is no real "required DOK" per standard.** [VERIFIED by counting the
+  catalog in `lib/teacher-catalog.ts`] 682 of the 683 California standards
+  carry the default DOK 2. The state's files don't give one; the one exception
+  comes from the app's own notes on that standard. The outlined "required" cell
+  in Ricky's mockup has no data behind it yet.
+- **Error types are rare.** [VERIFIED, read-only query on production,
+  `student_responses`] 24 of 316 graded answers carry an error type, so "most
+  common errors" would be blank in most cells today.
+- **Both "standards report" screens list every standard, tested or not.**
+  [VERIFIED] The test's "Standards report" tab lists the whole grade catalog
+  with a checkbox each, to pick the intended standards. The class "Standards
+  heatmap" in Insights has one column per catalog standard.
+
+#### Screens (proposed; none of this exists yet)
+
+1. **One mastery rule with Ricky's four bands.** One function would turn a
+   student's percentage on a standard into Exceeding, Proficient, Approaching
+   or Developing. It would apply wherever a *student's score on a standard* is
+   shown: class analysis, the Insights map, the student page, the tracker and
+   the printed report. It would not apply to the "% of students" bar or to the
+   scan-matching confidence, which measure other things. Scores would be
+   rounded to a whole percent first, so 79.6% would be 80% (Proficient) and no
+   score would fall between bands.
+2. **Class analysis per test, by band.** Each standard would show how many
+   students are in each band, and list them. Developing would keep today's
+   reteach buttons. Exceeding would get "Recommended: an extension lesson",
+   with a button that opens the lesson planner for that standard.
+3. **The test's standards report, tested standards only.** Untested standards
+   would leave this view; picking intended standards would stay, as its own
+   step. Tapping a standard would show the students tested on it, each with
+   their band and every attempt so far.
+4. **The student standards tracker.** The existing "Progress over time" panel
+   would become one row per standard the student was tested on. Each attempt
+   would be a bar: date, test, score, band, and the most common error type
+   where one was recorded. A change line ("+28 points, Approaching →
+   Proficient") would appear once there are two attempts. Item count, DOK and
+   error would be looked up from the test itself, so they would disappear if
+   that test is deleted. The score and date would stay.
+5. **The standards × DOK grid, per test.** One row per tested standard, one
+   column per DOK level the test has, each cell the class score coloured by
+   band. **Tapping** a cell (see below) would show its most common errors and
+   which students are in it.
+
+#### Data needed
+
+- Screens 1–5 need **no new saved fields**. [VERIFIED] Scores, standards, error
+  types and question DOKs are already saved and reloaded (the persistence guard
+  covers them).
+- **One fix before screen 4:** date each result from its test, not from the
+  last save (see above). This is a code change to how results are stamped, not
+  a new field.
+- A **required DOK** per standard, if you want the outline, would be a new
+  field: the teacher's required DOK per standard. Under this repo's rule, a new
+  workspace field has to be added to both `sync_workspace` and
+  `get_workspace_json` in a migration, and proven with a save and reload,
+  before it ships.
+
+#### Effort [estimated, working days]
+
+| Step | Effort | AI cost per class set |
+|---|---|---|
+| 1. One mastery rule | 1 day | $0 |
+| 2. Class analysis by band, extension recommendation | 1–2 days (reteach buttons and error lists exist). The by-student table and printed report planned above are separate, about 2–3 more | $0 for the labels. The lesson planner costs what a lesson costs today, and only when the teacher taps |
+| Fix: date results from the test | 1 day | $0 |
+| 3. Standards report, tested only, tap for students | 2 days | $0 |
+| 4. Tracker (extend "Progress over time") | 1–2 days | $0 |
+| 5. Standards × DOK grid | 2–3 days (extends the DOK breakdown); 2 more for a teacher-set required DOK | $0 |
+
+We could not measure what one generated lesson costs: the request type is
+cleared from each scan after 48 hours [VERIFIED, `scans.params`], so 201 of the
+last 30 days' 217 requests no longer say what they were. Nothing in this plan
+generates a lesson by itself.
+
+#### Order to build it in
+
+1. **The mastery rule first.** Everything else reads from it, and it ends
+   today's three disagreeing cut-offs.
+2. **Class analysis by band**, with the by-student table and printed report
+   above. This is the screen used after every test.
+3. **The date fix**, before anything shows results over time.
+4. **Standards report, tested only.** Small, and it is the tap-through into the
+   tracker.
+5. **The tracker.** It would show single bars until the first retest, so it is
+   worth having in place before that happens.
+6. **The DOK grid last.** Its data is the thinnest today: no DOK 3 or 4
+   questions yet, no real required DOK, and few error types.
+
+#### Things to talk through with Ricky and Michael before building
+
+- **Short tests land on the edges.** A percentage is only as fine as the number
+  of questions behind it. With one question on a standard, a student can only
+  be 0% (Developing) or 100% (Exceeding). With three questions, two right is
+  67% (Developing). With four, three right is 75% (Approaching). On a 4-point
+  writing trait, a 3 is 75% (Approaching) and a 4 is 100% (Exceeding), so **no
+  single 4-point trait can ever be Proficient**. Options: show the band only
+  when a standard has enough questions (say 4 or more) and "too few questions
+  to say" otherwise; or map writing levels to bands directly (4 Exceeding,
+  3 Proficient, and so on). This needs your call.
+- **What counts as "mastered"?** Ricky's spec gives bands, not a "mastered"
+  line. We have assumed mastered means Proficient or better (80%+). If so,
+  today's class-analysis "strong" line moves from 70 to 80, and a standard that
+  showed "75% of students mastered" could show fewer, with no grade changed. We
+  would say so on the screen the first time.
+- **Two meanings of "Developing".** Insights' "Developing" is 65–79% today;
+  Ricky's is 69% or below. The rule would switch everywhere at once, so the two
+  meanings are never on screen together.
+- **"Building evidence" in Insights.** That map waits for three results before
+  saying "Mastered", and averages the last three. Should the bands apply to the
+  latest result, to the average of the last three, or keep waiting for three?
+  This is a teaching call.
+- **Hover doesn't exist on an iPhone.** Ricky uses iPhone Safari [REPORTED by
+  Troy]. "Hover for the most common errors" would be a tap
+  that opens the detail, on every device, so it works the same on a phone and
+  a laptop.
+- **Required DOK.** The state's standards don't give one, and the catalog's
+  "DOK 2" is a placeholder. Options:
+  - (a) leave the outline out;
+  - (b) the teacher sets it per standard, once (a new saved field, see above);
+  - (c) the AI suggests one per standard. This is unmeasured, would cost
+    something per standard, and is a guess the teacher would still check.
+
+  We suggest (a) to start and (b) if Ricky misses it.
+- **DOK is the AI's read of each question.** The grid is only as right as those
+  reads, and the teacher can change any of them when reviewing questions.
+- **Small cells.** On one test, most standard × DOK cells would hold zero or one
+  question, so a cell's colour could rest on one answer. Each cell would show
+  how many questions it covers.
+- **Most common errors needs error types.** Only 24 of 316 answers have one
+  today. The tap view would say "no error types recorded" rather than looking
+  empty by mistake.
+- **Privacy.** The grid and the tracker show individual students. They are for
+  the teacher's eyes, like the class printout; the per-student page is the one
+  to share with a family.
+
+#### What we need from you
+
+- **Ricky:** is "mastered" Proficient or better (80%+)?
+- **Ricky:** in the tracker, is an "attempt" each test that included the
+  standard (what we have saved), or only tests you mark as a retest?
+- **Ricky:** for "the standards report", do you mean the test's Standards report
+  tab, the class Standards heatmap in Insights, or both?
+- **Ricky:** is the grid per test (our assumption), or across every test the
+  class has taken?
+- **Ricky:** for Exceeding, is a recommendation with a button to the lesson
+  planner enough, or should the app draft the extension lesson straight away
+  (which costs something each time)?
+- **Both:** short tests and writing traits: show "too few questions" below a
+  minimum, map writing levels to bands, or both?
+- **Both:** which "Mastered" rule for Insights (see above)?
+- **Both:** required DOK: leave it out to start (our suggestion), or have
+  teachers set it?
 
 ---
 
