@@ -2,20 +2,12 @@
 
 # Working agreements
 
-## Push means ship. Never leave finished work sitting on a branch
+## Never merge to main yourself
 
-When work is pushed to the working branch it is ready to go. Open the PR and
-merge it — do not ask, do not park it pending a decision, do not report it as
-"waiting on you" and stop. Netlify auto-publishes from `main`, so a merge is
-the deploy.
-
-Work that is tested and pushed but unmerged is the worst state to be in: it
-looks done in every internal signal and is invisible to the person actually
-using the app. That is how a correct fix sat unshipped for two days while a
-pilot teacher kept reporting it as broken.
-
-The only reason to hold a merge is a failing check or a merge conflict. Fix
-those, then merge.
+Never merge to main yourself. Push, open the PR, fill in the template and stop.
+Troy's reviewer verifies and merges. Never merge or apply anything for a PR that
+has a database migration, or that changes what we've promised the founders
+(retention, privacy, grading behaviour).
 
 ## Never announce work that is not verifiably live
 
