@@ -36,26 +36,10 @@ const read = jsonReads(defs.get_workspace_json);
  * docs/system-map.md. "I forgot the migration" is not a reason.
  */
 const NOT_PERSISTED = {
-  Standard: {
-    // KNOWN DATA LOSS, not a design choice -- see docs/system-map.md, "Known
-    // risky areas". sync_workspace's custom-standards insert keeps only
-    // code/title/subject/grade/domain/cluster/wording/summary/framework.
-    // get_workspace_json refills these from the shared catalog's meta or a
-    // fixed default (lib/teacher-server.ts normalizeStandard), so the teacher's
-    // own "skills" typed in Standards > Add (components/teacher-insights.tsx)
-    // and the AI catalog's enrichment are gone after a reload. Listed so the
-    // suite is green while the loss is visible; remove each line once a
-    // migration persists it.
-    skills: "write",
-    prerequisites: "write",
-    next: "write",
-    vocabulary: "write",
-    misconception: "write",
-    example: "write",
-    dok: "write",
-    source: "write",
-    officialCode: "both",
-  },
+  // Empty since 20261014120000_custom_standards_per_framework.sql: Standard's
+  // skills, prerequisites, next, vocabulary, misconception, example, dok,
+  // source and officialCode were dropped on save (gap G11) and now ride the
+  // row's `meta` column.
 };
 
 const TYPES = ["Classroom", "Student", "Evidence", "Assessment", "Question", "StudentResponse", "Group", "Standard"];
@@ -99,7 +83,14 @@ test("the not-persisted allow-list holds no stale entries", () => {
 test("the parser sees the fields added by the newest patch migrations", () => {
   // Guards the guard: if the replay silently stopped applying patch-style
   // migrations, every check above could pass on an old body.
-  for (const [type, field] of [["Question", "answerParts"], ["Question", "secondChoice"], ["StudentResponse", "gradedAlone"]]) {
+  for (const [type, field] of [
+    ["Question", "answerParts"],
+    ["Question", "secondChoice"],
+    ["StudentResponse", "gradedAlone"],
+    ["Standard", "skills"],
+    ["Standard", "misconception"],
+    ["Standard", "example"],
+  ]) {
     assert.ok(written[type].has(field), `${type}.${field} not found in the rebuilt sync_workspace`);
     assert.ok(read[type].has(field), `${type}.${field} not found in the rebuilt get_workspace_json`);
   }

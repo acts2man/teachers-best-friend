@@ -27,14 +27,32 @@ const strip = (sql) =>
     // Dollar-quoted bodies are code that runs later, not DDL in this file.
     .replace(/\$([a-zA-Z_]*)\$[\s\S]*?\$\1\$/g, "");
 
+// The ONLY exceptions to "no DROP", each one statement in one file, matched
+// exactly (whitespace collapsed, lower-case). Adding an entry is a design
+// decision: say why here and in docs/system-map.md rule R9. Never a table,
+// column or function -- only an index, which holds no data and can be built
+// again.
+export const ALLOWED_DROPS = {
+  // G8: custom standards were unique on (teacher_id, code), which rejects the
+  // same code in two frameworks and failed every save of a teacher who loaded
+  // California and Common Core. A unique index cannot be made non-unique
+  // except by dropping it. The file builds the wider unique index and
+  // re-points sync_workspace at it first, in the same transaction.
+  "20261014120000_custom_standards_per_framework.sql": ["drop index if exists public.custom_standards_key"],
+};
+
+const normal = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+
 export function problems(files, from = RULE_STARTS) {
   const out = [];
   for (const { name, text } of files) {
     if (name.slice(0, 14) < from) continue;
     const sql = strip(text);
     if (!/^\s*set\s+(local\s+)?lock_timeout\s*(=|to)/im.test(text)) out.push(`${name}: no "set lock_timeout"`);
-    for (const m of sql.matchAll(/\bdrop\s+(table|column|function|procedure|view|materialized\s+view|type|schema|index)\b[^;]*/gi))
+    for (const m of sql.matchAll(/\bdrop\s+(table|column|function|procedure|view|materialized\s+view|type|schema|index)\b[^;]*/gi)) {
+      if ((ALLOWED_DROPS[name] ?? []).includes(normal(m[0]))) continue;
       out.push(`${name}: ${m[0].replace(/\s+/g, " ").slice(0, 90)}`);
+    }
     // DROP ... IF EXISTS of a policy or trigger is how Postgres re-creates
     // one (there is no CREATE OR REPLACE for them). Allowed only when the
     // same file creates it again under the same name.
@@ -48,6 +66,24 @@ export function problems(files, from = RULE_STARTS) {
 
 test("every migration since the rule started sets lock_timeout and drops nothing", () => {
   assert.deepEqual(problems(migrationFiles()), []);
+});
+
+test("every allowed drop is an index, and is still in its file", () => {
+  // A stale entry would quietly allow the same statement in a later edit.
+  const byName = Object.fromEntries(migrationFiles().map((f) => [f.name, strip(f.text)]));
+  for (const [file, statements] of Object.entries(ALLOWED_DROPS)) {
+    assert.ok(byName[file] !== undefined, `${file} is allow-listed but does not exist`);
+    for (const s of statements) {
+      assert.match(s, /^drop index /, `${file}: only an index may be allow-listed: ${s}`);
+      assert.ok(normal(byName[file]).includes(s), `${file}: allow-listed "${s}" is not in the file`);
+    }
+  }
+});
+
+test("the allow-list is exact: any other drop in the same file still fails", () => {
+  const [file] = Object.keys(ALLOWED_DROPS);
+  const fake = [{ name: file, text: "set lock_timeout = '5s';\ndrop index if exists public.standards_teacher_idx;\ndrop table public.standards;" }];
+  assert.equal(problems(fake).length, 2);
 });
 
 test("the check bites: the history before the rule fails it", () => {
