@@ -31,6 +31,14 @@ export type ScanProgress = {
   graded: GradedGroup[];
   nextBatch: number;
   scanId: string | null;
+  /** The run's own pages and how it grouped them into students, so a resume
+   * grades the same students (gap G3: a whole-stack run grouped by name, and
+   * its resume used to treat the stack as one student). Absent on progress
+   * saved before this was recorded. */
+  pageIds?: string[];
+  pageGroups?: number[][];
+  /** Whether the run grouped by the names read (no piles declared). */
+  byName?: boolean;
 };
 
 export type ScanSession = {
@@ -104,6 +112,17 @@ function isPage(x: unknown): x is ScanPage {
   return !!p && typeof p.bodyId === "string" && typeof p.key === "string";
 }
 
+/** A saved progress's grouping record, if it is well formed; {} otherwise. */
+function runGrouping(p: Partial<ScanProgress>): Pick<ScanProgress, "pageIds" | "pageGroups" | "byName"> {
+  const ids = p.pageIds;
+  const groups = p.pageGroups;
+  if (!Array.isArray(ids) || !ids.every((x) => typeof x === "string")) return {};
+  if (!Array.isArray(groups)) return {};
+  const inRange = (x: unknown) => Number.isInteger(x) && (x as number) >= 0 && (x as number) < ids.length;
+  if (!groups.every((g) => Array.isArray(g) && g.every(inRange))) return {};
+  return { pageIds: ids, pageGroups: groups, byName: p.byName === true };
+}
+
 /**
  * A session read back from the server, or null if there is nothing usable in
  * it. Trusts nothing: a row written by an older app, or half-written, must not
@@ -135,6 +154,9 @@ export function parseSession(raw: unknown): ScanSession | null {
           graded: r.progress.graded,
           nextBatch: r.progress.nextBatch,
           scanId: typeof r.progress.scanId === "string" ? r.progress.scanId : null,
+          // The run's grouping, kept only when it is well formed: a resume
+          // that trusted a broken one could put answers on the wrong student.
+          ...runGrouping(r.progress),
         }
       : null;
   const groups = Array.isArray(r.groups)

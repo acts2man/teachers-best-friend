@@ -362,6 +362,39 @@ export function sameFirstNameSplit(pageIndexes: number[], names: PageName[]): nu
  * wrong a page is graded against the wrong student's key. Empty piles are
  * skipped so a stray "next student" tap costs nothing.
  */
+/**
+ * How a grading run that may be resuming groups its pages (gap G3).
+ *
+ * A saved progress records the pages its run graded and how it grouped them.
+ * Resuming over the SAME pages, the run must grade the same students: the
+ * groups come back as they were, and a by-name run reads names one page per
+ * request again (explicit null) even though the caller passes the panel's one
+ * pile. Over different pages the banked answers belong to other pages, so the
+ * run starts over. Progress saved before this was recorded resumes as before.
+ */
+export function resumePlan(
+  resume: {
+    graded: GradedGroup[];
+    nextBatch: number;
+    scanId: string | null;
+    pageIds?: string[];
+    pageGroups?: number[][];
+    byName?: boolean;
+  } | null,
+  ids: string[],
+  explicit: number[] | null,
+): { resume: typeof resume; pageGroups: number[][] | null; explicit: number[] | null } {
+  if (!resume) return { resume: null, pageGroups: null, explicit };
+  if (!resume.pageIds || !resume.pageGroups) return { resume, pageGroups: null, explicit };
+  const same = resume.pageIds.length === ids.length && resume.pageIds.every((id, i) => id === ids[i]);
+  if (!same) return { resume: null, pageGroups: null, explicit };
+  return {
+    resume,
+    pageGroups: resume.pageGroups,
+    explicit: resume.byName ? null : resume.pageGroups.map((g) => g.length),
+  };
+}
+
 export function groupPagesByCapture(sizes: number[]): number[][] {
   const groups: number[][] = [];
   let page = 0;

@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.6 "Resume" and G3 re-checked 2026-10-14 against the G3 branch (from `a183f93`). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -109,8 +109,11 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 - **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId}`
   (`components/teacher-class-scan.tsx:774`, `:785`), keyed by **whole-scan group index**.
   See gaps G1 and G3.
-- **Resume.** A rerun accepts the saved progress if `nextBatch <= batches.length`
-  (`components/teacher-class-scan.tsx:724`).
+- **Resume.** Saved progress records the run's page ids and page groups, and whether it
+  grouped by name. `resumePlan` (`lib/teacher-class-scan.ts`) hands back the same groups
+  for the same pages, or starts over when the pages differ. A rerun then accepts the
+  saved progress if `nextBatch <= batches.length` (`components/teacher-class-scan.tsx`
+  `gradePages`). Progress saved before the record existed resumes as before (G1).
 
 ### 1.7 Matching screen (teacher review)
 
@@ -333,7 +336,7 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1, G2, G3 and G12 are ways this rule breaks today.
+- **Open:** gaps G1, G2 and G12 are ways this rule breaks today (G3 closed: `tests/stack-resume.test.mjs`).
 
 **R4. Never mark an answer correct when it is wrong; never mark it blank when the student wrote something; uncertain goes to Unsure.**
 - **Why:**
@@ -502,7 +505,7 @@ Where a small change has the widest effect, roughly in order.
    - Grouping, name matching and batching all join on **array positions and group numbers**:
      `slice[r.page]`, `groupIndexes[g.group]`, `gradedByGroup.get(i)`, `"group-" + i`.
    - An off-by-one, or anything that renumbers groups between the grading and the matching
-     screen, moves answers between children with no error (R3; G1, G3).
+     screen, moves answers between children with no error (R3; G1).
 4. **`lib/teacher-workflow.ts` `normalizeRecognizedResponses`, `groupAnswers`, `applyGroupScore`
    and `mergeStudentResponses`.** Every grade passes through these four. They decide credit
    (R4), isolation (R5) and what a re-scan keeps (G5).
@@ -513,7 +516,7 @@ Where a small change has the widest effect, roughly in order.
    - It must stay one-directional: it may take credit away, never grant it.
 6. **`components/teacher-class-scan.tsx` resume and sync** (`:401-408`, `:715-760`;
    `components/use-scan-session.ts`; `lib/scan-session.ts` `mergeSessions`). Progress is saved
-   as group indexes and reused after the piles may have changed (G1, G3).
+   as group indexes and reused after the piles may have changed (G1; G3 closed).
 7. **`app/api/workspace/route.ts` schema.** It is deliberately loose for assessments
    (`z.any()`). It will accept any field, and that field is then dropped by the database (R2).
 8. **Migrations applied by hand.** Merging a PR does not apply its SQL. The app can ship ahead
@@ -542,15 +545,14 @@ reading the code, as marked. None has a test in the suite, because each test wou
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop
   whole-stack upload and Import from Photos with no split do not.
-- **G3. A failed whole-stack upload resumes as ONE student, wearing the wrong name** (R3;
-  reproduced with the lib functions, 14 Oct).
-  - `startStackScan` grades by name (`components/teacher-class-scan.tsx:992-993`). If it fails
-    partway, its progress survives, and the auto-resume (`:401-408`) runs `gradeCaptured`,
-    which passes the single pile `[N]` (`:926-929`).
-  - The resume is accepted. Group 0's saved answers (the first student's) then attach to one
-    row holding **every page**.
-  - `pickRead` names that row after the **most confidently read name in the whole stack**. In
-    the reproduction, Ana's answers were pre-filled under Ben.
+- **G3. A failed whole-stack upload resumed as ONE student, wearing the wrong name.**
+  **Closed** by the `resumePlan` PR (progress carries the run's own grouping);
+  `tests/stack-resume.test.mjs`. What it was:
+  - `startStackScan` grades by name. If it failed partway, its progress survived, and the
+    auto-resume ran `gradeCaptured`, which passes the single pile `[N]`.
+  - The resume was accepted. Group 0's saved answers (the first student's) then attached
+    to one row holding **every page**, named after the most confidently read name in the
+    stack.
 - **G4. The revision check is not atomic on Supabase** (R7; `lib/teacher-server.ts:456-458`).
   Two saves carrying the current revision that arrive together both pass; the second
   whole-workspace replace wins, and whatever the first added is deleted. The fix is for

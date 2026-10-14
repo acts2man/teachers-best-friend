@@ -39,6 +39,7 @@ import { reconcileEvidence } from "@/lib/teacher-data";
 import {
   applyScannedGroups,
   groupPagesByCapture,
+  resumePlan,
   groupPagesByName,
   sameFirstNameSplit,
   withRetry,
@@ -606,13 +607,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    */
   async function gradePages(
     pages: Page[],
-    explicit: number[] | null,
-    resume?: Progress | null,
+    asked: number[] | null,
+    saved?: Progress | null,
   ) {
+    const ids = pages.map((p) => p.bodyId);
+    // A resume grades the students its run first grouped, not whatever the
+    // caller passes now: the auto-resume of a whole-stack run passes the panel's
+    // one pile, which used to make the whole stack one student (gap G3).
+    const plan = resumePlan(saved ?? null, ids, asked);
+    const explicit = plan.explicit;
+    const resume = plan.resume;
     // Mirrors what has been banked, so the in-flight job id can be recorded
     // against the right point without waiting for a re-render.
     let banked: GradedGroup[] = resume?.graded ?? [];
-    const ids = pages.map((p) => p.bodyId);
     const nameIds = pages.map((p) => p.stripId);
     setPageUploadIds(ids);
     // The pages this run has grouped, set once the name pass yields groups. Left
@@ -689,9 +696,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
-      const pageGroups = explicit
-        ? groupPagesByCapture(explicit)
-        : groupPagesByName(names, (name) => rosterMatchCount(name, students));
+      const pageGroups =
+        plan.pageGroups ??
+        (explicit ? groupPagesByCapture(explicit) : groupPagesByName(names, (name) => rosterMatchCount(name, students)));
+      // Saved with every banked batch, so a resume can grade the same students.
+      const grouping = { pageIds: ids, pageGroups, byName: !explicit };
       // Pages whose name read failed or was skipped (a page with no name area
       // to read -- a PDF page -- is unread too, but nothing failed there).
       const failedReads = names.filter((n) => n.failed && pages[n.page]?.stripId).length;
@@ -771,7 +780,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             // numbered against its own smaller request, and resuming it as the
             // whole batch would put one student's answers on another.
             batch === batches[index]
-              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) }
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, ...grouping }) }
               : undefined,
           );
           return d.result;
@@ -782,7 +791,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           // Kept on the ref as well as in state: a failure is handled in the
           // same tick, where the state from this run has not landed yet.
           if (partial.current) partial.current.graded = soFar;
-          setProgress({ graded: soFar, nextBatch, scanId: null });
+          setProgress({ graded: soFar, nextBatch, scanId: null, ...grouping });
         },
         resuming?.nextBatch ?? 0,
         resuming?.graded ?? [],
