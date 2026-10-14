@@ -129,8 +129,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   the grading by group index (`gradedByGroup.get(i)`, `:760`, `:835`). It matches names to the
   roster with `matchRosterStudent` (`:689-751`).
 - **Pre-fill.** A student is chosen for the teacher **only** when there is exactly one match
-  with fit ≥ 0.9 **and** the name was read at ≥ 70% (`PREFILL_SCORE` `:644`, `PREFILL_READ`
-  `:648`, applied at `:825-826`). Anything weaker becomes a suggestion or a list of candidates
+  with fit ≥ 0.9, the name was read at ≥ 70%, **and** the written given name is the roster's
+  or a known short form of it (`givenNameMayPrefill`, G12; `PREFILL_SCORE`, `PREFILL_READ`
+  and `strongMatch` in `resolveScannedGroups`). Anything weaker becomes a suggestion or a list of candidates
   for the teacher to pick from.
 - Repeated off-roster names are marked `unassigned: "repeated"` (`:870-881`).
 - Teacher edits: `updateGroup`, `toggleDiscard`, `chooseStudent`, and the split "These are 2
@@ -345,10 +346,11 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G2 and G12 are ways this rule breaks
-  today. G3 is fixed in code (#140); the resume is guarded by
+- **Open:** gap G2 is a way this rule breaks today. G1 (#144), G3 (#140) and
+  G12 (#141) are fixed in code; the resume is guarded by
   `tests/invariants/scan-resume-layout.test.mjs` (`planResume`, `planRemainingBatches`,
-  `inFlightMatches` in `lib/scan-session.ts` / `lib/teacher-class-scan.ts`).
+  `inFlightMatches` in `lib/scan-session.ts` / `lib/teacher-class-scan.ts`) and near
+  names by `tests/invariants/no-near-name-prefill.test.mjs`.
 
 **R4. Never mark an answer correct when it is wrong; never mark it blank when the student wrote something; uncertain goes to Unsure.**
 - **Why:**
@@ -619,12 +621,31 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G11. Custom standards lose their skills, misconception, example and DOK on reload** (R2).
   `sync_workspace` writes none of them (`20261008190000…:278-288`). The teacher's own "skills"
   field in Standards > Add (`components/teacher-insights.tsx:167`) is gone after a refresh.
-- **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
-  that child** (R3; reproduced 14 Oct).
-  - `matchRosterStudent`'s fuzzy tier scores "Christina Lee" against "Chris Lee" at 0.947, and
-    "Josefina Ruiz" against "Jose Ruiz" at 0.940. Both are above `PREFILL_SCORE` (0.9).
-  - A first name alone ("Maria") pre-fills the only rostered Maria at 0.9.
-  - Siblings, a new student or a twin missing from the roster all hit this.
+- **G12. FIXED in code (G12 PR, awaiting review). An unrostered child whose name is a
+  near-variant of a rostered child was pre-filled as that child** (R3; reproduced 14 Oct;
+  guarded by `tests/invariants/no-near-name-prefill.test.mjs` and the near-name pairs in
+  `tests/invariants/no-wrong-student.test.mjs`).
+  - What it was: `matchRosterStudent`'s fuzzy tier scored "Christina Lee" against "Chris Lee"
+    at 0.947, "Josefina Ruiz" against "Jose Ruiz" at 0.940 and "Danielle Kim" against
+    "Daniel Kim" at 0.970, all above `PREFILL_SCORE` (0.9).
+  - Now: `resolveScannedGroups` pre-fills only when `givenNameMayPrefill` holds:
+    - the written given name is the roster's (case and accents aside), or a short form from
+      `SHORT_FORMS` that belongs to **exactly one** full name (so "Sam" never pre-fills
+      Samantha: it may be her brother Samuel). Forms that are given names in their own right
+      (Liam, Leo, Jack, Bella, Nathan…) are not short forms here;
+    - and, when both carry a family name, the surnames are the same, or the shorter is an
+      initial or a dotted abbreviation ("C.", "Ga."): "Maria Garza" is not Maria Garcia, and
+      "Amy Lin" is not Amy Li;
+    - and a short form never pre-fills when the class holds a sibling it could stand for
+      ("Danny Kim" with Daniel and Daniela Kim).
+    - `SHORT_FORMS` is narrower than `NICKNAMES` (translations, misspellings), which still
+      drives suggestions. Anything else is a suggestion, one tap away.
+  - Still open:
+    - a first name alone ("Maria") pre-fills the only rostered Maria (an exact given name
+      by Troy's rule);
+    - reversed names ("Garcia, Maria") are a suggestion: one tap per child where a school
+      teaches "Last, First" -- a tradeoff to put to the teachers;
+    - a roster entry that is only a first name ("Maria") fits any "Maria …" at 1.0.
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.

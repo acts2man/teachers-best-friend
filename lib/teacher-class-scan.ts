@@ -587,6 +587,133 @@ const NICKNAMES: string[][] = [
   ["alejandro", "ale"],
 ];
 
+/**
+ * The short forms a child may write for their own given name -- the ONLY
+ * difference from the roster's given name that still lets the app pre-fill a
+ * student (G12, docs/system-map.md). Narrower than NICKNAMES on purpose: that
+ * table also holds translations (Miguel/Michael, Diego/James), misspellings
+ * (Micheal) and look-alikes, which are good SUGGESTIONS but are different
+ * children often enough that choosing for the teacher would put one child's
+ * grades on another. Keyed by the full name; either side may be the short one.
+ */
+const SHORT_FORMS: Record<string, string[]> = {
+  michael: ["mike", "mikey"],
+  christopher: ["topher"],
+  christina: ["tina", "chrissy"],
+  christine: ["tina", "chrissy"],
+  daniel: ["danny"],
+  david: ["dave", "davey"],
+  anthony: ["tony"],
+  joseph: ["joe", "joey"],
+  jose: ["pepe"],
+  joshua: ["josh"],
+  matthew: ["matt", "matty"],
+  nicholas: ["nick", "nicky"],
+  nicolas: ["nick", "nicky"],
+  benjamin: ["benny", "benji"],
+  william: ["will", "willy", "bill", "billy"],
+  guillermo: ["memo"],
+  elizabeth: ["liz", "lizzy", "betsy"],
+  katherine: ["kate", "katie", "kathy"],
+  catherine: ["kate", "katie", "cathy"],
+  kathryn: ["kate", "katie", "kathy"],
+  jennifer: ["jen", "jenny"],
+  jessica: ["jess", "jessie"],
+  abigail: ["abby", "abbie"],
+  gabriel: ["gabe"],
+  gabriela: ["gabby"],
+  gabriella: ["gabby"],
+  isabella: ["izzy"],
+  isabel: ["izzy"],
+  zachary: ["zach", "zack"],
+  jacob: ["jake"],
+  andrew: ["andy"],
+  thomas: ["tom", "tommy"],
+  james: ["jim", "jimmy"],
+  robert: ["rob", "robbie", "bob", "bobby"],
+  richard: ["rick", "ricky", "rich"],
+  manuel: ["manny", "manolo"],
+  guadalupe: ["lupe", "lupita"],
+  ignacio: ["nacho"],
+  francisco: ["frankie", "paco", "pancho", "cisco"],
+  edward: ["eddie"],
+  eduardo: ["lalo"],
+  jesus: ["chuy"],
+  jonathan: ["jon", "jonny"],
+  steven: ["steve"],
+  stephen: ["steve"],
+  victoria: ["vicky"],
+  rebecca: ["becca", "becky"],
+  margaret: ["maggie", "meg", "peggy"],
+  natalie: ["nat"],
+  olivia: ["livvy"],
+  sophia: ["sophie"],
+  sofia: ["sophie"],
+  ashley: ["ash"],
+  jacqueline: ["jackie"],
+  timothy: ["tim", "timmy"],
+  kenneth: ["ken", "kenny"],
+  patrick: ["pat"],
+  josephine: ["josie"],
+  fernando: ["nando"],
+};
+
+/** Each short form -> the full names it can stand for. A short form two names
+ * share ("Sam": Samuel, Samantha; "Kate": Katherine, Catherine) never
+ * pre-fills: with only one of them on the roster, the other child -- a
+ * sibling, a new student -- would be chosen for the teacher. */
+const SHORT_FORM_OF = (() => {
+  const out = new Map<string, Set<string>>();
+  for (const [full, shorts] of Object.entries(SHORT_FORMS))
+    for (const short of shorts) out.set(short, (out.get(short) ?? new Set()).add(full));
+  return out;
+})();
+
+/** `short` is a short form of `full` and of no other name in the list. */
+function onlyShortFormOf(short: string, full: string): boolean {
+  const fulls = SHORT_FORM_OF.get(short);
+  return !!fulls && fulls.size === 1 && fulls.has(full);
+}
+
+/**
+ * Whether the given name written on the paper may stand for the roster's
+ * given name when the app picks the student for the teacher: the same name
+ * (case and accents aside, normalizeName) or a known short form of it. A
+ * reversed name, a misspelling, a translation or a look-alike ("Christina" for
+ * "Chris", "Danielle" for "Daniel") is not -- it is offered as a suggestion.
+ */
+export function givenNameMayPrefill(written: string, roster: string, others: string[] = []): boolean {
+  const w = nameParts(written);
+  const r = nameParts(roster);
+  if (!w || !r) return false;
+  // The family name too, when both carry one: the fuzzy tier also forgives a
+  // surname ("Maria Garza" fits "Maria Garcia" at 0.95), and a different
+  // surname is a different child. A prefix fits only when the shorter one is
+  // an abbreviation -- an initial, or written with a dot ("Ga.", "C.") -- not
+  // a whole surname that happens to start another ("Li" / "Lin", "Lee" /
+  // "Leeds": different families) (#141 review, round 2).
+  if (w.last && r.last && w.last !== r.last) {
+    if (!surnamesFit(w.last, r.last)) return false;
+    const [shortName, shortLast] = w.last.length <= r.last.length ? [written, w.last] : [roster, r.last];
+    if (shortLast.length > 1 && !/\.\s*$/.test(shortName.trim())) return false;
+  }
+  if (w.first === r.first) return true;
+  if (!(onlyShortFormOf(w.first, r.first) || onlyShortFormOf(r.first, w.first))) return false;
+  // A short form names one full name in the list, but the class may hold a
+  // sibling it fits as well ("Danny Kim" with Daniel and Daniela Kim): then
+  // the teacher picks (#141 review, round 2).
+  // A sibling is anyone else whose surname fits and whose given name the
+  // short form could also stand for: it fits the written name, or it shares
+  // the full name's first three letters (Antonia beside Anthony for "Tony").
+  return !others.some((o) => {
+    const p = nameParts(o);
+    if (!p) return false;
+    if (rosterFit(written, o) >= FUZZY_FLOOR) return true;
+    const sameFamily = !r.last || !p.last || surnamesFit(p.last, r.last);
+    return sameFamily && p.first.slice(0, 3) === r.first.slice(0, 3);
+  });
+}
+
 /** Whether two given names are written forms of the same name. */
 function sameGivenName(a: string, b: string): boolean {
   if (a === b) return true;
@@ -866,8 +993,21 @@ export function resolveScannedGroups(
     // than a blank, because it rides through unless spotted). The misread can
     // come from either pass: a bad name read (low readConfidence) or a loose
     // roster fit (low score); this gate catches both.
+    // ...and only when the given name on the paper IS the roster's given name
+    // or a known short form of it. A look-alike scores high on the fuzzy fit
+    // ("Christina Lee" 0.947 against "Chris Lee", "Danielle Kim" 0.970 against
+    // "Daniel Kim") and is often a different child -- a sibling, or a new
+    // student not yet on the roster -- so it is a suggestion, never a choice
+    // (G12, docs/system-map.md).
     const strongMatch =
-      !!match.student && (match.score ?? 0) >= PREFILL_SCORE && readConfidence >= PREFILL_READ;
+      !!match.student &&
+      (match.score ?? 0) >= PREFILL_SCORE &&
+      readConfidence >= PREFILL_READ &&
+      givenNameMayPrefill(
+        detectedName,
+        match.student.name,
+        students.filter((st) => st.id !== match.student!.id).map((st) => st.name),
+      );
     // A single roster student that wasn't strong enough to pre-fill still rides
     // along as the suggestion, so the teacher confirms with one tap.
     const weakSingle = !!match.student && !strongMatch ? [match.student.id] : [];

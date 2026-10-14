@@ -22,9 +22,6 @@
 //   - A name page with NO name on it, after another student's pages, in a
 //     stack without declared piles: it is read as that student's continuation
 //     sheet. (By design; the camera's "next student" piles avoid it.)
-//   - A student missing from the roster whose name is a near-variant of a
-//     rostered child ("Christina Lee" vs "Chris Lee", "Josefina Ruiz" vs
-//     "Jose Ruiz"): fuzzy matching scores it >= 0.9 and pre-fills it.
 //   - A student missing from the roster who writes only a first name a
 //     rostered child shares ("Maria" when only Maria Garcia is enrolled).
 import test from "node:test";
@@ -42,6 +39,18 @@ const ROSTER_POOL = [
 ];
 // Students missing from the roster: names no rostered child is a variant of.
 const NEW_POOL = ["Zed Hollis", "Yara Quill", "Wes Fontaine", "Uma Vance", "Tobias Krell"];
+// A rostered child and a DIFFERENT child missing from the roster whose name is
+// a near-variant of theirs -- a sibling, or a new student (G12). The fuzzy fit
+// scores these >= 0.9; they must reach the teacher as a suggestion only.
+const NEAR_PAIRS = [
+  ["Chris Lee", "Christina Lee"],
+  ["Jose Ruiz", "Josefina Ruiz"],
+  ["Daniel Kim", "Danielle Kim"],
+  ["Maria Chen", "Mia Chen"],
+  ["Maria Lopez", "Maria Lozano"],
+  ["Omar Reyes", "Omar Reed"],
+  ["Samantha Cole", "Sam Cole"],
+];
 const MOTTO = "Hope Always";
 
 const student = (id, name) => ({ id, classId: "c", name, color: "#000", evidence: [], notes: "" });
@@ -66,6 +75,11 @@ function written(R, full, roster) {
 function stack(R) {
   const roster = R.shuffle(ROSTER_POOL).slice(0, R.int(2, 12)).map((n, i) => student("s" + i, n));
   const newcomers = R.shuffle(NEW_POOL).slice(0, R.int(0, 2)).map((n, i) => ({ id: "new" + i, name: n }));
+  if (R.chance(0.5)) {
+    const [onRoster, near] = R.pick(NEAR_PAIRS);
+    roster.push(student("s-near", onRoster));
+    newcomers.push({ id: "new-near", name: near });
+  }
   const motto = R.chance(0.3);
   let order = R.shuffle([...roster, ...newcomers].filter(() => R.chance(0.85)));
   if (!order.length) order = [roster[0]];
