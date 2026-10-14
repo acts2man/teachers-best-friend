@@ -106,3 +106,28 @@ export function checkWorkspace(
     }),
   };
 }
+
+/**
+ * The teacher at position `index` (stable owner_id order) and how many there
+ * are, read one row at a time. It used to read every owner_id in one select,
+ * which PostgREST caps at 1,000 rows by default, so past the thousandth
+ * teacher the check would silently stop (#124 review).
+ */
+export async function workspaceOwnerAt(
+  svc: { from: (t: string) => any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+  index: number,
+): Promise<{ teacher: string | null; total: number }> {
+  const { count, error: countError } = await svc
+    .from("teacher_workspaces")
+    .select("owner_id", { count: "exact", head: true });
+  if (countError) throw countError;
+  const total = count ?? 0;
+  if (index >= total) return { teacher: null, total };
+  const { data, error } = await svc
+    .from("teacher_workspaces")
+    .select("owner_id")
+    .order("owner_id")
+    .range(index, index);
+  if (error) throw error;
+  return { teacher: (data?.[0]?.owner_id as string | undefined) ?? null, total };
+}

@@ -113,6 +113,8 @@ All SQL runs in the Supabase SQL editor (project `mmzbgmquhfdfqaootrvh`).
    pass/fail, accuracy by stage, multi-part parts read vs expected, cost, model and effort.
 7. To withdraw a set, press **Revoke set** (it deletes the copied files, then the
    allow-list row, which removes its fixtures and cases).
+   A teacher who presses "delete my workspace data" withdraws every set of theirs the
+   same way, and deleting their account removes the copied files too.
 
 ## What a run costs
 

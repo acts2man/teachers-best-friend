@@ -221,14 +221,17 @@ test("answers: each miss lands in its own category", () => {
   assert.equal(s.passed, false);
 });
 
-test("grouping is judged against the teacher's groups: a same-answer group the teacher split by credit is a miss", () => {
+test("grouping is judged on the final answer; a credit split by work is reported apart, not as the model's miss", () => {
   // The 12 Oct "Percents" pattern: three students wrote 27, the teacher gave
   // 25, 75, 75 -- the work differed, the final answer did not.
   const expected = [want("a", "q6", "27", 25), want("b", "q6", "27", 75), want("c", "q6", "27", 75), want("d", "q6", "156.52", 25)];
   const replayed = ["a", "b", "c"].map((id) => resp(id, "q6", { answer: "27", finalAnswer: "27" })).concat(resp("d", "q6", { answer: "156.52", finalAnswer: "156.52" }));
   const s = score.scoreAnswers(expected, replayed, "grouping");
-  assert.equal(s.inGroup, 1, "only the 156.52 group matches the teacher's");
-  assert.equal(s.misses.teacher_split_same_answer, 3);
+  // The teacher split a (25) from b and c (75) by their work. No grouping by
+  // answer can see work, so it is counted apart (creditSplits), and the
+  // grouping itself -- 27 together, 156.52 alone -- is right.
+  assert.equal(s.inGroup, 4);
+  assert.equal(s.creditSplits, 1);
   assert.equal(s.readRight, 4, "every read agrees -- grouping is what differs");
 });
 
@@ -424,4 +427,72 @@ test("undeclared piles: a pile is credited only when the app grouped exactly its
   assert.equal(out[0].studentId, "\u0000wrong-pile", "a merged group is not a right answer, and a pre-fill there counts as wrong");
   assert.equal(out[1].studentId, "\u0000wrong-pile");
   assert.equal(out[2].studentId, "s2");
+});
+
+test("#124 follow-up d: the old-data check reaches teacher 1,201 of 1,500 (the 1,000-row cap is not a limit)", async () => {
+  const { workspaceOwnerAt } = bundle("lib/regression/old-data.ts");
+  const owners = Array.from({ length: 1500 }, (_, i) => ({ owner_id: "t" + String(i).padStart(5, "0") }));
+  // A stand-in that behaves like PostgREST: a plain select returns at most
+  // 1,000 rows; range() and count work as documented.
+  const svc = {
+    from: () => {
+      let range = null;
+      let head = false;
+      const q = {
+        select(_c, opts) { head = !!opts?.head; return q; },
+        order() { return q; },
+        range(a, b) { range = [a, b]; return q; },
+        then(resolve) {
+          if (head) return resolve({ count: owners.length, error: null });
+          const rows = range ? owners.slice(range[0], range[1] + 1) : owners.slice(0, 1000);
+          return resolve({ data: rows, error: null });
+        },
+      };
+      return q;
+    },
+  };
+  assert.deepEqual(await workspaceOwnerAt(svc, 1200), { teacher: "t01200", total: 1500 });
+  assert.deepEqual(await workspaceOwnerAt(svc, 1500), { teacher: null, total: 1500 });
+});
+
+test("#124 follow-up: one Unsure or one half-credit student is ONE grouping miss, not the whole group", () => {
+  const ids = Array.from({ length: 26 }, (_, i) => "s" + i);
+  const expected = ids.flatMap((id) => [want(id, "q1", "12", 100), want(id, "q2", "3/4", 100)]);
+  const right = (id, q, ans) => resp(id, q, { answer: ans, finalAnswer: ans, correct: true, match: 100 });
+  // One Unsure per question.
+  const unsure = ids.flatMap((id, i) => [
+    i === 0 ? resp(id, "q1", { answer: "?", confidence: 0 }) : right(id, "q1", "12"),
+    i === 1 ? resp(id, "q2", { answer: "?", confidence: 0 }) : right(id, "q2", "3/4"),
+  ]);
+  const a = score.scoreAnswers(expected, unsure, "grouping");
+  assert.equal(a.inGroup, 50, "50 of 52 -- it was 0 of 52");
+  // The teacher gave one student half credit for the same final answer.
+  const half = expected.map((e) => (e.studentId === "s5" && e.questionId === "q1" ? { ...e, match: 50 } : e));
+  const b = score.scoreAnswers(half, ids.flatMap((id) => [right(id, "q1", "12"), right(id, "q2", "3/4")]), "grouping");
+  assert.equal(b.inGroup, 52, "the grouping is right; it was 26 of 52");
+  assert.equal(b.creditSplits, 1, "the half-credit split is reported, not charged");
+  // A teacher group the replay split in two still counts against the smaller part.
+  const split = score.scoreAnswers(
+    ids.slice(0, 4).map((id) => want(id, "q1", "1/2", 100)),
+    ids.slice(0, 4).map((id, i) => resp(id, "q1", { answer: i < 3 ? "1/2" : "0.5", finalAnswer: i < 3 ? "1/2" : "0.5" })),
+    "grouping",
+  );
+  assert.equal(split.inGroup, 3, "the student read as 0.5 sits in a group of their own");
+});
+
+test("#124 follow-up round 3: ties, small groups, credit splits, equivalent forms", () => {
+  const right = (id, ans) => resp(id, "q", { answer: ans, finalAnswer: ans, correct: true, match: 100 });
+  // A 2-student group where one is Unsure: the confident one is grouped right.
+  const two = score.scoreAnswers([want("a", "q", "7", 100), want("b", "q", "7", 100)], [right("a", "7"), resp("b", "q", { answer: "?", confidence: 0 })], "grouping");
+  assert.equal(two.inGroup, 1, "1 of 2 -- it was 0 of 2");
+  // Same answer, credit split 5/5 by the teacher, replay groups them all: 10/10, 5 splits reported.
+  const ids = Array.from({ length: 10 }, (_, i) => "s" + i);
+  const split = score.scoreAnswers(ids.map((id, i) => want(id, "q", "12", i < 5 ? 100 : 50)), ids.map((id) => right(id, "12")), "grouping");
+  assert.equal(split.inGroup, 10);
+  assert.equal(split.creditSplits, 5);
+  // Equivalent forms split evenly by the replay: a miss for each, labelled as such.
+  const four = ["a", "b", "c", "d"];
+  const eq = score.scoreAnswers(four.map((id) => want(id, "q", "1/2", 100)), four.map((id, i) => resp(id, "q", { answer: i < 2 ? "1/2" : "0.5", finalAnswer: i < 2 ? "1/2" : "0.5" })), "grouping");
+  assert.equal(eq.inGroup, 0, "an even split has no majority");
+  assert.equal(eq.misses.equivalent_not_grouped, 4, "labelled as split equivalents, not as the teacher's split");
 });

@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches; nothing in 7 or 8 is live until those merge).
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live".
 
 ---
 
@@ -390,14 +390,23 @@ actual promise. The edge function goes through the Storage API instead.
 
 ---
 
-## 7. Error and AI-failure log (`app_events`, PR 1, 12 Oct 2026; NOT YET LIVE)
+## 7. Error and AI-failure log (`app_events`, #124, merged and live)
 
 What goes wrong in a teacher's browser or in an AI call is written to `public.app_events`:
 event type, route template (`/assessments`, ids replaced by `:id`, no query string),
 viewport, device class, browser family, build commit, and an error message and stack with
 quoted text, emails and long numbers stripped (`scrubEventText` / `scrubStack` in
 `lib/app-events.ts`). AI failures carry the mode, model, effort, failure kind and token
-counts -- never the prompt, the pages or the output. **No student name or answer is part
+counts -- never the prompt, the pages or the output.
+
+Tightened in #128 (built, not yet live): a message keeps only error vocabulary and
+code-shaped words; a stack keeps only lines that parse as real code-location frames, with
+any page URL in them reduced to its route template (build output under `/_next/`,
+`/.next/`, `/.netlify/` and `node_modules` keeps its hashed file name -- a deliberate
+choice, since that is where the useful part of a stack is); and an event's `detail` takes
+`mode`, `kind` and `effort` only from the app's own fixed lists. One channel remains by
+nature: a function name in a stack frame is kept as written, so code that named a function
+after data (a computed property name) would show it. The app's code does not do that. **No student name or answer is part
 of any event**, by construction: the fields are fixed and free text is scrubbed in the
 browser and again on the server.
 
@@ -420,7 +429,7 @@ agreement for that assessment.
 | Item | Detail |
 |---|---|
 | Who can read | The service role only (no storage policy for anyone else). Results are readable by accounts on `regression_admins`. |
-| Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases) or the teacher's account is deleted (`purgeTeacherDocuments` removes the files) |
+| Retained | Until the set is revoked (the replay page's revoke action deletes the files, then the allow-list row, which cascades to fixtures and cases), the teacher presses "delete my workspace data" (`deleteAllDocuments` removes every fixture file in the teacher's folder of the bucket and withdraws every allow-list row, which cascades to fixtures and cases), or the teacher's account is deleted (`purgeTeacherDocuments` removes the files; the rows go with the account) |
 | Purge | Not touched by `purge-expired-uploads`: the copies are not `teacher_uploads` rows, and the function skips the bucket by name |
 | Sent to OpenAI | The same pages and prompts a teacher's scan sends, when an admin runs the replay |
 | Also held | `regression_cases.expected` (roster names for matching, the confirmed answers and credits, the questions and key) and `regression_run_cases.state` (what each replay read: names and answers). Same lifetime as the copies; readable by the service role and, for run results, by `regression_admins`. |

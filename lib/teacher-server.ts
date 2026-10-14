@@ -10,6 +10,7 @@ import { canonicalHosts, hostGuardEnforced } from "@/lib/canonical-host";
 export { HttpError };
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { removeTeacherFixtures } from "@/lib/regression/fixture-purge";
 import type { Assessment, Workspace } from "@/lib/teacher-types";
 import { withAssessmentDefaults } from "@/lib/workspace-safety";
 
@@ -678,6 +679,12 @@ export async function deleteDocument(ownerId: string, id: string) {
 
 export async function deleteAllDocuments(ownerId: string) {
   if (hasSupabaseConfig()) {
+    // First any copies kept as regression test fixtures, with the agreement
+    // that allowed them: "delete my data" has to mean these too, as full
+    // account deletion already did (#124 review). First, so a failure here
+    // leaves the account as it was, to be retried -- not with its documents
+    // gone and fixture copies of the same photos still kept (#128 round 3).
+    await removeTeacherFixtures(createServiceClient(), ownerId, { revokeConsent: true });
     const supabase = await createClient();
     const { data: rows, error } = await supabase
       .from("teacher_uploads")

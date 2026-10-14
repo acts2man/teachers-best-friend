@@ -86,7 +86,6 @@ export type AnswerMiss =
   | "unsure"
   | "wrong_final"
   | "equivalent_not_grouped"
-  | "teacher_split_same_answer"
   | "wrongly_blank"
   | "not_returned";
 
@@ -98,10 +97,14 @@ export type AnswersScore = {
    * teacher did not change it. The credit is the independent ground truth. */
   readRight: number;
   readAccuracy: number;
-  /** In exactly the group the teacher ended up with: the same students share
-   * this answer's group in the replay as shared the teacher's (final answer,
-   * credit) group. A group the teacher had to split, or merge, is a miss. */
+  /** Grouped right: this answer's replay group and the teacher's group for
+   * its final answer are each the other's majority (Unsure and unreturned
+   * answers left out of the counting -- they are misses of their own). */
   inGroup: number;
+  /** Answers the teacher gave different credit from classmates with the same
+   * final answer (the work differed). Information only: no grouping by answer
+   * can see work, so it is not a grouping miss (#124 review). */
+  creditSplits: number;
   groupAccuracy: number;
   /** Marked correct where the teacher gave less than full credit. */
   wronglyCorrect: number;
@@ -133,7 +136,6 @@ export function scoreAnswers(
     unsure: 0,
     wrong_final: 0,
     equivalent_not_grouped: 0,
-    teacher_split_same_answer: 0,
     wrongly_blank: 0,
     not_returned: 0,
   };
@@ -151,10 +153,40 @@ export function scoreAnswers(
   const got = (r: StudentResponse) => r.finalAnswer?.trim() || r.answer;
   // The teacher's groups: same final answer AND same credit, per question.
   const teacherKey = (e: ExpectedAnswer) => answerKey(want(e)) + "|" + (e.match ?? "-");
+  // Grouping is judged on the final answer alone: credit the teacher split by
+  // work is counted separately (creditSplits), not as the model's miss.
+  const groupKey = (e: ExpectedAnswer) => answerKey(want(e));
   // The replay's groups, as Grade by question would draw them before anyone decides.
   const replayKey = (r: StudentResponse | undefined) => (!r ? "\u0000none" : isUnsure(r) ? "\u0000unsure" : answerKey(got(r)));
-  const members = (q: string, keyOf: (e: ExpectedAnswer) => string, key: string) =>
-    expected.filter((x) => x.questionId === q && keyOf(x) === key).map((x) => x.studentId).sort().join(",");
+  // Per question: which teacher group is the majority of each replay group,
+  // and which replay group holds the majority of each teacher group. A tie
+  // has no majority.
+  const majorityCache = new Map<string, { replayToTeacher: Map<string, string>; teacherToReplay: Map<string, string> }>();
+  const groupMajorities = (q: string) => {
+    const hit = majorityCache.get(q);
+    if (hit) return hit;
+    const pairs = expected
+      .filter((x) => x.questionId === q)
+      .map((x) => [replayKey(find(x)), groupKey(x)] as const)
+      .filter(([rk]) => rk !== "\u0000none" && rk !== "\u0000unsure");
+    const majority = (from: 0 | 1) => {
+      const counts = new Map<string, Map<string, number>>();
+      for (const p of pairs) {
+        const inner = counts.get(p[from]) ?? new Map<string, number>();
+        inner.set(p[1 - from], (inner.get(p[1 - from]) ?? 0) + 1);
+        counts.set(p[from], inner);
+      }
+      const out = new Map<string, string>();
+      for (const [k, inner] of counts) {
+        const ranked = [...inner.entries()].sort((x, y) => y[1] - x[1]);
+        if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) out.set(k, ranked[0][0]);
+      }
+      return out;
+    };
+    const m = { replayToTeacher: majority(0), teacherToReplay: majority(1) };
+    majorityCache.set(q, m);
+    return m;
+  };
 
   for (const e of expected) {
     const r = find(e);
@@ -178,20 +210,40 @@ export function scoreAnswers(
     const equivalent = !sameFinal && !!g.trim() && !wantedBlank && compareAnswers(g, w) === "same";
     if (!unsureHere && (sameFinal || equivalent)) readRight++;
 
-    const sameMembers =
-      members(e.questionId, teacherKey, teacherKey(e)) ===
-      members(e.questionId, (x) => replayKey(find(x)), replayKey(r));
-    // Same members AND the same (or an equivalent) answer: a student alone in
-    // a group otherwise "matches" the teacher's group of one whatever was read.
-    if (!unsureHere && sameMembers && (sameFinal || equivalent)) {
+    // Grouped right when this student's replay group and teacher group are
+    // each the other's majority: the replay group is mostly this teacher
+    // group, and this teacher group mostly landed in this replay group. One
+    // student the replay set apart (Unsure, or credit the teacher split off)
+    // is then that student's miss -- it used to make every classmate in the
+    // group a miss too, so 2 Unsure of 52 scored "grouped 0%" (#124 review).
+    const majorities = groupMajorities(e.questionId);
+    const placed =
+      majorities.replayToTeacher.get(replayKey(r)) === groupKey(e) &&
+      majorities.teacherToReplay.get(groupKey(e)) === replayKey(r);
+    // AND the same (or an equivalent) answer: a student alone in a group
+    // otherwise "matches" the teacher's group of one whatever was read.
+    if (!unsureHere && placed && (sameFinal || equivalent)) {
       inGroup++;
       continue;
     }
     if (unsureHere) misses.unsure++;
     else if (isBlank && !wantedBlank) misses.wrongly_blank++;
-    else if (equivalent) misses.equivalent_not_grouped++;
-    else if (sameFinal) misses.teacher_split_same_answer++;
+    // Read right (or equivalently) but grouped apart from its classmates.
+    else if (equivalent || sameFinal) misses.equivalent_not_grouped++;
     else misses.wrong_final++;
+  }
+  // Per question and final answer: answers whose credit differs from the most
+  // common credit for that answer.
+  let creditSplits = 0;
+  const byAnswer = new Map<string, string[]>();
+  for (const e of expected) {
+    const k = e.questionId + "\u0000" + groupKey(e);
+    byAnswer.set(k, [...(byAnswer.get(k) ?? []), teacherKey(e)]);
+  }
+  for (const keys of byAnswer.values()) {
+    const counts = new Map<string, number>();
+    for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+    creditSplits += keys.length - Math.max(...counts.values());
   }
   const n = expected.length;
   const readAccuracy = ratio(readRight, n);
@@ -203,6 +255,7 @@ export function scoreAnswers(
     readAccuracy,
     inGroup,
     groupAccuracy,
+    creditSplits,
     wronglyCorrect,
     wronglyBlank: misses.wrongly_blank,
     missedCorrect,

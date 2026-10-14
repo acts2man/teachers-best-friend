@@ -30,14 +30,98 @@ export const SESSION_EVENT_CAP = 25;
 export const EVENTS_PER_POST = 10;
 
 /**
+ * Words an error message is allowed to keep: the vocabulary browsers, fetch,
+ * JSON, React and this app's own errors are written in. Anything else that is
+ * not code-shaped becomes "…" (#124 review: unquoted text such as "Student
+ * Maria Lopez not found" used to pass straight through).
+ */
+const ERROR_WORDS = new Set(
+  (
+    "a an the of to in on at for from by with without is are was were be been not no cannot can't could " +
+    "read reading properties property undefined null nan object function is not a valid invalid unexpected token end " +
+    "json input position line column parse syntax type reference range error errors exception failed failure fail " +
+    "fetch network request response timeout timed out aborted abort abortsignal load loading chunk module script " +
+    "missing found exceeded maximum call stack size memory quota storage access denied permission forbidden " +
+    "unauthorized unavailable service server client status code http https offline connection reset refused closed " +
+    "upload download file image page pages photo scan scans grading grade name names class student students " +
+    "assessment workspace save saving sync conflict revision changed another tab reload try again later " +
+    "short batch retry retries attempt still some answers may blank empty unread result results model mode kind " +
+    "stopped incomplete unparseable too many large small long minified react hydration render rendering hook hooks " +
+    "mismatch element child children key keys unique prop props state update unmounted component components " +
+    "and or but if then else when while after before during only also more less than into out up down over " +
+    "this that these it its your you please select choose classroom latest version first sign signed session expired " +
+    "account credits left plan limit reached video source start started camera minified visit full message see " +
+    "observer loop completed undelivered notifications already exists gone"
+  ).split(/\s+/),
+);
+
+/** Error class names a browser, fetch, React or this app actually throw. A
+ * name ending in "Error" is not enough ("MariaError" would pass). */
+const ERROR_CLASSES = new Set(
+  (
+    "Error TypeError RangeError SyntaxError ReferenceError EvalError URIError AggregateError DOMException " +
+    "AbortError TimeoutError NetworkError ChunkLoadError HttpError ZodError AiCallError QuotaExceededError " +
+    "NotAllowedError NotFoundError SecurityError InvalidStateError DataCloneError NotReadableError " +
+    "OverconstrainedError NotSupportedError UnknownError"
+  ).split(" "),
+);
+
+/** Upper-case words allowed through: acronyms, not a name in capitals. */
+const ACRONYMS = new Set("JSON HTTP HTTPS API URL PDF JPEG JPG PNG HEIC HTML CSS DOM ID OK AI CORS UTF GET POST PUT PATCH DELETE".split(" "));
+
+/** The app's own AI request modes, as its messages name them. */
+const MODES = new Set(
+  (
+    "class_scan name_strip answer_key key_check assignment passage roster rubric writing lesson reteaching responses catalog support embedding " +
+    "sync_workspace get_workspace_json"
+  ).split(" "),
+);
+
+/** Property names code is written in, for "e.map", "res.json", "x.length". */
+const CODE_PROPS = new Set("length map filter forEach find reduce then catch json text slice split trim push id name type value data error message status body headers current target style".split(" "));
+
+/**
+ * Code with internal structure -- never a bare word with a stray dot. A dotted
+ * token is code only when every part after the first starts lower-case and it
+ * ends in a known property ("e.map", "res.json") or has a camelCase / $ / _
+ * part -- so "maria.lopez", "M.Lopez" and "jo.garcia" are not (#124 review).
+ */
+function codeShaped(token: string): boolean {
+  if (ERROR_CLASSES.has(token) || ACRONYMS.has(token) || MODES.has(token)) return true;
+  if (/^ERR_[A-Z_]+$/.test(token)) return true; // ERR_NETWORK
+  if (/^#\d{1,5}$/.test(token)) return true; // "Minified React error #418"
+  if (/^\d{1,5}(\.\d+)?$/.test(token)) return true; // statuses, positions, counts
+  const dotted = token.match(/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)+$/);
+  if (dotted) {
+    const seg = token.split(".");
+    // Every part after the first must read as a property: lower-case start
+    // ("e.map", "res.json") -- so "M.Lopez" and "J.Smith" (an initial and a
+    // surname) are never taken for code (#124 review, round 4).
+    if (!seg.slice(1).every((x) => /^[a-z_$]/.test(x))) return false;
+    // And it ends in a known property ("e.map") or has a camelCase / _ / $
+    // part ("t.toLowerCase", "this._x"); a short receiver alone is not enough
+    // ("jo.garcia", "a.maria").
+    return CODE_PROPS.has(seg[seg.length - 1]) || seg.some((x) => /[A-Z_$]/.test(x.slice(1)) || /^[_$]/.test(x));
+  }
+  return false;
+}
+
+/** A URL or path in a message, reduced to its route template. */
+function pathToken(token: string): string | null {
+  if (/^https?:\/\//i.test(token) || /^\/[\w\-./:%?=&]*$/.test(token)) return routeTemplate(token) || "…";
+  return null;
+}
+
+/**
  * Error text with anything that could be a student's words taken out.
  *
  * An error message is code talking -- "Cannot read properties of undefined
  * (reading 'length')" -- but it can echo data: a failed JSON.parse quotes the
- * text it choked on, a validation error quotes the value. Quoted spans are the
- * usual carrier, so they go; so do email addresses and long digit runs (ids and
- * phone numbers), and the whole thing is capped. What is left identifies the
- * failure without carrying what was being processed when it happened.
+ * text it choked on, a validation error quotes the value, and an app message
+ * can name a student. So: quoted spans go, email addresses and long digit runs
+ * go, and then every remaining word that is neither error vocabulary nor
+ * code-shaped is replaced by "…". What is left says what failed, never who or
+ * what was being processed.
  */
 export function scrubEventText(text: unknown, max = 500): string {
   if (typeof text !== "string") return "";
@@ -45,26 +129,167 @@ export function scrubEventText(text: unknown, max = 500): string {
     .replace(/"[^"]{0,400}"|'[^']{0,400}'|`[^`]{0,400}`|“[^”]{0,400}”|‘[^’]{0,400}’/g, "\"…\"")
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "<email>")
     .replace(/\d{6,}/g, "<n>")
+    .split(/\s+/)
+    .map((token, i, all) => {
+      const path = pathToken(token);
+      if (path) return path;
+      const m = token.match(/^([,;:!?("'“‘\[<]*)(.*?)([,;:!?)."'”’\]>]*)$/);
+      const [lead, word, trail] = m ? [m[1], m[2], m[3]] : ["", token, ""];
+      if (!word || word === "…" || word === "\"…\"" || word === "<email>" || word === "<n>") return token;
+      // Vocabulary counts in lower case; a capital only where a sentence
+      // starts (the first word, after "SomeError:", or after a full stop),
+      // so "May" or "Page" as a name mid-sentence does not pass.
+      const lower = word.toLowerCase();
+      const prev = all[i - 1] ?? "";
+      const sentenceStart = i === 0 || /(Error|Exception):$/.test(prev) || /[.!?]$/.test(prev);
+      const capitalised = word === lower.charAt(0).toUpperCase() + lower.slice(1);
+      const vocab = ERROR_WORDS.has(lower) && (word === lower || (sentenceStart && capitalised));
+      if (vocab || codeShaped(word)) return lead + word + trail;
+      return "…";
+    })
+    .join(" ")
+    .replace(/…(\s+…)+/g, "…")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
 }
 
+/** The values detail.mode, detail.kind and detail.effort may take: the app's
+ * own lists, nothing else (#128 round 3: any lower-case word was accepted, so
+ * detail:{kind:"maria"} was stored). DETAIL_MODES is the analyze route's mode
+ * enum; a test fails if the two drift apart. */
+export const DETAIL_MODES = new Set(
+  "assignment responses class_scan writing name_strip answer_key passage lesson catalog roster rubric key_check".split(" "),
+);
+/** AiFailureKind (lib/app-events-server.ts) and the class scan's own kinds. */
+export const DETAIL_KINDS = new Set("error timeout unparseable short incomplete empty short_parts".split(" "));
+/** pipeline_config's reasoning efforts, and the retired "minimal". */
+export const DETAIL_EFFORTS = new Set("none minimal low medium high".split(" "));
+
+/** detail keys that may carry a string, and what each must be. Any other
+ * string is dropped: a detail is small structured facts, never text. */
+const DETAIL_STRINGS: Record<string, (v: string) => boolean> = {
+  mode: (v) => DETAIL_MODES.has(v),
+  kind: (v) => DETAIL_KINDS.has(v),
+  effort: (v) => DETAIL_EFFORTS.has(v),
+  model: (v) => /^[a-z0-9][a-z0-9.\-]{0,39}$/.test(v),
+  method: (v) => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(v),
+  endpoint: (v) => /^\/[a-z0-9_\-/:]{0,120}$/i.test(v),
+};
+
+/** The detail object as stored: numbers and booleans as given, strings only
+ * under the keys above and in their shape, at most 12 entries. */
+export function scrubDetail(detail: unknown): Record<string, string | number | boolean> | null {
+  if (!detail || typeof detail !== "object") return null;
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(detail as Record<string, unknown>).slice(0, 12)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,29}$/.test(k)) continue;
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "boolean") out[k] = v;
+    else if (typeof v === "string") {
+      const value = k === "endpoint" ? routeTemplate(v) : v;
+      if (DETAIL_STRINGS[k]?.(value)) out[k] = value;
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** A function name as code writes it: identifiers, dots, "<anonymous>",
+ * Firefox's "/<" nesting, Safari's "global code" -- not a sentence. */
+const FRAME_FN = /^(?:(?:async|new) )?(?:[\w$.<>[\]/]{1,100}|(?:global|module|eval) code)$/;
+
+/** Node's own code: its internals and its built-in modules, nothing else. */
+const NODE_LOCATION =
+  /^node:(?:internal(?:\/[\w/._-]{1,120})?|(?:assert|async_hooks|buffer|child_process|crypto|dns|events|fs|http|https|module|net|os|path|perf_hooks|process|querystring|readline|stream|string_decoder|timers|tls|url|util|vm|worker_threads|zlib)(?:\/[\w._-]{1,60})?)$/;
+
+/** Locations that are markers, not files. */
+const MARKER = /^(?:<anonymous>|<eval>|native|\[native code\]|index \d{1,4})$/;
+
+/** A frame's location, made safe. Build output (bundled chunks, the server
+ * build, node_modules, node's internals) keeps its file path -- hashed file
+ * names, not data. Any other URL or path is reduced to its route template, so
+ * a page URL like /students/maria-lopez in a frame says only /students/:seg. */
+function frameLocation(loc: string): string {
+  if (MARKER.test(loc)) return loc;
+  if (NODE_LOCATION.test(loc)) return loc;
+  let path = loc;
+  try {
+    path = new URL(loc).pathname;
+  } catch {
+    path = loc.split(/[?#]/)[0];
+  }
+  const build = /\/(?:_next|\.next|\.netlify|node_modules)\//.exec(path);
+  if (build) {
+    const tail = path.slice(build.index);
+    return tail.split("/").map((seg) => (!seg || /^[\w.\-[\]()@~]+$/.test(seg) ? seg : ":seg")).join("/").slice(0, 160);
+  }
+  return routeTemplate(path) || "…";
+}
+
+/** One stack line as [function, location, ":line:col"], or null when it is not
+ * a code-location frame. Linear-time patterns only: this runs on text a
+ * browser sent, before anything else is trusted. */
+function parseFrame(line: string): [string, string, string] | null {
+  if (line.length > 600) return null;
+  // Firefox marks where async code resumed: "async*fn@loc", "promise callback*fn@loc".
+  const l = line.replace(/^(?:async|promise callback|setTimeout handler|EventListener\.handleEvent)\*/, "");
+  let m: RegExpExecArray | null;
+  // V8: "at fn (loc:L:C)", "at fn [as alias] (loc:L:C)", "at fn (<anonymous>)".
+  if ((m = /^at ((?:async |new )?(?:[^\s()[\]]{1,120}|(?:global|module|eval) code))(?: \[as [\w$]{1,60}\])? \((index \d{1,4}|\[native code\]|(?:[^()\s]|\([\w.-]{1,60}\))+?)(:\d{1,7}:\d{1,7})?\)$/.exec(l)))
+    return m[3] || MARKER.test(m[2]) ? [m[1], m[2], m[3] ?? ""] : null;
+  // V8 eval: "at eval (eval at f (loc:L:C), <anonymous>:L:C)" -- where it was evaluated is the useful part.
+  if ((m = /^at (eval|[\w$.]{1,120}) \(eval at [\w$.<>]{1,120} \(([^()\s]+?)(:\d{1,7}:\d{1,7})\), [^()]{1,200}\)$/.exec(l)))
+    return [m[1], m[2], m[3]];
+  // V8, no function: "at loc:L:C".
+  if ((m = /^at ((?:[^\s()]|\([\w.-]{1,60}\))+?)(:\d{1,7}:\d{1,7})$/.exec(l))) return ["", m[1], m[2]];
+  // Firefox / Safari: "fn@loc:L:C", "@loc:L:C", "global code@loc:L:C", "fn@[native code]".
+  if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@(\[native code\])$/.exec(l))) return [m[1], m[2], ""];
+  if ((m = /^([^@\s]{0,120}|(?:global|module|eval) code)@([^@\s]+?)(?: line \d{1,7} > (?:eval|Function))?(:\d{1,7}:\d{1,7})$/.exec(l)))
+    return [m[1], m[2], m[3]];
+  return null;
+}
+
 /**
- * A stack trace reduced to code locations: one "fn@file:line:col" per frame.
- * Function names and bundle paths are code, not data; the message line at the
- * top of a stack is dropped here because it is logged (scrubbed) separately.
+ * A stack trace reduced to code locations, one V8-style frame per line ("at fn
+ * (location:L:C)" or "at location:L:C"). Only lines that parse as real frames
+ * are kept -- so a message or data line that merely contains "at", "@" or
+ * "12:30:45" is dropped (#128 round 3) -- and a URL in one is its route
+ * template unless it is build output. The message line at the top is dropped
+ * too; it is logged (scrubbed) separately.
+ *
+ * The output is itself a valid stack in this form, so scrubbing twice changes
+ * nothing: the browser scrubs before sending and the server scrubs again (the
+ * round-3 review found the first version's output did not survive the second
+ * pass, which emptied every browser stack).
  */
 export function scrubStack(stack: unknown, max = 4000): string {
   if (typeof stack !== "string") return "";
-  const frames = stack
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => /^at\s|@|:\d+:\d+/.test(l) && !/^[A-Za-z]*Error[:\s]/.test(l))
-    .map((l) => l.replace(/^at\s+/, "").replace(/\?[^\s:)]*/g, "").slice(0, 200))
-    .slice(0, 30);
+  const frames: string[] = [];
+  for (const raw of stack.split("\n")) {
+    const f = parseFrame(raw.trim());
+    if (!f) continue;
+    const [fn, loc, pos] = f;
+    if (fn && !FRAME_FN.test(fn)) continue;
+    // A bare location must look like one: a URL, a path or a node/webpack id.
+    if (!MARKER.test(loc) && !/^(?:https?:\/\/|file:\/\/|webpack-internal:\/\/|\/|node:)/.test(loc)) continue;
+    const where = frameLocation(loc) + pos;
+    frames.push(fn ? `at ${fn} (${where})` : `at ${where}`);
+    if (frames.length >= 30) break;
+  }
   return frames.join("\n").slice(0, max);
 }
+
+/** Every path segment the app's own routes use. Anything else in a path --
+ * "/students/maria-lopez" -- becomes ":seg", so a route can carry no name. */
+const ROUTE_WORDS = new Set(
+  (
+    "account accounts admin analyze api app assessments audit auth billing callback candidates checkout classes clear " +
+    "contact delete diagnostics events export guide impersonation legal lessons library login pipeline portal quota " +
+    "regression release reserve resources reteach scan scans session settings signout signup standards state students " +
+    "support tickets uploads usage version webhook workspace errors privacy terms student-data ai dpa how-we-use-ai " +
+    "student-data-privacy"
+  ).split(" "),
+);
 
 const UUIDISH = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -84,7 +309,7 @@ export function routeTemplate(urlOrPath: unknown): string {
   return path
     .replace(UUIDISH, ":id")
     .split("/")
-    .map((seg) => (/\d{3,}|^[A-Za-z0-9_-]{20,}$/.test(seg) ? ":id" : seg))
+    .map((seg) => (/\d{3,}|^[A-Za-z0-9_-]{20,}$/.test(seg) ? ":id" : !seg || seg.startsWith(":") || ROUTE_WORDS.has(seg) ? seg : ":seg"))
     .join("/")
     .slice(0, 200);
 }
@@ -150,6 +375,8 @@ export const clientEventSchema = z.object({
   detail: z
     .record(z.union([z.number(), z.boolean(), z.string().max(60).regex(/^[A-Za-z0-9_.:/ -]*$/)]))
     .refine((d) => Object.keys(d).length <= 12)
+    // Then narrower still: only known keys may carry a string, in their shape.
+    .transform(scrubDetail)
     .optional(),
 });
 export type ClientEvent = z.input<typeof clientEventSchema>;

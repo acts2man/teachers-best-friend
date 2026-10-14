@@ -54,7 +54,8 @@ function headline(m: Record<string, Record<string, unknown>> | null): string {
   if (m.answers) {
     const a = m.answers;
     return `grouped ${pct(a.groupAccuracy)}, same read as accepted ${pct(a.readAccuracy)}, wrongly correct ${a.wronglyCorrect}, wrongly blank ${a.wronglyBlank}, full credit not pre-marked ${a.missedCorrect}, unsure ${a.unsure}` +
-      (Number(a.partsExpected) ? `, multi-part ${a.partsReturned}/${a.partsExpected} parts returned` : "");
+      (Number(a.partsExpected) ? `, multi-part ${a.partsReturned}/${a.partsExpected} parts returned` : "") +
+      (Number(a.creditSplits) ? `, ${a.creditSplits} given different credit by the teacher for the same answer (not counted against grouping)` : "");
   }
   const k = m.answer_key ?? m.standards;
   return k ? `${k.right}/${k.items} right (${pct(k.accuracy)})` : "";

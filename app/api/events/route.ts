@@ -24,14 +24,16 @@ export async function POST(request: Request) {
   try {
     guardOrigin(request);
     if (!hasSupabaseConfig()) return NOTHING();
-    const text = await request.text();
-    if (text.length > 60000) return NOTHING();
-    const parsed = clientEventsBody.safeParse(JSON.parse(text));
-    if (!parsed.success) return NOTHING();
+    // Signed in first: nothing a signed-out caller sends is parsed or
+    // scrubbed, so it cannot spend the function's time (#128 round-3 review).
     const supabase = await createClient();
     const { data } = await supabase.auth.getClaims();
     const teacherId = data?.claims?.sub;
     if (!teacherId) return NOTHING();
+    const text = await request.text();
+    if (text.length > 60000) return NOTHING();
+    const parsed = clientEventsBody.safeParse(JSON.parse(text));
+    if (!parsed.success) return NOTHING();
     const { sessionId, userAgent, events } = parsed.data;
     const rows = events.map((e) =>
       eventRow(e, { teacherId, sessionId, userAgent, serverBuild: BUILD_REF }),
