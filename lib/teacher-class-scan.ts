@@ -372,6 +372,50 @@ export function groupPagesByCapture(sizes: number[]): number[][] {
   return groups;
 }
 
+/**
+ * A scan that mixes a whole-stack upload with piles the teacher declared
+ * ("Next student"): the stack's pile is split by the names read on it, every
+ * declared pile stays one student. Grading the whole scan by names threw the
+ * declared boundaries away (#140 review, round 2), and grading the stack as
+ * one declared pile put every child in it under one (G3). `sizes[i]` and
+ * `stackPile[i]` describe pile i in scan order; pages are numbered straight
+ * through, as groupPagesByCapture numbers them.
+ */
+export function groupMixedPiles(
+  sizes: number[],
+  stackPile: boolean[],
+  names: PageName[],
+  rosterMatches?: (name: string) => number,
+): number[][] {
+  const out: number[][] = [];
+  let start = 0;
+  sizes.forEach((size, i) => {
+    if (!Number.isInteger(size) || size <= 0) return;
+    const pages = Array.from({ length: size }, (_, k) => start + k);
+    if (stackPile[i]) {
+      const inPile = new Set(pages);
+      out.push(...groupPagesByName(names.filter((n) => inPile.has(n.page)), rosterMatches));
+    } else out.push(pages);
+    start += size;
+  });
+  return out;
+}
+
+/** The name-pass requests for a mixed scan: one per declared pile, one per page
+ * of a stack pile (its names are what split it). */
+export function namePilesFor(sizes: number[], stackPile: boolean[]): number[][] {
+  const out: number[][] = [];
+  let start = 0;
+  sizes.forEach((size, i) => {
+    if (!Number.isInteger(size) || size <= 0) return;
+    const pages = Array.from({ length: size }, (_, k) => start + k);
+    if (stackPile[i]) out.push(...pages.map((p) => [p]));
+    else out.push(pages);
+    start += size;
+  });
+  return out;
+}
+
 /** A scanned group after resolving it against the current roster, ready for
  * the teacher to confirm or correct before anything is saved. */
 export type ResolvedGroup = ScannedGroup & {

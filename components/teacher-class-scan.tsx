@@ -56,6 +56,8 @@ import {
   planNameBatches,
   planScanBatches,
   planRemainingBatches,
+  groupMixedPiles,
+  namePilesFor,
   resolveScannedGroups,
   ungradedReservations,
   type GradedGroup,
@@ -377,10 +379,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // The latest gradeCaptured, for the "Grade again" toast, whose action
   // outlives the render that created it.
   const gradeCapturedRef = useRef<(fresh?: boolean) => Promise<void>>(async () => {});
+  // Rows already on the matching screen (here or from the other device): the
+  // "Grade again" prompt must not re-grade over them.
+  const groupsRef = useRef(false);
   useEffect(() => {
     scanningRef.current = scanning;
     releaseRef.current = sync.releaseGrading;
     gradeCapturedRef.current = gradeCaptured;
+    groupsRef.current = !!groups;
   });
   useEffect(() => () => {
     if (scanningRef.current) releaseRef.current();
@@ -645,7 +651,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
      * (planResume). Used as is: never re-derived from the piles or the names,
      * so the banked answers stay on the groups they were read from (G3). */
     resumeGroups?: number[][] | null,
+    /** Which piles came from a whole-stack upload: split by names, while
+     * the declared piles beside them stay one student each. */
+    stackPiles?: boolean[],
   ) {
+    toast.dismiss("scan-regrade-" + a.id);
     // Mirrors what has been banked, so the in-flight job id can be recorded
     // against the right point without waiting for a re-render.
     let banked: GradedGroup[] = resume?.graded ?? [];
@@ -678,9 +688,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // One request per student pile the teacher declared (per page when they
       // declared none), a few at a time, so a name can never be read onto
       // another child's pages.
+      const mixed = !!explicit && !!stackPiles?.some(Boolean);
       const slices = planNameBatches(
         pages.map((p) => p.stripId),
-        resumeGroups ?? (explicit ? groupPagesByCapture(explicit) : null),
+        resumeGroups ?? (explicit ? (mixed ? namePilesFor(explicit, stackPiles!) : groupPagesByCapture(explicit)) : null),
       );
       const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
         // Tried again, with backoff, before a page is left for the teacher:
@@ -726,11 +737,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
+      const rosterMatches = (name: string) => rosterMatchCount(name, students);
       const pageGroups = resumeGroups
         ? resumeGroups
         : explicit
-          ? groupPagesByCapture(explicit)
-          : groupPagesByName(names, (name) => rosterMatchCount(name, students));
+          ? mixed
+            ? groupMixedPiles(explicit, stackPiles!, names, rosterMatches)
+            : groupPagesByCapture(explicit)
+          : groupPagesByName(names, rosterMatches);
       // What every banked group number below refers to. Saved with the
       // progress so a resume can check it is looking at the same pages.
       const layout = groupLayout(pageGroups, ids);
@@ -977,7 +991,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             // The latest panel state, not the render that showed the toast:
             // pages added since are graded too, and a run already going (here
             // or on the other device) is not started twice.
-            if (scanningRef.current) return;
+            if (scanningRef.current || groupsRef.current) return;
             setProgress(null);
             void gradeCapturedRef.current(true);
           },
@@ -999,7 +1013,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // A stack uploaded whole is one pile on screen, but that pile is not a
     // student: the names split it. Grading it as declared piles put every
     // page under one student (G3).
-    const explicit = captured.some((p) => p.stack) ? null : piles.map((pile) => pile.length);
+    const explicit = piles.map((pile) => pile.length);
+    const stackPiles = piles.map((pile) => pile.some((p) => p.stack));
     const plan = fresh ? null : planResume(progress, captured.map((p) => p.bodyId));
     if (plan?.kind === "changed") {
       // The pages are not the ones the saved answers were read from. Putting
@@ -1015,6 +1030,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         explicit,
         plan?.kind === "resume" ? progress : null,
         plan?.kind === "resume" ? plan.pageGroups : null,
+        stackPiles,
       );
     } catch (e) {
       // Show whatever got through before saying what went wrong. A class set
@@ -1068,6 +1084,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // A new stack starts from nothing: progress from an earlier scan is not
     // this stack's, and would only trigger a "pages changed" prompt.
     setProgress(null);
+    toast.dismiss("scan-regrade-" + a.id);
     setGroups(null);
     setDiscarded(new Set());
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
