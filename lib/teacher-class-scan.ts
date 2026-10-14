@@ -543,6 +543,120 @@ const NICKNAMES: string[][] = [
   ["alejandro", "ale"],
 ];
 
+/**
+ * The short forms a child may write for their own given name -- the ONLY
+ * difference from the roster's given name that still lets the app pre-fill a
+ * student (G12, docs/system-map.md). Narrower than NICKNAMES on purpose: that
+ * table also holds translations (Miguel/Michael, Diego/James), misspellings
+ * (Micheal) and look-alikes, which are good SUGGESTIONS but are different
+ * children often enough that choosing for the teacher would put one child's
+ * grades on another. Keyed by the full name; either side may be the short one.
+ */
+const SHORT_FORMS: Record<string, string[]> = {
+  michael: ["mike", "mikey"],
+  alexander: ["alex", "xander"],
+  alexandra: ["alex", "alexa"],
+  alejandro: ["ale", "alex"],
+  alejandra: ["ale"],
+  christopher: ["chris", "topher"],
+  christina: ["tina", "chrissy"],
+  christine: ["tina", "chrissy"],
+  daniel: ["dan", "danny"],
+  daniela: ["dani"],
+  daniella: ["dani"],
+  david: ["dave", "davey"],
+  anthony: ["tony"],
+  antonio: ["tony", "tono"],
+  joseph: ["joe", "joey"],
+  jose: ["pepe"],
+  joshua: ["josh"],
+  matthew: ["matt", "matty"],
+  nicholas: ["nick", "nicky", "nico"],
+  nicolas: ["nick", "nicky", "nico"],
+  samuel: ["sam", "sammy"],
+  samantha: ["sam", "sammy"],
+  benjamin: ["ben", "benny", "benji"],
+  william: ["will", "willy", "bill", "billy", "liam"],
+  guillermo: ["memo"],
+  elizabeth: ["liz", "lizzy", "beth", "betsy", "eliza"],
+  katherine: ["kate", "katie", "kat", "kathy"],
+  catherine: ["kate", "katie", "cathy"],
+  kathryn: ["kate", "katie", "kathy"],
+  jennifer: ["jen", "jenny"],
+  jessica: ["jess", "jessie"],
+  abigail: ["abby", "abbie"],
+  gabriel: ["gabe", "gabi"],
+  gabriela: ["gabby", "gabi"],
+  gabriella: ["gabby", "gabi"],
+  isabella: ["izzy", "bella", "isa"],
+  isabel: ["izzy", "isa"],
+  maximilian: ["max"],
+  maximus: ["max"],
+  maxwell: ["max"],
+  zachary: ["zach", "zack"],
+  jacob: ["jake"],
+  andrew: ["andy", "drew"],
+  thomas: ["tom", "tommy"],
+  james: ["jim", "jimmy", "jamie"],
+  robert: ["rob", "robbie", "bob", "bobby"],
+  roberto: ["beto"],
+  richard: ["rick", "ricky", "rich"],
+  ricardo: ["ricky"],
+  manuel: ["manny", "manolo"],
+  guadalupe: ["lupe", "lupita"],
+  ignacio: ["nacho"],
+  francisco: ["frank", "frankie", "paco", "pancho", "cisco"],
+  edward: ["ed", "eddie"],
+  eduardo: ["lalo"],
+  jesus: ["chuy"],
+  alberto: ["beto", "al"],
+  jonathan: ["jon", "jonny"],
+  steven: ["steve"],
+  stephen: ["steve"],
+  victoria: ["vicky", "tori"],
+  rebecca: ["becca", "becky"],
+  margaret: ["maggie", "meg", "peggy"],
+  madison: ["maddie", "maddy"],
+  madeline: ["maddie", "maddy"],
+  madeleine: ["maddie", "maddy"],
+  natalie: ["nat"],
+  olivia: ["liv", "livvy"],
+  sophia: ["sophie"],
+  sofia: ["sophie"],
+  emily: ["em", "emmy"],
+  emma: ["em", "emmy"],
+  ashley: ["ash"],
+  jacqueline: ["jackie"],
+  jackson: ["jack", "jax"],
+  timothy: ["tim", "timmy"],
+  kenneth: ["ken", "kenny"],
+  patrick: ["pat"],
+  patricia: ["pat", "patty", "tricia"],
+  dominic: ["dom"],
+  nathaniel: ["nathan", "nate"],
+  nathan: ["nate"],
+  leonardo: ["leo"],
+  elijah: ["eli"],
+  josephine: ["josie", "jo"],
+  valentina: ["vale", "val"],
+  fernando: ["nando"],
+};
+
+/**
+ * Whether the given name written on the paper may stand for the roster's
+ * given name when the app picks the student for the teacher: the same name
+ * (case and accents aside, normalizeName) or a known short form of it. A
+ * reversed name, a misspelling, a translation or a look-alike ("Christina" for
+ * "Chris", "Danielle" for "Daniel") is not -- it is offered as a suggestion.
+ */
+export function givenNameMayPrefill(written: string, roster: string): boolean {
+  const w = nameParts(written);
+  const r = nameParts(roster);
+  if (!w || !r) return false;
+  if (w.first === r.first) return true;
+  return !!SHORT_FORMS[w.first]?.includes(r.first) || !!SHORT_FORMS[r.first]?.includes(w.first);
+}
+
 /** Whether two given names are written forms of the same name. */
 function sameGivenName(a: string, b: string): boolean {
   if (a === b) return true;
@@ -822,8 +936,17 @@ export function resolveScannedGroups(
     // than a blank, because it rides through unless spotted). The misread can
     // come from either pass: a bad name read (low readConfidence) or a loose
     // roster fit (low score); this gate catches both.
+    // ...and only when the given name on the paper IS the roster's given name
+    // or a known short form of it. A look-alike scores high on the fuzzy fit
+    // ("Christina Lee" 0.947 against "Chris Lee", "Danielle Kim" 0.970 against
+    // "Daniel Kim") and is often a different child -- a sibling, or a new
+    // student not yet on the roster -- so it is a suggestion, never a choice
+    // (G12, docs/system-map.md).
     const strongMatch =
-      !!match.student && (match.score ?? 0) >= PREFILL_SCORE && readConfidence >= PREFILL_READ;
+      !!match.student &&
+      (match.score ?? 0) >= PREFILL_SCORE &&
+      readConfidence >= PREFILL_READ &&
+      givenNameMayPrefill(detectedName, match.student.name);
     // A single roster student that wasn't strong enough to pre-fill still rides
     // along as the suggestion, so the teacher confirms with one tap.
     const weakSingle = !!match.student && !strongMatch ? [match.student.id] : [];
