@@ -24,9 +24,10 @@
 -- the same extras, 20260914202357), and get_workspace_json reads them back.
 --
 -- What is stored is only what the teacher's copy ADDS: a value equal to the
--- shared catalog's for the same code, framework and grade, or equal to the
--- default get_workspace_json fills in (dok 2, the two default sentences), or
--- empty, is left out. The read merges key by key -- catalog first, the
+-- shared catalog's for the same code, framework and grade (dok compared as a
+-- number), or -- where the catalog has no value -- equal to the default
+-- get_workspace_json fills in (dok 2, the two default sentences), or empty,
+-- is left out. The read merges key by key -- catalog first, the
 -- teacher's own values on top -- so a catalog refresh still reaches every
 -- value the teacher did not change, and a custom standard with no values of
 -- its own reads exactly as before. (Review of the G8+G11 PR: storing the full
@@ -44,12 +45,22 @@
 -- only the custom-standards parts, so it applies before or after
 -- 20261014150000 (G4), which does not change either function.
 --
--- No new column, no DDL beyond the two function bodies. Nothing to drop.
+-- No new column. One new index (below); nothing to drop.
 --
 -- Proof: supabase/checks/custom-standards-round-trip.sql, run by hand AFTER
 -- this file; it rolls itself back.
 
 set lock_timeout = '5s';
+
+-- The catalog lookup both functions now make, by framework, code and grade.
+-- The only index on catalog rows leads with jurisdiction, which the lookup
+-- does not name, so each probe scanned all of it (review of the G8+G11 PR:
+-- 15,000 catalog rows made a reload take 26 s before the lookup was limited
+-- to the teacher's own rows). Not concurrent: the catalog is a few thousand
+-- rows, and lock_timeout stops it waiting on a long transaction.
+create index if not exists standards_catalog_lookup_idx
+  on public.standards (framework, code, grade)
+  where teacher_id is null;
 
 do $patch$
 declare
@@ -72,20 +83,30 @@ declare
                ''prerequisites'', case when jsonb_typeof(cs->''prerequisites'') = ''array'' and jsonb_array_length(cs->''prerequisites'') > 0 then cs->''prerequisites'' end,
                ''next'', case when jsonb_typeof(cs->''next'') = ''array'' and jsonb_array_length(cs->''next'') > 0 then cs->''next'' end,
                ''vocabulary'', case when jsonb_typeof(cs->''vocabulary'') = ''array'' and jsonb_array_length(cs->''vocabulary'') > 0 then cs->''vocabulary'' end,
-               ''misconception'', nullif(nullif(cs->>''misconception'',''''), ''Use the student''''s written reasoning to identify the step that needs support.''),
-               ''example'', nullif(nullif(cs->>''example'',''''), ''Choose a task that directly demonstrates this standard.''),
-               ''dok'', case when public.safe_int(cs->>''dok'') between 1 and 4 and public.safe_int(cs->>''dok'') <> 2 then public.safe_int(cs->>''dok'') end,
+               ''misconception'', nullif(cs->>''misconception'',''''),
+               ''example'', nullif(cs->>''example'',''''),
+               ''dok'', case when public.safe_int(cs->>''dok'') between 1 and 4 then public.safe_int(cs->>''dok'') end,
                ''source'', nullif(cs->>''source'','''')
              ))) kv
-            where kv.value is distinct from (
-              select g.meta -> kv.key from public.standards g
-               where g.teacher_id is null and g.active and g.code = cs->>''code''
-                 and g.framework = coalesce(nullif(cs->>''framework'',''''),''Custom'') and g.grade = cs->>''grade''
-               limit 1)
+            -- Kept only where it differs from the catalog''s value (dok as a number) ...
+            where case when kv.key = ''dok''
+                       then public.safe_int(kv.value #>> ''{}'') is distinct from public.safe_int(cat.meta ->> ''dok'')
+                       else kv.value is distinct from cat.meta -> kv.key end
+              -- ... and is not just the default the read shows when the catalog has none.
+              and not (cat.meta -> kv.key is null and (
+                    (kv.key = ''dok'' and kv.value = ''2''::jsonb)
+                 or (kv.key = ''misconception'' and kv.value = to_jsonb(''Use the student''''s written reasoning to identify the step that needs support.''::text))
+                 or (kv.key = ''example'' and kv.value = to_jsonb(''Choose a task that directly demonstrates this standard.''::text))))
          ), ''{}''::jsonb)'],
     array['sync_workspace',
       'from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) cs where cs->>''code'' is not null',
-      'from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) with ordinality as e(cs, n) where cs->>''code'' is not null
+      'from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) with ordinality as e(cs, n)
+  left join lateral (
+    select g.meta from public.standards g
+     where g.teacher_id is null and g.active and g.code = cs->>''code''
+       and g.framework = coalesce(nullif(cs->>''framework'',''''),''Custom'') and g.grade = cs->>''grade''
+     limit 1) cat on true
+  where cs->>''code'' is not null
   order by cs->>''code'', n'],
     array['sync_workspace',
       'domain = excluded.domain, cluster = excluded.cluster, updated_at = now();',
@@ -103,7 +124,7 @@ declare
       ) as meta',
       'select coalesce(
         (select g.meta from public.standards g
-          where g.teacher_id is null and g.active
+          where s.teacher_id is not null and g.teacher_id is null and g.active
             and g.code = s.code and g.framework = s.framework and g.grade = s.grade
           limit 1), ''{}''::jsonb) || coalesce(s.meta, ''{}''::jsonb) as meta'],
     array['get_workspace_json',

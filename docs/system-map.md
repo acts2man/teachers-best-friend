@@ -610,16 +610,22 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G11. Custom standards lost their skills, misconception, example and DOK on reload** (R2).
   **Closed** by the G8+G11 PR once `20261014160000` is applied.
   - `sync_workspace` writes into `standards.meta` only the values a teacher's copy adds: a
-    value equal to the shared catalog's (same code, framework and grade), equal to the default
-    the read fills in (DOK 2, the two default sentences), or empty is left out.
-  - `get_workspace_json` merges key by key, catalog first and the teacher's values on top, and
-    now reads prerequisites, next and vocabulary too (they were hard-coded to `[]`). A catalog
-    refresh still reaches every value the teacher did not change.
+    value equal to the shared catalog's (same code, framework and grade; DOK compared as a
+    number), empty, or -- where the catalog has no value for it -- equal to the default the
+    read fills in (DOK 2, the two default sentences) is left out.
+  - `get_workspace_json` merges key by key for the teacher's own rows, catalog first and the
+    teacher's values on top, and now reads prerequisites, next and vocabulary too (they were
+    hard-coded to `[]`). A catalog refresh still reaches every value the teacher did not
+    change. Shared rows are read as before.
+  - The lookup has its own index (`standards_catalog_lookup_idx`). Measured on a local copy
+    with 15,000 made-up catalog rows and 300 custom standards: reload 0.56 s (`main` 1.0 s),
+    save 0.6-0.75 s (`main` 0.95 s).
   - Residuals: a page loaded **before** a catalog refresh and saved after it stores the old
-    catalog values as the teacher's own (they then stop following the catalog). A DOK of 2 set
-    on purpose against a catalog DOK of 3 reads back as 3; teachers cannot set a standard's DOK
-    in the app today. A save that sends a standard without its extras clears what was stored
-    (today's client always sends them).
+    catalog values as the teacher's own (they then stop following the catalog). A value the
+    copy shares with the catalog follows the catalog row: if that row loses the key or is
+    deactivated, the copy shows the default (no code path does either today). A save that
+    sends a standard without its extras clears what was stored (today's client always sends
+    them).
   - Proof: `supabase/checks/custom-standards-round-trip.sql`.
 - **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
   that child** (R3; reproduced 14 Oct).
