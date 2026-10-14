@@ -642,6 +642,17 @@ const FUZZY_LEAD = 0.06;
  * first-name (0.9) pre-fill; a looser fuzzy fit (a misspelling or nickname that
  * scored 0.8-0.89) is only ever a suggestion. */
 const PREFILL_SCORE = 0.9;
+/** The highest score a fit may keep when it can only ever be a suggestion. */
+const SUGGEST_ONLY = PREFILL_SCORE - 0.01;
+
+/** One name is the other with letters added: "christina"/"chris",
+ * "dan"/"daniel". Different given names (or surnames), not a misspelling. An
+ * initial ("r") is an abbreviation, not another name, and is left alone. */
+function extendsName(a: NameParts, b: NameParts): boolean {
+  const ext = (x: string, y: string) => x.length > 1 && y.length > 1 && x !== y && (x.startsWith(y) || y.startsWith(x));
+  return ext(a.first, b.first) || (!!a.last && !!b.last && ext(a.last, b.last));
+}
+
 /** ...and only when the model read the handwriting this confidently (0-100). A
  * name the model wasn't sure it read is never pre-filled, however well the
  * string happens to fit the roster. */
@@ -720,8 +731,16 @@ export function matchRosterStudent(
     return { candidates: fits.map((r) => r.student), score: fitScore };
 
   // Nothing fits as written: a nickname, a misspelling, a reversed name.
+  // A different given name that merely extends a rostered one (Christina for
+  // "Chris Lee", Josefina for "Jose Ruiz", Danielle for "Daniel Kim") scores
+  // high but is another child as often as not -- a sibling, a new student, a
+  // twin missing from the roster (gap G12). It stays a suggestion, one tap,
+  // never a choice made for the teacher. A misspelling ("Micheal") still fits.
   const scored = roster
-    .map((r) => ({ student: r.student, score: rosterFit(name, r.student.name) }))
+    .map((r) => {
+      const fit = rosterFit(name, r.student.name);
+      return { student: r.student, score: extendsName(wanted, r.parts) ? Math.min(fit, SUGGEST_ONLY) : fit };
+    })
     .filter((r) => r.score >= FUZZY_FLOOR)
     .sort((x, y) => y.score - x.score);
   if (!scored.length) return {};

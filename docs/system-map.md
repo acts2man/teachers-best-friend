@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); G12 re-checked 2026-10-14 against the G12 branch (from `a183f93`). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -333,7 +333,7 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1, G2, G3 and G12 are ways this rule breaks today.
+- **Open:** gaps G1, G2, G3 and G12 (first name alone) are ways this rule breaks today.
 
 **R4. Never mark an answer correct when it is wrong; never mark it blank when the student wrote something; uncertain goes to Unsure.**
 - **Why:**
@@ -590,12 +590,17 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G11. Custom standards lose their skills, misconception, example and DOK on reload** (R2).
   `sync_workspace` writes none of them (`20261008190000…:278-288`). The teacher's own "skills"
   field in Standards > Add (`components/teacher-insights.tsx:167`) is gone after a refresh.
-- **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
-  that child** (R3; reproduced 14 Oct).
-  - `matchRosterStudent`'s fuzzy tier scores "Christina Lee" against "Chris Lee" at 0.947, and
-    "Josefina Ruiz" against "Jose Ruiz" at 0.940. Both are above `PREFILL_SCORE` (0.9).
-  - A first name alone ("Maria") pre-fills the only rostered Maria at 0.9.
-  - Siblings, a new student or a twin missing from the roster all hit this.
+- **G12. An unrostered child whose name is a near-variant of a rostered child was pre-filled
+  as that child** (R3).
+  - **Closed for given names that extend one another** by the G12 PR
+    (`tests/name-near-miss.test.mjs`). `matchRosterStudent`'s fuzzy tier scored "Christina
+    Lee" against "Chris Lee" at 0.947, "Josefina Ruiz" against "Jose Ruiz" at 0.940 and
+    "Danielle Kim" against "Daniel Kim" at 0.970, all above `PREFILL_SCORE` (0.9). A fit
+    where one name is the other with letters added (`extendsName`) is now capped below the
+    pre-fill line: a one-tap suggestion, never a choice. Misspellings ("Micheal", "Gonzales")
+    still pre-fill.
+  - **Still open:** a first name alone ("Maria") pre-fills the only rostered Maria at 0.9.
+    An unrostered Maria (a new student, a sibling) lands on her.
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.
