@@ -622,8 +622,13 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - Measured on 14 Oct against production's saved answers (read-only): of 53 distinct answers
     marked correct, 0 are newly sent to Unsure; of 5 sampled wrong ones, the guard would
     catch 5 (it caught 1).
-  - Not covered: a mixed number written with a space ("2 1/2") still does not equal "5/2"
-    (as on `main`).
+  - Not covered (as on `main`): a mixed number written with a space ("2 1/2") does not equal
+    "5/2"; a variable dropped from a single term ("6" for "6x") is not caught, because "x"
+    after a number reads as a unit (the price of leaving "12" for "12 m" alone); "+-" between
+    terms ("2 +- 3") is not read as ±.
+  - "3.2e5" is read both as 320000 and as 3.2·e·5, and the guard fires only if both differ;
+    a list of points ("(1, 2), (3, 4)") is split between the points, and a point only
+    matches a point.
 - **G15. Camera shots are deleted from the device before they upload**
   (`components/scan-camera.tsx:671`, then upload in `components/teacher-class-scan.tsx:544-573`).
   An upload failing partway loses the remaining pages.

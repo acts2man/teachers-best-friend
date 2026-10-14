@@ -54,6 +54,16 @@ const CAUGHT = [
   ["a", "-a"],
   ["-8", "8 centimeters"],
   ["(2+√5)/3", "(2 ± √5)/3"], // one root of two
+  // Review round 2.
+  ["x = 4; y = 3", "x = 3, y = 4"], // a system swapped, written with ";"
+  ["4; 3", "x = 3, y = 4"],
+  ["x = 4, y = 3", "x = 3; y = 4"],
+  ["y = 3; x = 4", "x = 3, y = 4"],
+  ["4; 3", "(3, 4)"], // an ordered pair is ordered
+  ["x = 4; y = 3", "(3, 4)"],
+  ["(3, 2)", "x = 2; y = 3"],
+  ["(1, -2), (3, 4)", "(1, 2), (3, 4)"], // a list of points
+  ["4, (0, -10/3)", "y = 4; (0, 10/3)"],
 ];
 
 const LEFT_ALONE = [
@@ -116,6 +126,11 @@ const LEFT_ALONE = [
   ["0,5", "0.5"],
   ["(2+√5)/3, (2-√5)/3", "(2 ± √5)/3"], // ± inside brackets
   ["x = (-3 + √17)/4, x = (-3 - √17)/4", "x = (-3 ± √17)/4"],
+  // Review round 2.
+  ["2e+1", "2e + 1"], // Euler's e, not scientific notation
+  ["5e-1", "5e - 1"],
+  ["y = 3; x = 2", "(2, 3)"],
+  ["(3, 4), (1, 2)", "(1, 2), (3, 4)"],
 ];
 
 test("G14: a sign flip or a wrong value is caught in units, %, °, $, ± and extra parts", () => {
@@ -151,6 +166,7 @@ test("the answer-key check still calls the same answer the same", () => {
   assert.equal(compareAnswers("(2 ± √5)/3", "(2+√5)/3, (2-√5)/3"), "same");
   assert.equal(compareAnswers("y = 4, x = 3", "x = 3, y = 4"), "same");
   assert.equal(compareAnswers("3.2e5", "320000"), "same");
+  assert.equal(compareAnswers("2e+1", "2e + 1"), "same");
 });
 
 test("a sign flip is caught at any size, with any unit the guard reads", () => {

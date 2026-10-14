@@ -79,8 +79,9 @@ function canonical(raw: string): string {
       .toLowerCase()
       // Scientific notation: "3.2x10^5" and "3.2e5" are numbers, not a
       // variable x or e (G14 review).
-      .replace(/(\d)\s*[x*]\s*10\s*\^/g, "$1*10^")
-      .replace(/(\d)e([+-]?\d+)(?![\d.])/g, "$1*10^($2)")
+      // Only as the whole answer. ("3.2e5" is tried both ways by readings():
+      // in an exponential answer "2e+1" is 2e + 1.)
+      .replace(/^([+-]?[\d.]+)\s*[x*]\s*10\s*\^/, "$1*10^")
       .trim()
   );
 }
@@ -439,6 +440,19 @@ function listText(raw: string): string {
     .trim();
 }
 
+/** Split at top-level commas, "or" and "and" -- never inside brackets, so
+ * "(1, 2), (3, 4)" is two points, not four fragments. */
+function topSplit(s: string, words = true): string[] {
+  let depth = 0;
+  let marked = "";
+  for (const c of s) {
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth--;
+    marked += c === "," && depth === 0 ? "\u0000" : c;
+  }
+  return marked.split(words ? /\u0000|\bor\b|\band\b/ : /\u0000|\band\b/).map((p) => p.trim());
+}
+
 /**
  * "x = 3, x = -3", "-3 or 3", "x = ±3", "(2 ± √5)/3": an answer that is a LIST
  * of values of ONE unknown, as its values (± written out as both). Null for a
@@ -460,7 +474,7 @@ function solutionList(raw: string): string[] | null {
     if (/,|\bor\b|\band\b|=/.test(body) || body.split("±").length !== 2) return null;
     return [body.replace("±", "+"), body.replace("±", "-")];
   }
-  const raw2 = s.split(/,|\bor\b|\band\b/).map((p) => p.trim());
+  const raw2 = topSplit(s);
   if (new Set(raw2.map(label).filter(Boolean)).size > 1) return null;
   const parts = raw2.map(value);
   if (parts.length < 2 || parts.some((p) => !p || p.includes("=") || !plainMath(p))) return null;
@@ -474,7 +488,7 @@ function system(raw: string): string[] | null {
   if (bracketed(raw)) return null;
   const s = listText(raw);
   if (NOTE.test(s) || /[<>≤≥≠!;±]/.test(s)) return null;
-  const parts = s.split(/,|\band\b/).map((p) => p.trim().match(/^([a-z])\s*=\s*(.+)$/));
+  const parts = topSplit(s, false).map((p) => p.match(/^([a-z])\s*=\s*(.+)$/));
   if (parts.length < 2 || parts.some((m) => !m || !plainMath(m[2]) || m[2].includes("="))) return null;
   const vars = parts.map((m) => m![1]);
   if (new Set(vars).size !== vars.length) return null;
@@ -563,9 +577,15 @@ function varies(f: string): boolean {
   return seen.some((v) => Math.abs(v - seen[0]) > 1e-9 * Math.max(1, Math.abs(v), Math.abs(seen[0])));
 }
 
-/** "120,150,180" is a number or a list of three numbers; both readings are
- * tried, and a comparison has to hold under each to count (G14 review). */
-const readings = (s: string) => (/^\s*[+-]?\d{1,3}(,\d{3})+\s*$/.test(s) ? [s, s.replace(/,/g, ", ")] : [s]);
+/** "120,150,180" is a number or a list of three numbers, and "3.2e5" is
+ * 320000 or 3.2·e·5; both readings are tried, and the guard fires only when
+ * the answers differ under every one (G14 review). */
+function readings(s: string): string[] {
+  if (/^\s*[+-]?\d{1,3}(,\d{3})+\s*$/.test(s)) return [s, s.replace(/,/g, ", ")];
+  const sci = s.trim().match(/^([+-]?\d*\.?\d+)e([+-]?\d+)$/i);
+  if (sci) return [s, `${sci[1]}*10^(${sci[2]})`];
+  return [s];
+}
 
 export function compareAnswers(a: string, b: string): Verdict {
   return readings(a).some((x) => readings(b).some((y) => compareRead(x, y) === "same")) ? "same" : "different";
@@ -638,9 +658,17 @@ function provablyDifferentRead(a: string, b: string): boolean {
     // The parts may be the other side's list written with ";": "x = 2; x = -2"
     // for "±2", "4; 5" for "4, 5", "x = 2; y = 3" for "(2, 3)". Compared as
     // lists (in any order) when both read as the same number of values.
-    const mi = itemsOf(many.join(", "));
+    // By unknown when both name them ("x = 4; y = 3" for "x = 3, y = 4" is
+    // caught, #155 review round 2); in any order only when both are one
+    // unknown's roots; otherwise by position, as an ordered pair is.
+    const joined = many.join(", ");
+    if (system(joined) && system(one)) return provablyDifferentOne(joined, one);
+    const ml = solutionList(joined);
+    const ol = solutionList(one);
+    if (ml && ol) return provablyDifferentOne(joined, one);
+    const mi = itemsOf(joined);
     const oi = itemsOf(one);
-    if (mi && oi && mi.length === oi.length) return mi.some((x) => oi.every((y) => provablyDifferentSingle(x, y)));
+    if (mi && oi && mi.length === oi.length) return mi.some((x, i) => provablyDifferentOne(x, oi[i]));
     if (provablyDifferentOne(many[0], one)) return true;
     // A value, "-3" or "y = -3" -- not a restriction ("x ≠ 0") or a relation.
     const value = (p: string) => {
@@ -674,14 +702,17 @@ function provablyDifferentOne(a: string, b: string): boolean {
   const lb = solutionList(b);
   if (la && lb) {
     if (la.length !== lb.length) return true;
-    return la.some((x) => lb.every((y) => provablyDifferentSingle(x, y)));
+    // An item may itself be a point: "(1, -2), (3, 4)". A point can only
+    // match a point, so a number never stands in for one.
+    const point = (x: string) => !!bracketed(x);
+    return la.some((x) => lb.every((y) => point(x) !== point(y) || provablyDifferentOne(x, y)));
   }
   if (la || lb) {
     const list = (la ?? lb)!;
     const single = la ? b : a;
     // A pair written with brackets ("(3, 4)" for "3, 4"): compared item by item.
     const pair = bracketed(single);
-    if (pair) return pair.items.length !== list.length || list.some((x) => pair.items.every((y) => provablyDifferentSingle(x, y)));
+    if (pair) return pair.items.length !== list.length || list.some((x, i) => provablyDifferentSingle(x, pair.items[i]));
     if (system(single)) return false;
     return plainMath(canonical(single)) && !NOTE.test(canonical(single)) && finalAnswer(single) !== "";
   }
