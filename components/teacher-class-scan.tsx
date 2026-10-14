@@ -28,6 +28,7 @@ import { deviceId, useScanSession } from "./use-scan-session";
 import {
   GRADING_STALE_MS,
   groupLayout,
+  pagesWithoutRow,
   inFlightMatches,
   isEmptySession,
   parseProgress,
@@ -582,6 +583,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setGroups(null);
   }
 
+  /** After a save: the class is saved, but these pages were never graded.
+   * They stay on screen as the next scan to grade; nothing else carries over. */
+  function keepForNextGrading(left: Page[][]) {
+    const count = left.flat().length;
+    setRemoteGrading(null);
+    setPaidIds(new Set());
+    setProgress(null);
+    setEdited([...left, []]);
+    setPageUploadIds([]);
+    setGroups(null);
+    setShownRun(null);
+    setDiscarded(new Set());
+    toast.warning(
+      count +
+        (count === 1 ? " page was" : " pages were") +
+        " scanned but not graded yet, so " +
+        (count === 1 ? "it is" : "they are") +
+        " kept here. Press Done to grade " +
+        (count === 1 ? "it." : "them."),
+      { duration: 12000 },
+    );
+  }
+
   function reset() {
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
@@ -1126,7 +1150,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     );
     setSaving(false);
     if (ok) {
-      reset();
+      // Pages no row covers -- the rest of a run that stopped part-way, or
+      // pages the other device added mid-grade -- are kept for the next
+      // grading instead of cleared with the rest (G1).
+      const left = pagesWithoutRow(piles, groups);
+      if (left.length) keepForNextGrading(left);
+      else reset();
       // Straight into grading by question, not the one-student-at-a-time list
       // further down: after confirming names Michael ended up working student
       // by student, which is the slow way through a class set.
@@ -1228,6 +1257,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const live = (groups ?? []).filter((g) => !discarded.has(g.key));
   // Papers the roster could not narrow to one student. The teacher answers
   // these; nothing is chosen for them, and nothing is saved until they have.
+  // Pages on screen that no row covers: kept for the next grading on save.
+  const notGraded = pagesWithoutRow(piles, groups).flat().length;
   const undecided = live.filter((g) => g.candidateIds.length > 0 || g.unassigned);
   // Two papers on one student. Not blocked -- a child really can hand in two
   // sheets -- but it is the shape a misread name makes, so it is said plainly
@@ -1697,6 +1728,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               {undecided.length} paper{undecided.length === 1 ? " needs" : "s need"} you to say
               whose {undecided.length === 1 ? "it is" : "they are"}. Choose a student for{" "}
               {undecided.length === 1 ? "it" : "each"}, or discard {undecided.length === 1 ? "it" : "them"}, and then save.
+            </p>
+          )}
+          {notGraded > 0 && (
+            <p className="key-notice" role="status">
+              {notGraded} scanned page{notGraded === 1 ? " is" : "s are"} not in any row above (grading
+              stopped part-way, or {notGraded === 1 ? "it was" : "they were"} added on your other device).{" "}
+              {notGraded === 1 ? "It stays" : "They stay"} here after you save, ready to grade.
             </p>
           )}
           <div className="review-heading-actions">

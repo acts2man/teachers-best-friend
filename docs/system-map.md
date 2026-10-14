@@ -340,7 +340,7 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1 (pages merged in mid-grade), G2, G12 and G17 are ways this rule breaks
+- **Open:** gaps G2, G12 and G17 are ways this rule breaks
   today. G3 is fixed in code (#140); the resume is guarded by
   `tests/invariants/scan-resume-layout.test.mjs` (`planResume`, `planRemainingBatches`,
   `inFlightMatches` in `lib/scan-session.ts` / `lib/teacher-class-scan.ts`).
@@ -546,10 +546,15 @@ reading the code, as marked. None has a test in the suite, because each test wou
     ungraded students (`planRemainingBatches`), waiting on an in-flight job only if it was
     sent for exactly those students (`inFlightMatches`). Pages added, removed, reordered or
     merged in from the other device now stop and ask (`askToRegrade`).
-  - **Still open (the G1 PR):** the other device's pages can be merged into the piles while
-    this device grades (`components/use-scan-session.ts` 409 handler applies even while
-    paused). The run grades its own copy, so those pages get no row on the matching screen
-    and are dropped on save with no message.
+  - **Fixed in code by the G1 PR (stacked on #140):** the other device's pages arriving
+    through the 409 retry are held until this device stops grading
+    (`components/use-scan-session.ts`, `pending`), then merged. And on save, pages no row
+    covers -- those, or the rest of a run that stopped part-way -- are kept on screen for the
+    next grading (`pagesWithoutRow`, `keepForNextGrading`) instead of cleared with the rest.
+    Guarded by `tests/invariants/scan-pages-not-dropped.test.mjs`.
+  - Reproduced 14 Oct: the wrong-student part of G1 was the name-split path (G3's
+    mechanism). With the teacher's own camera piles, group numbers follow the piles in
+    order, so a page added to a pile stayed with the right student even on main.
 - **G2. A front page with no name, in a stack without declared piles, joins the student before
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop

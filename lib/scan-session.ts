@@ -329,3 +329,22 @@ export function mergeSessions(server: ScanSession, local: ScanSession): ScanSess
 export function sessionFingerprint(s: ScanSession): string {
   return JSON.stringify(s);
 }
+
+/**
+ * The scanned pages no row on the matching screen covers, in their piles.
+ *
+ * A row exists only for a student the run graded. Pages without one are a
+ * run that stopped part-way ("confirm those, then press Done for the rest"),
+ * or pages the other device added while this one was grading (G1). Saving the
+ * class used to clear every pile, so those pages -- uploaded, never graded --
+ * vanished with no message. They are kept for the next grading instead.
+ * Pages of a discarded row are covered: the teacher set them aside on purpose.
+ */
+export function pagesWithoutRow(
+  piles: ScanPage[][],
+  groups: Pick<ResolvedGroup, "pageUploadIds">[] | null,
+): ScanPage[][] {
+  if (!groups) return [];
+  const covered = new Set(groups.flatMap((g) => g.pageUploadIds));
+  return piles.map((pile) => pile.filter((p) => !covered.has(p.bodyId))).filter((pile) => pile.length);
+}
