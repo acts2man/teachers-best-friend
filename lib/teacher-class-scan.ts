@@ -970,13 +970,21 @@ export type ConfirmedGroup = {
  * two DIFFERENT answers read for the same question go to the teacher as
  * Unsure, never silently one or the other.
  */
-export function mergeSplitGroups(first: StudentResponse[], second: StudentResponse[]): StudentResponse[] {
+export function mergeSplitGroups(
+  first: StudentResponse[],
+  second: StudentResponse[],
+  /** As for mergeStudentResponses: a grade the teacher confirmed is kept unless
+   * they chose to replace it (G5) -- `first` may already hold one, kept by the
+   * first group of this scan. */
+  replaceConfirmed = false,
+): StudentResponse[] {
   const byQuestion = new Map(second.map((r) => [r.questionId, r]));
   const read = (r?: StudentResponse) => (r?.finalAnswer?.trim() || r?.answer.trim() || "");
   const merged = first.map((a) => {
     const b = byQuestion.get(a.questionId);
     byQuestion.delete(a.questionId);
     if (!b) return a;
+    if (a.verified && !replaceConfirmed) return a;
     const ra = read(a);
     const rb = read(b);
     if (!rb) return a;
@@ -1057,7 +1065,7 @@ export function applyScannedGroups(
           // Merged with the first group, not with what was saved before the
           // scan: the last group used to win, so a correct front-page answer
           // became a blank from the back page (#125 review).
-          mergeSplitGroups(earlier, incoming)
+          mergeSplitGroups(earlier, incoming, replaceConfirmed)
         : mergeStudentResponses(a.responses.filter((r) => r.studentId === studentId), incoming, replaceConfirmed),
     );
     studentUploadIds[studentId] = [

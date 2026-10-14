@@ -1046,7 +1046,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // confirmed: ask before replacing any of them (G5).
     if (replaceConfirmed === undefined) {
       const onRoster = new Set(students.map((s) => s.id));
-      const scannedIds = kept.map((g) => g.studentId).filter((id): id is string => !!id && onRoster.has(id));
+      // Only rows the save will actually apply (applyScannedGroups skips a row
+      // with no pages or no answers).
+      const scannedIds = kept
+        .filter((g) => g.pageUploadIds.length && g.responses.length)
+        .map((g) => g.studentId)
+        .filter((id): id is string => !!id && onRoster.has(id));
       if (confirmedGradesAtRisk(a, scannedIds).answers > 0) {
         setAskRescan(scannedIds);
         return;

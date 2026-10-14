@@ -64,8 +64,11 @@ import {
   studentReview,
   pointsText,
   withReteachGroup,
+  confirmedGradesAtRisk,
+  mergeStudentResponses,
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
+import { ConfirmRescan } from "./confirm-reread";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { errorTypesFor } from "@/lib/error-types";
 import { safePdfText } from "@/lib/pdf-text";
@@ -1142,6 +1145,8 @@ export function StudentResponseReview({
   const [perStudentOpen, setPerStudentOpen] = useState(!!params.get("student"));
   const [filter, setFilter] = useState("flagged");
   const [limit, setLimit] = useState(12);
+  // Pages waiting while the teacher is asked about their confirmed grades (G5).
+  const [askRescan, setAskRescan] = useState<File[] | null>(null);
   const [uploading, setUploading] = useState(false),
     [status, setStatus] = useState(""),
     [notice, setNotice] = useState(""),
@@ -1259,13 +1264,22 @@ export function StudentResponseReview({
     }
   }
 
-  async function uploadPages(list: FileList | File[] | null) {
+  /** `replaceConfirmed`: the teacher's answer when this student already has
+   * confirmed grades (G5); undefined until asked. Asked before anything is
+   * uploaded or read, so cancelling costs nothing. */
+  async function uploadPages(list: FileList | File[] | null, replaceConfirmed?: boolean) {
     if (!list?.length || !selected || uploading) return;
     if (!prep.ready) {
       toast.error("Confirm the standards and answer key before adding student work.");
       return;
     }
     const incoming = Array.from(list);
+    if (replaceConfirmed === undefined && confirmedGradesAtRisk(a, [selected]).answers > 0) {
+      setAskRescan(incoming);
+      if (input.current) input.current.value = "";
+      if (camera.current) camera.current.value = "";
+      return;
+    }
     if (incoming.length > 6) {
       toast.error("Add up to six pages for one student at a time.");
       return;
@@ -1322,9 +1336,17 @@ export function StudentResponseReview({
         await onSave(
           {
             ...withFiles,
+            // Layered over what the student already had, like the scan
+            // screens: confirmed grades stay unless the teacher chose to
+            // replace them (G5), and a page that cannot see a question keeps
+            // the answer an earlier page gave.
             responses: [
               ...a.responses.filter((r) => r.studentId !== selected),
-              ...(d.result.responses as StudentResponse[]),
+              ...mergeStudentResponses(
+                a.responses.filter((r) => r.studentId === selected),
+                d.result.responses as StudentResponse[],
+                replaceConfirmed === true,
+              ),
             ],
           },
           "Student work is ready to review",
@@ -1340,6 +1362,11 @@ export function StudentResponseReview({
       }
     } else {
       const parsed = parseAnswerKey(pdfText, activeQuestions(a));
+      // A confirmed grade is not overwritten by a typed-PDF read unless the
+      // teacher chose to replace (G5).
+      if (replaceConfirmed !== true)
+        for (const r of a.responses)
+          if (r.studentId === selected && r.verified) delete parsed[r.questionId];
       const captured = Object.entries(parsed).map(([questionId, answer]) => ({
         id: crypto.randomUUID(),
         questionId,
@@ -1517,6 +1544,21 @@ export function StudentResponseReview({
               <Camera size={16} />
               Take a photo
             </Action>
+            <ConfirmRescan
+              risk={confirmedGradesAtRisk(a, selected ? [selected] : [])}
+              open={!!askRescan}
+              onCancel={() => setAskRescan(null)}
+              onKeep={() => {
+                const files = askRescan;
+                setAskRescan(null);
+                void uploadPages(files, false);
+              }}
+              onReplace={() => {
+                const files = askRescan;
+                setAskRescan(null);
+                void uploadPages(files, true);
+              }}
+            />
             <input
               ref={input}
               type="file"

@@ -719,11 +719,16 @@ export function mergeStudentResponses(
   replaceConfirmed = false,
 ): StudentResponse[] {
   const before = new Map(existing.map((r) => [r.questionId, r]));
-  return incoming.map((r) => {
+  const merged = incoming.map((r) => {
     const prior = before.get(r.questionId);
     if (prior?.verified && !replaceConfirmed) return prior;
     return !r.answer.trim() && prior?.answer.trim() ? prior : r;
   });
+  if (replaceConfirmed) return merged;
+  // Kept means kept: a confirmed grade on a question the new read does not
+  // cover (an excluded question, a rubric trait) is not dropped either.
+  const covered = new Set(incoming.map((r) => r.questionId));
+  return [...merged, ...existing.filter((r) => r.verified && !covered.has(r.questionId))];
 }
 
 /**

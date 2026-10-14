@@ -133,14 +133,16 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 
 1. Rows kept: `!discarded && g.name.trim()` (`:1021`). An empty name is dropped silently;
    see gap G6.
-2. `applyScannedGroups(a, students, classroom.id, rows)` (`:1040`; lib `lib/teacher-class-scan.ts:997-1089`):
+2. If any scanned student already has grades the teacher confirmed, `saveAll` first asks
+   (`confirmedGradesAtRisk`, `ConfirmRescan`): keep them / replace them / cancel (G5).
+   Then `applyScannedGroups(a, students, classroom.id, rows, { replaceConfirmed })`
+   (`lib/teacher-class-scan.ts`, `applyScannedGroups`):
    - creates a student for each row with no `studentId`, or whose student has been removed
-     since (`:1013`, `:1022-1041`);
-   - maps verdicts through `normalizeRecognizedResponses` (`lib/teacher-workflow.ts:496-556`);
+     since;
+   - maps verdicts through `normalizeRecognizedResponses` (`lib/teacher-workflow.ts`);
    - the first row for a student is merged with **previously saved** responses through
-     `mergeStudentResponses` (`lib/teacher-workflow.ts:712-721`). **A re-read answer replaces
-     a teacher-confirmed one** (gap G5). Two rows of one scan are merged with `mergeSplitGroups`
-     (`:973-995`);
+     `mergeStudentResponses`, which keeps confirmed grades unless `replaceConfirmed`; two rows
+     of one scan are merged with `mergeSplitGroups`, which keeps them too;
    - `studentOrder` is appended (`:1074-1075`).
 3. The payload is the **whole workspace**:
    `{...w, students: reconcileEvidence(keepOtherClassStudents(w.students, students, result.students), result.assessment), assessments: w.assessments.map(...)}`
@@ -387,7 +389,8 @@ unassigned is always allowed.
   re-read button must go through the confirmation.
 - **Re-scanning** students' work (G5, fixed in code by the G5 PR): `mergeStudentResponses` and
   `applyScannedGroups` keep confirmed (verified) grades unless told `replaceConfirmed`; the class
-  scan's `saveAll` and the one-student "Check student work" ask first with the exact count
+  scan's `saveAll`, the one-student "Check student work" and the review screen's "Upload
+  pages" ask first with the exact count
   (`confirmedGradesAtRisk`, `rescanWarning`, `ConfirmRescan` in `components/confirm-reread.tsx`):
   keep my confirmed grades / replace with the new scan / cancel. Guarded by
   `tests/invariants/rescan-keeps-confirmed.test.mjs`.
@@ -559,10 +562,14 @@ reading the code, as marked. None has a test in the suite, because each test wou
   Two saves carrying the current revision that arrive together both pass; the second
   whole-workspace replace wins, and whatever the first added is deleted. The fix is for
   `sync_workspace` to take the expected revision and check it under a row lock.
-- **G5. FIXED in code (G5 PR, awaiting review). Re-scanning a student replaced their
-  teacher-confirmed grades with no warning** (R6). Confirmed grades are now kept by default;
-  both scan screens ask before replacing them. `tests/teacher-class-scan.test.mjs`, which had
-  pinned the silent replacement as intended, was changed with a note.
+- **G5. FIXED in code (#147, awaiting review). Re-scanning a student replaced their
+  teacher-confirmed grades with no warning** (R6). Confirmed grades are now kept by default
+  (`mergeStudentResponses`, `mergeSplitGroups`, including grades on questions the new read
+  does not cover), and all three paths that re-read a student's work ask first: the class
+  scan's Save, "Check student work", and the review screen's "Upload pages" / "Take a
+  photo" (`components/teacher-review.tsx` `uploadPages`, which now also layers pages instead
+  of replacing every answer). `tests/teacher-class-scan.test.mjs`, which had pinned the silent
+  replacement as intended, was changed with a note.
 - **G6. A matching-screen row with an empty name is silently not saved**
   (`components/teacher-class-scan.tsx:1021`).
   - It is reachable: the second half of a split is named `two.detectedName || ""` (`:1131`).
@@ -614,3 +621,8 @@ reading the code, as marked. None has a test in the suite, because each test wou
   `class_scan_sessions` keeps transcribed answers and names read for 7 days; the localStorage
   draft is expired only when it is read; camera shots in IndexedDB never expire. All of them
   sit on shared school devices. Check `docs/student-data-flow.md` against this.
+- **G18. "Replace writing" discards confirmed rubric scores with no count or confirmation**
+  (R6; #147 review). `components/teacher-assessments.tsx` re-scores an essay through
+  `replaceWritingResponses`. The button says "Replace", but a teacher's confirmed trait scores
+  go without the #134/#147-style question. Manual answer entry in `components/teacher-scan.tsx`
+  also overwrites confirmed answers with what the teacher types (deliberate, noted).
