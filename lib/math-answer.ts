@@ -77,6 +77,10 @@ function canonical(raw: string): string {
       .replace(/[[{]/g, "(")
       .replace(/[\]}]/g, ")")
       .toLowerCase()
+      // Scientific notation: "3.2x10^5" and "3.2e5" are numbers, not a
+      // variable x or e (G14 review).
+      .replace(/(\d)\s*[x*]\s*10\s*\^/g, "$1*10^")
+      .replace(/(\d)e([+-]?\d+)(?![\d.])/g, "$1*10^($2)")
       .trim()
   );
 }
@@ -91,7 +95,8 @@ export function finalAnswer(raw: string): string {
   let s = canonical(raw);
   // "x is 5" names the answer the way "x = 5" does; without this the note
   // split below cut it at "is", and "x is 5" and "x is 6" were both "x" (G14).
-  s = s.replace(/^([a-z])\s+(is|equals)\s+/, "$1 = ");
+  // Only when math follows: "A is correct" stays words (#152 review).
+  s = s.replace(/^([a-z])\s+(is|equals)\s+(?=[-+.(\d√]|sqrt|pi)/, "$1 = ");
   // Notes after a separator: "; x=5 is excluded", ", with x ≠ 0", "(x ≠ 2)".
   s = s.split(/;|\bwith\b|\bwhere\b|\bfor\b|\bno extraneous\b|\bexcluded\b|\bextraneous\b|\bis\b|\bbecause\b|\bequivalently\b|,\s*or\b|\brestrictions?\b/)[0];
   // A second clause naming another value: "x = 2, x = 0 is extraneous".
@@ -424,31 +429,65 @@ const plainMath = (s: string) => /\d/.test(s) && !/[a-z]{2,}/.test(s.replace(/sq
  * list of answers. */
 const NOTE = /\b(is|are|extraneous|excluded|rejected|because|for|where|with|when|restrictions?|not|no)\b/;
 
+/** The answer with a thousands comma read as part of the number ("1,200"),
+ * and an explicit "+/-" (or a leading "+-") read as ±. "4 + -2i" is not ±. */
+function listText(raw: string): string {
+  return canonical(raw)
+    .replace(/\+\s*\/\s*-/g, "±")
+    .replace(/(^|=)\s*\+-/g, "$1±")
+    .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
+    .trim();
+}
+
 /**
- * "x = 3, x = -3", "-3 or 3", "x = ±3", "2 ± √5": an answer that is a LIST of
- * values, as its values (± written out as both). Null for a single value, for
- * anything with a note, and for a pair or interval ("(1, -3)"), which
- * bracketed() reads instead. A thousands comma ("1,200") is not a list.
+ * "x = 3, x = -3", "-3 or 3", "x = ±3", "(2 ± √5)/3": an answer that is a LIST
+ * of values of ONE unknown, as its values (± written out as both). Null for a
+ * single value, for anything with a note, for a pair or interval ("(1, -3)"),
+ * which bracketed() reads instead, and for a system ("x = 3, y = 4"), which
+ * system() reads -- its values are not interchangeable. A thousands comma
+ * ("1,200") or a decimal comma ("3,5") is not a list.
  */
 function solutionList(raw: string): string[] | null {
   if (bracketed(raw)) return null;
-  const s = canonical(raw)
-    .replace(/\+\s*\/\s*-|\+\s*-(?=\s*[\d(a-z])/g, "±")
-    .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
-    .trim();
-  if (NOTE.test(s) || /[<>≤≥≠!;]/.test(s)) return null;
+  const s = listText(raw);
+  if (NOTE.test(s) || /[<>≤≥≠!;]/.test(s) || /^[+-]?\d+,\d{1,2}$/.test(s)) return null;
+  const label = (p: string) => p.match(/^([a-z])\s*=/)?.[1];
   const value = (p: string) => p.replace(/^[a-z]\s*=\s*/, "").replace(/\s+/g, "");
-  const pm = s.split("±");
-  if (pm.length === 2 && !/,|\bor\b|\band\b/.test(s)) {
-    const base = value(pm[0]);
-    const off = pm[1].replace(/\s+/g, "");
-    if (!off || /=/.test(base + off)) return null;
-    return base ? [`${base}+(${off})`, `${base}-(${off})`] : [`(${off})`, `-(${off})`];
+  if (s.includes("±")) {
+    // One ±, anywhere -- inside brackets too: "(2 ± √5)/3" is (2+√5)/3 and
+    // (2-√5)/3, so the sign itself is replaced rather than the text split.
+    const body = value(s);
+    if (/,|\bor\b|\band\b|=/.test(body) || body.split("±").length !== 2) return null;
+    return [body.replace("±", "+"), body.replace("±", "-")];
   }
-  if (pm.length > 1) return null;
-  const parts = s.split(/,|\bor\b|\band\b/).map((p) => value(p.trim()));
+  const raw2 = s.split(/,|\bor\b|\band\b/).map((p) => p.trim());
+  if (new Set(raw2.map(label).filter(Boolean)).size > 1) return null;
+  const parts = raw2.map(value);
   if (parts.length < 2 || parts.some((p) => !p || p.includes("=") || !plainMath(p))) return null;
   return parts;
+}
+
+/** "x = 3, y = 4", "y = 4 and x = 3": a system's values by unknown, in the
+ * unknowns' order. Null unless every part is "<letter> = <value>" with a
+ * different letter. */
+function system(raw: string): string[] | null {
+  if (bracketed(raw)) return null;
+  const s = listText(raw);
+  if (NOTE.test(s) || /[<>≤≥≠!;±]/.test(s)) return null;
+  const parts = s.split(/,|\band\b/).map((p) => p.trim().match(/^([a-z])\s*=\s*(.+)$/));
+  if (parts.length < 2 || parts.some((m) => !m || !plainMath(m[2]) || m[2].includes("="))) return null;
+  const vars = parts.map((m) => m![1]);
+  if (new Set(vars).size !== vars.length) return null;
+  return parts
+    .map((m) => [m![1], m![2].replace(/\s+/g, "")] as const)
+    .sort((x, y) => x[0].localeCompare(y[0]))
+    .map(([v, x]) => v + "=" + x);
+}
+
+/** The values of a list, a pair or a system, or null for a single answer. */
+function itemsOf(raw: string): string[] | null {
+  const sys = system(raw);
+  return solutionList(raw) ?? bracketed(raw)?.items ?? (sys ? sys.map((p) => p.slice(2)) : null);
 }
 
 /** Two lists of values are the same answer: the same values, in any order. */
@@ -477,7 +516,7 @@ function quantity(f: string): { value: number; unit: string } | null {
   const m = s.match(/^([+-]?)(\d+(?:\.\d+)?|\.\d+)(?:\/(\d+(?:\.\d+)?))?(.*)$/);
   if (!m) return null;
   const rest = m[4];
-  if (unit ? rest : !/^(%|°[cf]?|[a-z]{1,8}(\^[23])?(\/[a-z]{1,3}(\^[23])?)?)$/.test(rest)) return null;
+  if (unit ? rest : !/^(%|°[cf]?|[a-z]{1,12}(\^[23])?(\/[a-z]{1,3}(\^[23])?)?)$/.test(rest)) return null;
   if (!unit && !rest) return null;
   const value = (m[1] === "-" ? -1 : 1) * Number(m[2]) / (m[3] ? Number(m[3]) : 1);
   return Number.isFinite(value) ? { value, unit: unit || rest } : null;
@@ -496,7 +535,9 @@ function quantitiesDiffer(fa: string, fb: string): boolean | null {
   const q = qa || qb;
   const n = qa ? plain(fb) : qb ? plain(fa) : null;
   if (!q || n === null || !Number.isFinite(n)) return null;
-  return q.value !== 0 && close(q.value, -n) ? true : null;
+  // Decided here either way: falling through would read the unit's letters as
+  // variables, and "12" would "differ" from "12 m" (#152 review).
+  return q.value !== 0 && close(q.value, -n);
 }
 
 /** A plain number or fraction ("-3", "15/2") as a number. */
@@ -522,7 +563,15 @@ function varies(f: string): boolean {
   return seen.some((v) => Math.abs(v - seen[0]) > 1e-9 * Math.max(1, Math.abs(v), Math.abs(seen[0])));
 }
 
+/** "120,150,180" is a number or a list of three numbers; both readings are
+ * tried, and a comparison has to hold under each to count (G14 review). */
+const readings = (s: string) => (/^\s*[+-]?\d{1,3}(,\d{3})+\s*$/.test(s) ? [s, s.replace(/,/g, ", ")] : [s]);
+
 export function compareAnswers(a: string, b: string): Verdict {
+  return readings(a).some((x) => readings(b).some((y) => compareRead(x, y) === "same")) ? "same" : "different";
+}
+
+function compareRead(a: string, b: string): Verdict {
   const parts = pairedParts(a, b);
   if (parts) return parts.every(([x, y]) => compareOne(x, y) === "same") ? "same" : "different";
   // Both multi-part, but a different number of parts: not the same answer.
@@ -536,6 +585,10 @@ function compareOne(a: string, b: string): Verdict {
   const ia = inequality(a);
   const ib = inequality(b);
   if (ia && ib) return ia.v === ib.v && ia.op === ib.op && itemSame(ia.rhs, ib.rhs) ? "same" : "different";
+  // A system is the same answer only with the same value for each unknown.
+  const sa = system(a);
+  const sb = system(b);
+  if (sa && sb) return sa.length === sb.length && sa.every((x, i) => x[0] === sb[i][0] && compareSingle(x.slice(2), sb[i].slice(2)) === "same") ? "same" : "different";
   // A list of values ("x = 3, x = -3", "±3") is the same answer only as the
   // same list; it used to be cut to its first value (G14).
   const la = solutionList(a);
@@ -560,6 +613,10 @@ function compareSingle(a: string, b: string): Verdict {
  * where this returns false and the model's verdict stands.
  */
 export function provablyDifferent(a: string, b: string): boolean {
+  return readings(a).every((x) => readings(b).every((y) => provablyDifferentRead(x, y)));
+}
+
+function provablyDifferentRead(a: string, b: string): boolean {
   // Part by part when both are multi-part with the same count: a sign flip in
   // the second part ("y=4; (0,-10/3)" for "y=4; (0,10/3)") is a difference,
   // not hidden behind an equal first part.
@@ -578,6 +635,12 @@ export function provablyDifferent(a: string, b: string): boolean {
   // is excluded") is words, not a value, and stays a single answer.
   if (multiPart(a) !== multiPart(b)) {
     const [many, one] = multiPart(a) ? [splitParts(a), b] : [splitParts(b), a];
+    // The parts may be the other side's list written with ";": "x = 2; x = -2"
+    // for "±2", "4; 5" for "4, 5", "x = 2; y = 3" for "(2, 3)". Compared as
+    // lists (in any order) when both read as the same number of values.
+    const mi = itemsOf(many.join(", "));
+    const oi = itemsOf(one);
+    if (mi && oi && mi.length === oi.length) return mi.some((x) => oi.every((y) => provablyDifferentSingle(x, y)));
     if (provablyDifferentOne(many[0], one)) return true;
     // A value, "-3" or "y = -3" -- not a restriction ("x ≠ 0") or a relation.
     const value = (p: string) => {
@@ -601,6 +664,12 @@ function provablyDifferentOne(a: string, b: string): boolean {
   // "3" for "±3", or "x = 3, x = 5" for "x = ±3": a value missing or a value
   // that is not in the key's list (G14). A list against a single value is
   // only provable when the single side is plainly a value.
+  // A system: the same unknowns with a value that differs ("x=4, y=3" for
+  // "x=3, y=4"). Different unknowns are not provable.
+  const sa = system(a);
+  const sb = system(b);
+  if (sa && sb)
+    return sa.length === sb.length && sa.every((x, i) => x[0] === sb[i][0]) && sa.some((x, i) => provablyDifferentSingle(x.slice(2), sb[i].slice(2)));
   const la = solutionList(a);
   const lb = solutionList(b);
   if (la && lb) {
@@ -608,7 +677,12 @@ function provablyDifferentOne(a: string, b: string): boolean {
     return la.some((x) => lb.every((y) => provablyDifferentSingle(x, y)));
   }
   if (la || lb) {
+    const list = (la ?? lb)!;
     const single = la ? b : a;
+    // A pair written with brackets ("(3, 4)" for "3, 4"): compared item by item.
+    const pair = bracketed(single);
+    if (pair) return pair.items.length !== list.length || list.some((x) => pair.items.every((y) => provablyDifferentSingle(x, y)));
+    if (system(single)) return false;
     return plainMath(canonical(single)) && !NOTE.test(canonical(single)) && finalAnswer(single) !== "";
   }
   return provablyDifferentSingle(a, b);
@@ -620,7 +694,10 @@ function provablyDifferentSingle(a: string, b: string): boolean {
   if (!fa || !fb || fa === fb) return false;
   // A multiple-choice answer ("D", "D. 8,662", "b)") is a choice, not
   // arithmetic: "d.8662" would otherwise read as d times 0.8662.
-  if (/^[a-e]$|^[a-z][.)]/.test(fa) || /^[a-e]$|^[a-z][.)]/.test(fb)) return false;
+  // Only against a number or another choice: "-a" for "a" is still a sign.
+  const choice = (f: string) => /^[a-e]$|^[a-z][.)]/.test(f);
+  const number = (f: string) => /^[+-]?[\d.]+$/.test(f);
+  if ((choice(fa) && (choice(fb) || number(fb))) || (choice(fb) && number(fa))) return false;
   // Units, %, °, $: "-12" for "12 cm³" (G14). The evaluator reads "cm" as
   // two variables and gave up.
   const units = quantitiesDiffer(fa, fb);

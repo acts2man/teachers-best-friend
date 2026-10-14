@@ -343,7 +343,7 @@ unassigned is always allowed.
 - **Enforced by:**
   - Credit comes **only** from the model's `match`, mapped in `normalizeRecognizedResponses`
     (`lib/teacher-workflow.ts:496-556`).
-  - A match is taken away when `provablyDifferent` says so (`lib/math-answer.ts:444`, used at
+  - A match is taken away when `provablyDifferent` says so (`lib/math-answer.ts:615`, used at
     `teacher-workflow.ts:508-509`).
   - A question that is missing, reported twice, or short of parts becomes Unsure
     (`teacher-workflow.ts:518-520`).
@@ -355,12 +355,13 @@ unassigned is always allowed.
     fractions, LaTeX `\frac`/`\dfrac`/mixed numbers, Unicode minus and `x =` prefixes, plus a
     check that skipped answers go to Unsure;
   - `tests/sign-flip-latex.test.mjs`, `tests/grading-verdicts.test.mjs`,
-    `tests/confirm-matches-confidence.test.mjs`.
+    `tests/confirm-matches-confidence.test.mjs`;
+  - `tests/sign-guard-units-and-parts.test.mjs` (G14): units, %, °, $, ±, lists, systems,
+    extra parts, thousands commas and a variable on one side only, plus the answers that must
+    NOT be flagged.
 - **NO TEST YET:**
   - "never blank when written": a model `blank` verdict on an answer that has text still wipes
-    the text (gap G13);
-  - (G14, units, %, °, $, ±, extra parts, thousands commas and a variable on one side only, is
-    guarded by `tests/sign-guard-units-and-parts.test.mjs`.)
+    the text (gap G13).
 
 **R5. Grading one student or group never changes another's grade.**
 - **Why:** 12 Oct 2026 (#126 round 3, Ricky's question 8). "Grade on their own" lived only in
@@ -602,18 +603,27 @@ reading the code, as marked. None has a test in the suite, because each test wou
   photo shows the teacher it was not blank.
 - **G14. The sign guard was off for keys with units, %, °, ±, `$`, a second part, thousands
   commas, or a variable on one side only** (R4). **Closed** by the G14 PR.
-  - `provablyDifferent` now reads a number with a one-word unit, `%`, `°` or `$`; a `±` or
-    "x = 3, x = -3" as a list of values; "9,487" as a number; and a constant against an
-    expression that changes with its variable ("5" for "5/x").
+  - `provablyDifferent` now reads:
+    - a number with a one-word unit, `%`, `°` or `$`;
+    - a `±` (anywhere, brackets included) or "x = 3, x = -3" as a list of values of one
+      unknown, and "x = 3, y = 4" as a system (values by unknown);
+    - "9,487" as a number (and "120,150,180" both ways, flagging only if both readings
+      differ);
+    - scientific notation;
+    - a constant against an expression that changes with its variable ("5" for "5/x").
   - A unit left off is caught only as an exact sign flip ("-12" for "12 cm"), never as a
     different number (it may be another unit); different units are never compared.
-  - Words, multiple-choice letters ("D", "D. 8,662"), key notes ("x = 15/2; x = 5 is
-    excluded") and restrictions ("x = 2; x ≠ 0") are left to the model's verdict, as before.
-  - `compareAnswers` (the answer-key check) no longer calls "x is 5" and "x is 6", or
-    "x = 3, x = -3" and "x = 3", the same.
+  - Left to the model's verdict, as before: words, multiple-choice letters against a number
+    or another choice ("D", "D. 8,662"), key notes ("x = 15/2; x = 5 is excluded"),
+    restrictions ("x = 2; x ≠ 0"), a point against a system, and a list written with ";"
+    against the same list written with "," or brackets.
+  - `compareAnswers` (the answer-key check) no longer calls "x is 5" and "x is 6",
+    "x = 3, x = -3" and "x = 3", or "x=3, y=4" and "x=3, y=5" the same.
   - Measured on 14 Oct against production's saved answers (read-only): of 53 distinct answers
     marked correct, 0 are newly sent to Unsure; of 5 sampled wrong ones, the guard would
     catch 5 (it caught 1).
+  - Not covered: a mixed number written with a space ("2 1/2") still does not equal "5/2"
+    (as on `main`).
 - **G15. Camera shots are deleted from the device before they upload**
   (`components/scan-camera.tsx:671`, then upload in `components/teacher-class-scan.tsx:544-573`).
   An upload failing partway loses the remaining pages.

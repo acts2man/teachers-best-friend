@@ -44,6 +44,16 @@ const CAUGHT = [
   ["-30.14", "30.14 years"],
   ["9,587", "9,487"], // a thousands comma: the evaluator could not read it
   ["1,450", "550"],
+  // From the review of this PR.
+  ["x=4, y=3", "x=3, y=4"], // a system with its values swapped
+  ["x = 3, y = 5", "x = 3, y = 4"],
+  ["-a", "a"], // a single-letter answer is a variable, not a choice, against itself
+  ["-b", "b"],
+  ["2c", "c"],
+  ["a+1", "a"],
+  ["a", "-a"],
+  ["-8", "8 centimeters"],
+  ["(2+√5)/3", "(2 ± √5)/3"], // one root of two
 ];
 
 const LEFT_ALONE = [
@@ -77,6 +87,35 @@ const LEFT_ALONE = [
   ["t >= 2", "x >= 2"],
   ["2; 3", "2; 3"],
   ["(1, -3)", "(1, -3)"],
+  // From the review of this PR.
+  ["12", "12 m"], // a one-letter unit left off is not a variable
+  ["500", "500 g"],
+  ["7", "7 h"],
+  ["45", "45 s"],
+  ["3", "3 L"],
+  ["12", "12 m²"],
+  ["3.5", "3.5 m/s"],
+  ["9.8", "9.8 m/s^2"],
+  ["x = 3, y = 4", "(3, 4)"], // a system and a point, written two ways
+  ["3, 4", "(3,4)"],
+  ["(3,4)", "x=3, y=4"],
+  ["2 and 3", "(2, 3)"],
+  ["y = 4, x = 3", "x = 3, y = 4"],
+  ["±2", "x = 2; x = -2"], // parts against a list
+  ["2, -2", "2; -2"],
+  ["x = 2 or x = -2", "x = 2; x = -2"],
+  ["4; 5", "4, 5"],
+  ["(2, 3)", "x = 2; y = 3"],
+  ["x = 2; y = 3", "(2, 3)"],
+  ["120,150,180", "120, 150, 180"], // a list written without spaces
+  ["100,200", "100, 200"],
+  ["3.2x10^5", "320,000"], // scientific notation
+  ["3.2e5", "320000"],
+  ["4-2i", "4 + -2i"], // "+ -" is not ±
+  ["3,5", "3.5"], // a decimal comma
+  ["0,5", "0.5"],
+  ["(2+√5)/3, (2-√5)/3", "(2 ± √5)/3"], // ± inside brackets
+  ["x = (-3 + √17)/4, x = (-3 - √17)/4", "x = (-3 ± √17)/4"],
 ];
 
 test("G14: a sign flip or a wrong value is caught in units, %, °, $, ± and extra parts", () => {
@@ -91,6 +130,11 @@ test("G14: the answer-key check no longer calls different answers the same", () 
   assert.equal(compareAnswers("x is 5", "x is 6"), "different");
   assert.equal(compareAnswers("x = 3, x = -3", "x = 3"), "different");
   assert.equal(compareAnswers("±3", "3"), "different");
+  // From the review of this PR.
+  assert.equal(compareAnswers("x=3, y=4", "x=4, y=3"), "different");
+  assert.equal(compareAnswers("x = 3, y = 4", "x = 3, y = 5"), "different");
+  assert.equal(compareAnswers("(2 ± √5)/3", "2 + √5/3, 2 - √5/3"), "different");
+  assert.equal(compareAnswers("A is correct", "B is correct"), "different");
 });
 
 test("the answer-key check still calls the same answer the same", () => {
@@ -99,6 +143,14 @@ test("the answer-key check still calls the same answer the same", () => {
   assert.equal(compareAnswers("x = -3 or x = 3", "x = 3, x = -3"), "same");
   assert.equal(compareAnswers("x = 2, x = 0 is extraneous", "x = 2"), "same");
   assert.equal(compareAnswers("x = 15/2; x = 5 is excluded", "15/2"), "same");
+  // From the review of this PR.
+  assert.equal(compareAnswers("120, 150, 180", "120,150,180"), "same");
+  assert.equal(compareAnswers("4 + -2i", "4-2i"), "same");
+  assert.equal(compareAnswers("x + -3", "x-3"), "same");
+  assert.equal(compareAnswers("B", "B is correct"), "same");
+  assert.equal(compareAnswers("(2 ± √5)/3", "(2+√5)/3, (2-√5)/3"), "same");
+  assert.equal(compareAnswers("y = 4, x = 3", "x = 3, y = 4"), "same");
+  assert.equal(compareAnswers("3.2e5", "320000"), "same");
 });
 
 test("a sign flip is caught at any size, with any unit the guard reads", () => {
