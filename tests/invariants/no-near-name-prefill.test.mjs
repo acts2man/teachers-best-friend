@@ -72,6 +72,41 @@ test("exact and normal matches are still pre-filled", () => {
   }
 });
 
+test("a surname near-variant is a suggestion too (#141 review)", () => {
+  const roster2 = [student("garcia", "Maria Garcia"), student("lee", "Ana Lee"), student("kim", "Daniel Kim"), student("smith", "Michael Smith")];
+  for (const written of ["Maria Garza", "Maria Gardner", "Ana Lewis", "Ana Leon", "Daniel Kin", "Mike Smyth"]) {
+    const r = C.resolveScannedGroups([[0]], [{ page: 0, name: written, confidence: 95 }], [], ["p"], roster2)[0];
+    assert.equal(r.studentId, null, `${written} was pre-filled as ${r.studentId}`);
+  }
+});
+
+test("a short form two names share, or a given name in its own right, never pre-fills a sibling (#141 review)", () => {
+  // Only ONE of the two is on the roster: the other child is the sibling or
+  // the new student the paper may really belong to.
+  for (const [rostered, written] of [
+    ["Samantha Lee", "Sam Lee"],
+    ["Alexandra Ruiz", "Alex Ruiz"],
+    ["Patricia Wong", "Pat Wong"],
+    ["Katherine Diaz", "Kate Diaz"],
+    ["William Ortiz", "Liam Ortiz"],
+    ["Leonardo Cruz", "Leo Cruz"],
+    ["Jackson Reed", "Jack Reed"],
+    ["Isabella Moss", "Bella Moss"],
+    ["Nathaniel Fox", "Nathan Fox"],
+    ["Chris Lee", "Christopher Lee"], // the roster holds a short form two names share
+  ]) {
+    const r = C.resolveScannedGroups([[0]], [{ page: 0, name: written, confidence: 95 }], [], ["p"], [student("x", rostered)])[0];
+    assert.equal(r.studentId, null, `${written} was pre-filled as ${rostered}`);
+  }
+});
+
+test("a short form of exactly one name still pre-fills, either way round", () => {
+  for (const [rostered, written] of [["Michael Smith", "Mike Smith"], ["Mike Smith", "Michael Smith"], ["Guadalupe Rios", "Lupe Rios"]]) {
+    const r = C.resolveScannedGroups([[0]], [{ page: 0, name: written, confidence: 95 }], [], ["p"], [student("x", rostered)])[0];
+    assert.equal(r.studentId, "x", `${written} should pre-fill ${rostered}`);
+  }
+});
+
 test("a shaky read is still never pre-filled, whatever the name", () => {
   assert.equal(row("Ana Lee", 50).studentId, null);
 });

@@ -554,93 +554,82 @@ const NICKNAMES: string[][] = [
  */
 const SHORT_FORMS: Record<string, string[]> = {
   michael: ["mike", "mikey"],
-  alexander: ["alex", "xander"],
-  alexandra: ["alex", "alexa"],
-  alejandro: ["ale", "alex"],
-  alejandra: ["ale"],
-  christopher: ["chris", "topher"],
+  christopher: ["topher"],
   christina: ["tina", "chrissy"],
   christine: ["tina", "chrissy"],
-  daniel: ["dan", "danny"],
-  daniela: ["dani"],
-  daniella: ["dani"],
+  daniel: ["danny"],
   david: ["dave", "davey"],
   anthony: ["tony"],
-  antonio: ["tony", "tono"],
   joseph: ["joe", "joey"],
   jose: ["pepe"],
   joshua: ["josh"],
   matthew: ["matt", "matty"],
-  nicholas: ["nick", "nicky", "nico"],
-  nicolas: ["nick", "nicky", "nico"],
-  samuel: ["sam", "sammy"],
-  samantha: ["sam", "sammy"],
-  benjamin: ["ben", "benny", "benji"],
-  william: ["will", "willy", "bill", "billy", "liam"],
+  nicholas: ["nick", "nicky"],
+  nicolas: ["nick", "nicky"],
+  benjamin: ["benny", "benji"],
+  william: ["will", "willy", "bill", "billy"],
   guillermo: ["memo"],
-  elizabeth: ["liz", "lizzy", "beth", "betsy", "eliza"],
-  katherine: ["kate", "katie", "kat", "kathy"],
+  elizabeth: ["liz", "lizzy", "betsy"],
+  katherine: ["kate", "katie", "kathy"],
   catherine: ["kate", "katie", "cathy"],
   kathryn: ["kate", "katie", "kathy"],
   jennifer: ["jen", "jenny"],
   jessica: ["jess", "jessie"],
   abigail: ["abby", "abbie"],
-  gabriel: ["gabe", "gabi"],
-  gabriela: ["gabby", "gabi"],
-  gabriella: ["gabby", "gabi"],
-  isabella: ["izzy", "bella", "isa"],
-  isabel: ["izzy", "isa"],
-  maximilian: ["max"],
-  maximus: ["max"],
-  maxwell: ["max"],
+  gabriel: ["gabe"],
+  gabriela: ["gabby"],
+  gabriella: ["gabby"],
+  isabella: ["izzy"],
+  isabel: ["izzy"],
   zachary: ["zach", "zack"],
   jacob: ["jake"],
-  andrew: ["andy", "drew"],
+  andrew: ["andy"],
   thomas: ["tom", "tommy"],
-  james: ["jim", "jimmy", "jamie"],
+  james: ["jim", "jimmy"],
   robert: ["rob", "robbie", "bob", "bobby"],
-  roberto: ["beto"],
   richard: ["rick", "ricky", "rich"],
-  ricardo: ["ricky"],
   manuel: ["manny", "manolo"],
   guadalupe: ["lupe", "lupita"],
   ignacio: ["nacho"],
-  francisco: ["frank", "frankie", "paco", "pancho", "cisco"],
-  edward: ["ed", "eddie"],
+  francisco: ["frankie", "paco", "pancho", "cisco"],
+  edward: ["eddie"],
   eduardo: ["lalo"],
   jesus: ["chuy"],
-  alberto: ["beto", "al"],
   jonathan: ["jon", "jonny"],
   steven: ["steve"],
   stephen: ["steve"],
-  victoria: ["vicky", "tori"],
+  victoria: ["vicky"],
   rebecca: ["becca", "becky"],
   margaret: ["maggie", "meg", "peggy"],
-  madison: ["maddie", "maddy"],
-  madeline: ["maddie", "maddy"],
-  madeleine: ["maddie", "maddy"],
   natalie: ["nat"],
-  olivia: ["liv", "livvy"],
+  olivia: ["livvy"],
   sophia: ["sophie"],
   sofia: ["sophie"],
-  emily: ["em", "emmy"],
-  emma: ["em", "emmy"],
   ashley: ["ash"],
   jacqueline: ["jackie"],
-  jackson: ["jack", "jax"],
   timothy: ["tim", "timmy"],
   kenneth: ["ken", "kenny"],
   patrick: ["pat"],
-  patricia: ["pat", "patty", "tricia"],
-  dominic: ["dom"],
-  nathaniel: ["nathan", "nate"],
-  nathan: ["nate"],
-  leonardo: ["leo"],
-  elijah: ["eli"],
-  josephine: ["josie", "jo"],
-  valentina: ["vale", "val"],
+  josephine: ["josie"],
   fernando: ["nando"],
 };
+
+/** Each short form -> the full names it can stand for. A short form two names
+ * share ("Sam": Samuel, Samantha; "Kate": Katherine, Catherine) never
+ * pre-fills: with only one of them on the roster, the other child -- a
+ * sibling, a new student -- would be chosen for the teacher. */
+const SHORT_FORM_OF = (() => {
+  const out = new Map<string, Set<string>>();
+  for (const [full, shorts] of Object.entries(SHORT_FORMS))
+    for (const short of shorts) out.set(short, (out.get(short) ?? new Set()).add(full));
+  return out;
+})();
+
+/** `short` is a short form of `full` and of no other name in the list. */
+function onlyShortFormOf(short: string, full: string): boolean {
+  const fulls = SHORT_FORM_OF.get(short);
+  return !!fulls && fulls.size === 1 && fulls.has(full);
+}
 
 /**
  * Whether the given name written on the paper may stand for the roster's
@@ -653,8 +642,13 @@ export function givenNameMayPrefill(written: string, roster: string): boolean {
   const w = nameParts(written);
   const r = nameParts(roster);
   if (!w || !r) return false;
+  // The family name too, when both carry one: the fuzzy tier also forgives a
+  // surname ("Maria Garza" fits "Maria Garcia" at 0.95), and a different
+  // surname is a different child. A prefix of the stored abbreviation still
+  // fits (surnamesFit), as it does for an exact match.
+  if (w.last && r.last && !surnamesFit(w.last, r.last)) return false;
   if (w.first === r.first) return true;
-  return !!SHORT_FORMS[w.first]?.includes(r.first) || !!SHORT_FORMS[r.first]?.includes(w.first);
+  return onlyShortFormOf(w.first, r.first) || onlyShortFormOf(r.first, w.first);
 }
 
 /** Whether two given names are written forms of the same name. */

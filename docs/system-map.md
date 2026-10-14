@@ -119,8 +119,8 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   roster with `matchRosterStudent` (`:689-751`).
 - **Pre-fill.** A student is chosen for the teacher **only** when there is exactly one match
   with fit ≥ 0.9, the name was read at ≥ 70%, **and** the written given name is the roster's
-  or a known short form of it (`givenNameMayPrefill`, G12) (`PREFILL_SCORE` `:644`, `PREFILL_READ`
-  `:648`, applied at `:825-826`). Anything weaker becomes a suggestion or a list of candidates
+  or a known short form of it (`givenNameMayPrefill`, G12; `PREFILL_SCORE`, `PREFILL_READ`
+  and `strongMatch` in `resolveScannedGroups`). Anything weaker becomes a suggestion or a list of candidates
   for the teacher to pick from.
 - Repeated off-roster names are marked `unassigned: "repeated"` (`:870-881`).
 - Teacher edits: `updateGroup`, `toggleDiscard`, `chooseStudent`, and the split "These are 2
@@ -598,12 +598,21 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - What it was: `matchRosterStudent`'s fuzzy tier scored "Christina Lee" against "Chris Lee"
     at 0.947, "Josefina Ruiz" against "Jose Ruiz" at 0.940 and "Danielle Kim" against
     "Daniel Kim" at 0.970, all above `PREFILL_SCORE` (0.9).
-  - Now: `resolveScannedGroups` pre-fills only when `givenNameMayPrefill` holds: the written
-    given name is the roster's given name (case and accents aside) or a known short form
-    from `SHORT_FORMS` (narrower than `NICKNAMES`, which also holds translations and
-    misspellings). Anything else is a suggestion, one tap away.
-  - Still open: a first name alone ("Maria") pre-fills the only rostered Maria. By Troy's
-    rule that is an exact given name, so it stays.
+  - Now: `resolveScannedGroups` pre-fills only when `givenNameMayPrefill` holds:
+    - the written given name is the roster's (case and accents aside), or a short form from
+      `SHORT_FORMS` that belongs to **exactly one** full name (so "Sam" never pre-fills
+      Samantha: it may be her brother Samuel). Forms that are given names in their own right
+      (Liam, Leo, Jack, Bella, Nathan…) are not short forms here;
+    - and, when both carry a family name, the surnames fit as they do for an exact match
+      (`surnamesFit`), so "Maria Garza" is not pre-filled as Maria Garcia.
+    - `SHORT_FORMS` is narrower than `NICKNAMES` (translations, misspellings), which still
+      drives suggestions. Anything else is a suggestion, one tap away.
+  - Still open:
+    - a first name alone ("Maria") pre-fills the only rostered Maria (an exact given name
+      by Troy's rule);
+    - a written surname that EXTENDS the stored one pre-fills at 1.0 by design of the
+      abbreviation rule ("Daniel Kimball" → Daniel Kim, "Mia Cheng" → Mia Chen);
+    - a roster entry that is only a first name ("Maria") fits any "Maria …" at 1.0.
 - **G13. A model `blank` verdict erases text the student wrote**
   (`lib/teacher-workflow.ts:527`, `:547`). The response is scored 0, unconfirmed; only the
   photo shows the teacher it was not blank.

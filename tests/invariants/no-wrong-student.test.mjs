@@ -47,6 +47,9 @@ const NEAR_PAIRS = [
   ["Jose Ruiz", "Josefina Ruiz"],
   ["Daniel Kim", "Danielle Kim"],
   ["Maria Chen", "Mia Chen"],
+  ["Maria Lopez", "Maria Lozano"],
+  ["Omar Reyes", "Omar Reed"],
+  ["Samantha Cole", "Sam Cole"],
 ];
 const MOTTO = "Hope Always";
 
