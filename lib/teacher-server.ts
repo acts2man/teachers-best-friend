@@ -330,6 +330,29 @@ async function syncWorkspace(id: string, workspace: Workspace) {
   if (error) throw rpcFailure("sync_workspace", error);
 }
 
+/**
+ * Writes the full workspace only if it is still at `revision`, checked under a
+ * row lock in the same transaction (sync_workspace_checked, gap G4). Returns
+ * the new revision, null when the save is stale, or "missing" when the
+ * database does not have the function yet (PostgREST's PGRST202).
+ */
+async function syncWorkspaceChecked(
+  id: string,
+  workspace: Workspace,
+  revision: number,
+): Promise<number | null | "missing"> {
+  const { data, error } = await createServiceClient().rpc("sync_workspace_checked", {
+    p_teacher: id,
+    p_data: workspace,
+    p_expected_revision: revision,
+  });
+  if (error) {
+    if (error.code === "PGRST202") return "missing";
+    throw rpcFailure("sync_workspace_checked", error);
+  }
+  return data === null || data === undefined ? null : Number(data);
+}
+
 function numeric(value: unknown) {
   if (typeof value === "number") return value;
   if (
@@ -453,6 +476,13 @@ export async function updateWorkspace(
   revision: number,
 ) {
   if (hasSupabaseConfig()) {
+    // One call: the revision is checked under a row lock and the workspace
+    // written in the same transaction (gap G4). Two saves carrying the same
+    // revision can no longer both pass.
+    const checked = await syncWorkspaceChecked(id, workspace, revision);
+    if (checked !== "missing") return checked;
+    // The function's migration is applied by hand, so the app can reach a
+    // database without it: save the old way rather than failing every save.
     const current = await workspaceRevision(id);
     if (current === null || current !== revision) return null;
     await syncWorkspace(id, workspace);

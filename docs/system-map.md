@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.8 step 6, R7 and G4 re-checked 2026-10-14 against the G4 branch (from `a183f93`). Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. Migrations listed here are the repo's copies; production is applied **by hand**
@@ -157,10 +157,13 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - calls `updateWorkspace(id, workspace, revision)` and returns **409 when it returns null**
      (`:170-175`).
 6. `updateWorkspace` (`lib/teacher-server.ts:450-469`). On Supabase:
-   - read the revision (`:456`);
-   - refuse if it differs (`:457`);
-   - otherwise call `sync_workspace` (`:458`, RPC at `:322-331`).
-   - **The check and the write are separate round trips**: gap G4.
+   - call `sync_workspace_checked(teacher, data, expected revision)`
+     (`supabase/migrations/20261014150000_sync_workspace_checked.sql`). It locks the
+     `teacher_workspaces` row, compares the revision, and runs `sync_workspace` in the same
+     transaction. A stale save gets null, which becomes a 409 (G4, closed once that
+     migration is applied);
+   - on a database without that function (PGRST202) it falls back to the old two-call
+     path, where the check and the write are separate round trips.
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
@@ -398,8 +401,9 @@ unassigned is always allowed.
   - `readWorkspace` reads the revision before the data (`lib/teacher-server.ts:413-424`).
 - **Guarded by:** `tests/invariants/stale-revision.test.mjs`, which runs the real
   `updateWorkspace` against an in-memory database.
-- **NO TEST YET:** two saves carrying the same current revision at the same moment can both
-  pass (gap G4).
+- Two saves carrying the same current revision at the same moment: exactly one is written
+  (gap G4, closed by `sync_workspace_checked`; tested in the same file, and against a real
+  Postgres in the G4 PR).
 
 **R8. No student data in the public repo, CI logs, `app_events` or screenshots.**
 - **Why:** CLAUDE.md and `docs/student-data-flow.md`. These are published commitments in
@@ -551,10 +555,10 @@ reading the code, as marked. None has a test in the suite, because each test wou
     row holding **every page**.
   - `pickRead` names that row after the **most confidently read name in the whole stack**. In
     the reproduction, Ana's answers were pre-filled under Ben.
-- **G4. The revision check is not atomic on Supabase** (R7; `lib/teacher-server.ts:456-458`).
-  Two saves carrying the current revision that arrive together both pass; the second
-  whole-workspace replace wins, and whatever the first added is deleted. The fix is for
-  `sync_workspace` to take the expected revision and check it under a row lock.
+- **G4. The revision check was not atomic on Supabase** (R7). **Closed** by the G4 PR once
+  its migration is applied: `sync_workspace_checked` checks the revision under a row lock and
+  writes in the same transaction. Until the migration is applied, `updateWorkspace` falls back
+  to the old two-call path (PGRST202), where the race still exists.
 - **G5. Re-scanning a student replaces their teacher-confirmed grades with no warning** (R6;
   confirmed by reading the code).
   - `mergeStudentResponses` keeps a prior response only when the new answer is blank
