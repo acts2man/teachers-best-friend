@@ -119,8 +119,13 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
     (G1 PR).
   - `gradeInBatches` skips a batch only when all its students are already graded, and
     sends just the unbanked students of a partly graded one, so a changed batch plan
-    (questions edited) never skips a student. A running job is picked up only under the
-    same batch plan (`inFlightJob`; `batchPlan` is recorded with the progress).
+    (questions edited) never skips a student.
+  - A resume therefore also re-asks students that the interrupted run had given up on
+    (never returned after retries, in batches before `nextBatch`). That is extra AI cost
+    and better for the teacher; pages are charged once (R11).
+  - A running job is picked up only under the same batch plan (`inFlightJob`; `batchPlan`
+    is recorded with the progress), and only by the grade call for the very batch it was
+    sent for (`takeInFlight`), never by an earlier batch being finished off.
   - Starting over on different pages drops a still-running AI job (`scanId`) for those
     pages. It is not charged twice to the teacher (pages are paid once), but the AI cost
     is paid twice. That is the deliberate trade-off against reusing answers on the wrong
@@ -547,7 +552,7 @@ reading the code, as marked. None has a test in the suite, because each test wou
   - progress records its page ids, groups and batch plan; a resume over different pages,
     or with no record, starts over;
   - a changed batch plan is resumed by which students are banked, not by batch number;
-  - a running job is only picked up under the same plan.
+  - a running job is only picked up under the same plan, and only for its own batch.
 
   What it was: banked `progress.graded`, keyed by whole-scan group index, was accepted if
   `nextBatch <= batches.length`, against the **current** piles, after `addPages`,

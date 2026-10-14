@@ -23,7 +23,7 @@ function bundle(path) {
   new Function("module", "exports", r.outputFiles[0].text)(m, m.exports);
   return m.exports;
 }
-const { resumePlan, gradeInBatches, inFlightJob } = bundle("lib/teacher-class-scan.ts");
+const { resumePlan, gradeInBatches, inFlightJob, takeInFlight } = bundle("lib/teacher-class-scan.ts");
 const { parseSession } = bundle("lib/scan-session.ts");
 
 const ids = ["p0", "p1", "p2", "p3"];
@@ -60,12 +60,44 @@ test("a batch whose students are all banked is not sent again", async () => {
 
 test("G1: a running AI job is picked up only when the batch plan is unchanged", () => {
   const saved = { graded: [answer(0)], nextBatch: 1, scanId: "job-1", pageIds: ids, pageGroups: [[0], [1], [2], [3]], byName: false, batchPlan: [[0], [1], [2], [3]] };
-  assert.equal(inFlightJob(saved, [batch([0]), batch([1]), batch([2]), batch([3])]), "job-1");
+  assert.deepEqual(inFlightJob(saved, [batch([0]), batch([1]), batch([2]), batch([3])]), { scanId: "job-1", index: 1 });
   // Same pages, different plan: the job's answers are numbered within a batch
   // that no longer exists. Not picked up.
   assert.equal(inFlightJob(saved, [batch([0, 1]), batch([2, 3])]), null);
   // No plan recorded: not picked up either.
   assert.equal(inFlightJob({ ...saved, batchPlan: undefined }, [batch([0]), batch([1]), batch([2]), batch([3])]), null);
+});
+
+// From the review of this PR: the job used to be taken by whichever grade call
+// came first. A partly banked EARLIER batch is now finished off first, so it
+// took the job's result -- answers for students 2 and 3 -- and laid them on
+// student 0.
+test("G1: a running job answers only the batch it was sent for, never an earlier one", async () => {
+  const batches = [batch([0, 1]), batch([2, 3])];
+  // Student 1 came back in batch 0; student 0 never did. Batch 1 was sent and
+  // is still running when the panel resumes.
+  const saved = { graded: [answer(1)], nextBatch: 1, scanId: "job-1", pageIds: ids, pageGroups: [[0], [1], [2], [3]], byName: false, batchPlan: [[0, 1], [2, 3]] };
+  let job = inFlightJob(saved, batches);
+  const sent = [];
+  const jobResult = { groups: [{ ...answer(2), group: 0 }, { ...answer(3), group: 1 }] }; // batch 1's answers, numbered within it
+  // The component's grade callback.
+  const grade = async (b, index) => {
+    const id = takeInFlight(job, b, index, batches);
+    if (id) {
+      job = null;
+      sent.push("waited on " + id + " for batch " + index);
+      return jobResult;
+    }
+    sent.push(b.groupIndexes);
+    return { groups: b.groupIndexes.map((g, i) => ({ ...answer(g), group: i })) };
+  };
+  const graded = await gradeInBatches(batches, grade, undefined, saved.nextBatch, saved.graded);
+  const of = (g) => graded.find((x) => x.group === g).responses[0].answer;
+  assert.equal(of(0), "student 0", "student 0 gets their own answers, not student 2's");
+  assert.equal(of(2), "student 2");
+  assert.equal(of(3), "student 3");
+  assert.deepEqual(sent, [[0], "waited on job-1 for batch 1"], "student 0 asked alone; batch 1 not sent again");
+  assert.equal(graded.length, 4);
 });
 
 test("the batch plan survives a session sync", () => {

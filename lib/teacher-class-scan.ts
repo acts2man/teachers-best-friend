@@ -387,21 +387,38 @@ export function resumePlan(
 }
 
 /**
- * The grading job a resume may pick up and wait on, or null. Its answers are
- * numbered within the batch it was sent for, so it is only safe when the batch
- * plan is exactly the one it was sent under (gap G1): a different plan would
- * lay them on other students. A job not picked up still finishes; its pages
- * are already paid for, so only the model's time is spent twice.
+ * The grading job a resume may pick up and wait on: its id and the batch it
+ * was sent for, or null. Its answers are numbered within THAT batch, so it is
+ * only safe when the batch plan is exactly the one it was sent under (gap G1)
+ * -- and it may only answer that same batch: see takeInFlight. A job not
+ * picked up still finishes and is ignored; its pages are already paid for, so
+ * the teacher is not charged twice, but the model's time (our AI cost) is
+ * spent twice.
  */
 export function inFlightJob(
-  resume: { scanId: string | null; batchPlan?: number[][] } | null,
+  resume: { scanId: string | null; nextBatch: number; batchPlan?: number[][] } | null,
   batches: { groupIndexes: number[] }[],
-): string | null {
+): { scanId: string; index: number } | null {
   if (!resume?.scanId || !resume.batchPlan) return null;
   const same =
     resume.batchPlan.length === batches.length &&
     resume.batchPlan.every((g, i) => g.length === batches[i].groupIndexes.length && g.every((x, j) => x === batches[i].groupIndexes[j]));
-  return same ? resume.scanId : null;
+  return same ? { scanId: resume.scanId, index: resume.nextBatch } : null;
+}
+
+/**
+ * Whether a grade call may take the running job's result: only the call for
+ * the very batch the job was sent for, whole. Any other call -- an earlier
+ * batch being finished off, a re-ask of part of a batch -- must not, or the
+ * job's answers land on other students (review of the G1 PR).
+ */
+export function takeInFlight(
+  job: { scanId: string; index: number } | null,
+  batch: { groupIndexes: number[] },
+  index: number,
+  batches: { groupIndexes: number[] }[],
+): string | null {
+  return job && job.index === index && batch === batches[index] ? job.scanId : null;
 }
 
 /**
@@ -1509,7 +1526,10 @@ export async function gradeInBatches(
     // ungraded (gap G1).
     const unbanked = planned.groupIndexes.filter((g) => !banked.has(g));
     if (planned.groupIndexes.length && !unbanked.length) continue;
-    if (index < startAt && !already.length) continue;
+    // `startAt` is kept for callers that pass it, but no batch is skipped by
+    // number any more: one with nothing banked is graded (a resume whose first
+    // batch came back empty asks it again rather than leaving it out).
+    void startAt;
     // A batch some of whose students are already banked sends only the rest:
     // a banked answer is never graded again or listed twice.
     const batch = unbanked.length < planned.groupIndexes.length ? subBatch(planned, unbanked) : planned;

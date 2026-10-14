@@ -42,6 +42,7 @@ import {
   groupPagesByCapture,
   resumePlan,
   inFlightJob,
+  takeInFlight,
   groupPagesByName,
   sameFirstNameSplit,
   withRetry,
@@ -679,7 +680,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // Recorded with every save, so a resume can tell whether a running job
       // was sent under this same plan before waiting on it (gap G1).
       const batchPlan = batches.map((b) => b.groupIndexes);
-      let inFlight = inFlightJob(resuming, batches);
+      let job = inFlightJob(resuming, batches);
       const graded = await gradeInBatches(
         batches,
         async (batch, index) => {
@@ -698,10 +699,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   (pageGroups.length === 1 ? "" : "s") +
                   "\u2026",
           );
-          // A batch already sent and still running is waited on, not repeated.
-          if (inFlight) {
-            const id = inFlight;
-            inFlight = null;
+          // A batch already sent and still running is waited on, not repeated --
+          // but only by the call for that same whole batch (takeInFlight), never
+          // by an earlier batch being finished off, whose students it would
+          // otherwise be answered for.
+          const id = takeInFlight(job, batch, index, batches);
+          if (id) {
+            job = null; // taken once at most
             try {
               return (await resumeScan(id)).result;
             } catch {
