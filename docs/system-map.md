@@ -107,13 +107,21 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
     parts (`partsShortfall` `:1341`, `settleShortParts` `:1417`, which sends the leftovers to
     Unsure).
 - **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId}`
-  (`components/teacher-class-scan.tsx:774`, `:785`), keyed by **whole-scan group index**.
-  See gaps G1 and G3.
+  plus the run's grouping, `{pageIds, pageGroups, byName}` (`components/teacher-class-scan.tsx`
+  `gradePages`), keyed by **whole-scan group index**. The server copy and the local draft
+  read it through one function, `parseProgress` (`lib/scan-session.ts`). See gap G1.
 - **Resume.** Saved progress records the run's page ids and page groups, and whether it
   grouped by name. `resumePlan` (`lib/teacher-class-scan.ts`) hands back the same groups
   for the same pages, or starts over when the pages differ. A rerun then accepts the
   saved progress if `nextBatch <= batches.length` (`components/teacher-class-scan.tsx`
-  `gradePages`). Progress saved before the record existed resumes as before (G1).
+  `gradePages`).
+  - Progress saved before the record existed (still live in 7-day sessions and drafts from
+    before the deploy) resumes as before. For a whole-stack run that is still the G3 bug,
+    until those records expire.
+  - Starting over on different pages drops a still-running AI job (`scanId`) for those
+    pages. It is not charged twice to the teacher (pages are paid once), but the AI cost
+    is paid twice. That is the deliberate trade-off against reusing answers on the wrong
+    students.
 
 ### 1.7 Matching screen (teacher review)
 
@@ -238,8 +246,8 @@ computer can share one scan. They are separate from the workspace.
   - debounced 800 ms (`:12`) and polled (`:196-218`);
   - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1);
   - merging is in `mergeSessions` (`lib/scan-session.ts:203-240`).
-- **Local draft.** `localStorage['tbf.scan-draft.<assessmentId>']` holds piles and progress
-  (`components/teacher-class-scan.tsx:83`, `:410-421`). Its 7-day lifetime is checked only
+- **Local draft.** `localStorage['tbf.scan-draft.<assessmentId>']` holds piles and progress.
+  It is read by `parseDraft` (`lib/scan-session.ts`), whose 7-day lifetime is checked only
   when it is read.
 - **Cleared on save or Start over**: `reset()` → `sync.clear()` (`:586-600`).
 
@@ -540,14 +548,18 @@ reading the code, as marked. None has a test in the suite, because each test wou
     (`:501`, `:548`, `:576-584`).
   - `mergeSessions` can add another device's pages or piles (`lib/scan-session.ts:212-229`),
     including during a 409 retry mid-grade (`components/use-scan-session.ts:116-124`).
-  - Nothing records which pages a saved progress covered.
+  - **Partly closed** by the G3 PR: progress saved since then records its page ids, and a
+    resume over different pages starts over instead of re-mapping. Progress saved before
+    then records nothing and is still re-mapped by index.
 - **G2. A front page with no name, in a stack without declared piles, joins the student before
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop
   whole-stack upload and Import from Photos with no split do not.
 - **G3. A failed whole-stack upload resumed as ONE student, wearing the wrong name.**
-  **Closed** by the `resumePlan` PR (progress carries the run's own grouping);
-  `tests/stack-resume.test.mjs`. What it was:
+  **Closed** by the `resumePlan` PR, for every scan whose progress was saved after it: the
+  progress carries the run's own grouping through the account copy and the local draft
+  (`tests/stack-resume.test.mjs`, including a reload). Records from before the deploy
+  still resume the old way until they expire (7 days). What it was:
   - `startStackScan` grades by name. If it failed partway, its progress survived, and the
     auto-resume ran `gradeCaptured`, which passes the single pile `[N]`.
   - The resume was accepted. Group 0's saved answers (the first student's) then attached

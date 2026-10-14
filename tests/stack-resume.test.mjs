@@ -21,7 +21,7 @@ function bundle(path) {
   return m.exports;
 }
 const { resumePlan, groupPagesByName, groupPagesByCapture, resolveScannedGroups } = bundle("lib/teacher-class-scan.ts");
-const { parseSession } = bundle("lib/scan-session.ts");
+const { parseSession, parseDraft } = bundle("lib/scan-session.ts");
 
 // Three students, two pages each; the name is on the front page.
 const ids = ["p0", "p1", "p2", "p3", "p4", "p5"];
@@ -107,10 +107,37 @@ test("the record survives a session sync (normalizeSession used to drop unknown 
   assert.equal(bad.progress.pageGroups, undefined);
 });
 
-test("the class-scan panel resumes through resumePlan and records the grouping with every save of progress", () => {
+test("G3 after a reload: the local draft keeps the run's grouping, so the resume still grades three students", () => {
+  // The panel's first render reads the browser draft and auto-resumes from it,
+  // before the account copy arrives -- the commonest way back into a scan (the
+  // tab closed, the phone slept). The draft used to drop the grouping.
+  const pages = ids.map((bodyId, i) => ({ key: "k" + i, label: "Page", bodyId, stripId: "n" + i, pages: 1 }));
+  const now = Date.UTC(2026, 9, 14);
+  const raw = JSON.stringify({ piles: [pages], progress: banked, savedAt: now - 60_000 });
+  const draft = parseDraft(raw, now);
+  assert.deepEqual(draft.progress.pageGroups, firstRunGroups);
+  assert.deepEqual(draft.progress.pageIds, ids);
+  // gradeCaptured resumes with the panel's one pile of six pages.
+  const plan = resumePlan(draft.progress, draft.piles.flat().map((p) => p.bodyId), [6]);
+  assert.deepEqual(plan.pageGroups, [[0, 1], [2, 3], [4, 5]]);
+  // A draft older than its pages is still dropped; a bare-array draft still reads.
+  assert.equal(parseDraft(JSON.stringify({ piles: [pages], progress: banked, savedAt: now - 8 * 86_400_000 }), now), null);
+  assert.equal(parseDraft(JSON.stringify([pages]), now).progress, null);
+});
+
+test("every save of progress in the grading run records the grouping", () => {
   const src = readFileSync("components/teacher-class-scan.tsx", "utf8");
-  assert.match(src, /resumePlan\(saved \?\? null, ids, asked\)/);
-  const saves = src.match(/setProgress\(\{[^}]*\}\)/g) ?? [];
-  assert.ok(saves.length >= 2);
-  for (const call of saves) assert.match(call, /\.\.\.grouping/, call);
+  const body = src.slice(src.indexOf("async function gradePages("), src.indexOf("function showGraded"));
+  assert.match(body, /resumePlan\(saved \?\? null, ids, asked\)/);
+  const at = [...body.matchAll(/setProgress\(/g)].map((m) => m.index);
+  assert.ok(at.length >= 2, "both banked saves found");
+  for (const i of at) {
+    const call = body.slice(i, body.indexOf(")", body.indexOf("}", i)) + 1);
+    // A clear is setProgress(null); every other save must carry the grouping.
+    if (/^setProgress\(null\)/.test(call)) continue;
+    assert.match(call, /\.\.\.grouping/, call);
+  }
+  // The panel reads its draft through the shared reader, not its own copy.
+  assert.match(src, /parseDraft\(savedRaw\)/);
+  assert.doesNotMatch(src, /function parseDraft\(/);
 });

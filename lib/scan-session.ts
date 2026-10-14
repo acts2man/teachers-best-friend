@@ -124,6 +124,72 @@ function runGrouping(p: Partial<ScanProgress>): Pick<ScanProgress, "pageIds" | "
 }
 
 /**
+ * A saved grading progress, or null if it is not usable. One reader for the
+ * server copy and the browser's local draft: the draft used to rebuild progress
+ * by hand and drop the run's grouping, so a reload resumed a whole-stack scan
+ * as one student (gap G3, review of the G3 PR).
+ */
+export function parseProgress(raw: unknown): ScanProgress | null {
+  const p = raw as Partial<ScanProgress> | null | undefined;
+  if (!p || !Array.isArray(p.graded) || !Number.isInteger(p.nextBatch) || (p.nextBatch as number) < 0) return null;
+  return {
+    graded: p.graded,
+    nextBatch: p.nextBatch as number,
+    scanId: typeof p.scanId === "string" ? p.scanId : null,
+    // The run's grouping, kept only when it is well formed: a resume that
+    // trusted a broken one could put answers on the wrong student.
+    ...runGrouping(p),
+  };
+}
+
+/**
+ * How long an abandoned scan is worth offering back.
+ *
+ * The pages a draft points at are deleted on the retention schedule whether or
+ * not anyone came back for them, so a draft outlives its own uploads. Offering
+ * a teacher a month-old half-scan whose photographs no longer exist wastes
+ * their time and fails confusingly. Comfortably longer than anyone's grading
+ * session and comfortably shorter than the retention window.
+ */
+export const DRAFT_LIFETIME = 7 * 24 * 60 * 60 * 1000;
+
+/** The class-scan panel's local draft (localStorage): the piles, and the
+ * grading progress if it got that far. Shared shape with the account copy. */
+export type ScanDraft = { piles: ScanPage[][]; progress: ScanProgress | null };
+
+/**
+ * The local draft read back, or null if there is nothing usable in it. Trusts
+ * nothing: a half-written or hand-edited draft is dropped, not allowed to crash
+ * the panel a teacher is standing in front of.
+ */
+export function parseDraft(raw: string | null, now: number = Date.now()): ScanDraft | null {
+  try {
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    // Drafts written before grading jobs were remembered are a bare array.
+    const parsed = Array.isArray(stored) ? stored : stored?.piles;
+    const progress = Array.isArray(stored) ? null : (stored?.progress ?? null);
+    const savedAt = Array.isArray(stored) ? null : stored?.savedAt;
+    if (!Array.isArray(parsed)) return null;
+    // Older than the pages it refers to, so there is nothing useful left in it.
+    if (typeof savedAt === "number" && now - savedAt > DRAFT_LIFETIME) return null;
+    const piles = parsed
+      .filter(Array.isArray)
+      .map((pile: unknown[]) =>
+        pile
+          .filter(isPage)
+          // Drafts saved before pages were counted carry no count. A
+          // photograph is one page, which is what all of them were.
+          .map((page) => ({ ...page, pages: page.pages ?? 1 })),
+      );
+    if (!piles.some((pile: ScanPage[]) => pile.length)) return null;
+    return { piles, progress: parseProgress(progress) };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A session read back from the server, or null if there is nothing usable in
  * it. Trusts nothing: a row written by an older app, or half-written, must not
  * crash the panel a teacher is standing in front of.
@@ -145,20 +211,7 @@ export function parseSession(raw: unknown): ScanSession | null {
           })),
         )
     : [];
-  const progress =
-    r.progress &&
-    Array.isArray(r.progress.graded) &&
-    Number.isInteger(r.progress.nextBatch) &&
-    r.progress.nextBatch >= 0
-      ? {
-          graded: r.progress.graded,
-          nextBatch: r.progress.nextBatch,
-          scanId: typeof r.progress.scanId === "string" ? r.progress.scanId : null,
-          // The run's grouping, kept only when it is well formed: a resume
-          // that trusted a broken one could put answers on the wrong student.
-          ...runGrouping(r.progress),
-        }
-      : null;
+  const progress = parseProgress(r.progress);
   const groups = Array.isArray(r.groups)
     ? r.groups.filter(
         (g): g is ResolvedGroup =>

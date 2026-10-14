@@ -31,6 +31,7 @@ import {
   type ScanPage,
   type ScanProgress,
   type ScanSession,
+  parseDraft,
 } from "@/lib/scan-session";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
@@ -86,18 +87,6 @@ const draftKey = (assessmentId: string) => "tbf.scan-draft." + assessmentId;
 /** A scan in progress: the pages grouped so far, and the grading job started
  * from them, if it got that far. Shared with the account copy. */
 type Progress = ScanProgress;
-type Draft = { piles: Page[][]; progress?: Progress | null; savedAt?: number };
-
-/**
- * How long an abandoned scan is worth offering back.
- *
- * The pages a draft points at are deleted on the retention schedule whether or
- * not anyone came back for them, so a draft outlives its own uploads. Offering
- * a teacher a month-old half-scan whose photographs no longer exist wastes
- * their time and fails confusingly. Comfortably longer than anyone's grading
- * session and comfortably shorter than the retention window.
- */
-const DRAFT_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 
 /** localStorage is an external store, so it is read as one: a server snapshot
  * of null, a client snapshot of the raw string, and a subscription so a scan
@@ -107,51 +96,6 @@ const DRAFT_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 function subscribeToDraft(onChange: () => void) {
   window.addEventListener("storage", onChange);
   return () => window.removeEventListener("storage", onChange);
-}
-
-function parseDraft(raw: string | null): Draft | null {
-  try {
-    if (!raw) return null;
-    const stored = JSON.parse(raw);
-    // Drafts written before grading jobs were remembered are a bare array.
-    const parsed = Array.isArray(stored) ? stored : stored?.piles;
-    const progress = Array.isArray(stored) ? null : (stored?.progress ?? null);
-    const savedAt = Array.isArray(stored) ? null : stored?.savedAt;
-    if (!Array.isArray(parsed)) return null;
-    // Older than the pages it refers to, so there is nothing useful left in it.
-    if (typeof savedAt === "number" && Date.now() - savedAt > DRAFT_LIFETIME)
-      return null;
-    // Trust nothing that comes back: a half-written or hand-edited draft should
-    // be dropped, not crash the panel a teacher is standing in front of.
-    const piles = parsed
-      .filter(Array.isArray)
-      .map((pile) =>
-        pile.filter(
-          (page: unknown): page is Page =>
-            !!page &&
-            typeof (page as Page).bodyId === "string" &&
-            typeof (page as Page).key === "string",
-        )
-        // Drafts saved before pages were counted carry no count. A photograph
-        // is one page, which is what all of them were.
-        .map((page: Page) => ({ ...page, pages: page.pages ?? 1 })),
-      );
-    if (!piles.some((pile) => pile.length)) return null;
-    const usable =
-      progress &&
-      Array.isArray(progress.graded) &&
-      Number.isInteger(progress.nextBatch) &&
-      progress.nextBatch >= 0
-        ? {
-            graded: progress.graded as GradedGroup[],
-            nextBatch: progress.nextBatch as number,
-            scanId: typeof progress.scanId === "string" ? progress.scanId : null,
-          }
-        : null;
-    return { piles, progress: usable };
-  } catch {
-    return null;
-  }
 }
 
 const EMPTY: Page[][] = [[]];

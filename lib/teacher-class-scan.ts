@@ -351,18 +351,6 @@ export function sameFirstNameSplit(pageIndexes: number[], names: PageName[]): nu
 }
 
 /**
- * Splits a stack into one group per student using boundaries the teacher
- * declared while scanning -- "next student" -- rather than names the AI read.
- * `sizes[i]` is how many pages the teacher put in student i's pile, in scan
- * order, so the pages are numbered straight through the flattened stack.
- *
- * Preferred over groupPagesByName wherever the teacher scanned student by
- * student. A boundary the teacher drew is a fact; a boundary inferred from
- * whether a name was legible on a page is a guess, and when that guess is
- * wrong a page is graded against the wrong student's key. Empty piles are
- * skipped so a stray "next student" tap costs nothing.
- */
-/**
  * How a grading run that may be resuming groups its pages (gap G3).
  *
  * A saved progress records the pages its run graded and how it grouped them.
@@ -395,6 +383,18 @@ export function resumePlan(
   };
 }
 
+/**
+ * Splits a stack into one group per student using boundaries the teacher
+ * declared while scanning -- "next student" -- rather than names the AI read.
+ * `sizes[i]` is how many pages the teacher put in student i's pile, in scan
+ * order, so the pages are numbered straight through the flattened stack.
+ *
+ * Preferred over groupPagesByName wherever the teacher scanned student by
+ * student. A boundary the teacher drew is a fact; a boundary inferred from
+ * whether a name was legible on a page is a guess, and when that guess is
+ * wrong a page is graded against the wrong student's key. Empty piles are
+ * skipped so a stray "next student" tap costs nothing.
+ */
 export function groupPagesByCapture(sizes: number[]): number[][] {
   const groups: number[][] = [];
   let page = 0;
