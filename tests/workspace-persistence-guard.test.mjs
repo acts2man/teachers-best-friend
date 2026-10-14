@@ -38,6 +38,8 @@ const PERSISTED = {
     "rubricScore", "rubricReason",
     // Grade by question (20261008190000).
     "finalAnswer", "answerRegion", "suggestedErrorType",
+    // Grade on their own, kept (20261013120000).
+    "gradedAlone",
   ],
   Assessment: [
     "id", "classId", "elaArea", "title", "subject", "grade", "framework",

@@ -115,6 +115,12 @@ export type StudentResponse = {
    * subject's list. Only a suggestion: the teacher approves or changes it, and
    * it is not `errorType` until they do. */
   suggestedErrorType?: string;
+  /** The teacher pulled this answer out of its group in Grade by question
+   * ("Grade on their own"). It is then its own group for good, whatever
+   * credit it gets, and nothing done to the group -- the green "Confirm N"
+   * bar included -- touches it (#126 round 3; Ricky's question 8). Absent
+   * means grouped as usual. */
+  gradedAlone?: boolean;
 };
 export type AnswerRegion = {
   uploadId: string;

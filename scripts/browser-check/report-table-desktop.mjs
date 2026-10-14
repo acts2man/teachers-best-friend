@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "out");
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3100";
-const CHROMIUM = process.env.CHROMIUM || "/opt/pw-browsers/chromium/chrome-linux/chrome";
+const CHROMIUM = process.env.CHROMIUM || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const workspace = JSON.parse(readFileSync(join(OUT, "fixture.json"), "utf8"));
 
 // Seed a long question + long standard on the first question of math-demo.

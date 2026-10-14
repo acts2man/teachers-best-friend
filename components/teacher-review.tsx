@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
+import { REQUIRE_CONFIRM_MATCHES } from "@/lib/grading-settings";
 import { analyzeRequest } from "@/lib/analyze-client";
 import {
   ArrowRight,
@@ -40,7 +42,9 @@ import {
   activeQuestions,
   applyGroupScore,
   autoGradedToConfirm,
+  matchesToConfirm,
   confirmResponses,
+  setGradedAlone,
   countsAsGraded,
   CREDIT_LEVELS,
   creditForPoints,
@@ -242,6 +246,32 @@ function StudentWorkPhoto({ pages, alt }: { pages: string[]; alt: string }) {
  * teacher is the one held responsible for a partial-credit call, so the
  * teacher makes each one -- once per group, not 35 times.
  */
+/** Everything on the page a teacher can tap or type into. A tab panel and a
+ * tab list are focusable (tabindex=0) but are containers, not controls -- the
+ * tabs inside a list are buttons and counted on their own. */
+const TAPPABLE =
+  "a[href], button, input:not([type=hidden]), select, textarea, summary, label[for], " +
+  "[role=button], [role=link], [role=combobox], [role=checkbox], [role=radio], [role=tab], " +
+  "[tabindex]:not([tabindex='-1']):not([role=tabpanel]):not([role=tablist])";
+const OPEN_QUESTION_EVENT = "tbf:open-question";
+// A request to open a question, for a panel that is about to mount. It only
+// lives long enough for that mount: a request nobody took (the panel never
+// mounted -- another tab won, the teacher left the page) must not open a
+// question the next time the panel appears, minutes later (#126 round 3).
+const OPEN_REQUEST_MS = 2000;
+let questionToOpen: { id: string; at: number } | null = null;
+function takeQuestionToOpen() {
+  const request = questionToOpen;
+  questionToOpen = null;
+  return request && Date.now() - request.at <= OPEN_REQUEST_MS ? request.id : null;
+}
+/** Opens one question in Grade by question -- whether the panel is already on
+ * screen or is about to be (a tab switch mounts it fresh). */
+export function openQuestionForGrading(questionId: string) {
+  questionToOpen = { id: questionId, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(OPEN_QUESTION_EVENT, { detail: questionId }));
+}
+
 function GradeByQuestion({
   assessment: a,
   students,
@@ -256,7 +286,23 @@ function GradeByQuestion({
   const { w, classroom, save, go } = useTeacher();
   const questions = activeQuestions(a);
   // null: the summary of every question. Otherwise the question under review.
-  const [openId, setOpenId] = useState<string | null>(null);
+  // "Grade it now" on the class-analysis step asks for a question to be open.
+  const [openId, setOpenId] = useState<string | null>(() => takeQuestionToOpen());
+  useEffect(() => {
+    // A panel already on screen takes the request, so it is not left behind.
+    const onOpen = (e: Event) => {
+      takeQuestionToOpen();
+      setOpenId((e as CustomEvent<string>).detail);
+    };
+    window.addEventListener(OPEN_QUESTION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_QUESTION_EVENT, onOpen);
+  }, []);
+  useEffect(() => {
+    if (!openId) return;
+    requestAnimationFrame(() =>
+      document.getElementById("grade-by-question")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }, [openId]);
   // Decided groups the teacher tapped "Change" on, so the controls show again.
   const [reopened, setReopened] = useState<Set<string>>(new Set());
   const question = questions.find((q) => q.id === openId) || null;
@@ -266,14 +312,103 @@ function GradeByQuestion({
     groupAnswers(assessment, id).some((g) => g.needsDecision);
   const anyAnswers = questions.some((q) => groupAnswers(a, q.id).length > 0);
   const anyPending = questions.some((q) => hasWork(a, q.id));
+  // While the green bar is pinned, the page keeps a bar-high strip at the
+  // bottom out of reach of anything it scrolls into view (scroll-padding), so
+  // a "Give" button the app brings up never lands under the bar.
+  const barUp =
+    !!question &&
+    REQUIRE_CONFIRM_MATCHES &&
+    matchesToConfirm(a, question.id).length > 0 &&
+    (a.responses.some((r) => r.questionId === question.id && r.verified) || !hasWork(a, question.id));
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("confirm-bar-on", barUp);
+    return () => root.classList.remove("confirm-bar-on");
+  }, [barUp]);
+  // The bar gets out of the way: whenever ANY control a teacher could tap --
+  // a credit box, "Grade on their own", "Change", an error-type picker, "All
+  // questions", a link -- would sit under its button, it slides out of sight
+  // and comes back when the spot is clear. So a tap aimed at a control can
+  // never land on "Confirm N answers" (#126 review, 360x640; round 3: the
+  // first fix watched only the credit form).
+  const [barTucked, setBarTucked] = useState(false);
+  useEffect(() => {
+    if (!barUp) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const wrap = document.querySelector<HTMLElement>(".confirm-matches-bar");
+      const bar = wrap?.querySelector<HTMLElement>(".confirm-matches");
+      if (!wrap || !bar) return;
+      // Where the button sits when shown, whether or not it is now (tucked, it
+      // is slid down by a transform the layout box does not include).
+      const w = bar.offsetWidth;
+      const h = bar.offsetHeight;
+      const bottom = window.innerHeight - (parseFloat(getComputedStyle(wrap).bottom) || 0);
+      const left = (window.innerWidth - w) / 2;
+      // A finger is wider than a pixel: a control within 8px of the button
+      // counts as under it.
+      const zone = { top: bottom - h - 8, bottom: bottom + 8, left: left - 8, right: left + w + 8 };
+      const under = [...document.querySelectorAll<HTMLElement>(TAPPABLE)].some((el) => {
+        if (wrap.contains(el) || el.closest("[inert]")) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.bottom > zone.top && r.top < zone.bottom && r.right > zone.left && r.left < zone.right;
+      });
+      // Straight onto the element, in this frame: waiting for React to
+      // re-render left the bar over a control for up to three frames after a
+      // scroll (measured). The state below keeps React's render in agreement.
+      // (aria-hidden is left to React: setting it here could undo a dialog's.)
+      wrap.classList.toggle("is-tucked", under);
+      wrap.inert = under;
+      setBarTucked(under);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    // A scroll event comes at most once a frame: measure right away rather
+    // than a frame later.
+    const onScroll = () => {
+      if (frame) cancelAnimationFrame(frame);
+      measure();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", schedule);
+    const observer = new MutationObserver(schedule);
+    // The layout also moves without a scroll -- a photo finishing loading, a
+    // group growing -- so watch the page's size and image loads as well
+    // (#126 review: the bar could stay tucked over a clear strip).
+    const sized = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    const panel = document.getElementById("grade-by-question");
+    // The whole page, not just the panel: a control can appear anywhere (a
+    // toast's button, a menu) and must not end up under the bar either.
+    observer.observe(document.body, { childList: true, subtree: true });
+    // And the page's size and every image load, not only the panel's: a photo
+    // loading elsewhere moves controls below the panel too (measured: "More
+    // options" under the bar at 360x640, 1 sweep in 3).
+    sized?.observe(document.body);
+    if (panel) sized?.observe(panel);
+    document.addEventListener("load", schedule, true);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", schedule);
+      observer.disconnect();
+      sized?.disconnect();
+      document.removeEventListener("load", schedule, true);
+    };
+  }, [barUp]);
 
   /** Confirm the answers that need no judgement (a clean match to the key; a blank always needs a look). */
   async function confirmMatching() {
     if (!autoConfirmIds.length) return;
-    await onSave(
+    const ok = await onSave(
       confirmResponses(a, autoConfirmIds),
       autoConfirmIds.length + (autoConfirmIds.length === 1 ? " answer" : " answers") + " confirmed",
     );
+    // The summary promises "finish and open class analysis": keep it.
+    if (ok !== false && REQUIRE_CONFIRM_MATCHES && !anyPending)
+      go("/assessments?id=" + a.id + "&tab=analysis");
   }
 
   async function makeReteachGroup(q: Question, group: AnswerGroup) {
@@ -293,7 +428,6 @@ function GradeByQuestion({
     group: AnswerGroup,
     points: number,
     errorType: string,
-    // The group, less any student the teacher pulled out to grade alone.
     ids: string[] = group.responseIds,
   ) {
     const credit = creditForPoints(a, q, points);
@@ -311,6 +445,7 @@ function GradeByQuestion({
     );
     if (ok === false) return;
     moveOnIfDone(updated, q);
+    revealNextCredit();
   }
 
   /** One student, pulled out of their group, graded on their own. */
@@ -324,10 +459,57 @@ function GradeByQuestion({
     moveOnIfDone(updated, q);
   }
 
+  /** Pull one student out of their group to grade on their own, or put them
+   * back. Saved at once: the separation is part of the answer, so the bar, the
+   * group's buttons and a reload all see it (#126 round 3). A grade they
+   * already had is kept, shown with "Change". */
+  async function separate(responseId: string, alone: boolean) {
+    const ok = await onSave(setGradedAlone(a, responseId, alone), alone ? "Pulled out to grade on their own" : "Back into the group");
+    // Bring that student's own credit form into view, wherever its card sorts.
+    if (ok !== false && alone)
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          document
+            .querySelector(`#grade-by-question [data-alone="${CSS.escape(responseId)}"] .gbq-credit`)
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+        ),
+      );
+  }
+
+  /** Confirm this question's matching answers (the green step), then on to
+   * the next question as if its last group had just been decided. */
+  async function confirmQuestionMatches(q: Question) {
+    const ids = matchesToConfirm(a, q.id);
+    if (!ids.length) return;
+    const updated = confirmResponses(a, ids);
+    const ok = await onSave(updated, ids.length + (ids.length === 1 ? " answer" : " answers") + " that match the key confirmed on Q" + q.number);
+    if (ok === false) return;
+    moveOnIfDone(updated, q);
+  }
+
+  /**
+   * After a group is decided, the next group opens where the last one was and
+   * can land with its "Points" box and "Give" button under the pinned green
+   * bar (#126 review, 360x640). Scroll just enough to show them; the page's
+   * scroll-padding (set while the bar is up) keeps them clear of it.
+   */
+  function revealNextCredit() {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        document
+          .querySelector("#grade-by-question .gbq-group.is-current .gbq-credit")
+          ?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+      ),
+    );
+  }
+
   /** After a question's last group: the next question, from the top. */
   function moveOnIfDone(updated: Assessment, q: Question) {
     if (hasWork(updated, q.id)) return;
-    const next = questions.find((x) => x.id !== q.id && hasWork(updated, x.id));
+    // Stay while this question still has matches to confirm: the green button
+    // is the next thing to do, and it is on screen.
+    if (REQUIRE_CONFIRM_MATCHES && matchesToConfirm(updated, q.id).length) return;
+    const next = questions.find((x) => x.id !== q.id && (hasWork(updated, x.id) || (REQUIRE_CONFIRM_MATCHES && matchesToConfirm(updated, x.id).length > 0)));
     if (!next) {
       // The whole class set is graded -- move straight on to class analysis
       // (Ricky/Michael: don't make me hunt for the next step) rather than
@@ -368,7 +550,13 @@ function GradeByQuestion({
             <Check size={22} />
             <div>
               <strong>All questions graded</strong>
-              {autoConfirmIds.length > 0 ? (
+              {autoConfirmIds.length > 0 && REQUIRE_CONFIRM_MATCHES ? (
+                <p>
+                  {autoConfirmIds.length} answer
+                  {autoConfirmIds.length === 1 ? "" : "s"} match your key and are marked correct.
+                  Confirm them to finish and open class analysis.
+                </p>
+              ) : autoConfirmIds.length > 0 ? (
                 <p>
                   {autoConfirmIds.length} answer
                   {autoConfirmIds.length === 1 ? "" : "s"} match your key and are already counted —
@@ -379,9 +567,16 @@ function GradeByQuestion({
               )}
             </div>
             {autoConfirmIds.length > 0 && (
-              <Action variant="secondary" disabled={busy} onClick={confirmMatching}>
-                <Check size={16} /> Lock in {autoConfirmIds.length} match
-                {autoConfirmIds.length === 1 ? "" : "es"}
+              <Action
+                variant={REQUIRE_CONFIRM_MATCHES ? "" : "secondary"}
+                className={REQUIRE_CONFIRM_MATCHES ? "confirm-matches" : undefined}
+                disabled={busy}
+                onClick={confirmMatching}
+              >
+                <Check size={16} />{" "}
+                {REQUIRE_CONFIRM_MATCHES
+                  ? "Confirm " + autoConfirmIds.length + (autoConfirmIds.length === 1 ? " answer" : " answers") + " that match the key"
+                  : "Lock in " + autoConfirmIds.length + " match" + (autoConfirmIds.length === 1 ? "" : "es")}
               </Action>
             )}
           </div>
@@ -439,6 +634,18 @@ function GradeByQuestion({
   const current = groups.find((g) => g.needsDecision);
   const sum = questionSummary(a, question.id);
   const worth = questionPoints(a, question);
+  // Ricky (11 Oct): once credit has been given on this question, the answers
+  // that already match the key are confirmed in one tap. The bar sticks to the
+  // bottom of the screen until it is done -- but since round 3 it tucks itself
+  // away whenever any control would sit under it, which on a phone is most of
+  // the time; the same button at the top of the question is always there.
+  // That trade is Ricky's call and is put to him (#126 round 3).
+  const pendingMatches = REQUIRE_CONFIRM_MATCHES ? matchesToConfirm(a, question.id) : [];
+  // Shown once credit has been given here, or straight away when nothing on
+  // this question is left to decide (every student matched the key), so a
+  // question with only matches is never a dead end without the button.
+  const creditGiven = a.responses.some((r) => r.questionId === question.id && r.verified);
+  const showBar = pendingMatches.length > 0 && (creditGiven || !current);
   return (
     <div className="panel" id="grade-by-question">
       <SectionTitle
@@ -460,6 +667,14 @@ function GradeByQuestion({
         <Pill>
           Worth {pointsText(worth)} point{worth === 1 ? "" : "s"}
         </Pill>
+        {/* The same step, in the page: the pinned bar tucks itself away
+            whenever a control would sit under it (round 3), so it is not
+            always on screen -- this one always is, at the top. */}
+        {showBar && (
+          <Action className="confirm-matches confirm-matches-inline" disabled={busy} onClick={() => confirmQuestionMatches(question)}>
+            <Check size={16} /> Confirm {pendingMatches.length} answer{pendingMatches.length === 1 ? "" : "s"} that match the key
+          </Action>
+        )}
       </div>
       <div className="class-scan-groups">
         {groups.map((g) => (
@@ -474,12 +689,36 @@ function GradeByQuestion({
             nameFor={nameFor}
             onGrade={(points, errorType, ids) => grade(question, g, points, errorType, ids)}
             onGradeOne={(id, points, errorType) => gradeOne(question, id, points, errorType)}
+            onSeparate={(id, alone) => separate(id, alone)}
             onReopen={() => setReopened((p) => new Set(p).add(g.key))}
             onTag={(errorType) => tagError(g, errorType)}
             onReteach={() => makeReteachGroup(question, g)}
           />
         ))}
       </div>
+      {showBar && typeof document !== "undefined" &&
+        // Into <body>: an animated ancestor here has a transform, which makes
+        // position:fixed fixed to IT rather than to the screen (measured: the
+        // button sat 1,400-1,900px down the page).
+        createPortal(
+          <div
+            className={"confirm-matches-bar" + (barUp && barTucked ? " is-tucked" : "")}
+            role="status"
+            aria-hidden={(barUp && barTucked) || undefined}
+            // Tucked away it can be neither tapped nor reached by keyboard.
+            inert={barUp && barTucked ? true : undefined}
+          >
+            <Action className="confirm-matches" disabled={busy} onClick={() => confirmQuestionMatches(question)}>
+              <Check size={18} /> Confirm {pendingMatches.length} answer{pendingMatches.length === 1 ? "" : "s"} that
+              match the key
+            </Action>
+          </div>,
+          document.body,
+        )}
+      {/* Room under the last group whenever the bar is up -- it used to need
+          creditGiven while the bar also showed on a question with nothing
+          left to decide, so the last group's buttons ended under it. */}
+      {showBar && <div className="confirm-matches-spacer" aria-hidden="true" />}
     </div>
   );
 }
@@ -505,6 +744,7 @@ function AnswerGroupCard({
   nameFor,
   onGrade,
   onGradeOne,
+  onSeparate,
   onReopen,
   onTag,
   onReteach,
@@ -518,6 +758,7 @@ function AnswerGroupCard({
   nameFor: (studentId: string) => string;
   onGrade: (points: number, errorType: string, responseIds: string[]) => void;
   onGradeOne: (responseId: string, points: number, errorType: string) => void;
+  onSeparate: (responseId: string, alone: boolean) => void;
   onReopen: () => void;
   onTag: (errorType: string) => void;
   onReteach: () => void;
@@ -526,9 +767,7 @@ function AnswerGroupCard({
   const types = errorTypesFor(a.subject);
   const [errorType, setErrorType] = useState(g.errorType || g.suggestedErrorType);
   const [viewing, setViewing] = useState<string | null>(null);
-  // Students pulled out of the group to grade on their own.
-  const [apart, setApart] = useState<Set<string>>(new Set());
-  const closeViewing = useCallback(() => setViewing(null), []);
+  const closeViewing = useCallback(() => setViewing(null), [setViewing]);
   const blank = !g.unsure && !g.answer.trim();
   const responses = g.responseIds
     .map((id) => a.responses.find((r) => r.id === id))
@@ -552,16 +791,27 @@ function AnswerGroupCard({
   const decidedLabel =
     pointsText((Math.round(g.match) / 100) * worth) + " of " + pointsText(worth) + " points";
   const fullCredit = g.verified && Math.round(g.match) >= 100;
-  const together = responses.filter((r) => !apart.has(r.id) && !g.unsure);
+  const together = g.unsure ? [] : responses;
 
   return (
-    <div className={"gbq-group" + (current ? " is-current" : "") + (g.unsure ? " is-unsure" : "")}>
+    <div
+      className={"gbq-group" + (current ? " is-current" : "") + (g.unsure ? " is-unsure" : "")}
+      data-alone={g.alone ? g.responseIds[0] : undefined}
+    >
       <div className="gbq-group-head">
         <span className="gbq-answer">
-          {g.unsure ? "Unsure — check each one" : blank ? "(blank)" : g.answer}
+          {g.unsure
+            ? "Unsure — check each one"
+            : blank && g.alone
+              ? "Read as blank — check the photo"
+              : blank
+                ? "(blank)"
+                : g.answer}
         </span>
         <span className="cell-meta">
-          {g.studentIds.length} {g.studentIds.length === 1 ? "student" : "students"}
+          {g.alone
+            ? nameFor(g.studentIds[0]) + " · graded on their own"
+            : g.studentIds.length + (g.studentIds.length === 1 ? " student" : " students")}
         </span>
       </div>
       {/* The key right under the answer, so nobody scrolls up to compare. */}
@@ -574,10 +824,22 @@ function AnswerGroupCard({
           didn&rsquo;t grade them. Look at each photo and give credit.
         </p>
       )}
-      {blank && !g.verified && (
+      {g.lowConfidence && !g.verified && (
+        <p className="cell-meta">
+          Read as matching your key, but the AI wasn&rsquo;t fully sure it read these
+          right. Check the photos before giving credit.
+        </p>
+      )}
+      {blank && !g.verified && !g.alone && (
         <p className="cell-meta">
           Read as blank. Check the photos — if there is any work, pull that student out and
           grade them on their own.
+        </p>
+      )}
+      {g.alone && blank && !g.verified && (
+        <p className="cell-meta">
+          The AI read this answer as blank. Look at the photo and give the credit the work
+          deserves.
         </p>
       )}
       {!g.unsure && g.written.length > 0 && !(g.written.length === 1 && g.written[0] === g.answer) && (
@@ -648,7 +910,7 @@ function AnswerGroupCard({
         <CreditForm
           worth={worth}
           busy={busy}
-          label={g.answer || "blank"}
+          label={g.answer || (g.alone ? "read as blank" : "blank")}
           initial={g.verified ? (Math.round(g.match) / 100) * worth : null}
           who={together.length === 1 ? "this student" : "all " + together.length}
           onGive={(points) => onGrade(points, errorType, together.map((r) => r.id))}
@@ -658,41 +920,26 @@ function AnswerGroupCard({
               <Users size={15} /> Reteach these {g.studentIds.length}
             </Action>
           )}
+          {g.alone && !g.verified && (
+            <Action variant="secondary small" disabled={busy} onClick={() => onSeparate(g.responseIds[0], false)}>
+              Back into the group
+            </Action>
+          )}
         </CreditForm>
       )}
       {/* Every student in the group, in scan order. Any one can be pulled out
           and graded on their own; in the Unsure group every one is. */}
       <ul className="gbq-students">
-        {responses.map((r) => {
-          const alone = g.unsure || apart.has(r.id);
+        {!g.alone && responses.map((r) => {
+          const alone = g.unsure;
           const photo = photoOf(r);
           return (
             <li key={r.id} className={alone ? "is-apart" : ""}>
               <div className="gbq-student-head">
                 <span>{nameFor(r.studentId)}</span>
                 {alone && r.answer.trim() && <span className="cell-meta">wrote “{r.answer}”</span>}
-                {!g.unsure && open && (
-                  <button
-                    type="button"
-                    className="grade-change"
-                    disabled={busy}
-                    onClick={() =>
-                      setApart((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(r.id)) next.delete(r.id);
-                        else next.add(r.id);
-                        return next;
-                      })
-                    }
-                  >
-                    {apart.has(r.id) ? "Back into the group" : "Grade on their own"}
-                  </button>
-                )}
-                {!g.unsure && !open && (
-                  <button type="button" className="grade-change" disabled={busy} onClick={() => {
-                    onReopen();
-                    setApart((prev) => new Set(prev).add(r.id));
-                  }}>
+                {!g.unsure && g.studentIds.length > 1 && (
+                  <button type="button" className="grade-change" disabled={busy} onClick={() => onSeparate(r.id, true)}>
                     Grade on their own
                   </button>
                 )}
