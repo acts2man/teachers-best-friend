@@ -211,3 +211,75 @@ export function declaredFields(typesSource, typeName) {
   }
   return fields;
 }
+
+/** Strip comments and dollar-quoted bodies: what is left is a file's own DDL. */
+const ddlOnly = (sql) => noComments(sql).replace(/\$([a-zA-Z_]*)\$[\s\S]*?\$\1\$/g, "");
+
+/** Split an index column list on top-level commas, lower-cased. */
+function splitColumns(list) {
+  const out = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of list) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      out.push(cur.trim().toLowerCase());
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur.trim().toLowerCase());
+  return out;
+}
+
+/**
+ * Replays `create [unique] index`, `drop index` and `alter index ... rename
+ * to` across `files` and returns the indexes on public.<table> that exist at
+ * the end: [{ name, unique, columns, where }]. Statements inside function
+ * bodies and comments are ignored, as the database would.
+ */
+export function liveIndexes(files, table) {
+  const bare = (s) => s.replace(/"/g, "").replace(/^public\./i, "").toLowerCase();
+  const live = new Map();
+  const re =
+    /\bcreate\s+(unique\s+)?index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?([\w."]+)\s+on\s+(?:only\s+)?([\w."]+)\s*(?:using\s+\w+\s*)?\(([^;]*?)\)\s*(?:where\s+([^;]*))?;|\bdrop\s+index\s+(?:concurrently\s+)?(?:if\s+exists\s+)?([\w."]+)\s*;|\balter\s+index\s+(?:if\s+exists\s+)?([\w."]+)\s+rename\s+to\s+([\w"]+)\s*;/gi;
+  for (const { text } of files) {
+    const sql = ddlOnly(text);
+    let m;
+    while ((m = re.exec(sql))) {
+      if (m[2]) {
+        if (bare(m[3]) !== table || live.has(bare(m[2]))) continue; // other table, or "if not exists"
+        live.set(bare(m[2]), {
+          name: bare(m[2]),
+          unique: Boolean(m[1]),
+          columns: splitColumns(m[4]),
+          where: (m[5] || "").trim().toLowerCase(),
+        });
+      } else if (m[6]) {
+        live.delete(bare(m[6]));
+      } else if (m[7] && live.has(bare(m[7]))) {
+        const idx = live.get(bare(m[7]));
+        live.delete(bare(m[7]));
+        live.set(bare(m[8]), { ...idx, name: bare(m[8]) });
+      }
+    }
+  }
+  return [...live.values()];
+}
+
+/**
+ * sync_workspace's "custom standards" section: the ON CONFLICT target columns
+ * of its upsert, its delete statement, and the section text.
+ */
+export function customStandardsSave(def) {
+  const body = syncSections(def)["custom standards"];
+  if (body === undefined) throw new Error('sync_workspace has no "custom standards" section');
+  const sql = noComments(body);
+  const target = /on\s+conflict\s*\(([^)]*)\)/i.exec(sql);
+  const del = /delete\s+from\s+public\.standards\b[\s\S]*?;/i.exec(sql);
+  return {
+    sql,
+    conflictTarget: target ? splitColumns(target[1]) : [],
+    deleteStatement: del ? del[0] : "",
+  };
+}

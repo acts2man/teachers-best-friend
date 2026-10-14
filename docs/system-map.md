@@ -195,8 +195,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
-   patches in `20261012200000` (answerParts), `20261013120000` (gradedAlone) and
-   `20261013130000` (secondChoice). For each table it **upserts the rows it is sent and deletes
+   patches in `20261012200000` (answerParts), `20261013120000` (gradedAlone),
+   `20261013130000` (secondChoice) and `20261014130000` (custom standards keyed per framework,
+   their extras saved in `meta`; **in the repo, not yet applied to production**). For each table it **upserts the rows it is sent and deletes
    every row it is not sent**:
 
    | Table | Delete statement |
@@ -211,14 +212,17 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    | lessons | `:244` |
    | resources | `:253` |
    | student_groups and student_group_members | `:265-268` |
-   | standards (custom) | `:288` |
+   | standards (custom) | `:288`, replaced by `20261014130000`: deletes a row only when no payload row has its framework, grade, subject **and** code |
 
    - Responses are inserted through **inner joins** on the question and the student
      (`:188-189`). A response whose question or student is missing from the payload is
      silently not saved.
-   - Responses upsert `on conflict (question_id, student_id)` (`:191`). Custom standards upsert
-     `on conflict (teacher_id, code)` (`:283`). **Two payload rows hitting the same key fail the
-     entire save** (rule R14; gap G8).
+   - Responses upsert `on conflict (question_id, student_id)` (`:191`). **Two payload rows
+     hitting the same key fail the entire save** (rule R14). Custom standards upserted
+     `on conflict (teacher_id, code)` (`:283`), which failed every save of a teacher with one
+     code in two frameworks (gap G8); `20261014130000` upserts them on
+     `(teacher_id, framework, grade, subject, code)` from a `distinct on` over the same four
+     fields, so a repeated row keeps the last copy instead of failing.
    - The function then bumps `teacher_workspaces.revision` (`:301-306`).
 
 ### 1.9 Reload
@@ -226,7 +230,7 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 - `GET /api/workspace` (`app/api/workspace/route.ts:90-115`) calls `readWorkspace`
   (`lib/teacher-server.ts:446-465`). It reads the **revision first, then the data**, so a save
   in between shows up as a 409 on the next PUT.
-- `get_workspace_json` (`20261008190000…:320-468` plus the three patches) builds the JSON from
+- `get_workspace_json` (`20261008190000…:320-468` plus the four patches) builds the JSON from
   a **fixed list of columns**. `jsonb_strip_nulls` removes null keys.
 - `normalizeWorkspace` (`lib/teacher-server.ts:411-444`) and `withAssessmentDefaults`
   (`lib/workspace-safety.ts:24-32`) put back the defaults a stripped key loses.
@@ -338,9 +342,11 @@ deletes anything the payload leaves out.
     enforce) and checks every field of Classroom, Student, Evidence, Assessment, Question,
     StudentResponse, Group and Standard;
   - `tests/workspace-persistence-guard.test.mjs`: the hand-kept list.
-- **Known exception:** `Standard`'s skills, prerequisites, next, vocabulary, misconception,
-  example, dok and source are **not saved** (gap G11). They are allow-listed in the test so
-  the loss stays visible.
+- **Known exception:** none. `Standard`'s skills, prerequisites, next, vocabulary,
+  misconception, example, dok, source and officialCode were not saved (gap G11); since
+  `20261014130000` they ride the row's `meta` column and the allow-list in the test is empty.
+  **That migration is in the repo, not yet applied to production**: until it is, the loss is
+  still live.
 
 **R3. One student's pages and answers never land under another student.** Leaving a page
 unassigned is always allowed.
@@ -486,7 +492,13 @@ unassigned is always allowed.
 - **Guarded by:**
   - `tests/invariants/migration-safety.test.mjs`: from `20261012190000`, every file must set
     `lock_timeout` and may not drop a table, column, function, view, type, schema or index; a
-    dropped policy or trigger must be re-created in the same file;
+    dropped policy or trigger must be re-created in the same file. Exceptions are named one
+    statement at a time in `ALLOWED_DROPS` in that test, and only an index may be listed;
+  - **the one exception so far:** `20261014130000_custom_standards_per_framework.sql` drops the
+    index `custom_standards_key` on `(teacher_id, code)` (gap G8). A unique index cannot be made
+    non-unique except by dropping it, and it rejected the same code in two frameworks. An index
+    holds no data; the file builds the wider unique index and re-points `sync_workspace` at it
+    first, in the same transaction;
   - `tests/invariants/workspace-field-round-trip.test.mjs`: replays every patch migration and
     fails where one would raise on the database.
 
@@ -531,10 +543,14 @@ page, and matched to a student on our side.
 fails the whole save if one statement touches the same row twice.
 - **Enforced by:** `normalizeRecognizedResponses` emits one response per question
   (`lib/teacher-workflow.ts:501`); `mergeSplitGroups` merges two rows for one student
-  (`lib/teacher-class-scan.ts:973`).
+  (`lib/teacher-class-scan.ts:973`). Custom standards: the database key is the key the app
+  uses, `(teacher_id, framework, grade, subject, code)`, and `sync_workspace` reads them through
+  a `distinct on` that key (`20261014130000`, **not yet applied to production**).
 - **Guarded by:** `tests/invariants/no-wrong-student.test.mjs` (no student and question pair
-  saved twice).
-- **NO TEST YET:** custom standards with the same code (gap G8).
+  saved twice); `tests/invariants/custom-standards-key.test.mjs` (the upsert's target, the
+  live unique indexes on `public.standards` after replaying every migration, the payload
+  `distinct on`, the delete, and the catalog loader's de-duplication all use the same four
+  fields). Proven on the database by `supabase/checks/custom-standards-round-trip.sql`.
 
 ---
 
@@ -664,8 +680,19 @@ reading the code, as marked. None has a test in the suite, because each test wou
     (`components/teacher-classes.tsx:730-734`).
   - Loading two frameworks that share codes (California and Common Core both use `3.OA.A.1`)
     puts two rows with one code into the payload, and `ON CONFLICT` raises.
+  - Reproduced 14 Oct on a full replay of `supabase/migrations` (PGlite): "ON CONFLICT DO
+    UPDATE command cannot affect row a second time".
+  - **FIXED IN CODE, MIGRATION PENDING APPLICATION:**
+    `20261014130000_custom_standards_per_framework.sql` keys custom standards on
+    `(teacher_id, framework, grade, subject, code)` and drops the old index (the one R9
+    exception). Not live until it is applied by hand; then run
+    `supabase/checks/custom-standards-round-trip.sql`.
+  - Still open: the "resolve standard links" step in `sync_workspace` links a question to a
+    standard by **code** only, so with one code in two frameworks the question's
+    `standard_id` points at either row. Reports that group by `standard_id` could count it
+    under the other framework; the app itself reads `standard_code`.
 - **G9. Upload recovery can return a purged file.** `findUploadByHash` ignores `purged_at`
-  (`lib/teacher-server.ts:680-703`), so the scan later fails with a 404. The purge also
+  (`lib/teacher-server.ts:617-640`), so the scan later fails with a 404. The purge also
   handles only 200 rows per table per run, and each class-scan page creates two rows.
 - **G10. The reuse cache key is looser than the read it caches.**
   - The page hashes are sorted and de-duplicated, so a reordered set gets the old order.
@@ -677,6 +704,36 @@ reading the code, as marked. None has a test in the suite, because each test wou
 - **G11. Custom standards lose their skills, misconception, example and DOK on reload** (R2).
   `sync_workspace` writes none of them (`20261008190000…:278-288`). The teacher's own "skills"
   field in Standards > Add (`components/teacher-insights.tsx:167`) is gone after a refresh.
+  - **FIXED IN CODE, MIGRATION PENDING APPLICATION:** `20261014130000` writes skills,
+    prerequisites, next, vocabulary, misconception, example, dok, source and officialCode into
+    the row's `meta` jsonb, and `get_workspace_json` reads all of them back (prerequisites,
+    next and vocabulary were hard-coded `[]`).
+  - **Neither the defaults nor the catalog's values are frozen.** The reader and
+    `normalizeStandard` fill every missing extra (skills `[]`, DOK 2, a stock misconception
+    and example) from the shared catalog or a default, the client sends them back, and
+    `StandardsLoader` (`components/teacher-classes.tsx`) copies catalog rows whole. Storing
+    any of that would freeze a snapshot into every teacher row on its first save after the
+    migration, and a later catalog refresh would never reach it. So the save stores only the
+    teacher's real differences:
+    - lists only when non-empty; misconception and example only when they differ from the
+      stock texts (both apostrophe forms); DOK only when it is not 2;
+    - and no key whose value equals the shared catalog's copy of the same standard
+      (`teacher_id` null, active, same framework, grade and code -- the reader's match).
+    - A row with nothing left stores `meta` NULL.
+  - The reader merges per key, `catalog || teacher`: the teacher's values win, the catalog
+    fills every key the teacher has not set, including a later refresh.
+  - **Rule this creates: an empty or default value means "inherit from the catalog".** A
+    teacher cannot clear a field to empty, or keep a value equal to an old catalog value once
+    the catalog changes, where the catalog has that standard: the catalog's value shows. The
+    same holds for DOK: a teacher's 2 cannot beat a catalog 3. No screen reaches any of this
+    today: Standards > Add creates district standards, which have no catalog row, and nothing
+    edits a saved standard's extras or DOK. A screen that edits them must store an explicit
+    override first.
+  - Guarded by `tests/invariants/custom-standards-key.test.mjs` (the merge; the stock texts
+    and DOK match `normalizeStandard` and `get_workspace_json`; the save compares against
+    the catalog row with the reader's match); proven on the database by
+    `supabase/checks/custom-standards-round-trip.sql` steps 5-7 (step 7: catalog v1, teacher
+    loads and saves, catalog refreshed to v2, the teacher sees v2 and keeps their own example).
 - **G12. FIXED in code (G12 PR, awaiting review). An unrostered child whose name is a
   near-variant of a rostered child was pre-filled as that child** (R3; reproduced 14 Oct;
   guarded by `tests/invariants/no-near-name-prefill.test.mjs` and the near-name pairs in
