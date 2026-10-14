@@ -621,20 +621,32 @@ reading the code, as marked. None has a test in the suite, because each test wou
     prerequisites, next, vocabulary, misconception, example, dok, source and officialCode into
     the row's `meta` jsonb, and `get_workspace_json` reads all of them back (prerequisites,
     next and vocabulary were hard-coded `[]`).
-  - **The defaults are not frozen.** The reader and `normalizeStandard` fill every missing
-    extra (skills `[]`, DOK 2, a stock misconception and example) and the client sends them
-    back. So the save stores only what the reader would not fill in: lists only when non-empty,
-    misconception and example only when they differ from the stock texts (both apostrophe
-    forms), DOK only when it is not 2 (no screen edits a standard's DOK; it comes from the
-    catalog). A row with nothing else stores `meta` NULL. The reader merges per key,
-    `catalog || teacher`: the teacher's own values win, the shared catalog fills every key the
-    teacher has not set, including enrichment added later.
-  - Guarded by `tests/invariants/custom-standards-key.test.mjs` (the merge, and that the
-    save's stock texts and DOK match `normalizeStandard` and `get_workspace_json`); proven on
-    the database by `supabase/checks/custom-standards-round-trip.sql` steps 5-6.
-  - Remaining edge: a teacher who types a skill list into Standards > Add and later clears it
-    to empty gets the catalog's list back on reload, if the shared catalog has that standard.
-    Hand-added district standards have no catalog row, so in practice this does not arise.
+  - **Neither the defaults nor the catalog's values are frozen.** The reader and
+    `normalizeStandard` fill every missing extra (skills `[]`, DOK 2, a stock misconception
+    and example) from the shared catalog or a default, the client sends them back, and
+    `StandardsLoader` (`components/teacher-classes.tsx`) copies catalog rows whole. Storing
+    any of that would freeze a snapshot into every teacher row on its first save after the
+    migration, and a later catalog refresh would never reach it. So the save stores only the
+    teacher's real differences:
+    - lists only when non-empty; misconception and example only when they differ from the
+      stock texts (both apostrophe forms); DOK only when it is not 2;
+    - and no key whose value equals the shared catalog's copy of the same standard
+      (`teacher_id` null, active, same framework, grade and code -- the reader's match).
+    - A row with nothing left stores `meta` NULL.
+  - The reader merges per key, `catalog || teacher`: the teacher's values win, the catalog
+    fills every key the teacher has not set, including a later refresh.
+  - **Rule this creates: an empty or default value means "inherit from the catalog".** A
+    teacher cannot clear a field to empty, or keep a value equal to an old catalog value once
+    the catalog changes, where the catalog has that standard: the catalog's value shows. The
+    same holds for DOK: a teacher's 2 cannot beat a catalog 3. No screen reaches any of this
+    today: Standards > Add creates district standards, which have no catalog row, and nothing
+    edits a saved standard's extras or DOK. A screen that edits them must store an explicit
+    override first.
+  - Guarded by `tests/invariants/custom-standards-key.test.mjs` (the merge; the stock texts
+    and DOK match `normalizeStandard` and `get_workspace_json`; the save compares against
+    the catalog row with the reader's match); proven on the database by
+    `supabase/checks/custom-standards-round-trip.sql` steps 5-7 (step 7: catalog v1, teacher
+    loads and saves, catalog refreshed to v2, the teacher sees v2 and keeps their own example).
 - **G12. An unrostered child whose name is a near-variant of a rostered child is pre-filled as
   that child** (R3; reproduced 14 Oct).
   - `matchRosterStudent`'s fuzzy tier scores "Christina Lee" against "Chris Lee" at 0.947, and

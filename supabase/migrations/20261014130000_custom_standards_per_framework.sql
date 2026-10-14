@@ -53,9 +53,27 @@
 --     (no screen edits it), so a 2 is either the default or the same value
 --     the catalog would give; storing it would only stop a catalog 3 showing.
 --     A meta left with nothing in it is stored as NULL;
+--   * the save also leaves out every key whose value EQUALS the shared
+--     catalog's copy of the same standard (teacher_id null, active, same
+--     framework, grade and code -- the match get_workspace_json uses). The
+--     catalog loader (components/teacher-classes.tsx StandardsLoader) copies
+--     catalog rows whole, and every teacher's reload carries the catalog's
+--     values; storing them would freeze a snapshot on the first save and a
+--     later catalog refresh would never reach the teacher. Only the teacher's
+--     real differences are stored;
 --   * the reader merges per key, catalog first and the teacher's row on top
 --     (`catalog || teacher`): the teacher's own values win, the catalog fills
 --     every key the teacher has not set.
+--
+-- RULE THIS CREATES: an empty or default value means "inherit from the
+-- catalog". A teacher cannot clear a field to empty, or set DOK back to 2,
+-- where the catalog has a value: the catalog's shows. No screen does either
+-- today (Standards > Add creates district standards, which have no catalog
+-- row, and nothing edits a saved standard's extras or its DOK). The same
+-- holds for DOK: a teacher's 2 cannot beat a catalog 3.
+--
+-- Also removes the custom-standards `select ... into ids`: the delete matches
+-- the full key now, so that code list was dead.
 --
 -- Also: a payload that somehow holds two rows for the SAME new key keeps the
 -- last one instead of failing the save (R14), and the delete of custom
@@ -86,7 +104,8 @@ declare
     array['sync_workspace',
       'nullif(cs->>''domain'',''''), nullif(cs->>''cluster'','''')',
       'nullif(cs->>''domain'',''''), nullif(cs->>''cluster'',''''),
-         nullif(jsonb_strip_nulls(jsonb_build_object(
+         nullif((select coalesce(jsonb_object_agg(kv.key, kv.value), ''{}''::jsonb)
+           from jsonb_each(jsonb_strip_nulls(jsonb_build_object(
            ''skills'', case when jsonb_typeof(cs->''skills'') = ''array'' then case when jsonb_array_length(cs->''skills'') > 0 then cs->''skills'' end end,
            ''prerequisites'', case when jsonb_typeof(cs->''prerequisites'') = ''array'' then case when jsonb_array_length(cs->''prerequisites'') > 0 then cs->''prerequisites'' end end,
            ''next'', case when jsonb_typeof(cs->''next'') = ''array'' then case when jsonb_array_length(cs->''next'') > 0 then cs->''next'' end end,
@@ -98,13 +117,19 @@ declare
            ''example'', nullif(nullif(cs->>''example'', ''''), ''Choose a task that directly demonstrates this standard.''),
            ''dok'', nullif(public.safe_int(cs->>''dok''), 2),
            ''source'', nullif(cs->>''source'', ''''),
-           ''officialCode'', nullif(cs->>''officialCode'', ''''))), ''{}''::jsonb)'],
+           ''officialCode'', nullif(cs->>''officialCode'', '''')))) kv
+          where kv.value is distinct from cat.meta -> kv.key), ''{}''::jsonb)'],
     array['sync_workspace',
       'from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) cs where cs->>''code'' is not null',
       'from (select distinct on (coalesce(nullif(el.v->>''framework'',''''),''Custom''), el.v->>''grade'', el.v->>''subject'', el.v->>''code'') el.v
           from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) with ordinality el(v, pos)
          where el.v->>''code'' is not null
-         order by coalesce(nullif(el.v->>''framework'',''''),''Custom''), el.v->>''grade'', el.v->>''subject'', el.v->>''code'', el.pos desc) cs_src(cs)'],
+         order by coalesce(nullif(el.v->>''framework'',''''),''Custom''), el.v->>''grade'', el.v->>''subject'', el.v->>''code'', el.pos desc) cs_src(cs)
+  left join lateral (
+    select g.meta from public.standards g
+     where g.teacher_id is null and g.active
+       and g.code = cs->>''code'' and g.framework = coalesce(nullif(cs->>''framework'',''''),''Custom'') and g.grade = cs->>''grade''
+     limit 1) cat on true'],
     array['sync_workspace',
       'on conflict (teacher_id, code) where teacher_id is not null do update set',
       'on conflict (teacher_id, framework, grade, subject, code) where teacher_id is not null do update set'],
@@ -117,6 +142,9 @@ declare
     select 1 from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) cs
      where cs->>''code'' = s.code and coalesce(nullif(cs->>''framework'',''''),''Custom'') = s.framework
        and cs->>''grade'' = s.grade and cs->>''subject'' = s.subject);'],
+    array['sync_workspace',
+      'select coalesce(array_agg(cs->>''code''), ''{}'') into ids from jsonb_array_elements(coalesce(p_data->''customStandards'',''[]''::jsonb)) cs;',
+      '-- custom standards: the delete below matches the full key, so no list of codes is needed.'],
     array['get_workspace_json',
       '''prerequisites'', ''[]''::jsonb,',
       '''prerequisites'', case when jsonb_typeof(m.meta -> ''prerequisites'') = ''array''

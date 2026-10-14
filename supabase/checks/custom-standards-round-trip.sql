@@ -23,10 +23,17 @@
 --   6. Catalog details added to the shared library LATER reach that teacher
 --      row; and on a row that has its own skills, the teacher's skills win
 --      while the catalog fills the keys the teacher never set.
---   7. The teacher's other rows are untouched (counts before == after).
+--   7. Catalog values are not frozen either. A standard loaded from the shared
+--      catalog (v1) and saved stores only the teacher's own difference (here
+--      an example), on the first save and on a resave of the reload; after the
+--      catalog is refreshed to v2 the teacher sees v2, with their own example
+--      still on top. This is also what every existing teacher's first save
+--      after the migration does: their reload carries the catalog's values.
+--   8. The teacher's other rows are untouched (counts before == after).
 --
--- Step 6 inserts two rows into the shared catalog (framework "Common Core",
--- codes CHECK-G8.1 / CHECK-G11.1); they roll back with everything else.
+-- Steps 6-7 insert three rows into the shared catalog (framework "Common
+-- Core", codes CHECK-G8.1 / CHECK-G11.1 / CHECK-G11.2) and update one; all of
+-- it rolls back with everything else.
 --
 -- Set the teacher below to an account with a workspace -- ideally your own
 -- test account, not a pilot teacher's. The block holds that teacher's rows
@@ -46,6 +53,11 @@ declare
   later jsonb;
   plain_later jsonb;
   cc_later jsonb;
+  cat_code text := 'CHECK-G11.2'; -- ditto
+  cat_meta_first jsonb;
+  cat_meta_resave jsonb;
+  cat_v2 jsonb;
+  ws2 jsonb;
   ws jsonb;
   back jsonb;
   after_drop jsonb;
@@ -133,13 +145,37 @@ begin
   select s into cc_later from jsonb_array_elements(later->'customStandards') s
    where s->>'code' = test_code and s->>'framework' = 'Common Core';
 
+  -- Step 7: the catalog has v1; the teacher loads it (StandardsLoader copies
+  -- the catalog row whole) and adds an example of their own.
+  insert into public.standards (teacher_id, jurisdiction, framework, subject, grade, code, description, meta)
+  values (null, 'CA', 'Common Core', 'Math', '3', cat_code, 'catalog row',
+    jsonb_build_object('skills', jsonb_build_array('v1 skill'), 'misconception', 'v1 misc', 'dok', 3));
+  perform public.sync_workspace(tid, jsonb_set(later, '{customStandards}',
+    coalesce(later->'customStandards', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+      'code', cat_code, 'framework', 'Common Core', 'grade', 3, 'subject', 'Math',
+      'title', 'Loaded', 'summary', 'Loaded wording', 'domain', 'D', 'cluster', 'C',
+      'skills', jsonb_build_array('v1 skill'), 'prerequisites', '[]'::jsonb, 'next', '[]'::jsonb,
+      'vocabulary', '[]'::jsonb, 'misconception', 'v1 misc', 'example', 'teacher example',
+      'dok', 3, 'source', ''))));
+  select meta into cat_meta_first from public.standards
+   where teacher_id = tid and code = cat_code and framework = 'Common Core';
+  perform public.sync_workspace(tid, public.get_workspace_json(tid));
+  select meta into cat_meta_resave from public.standards
+   where teacher_id = tid and code = cat_code and framework = 'Common Core';
+  -- An admin refreshes the catalog.
+  update public.standards set meta = jsonb_build_object('skills', jsonb_build_array('v2 skill'), 'misconception', 'v2 misc', 'dok', 4)
+   where teacher_id is null and code = cat_code and framework = 'Common Core';
+  ws2 := public.get_workspace_json(tid);
+  select s into cat_v2 from jsonb_array_elements(ws2->'customStandards') s
+   where s->>'code' = cat_code and s->>'framework' = 'Common Core';
+
   -- Clean up our rows so the counts compare like for like.
-  perform public.sync_workspace(tid, jsonb_set(later, '{customStandards}', coalesce((
-    select jsonb_agg(s) from jsonb_array_elements(later->'customStandards') s
-     where s->>'code' not in (test_code, plain_code)), '[]'::jsonb)));
+  perform public.sync_workspace(tid, jsonb_set(ws2, '{customStandards}', coalesce((
+    select jsonb_agg(s) from jsonb_array_elements(ws2->'customStandards') s
+     where s->>'code' not in (test_code, plain_code, cat_code)), '[]'::jsonb)));
   execute counts into after_counts using tid;
 
-  raise exception E'ROLLED_BACK expect both=true | CA skills=["ca skill one", "ca skill two"] misconception="CA misconception" example="CA example" prerequisites=["2.OA.A.1"] next=["4.OA.A.1"] vocabulary=["product"] dok=3 source="CA source" officialCode="3.OA.1" | CC skills=["cc skill"] misconception="CC misconception" example="CC example" dok=2 prerequisites=[] | after dropping CA: CA=absent CC=present | defaults-only meta: first=absent resave=absent | catalog later: plain skills=["catalog skill"] prerequisites=["catalog prereq"] misconception="catalog misconception" example="catalog example" dok=3; CC skills=["cc skill"] prerequisites=["catalog prereq"] misconception="CC misconception" | equal counts\n got both=% | CA skills=% misconception=% example=% prerequisites=% next=% vocabulary=% dok=% source=% officialCode=% | CC skills=% misconception=% example=% dok=% prerequisites=% | after dropping CA: CA=% CC=% | defaults-only meta: first=% resave=% | catalog later: plain skills=% prerequisites=% misconception=% example=% dok=%; CC skills=% prerequisites=% misconception=% | counts before=% after=%',
+  raise exception E'ROLLED_BACK expect both=true | CA skills=["ca skill one", "ca skill two"] misconception="CA misconception" example="CA example" prerequisites=["2.OA.A.1"] next=["4.OA.A.1"] vocabulary=["product"] dok=3 source="CA source" officialCode="3.OA.1" | CC skills=["cc skill"] misconception="CC misconception" example="CC example" dok=2 prerequisites=[] | after dropping CA: CA=absent CC=present | defaults-only meta: first=absent resave=absent | catalog later: plain skills=["catalog skill"] prerequisites=["catalog prereq"] misconception="catalog misconception" example="catalog example" dok=3; CC skills=["cc skill"] prerequisites=["catalog prereq"] misconception="CC misconception" | catalog refresh: meta first={"example": "teacher example"} resave={"example": "teacher example"} after v2 skills=["v2 skill"] misconception="v2 misc" dok=4 example="teacher example" | equal counts\n got both=% | CA skills=% misconception=% example=% prerequisites=% next=% vocabulary=% dok=% source=% officialCode=% | CC skills=% misconception=% example=% dok=% prerequisites=% | after dropping CA: CA=% CC=% | defaults-only meta: first=% resave=% | catalog later: plain skills=% prerequisites=% misconception=% example=% dok=%; CC skills=% prerequisites=% misconception=% | catalog refresh: meta first=% resave=% after v2 skills=% misconception=% dok=% example=% | counts before=% after=%',
     (ca is not null and cc is not null),
     ca->'skills', ca->'misconception', ca->'example', ca->'prerequisites', ca->'next', ca->'vocabulary',
     ca->'dok', ca->'source', coalesce(ca->'officialCode', '"absent"'),
@@ -149,6 +185,8 @@ begin
     coalesce(plain_meta_first::text, 'absent'), coalesce(plain_meta_resave::text, 'absent'),
     plain_later->'skills', plain_later->'prerequisites', plain_later->'misconception', plain_later->'example', plain_later->'dok',
     cc_later->'skills', cc_later->'prerequisites', cc_later->'misconception',
+    coalesce(cat_meta_first::text, 'absent'), coalesce(cat_meta_resave::text, 'absent'),
+    cat_v2->'skills', cat_v2->'misconception', cat_v2->'dok', cat_v2->'example',
     before_counts, after_counts;
 end
 $check$;

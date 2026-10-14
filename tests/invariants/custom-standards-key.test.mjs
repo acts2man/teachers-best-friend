@@ -137,3 +137,29 @@ test("the save drops the stock texts and DOK the reader fills in itself", () => 
   assert.match(normalize, /typeof item\.dok === "number" \? item\.dok : 2/);
   assert.ok(save.sql.includes("nullif(public.safe_int(cs->>'dok'), 2)"), "sync_workspace stores the default DOK 2 in meta");
 });
+
+test("the save leaves out every value equal to the shared catalog's, so a catalog refresh reaches the teacher", () => {
+  // StandardsLoader copies catalog rows whole, and every teacher's reload
+  // carries the catalog's values. Stored, they freeze a snapshot on the first
+  // save after the migration and a later catalog refresh never shows.
+  const join =
+    /left join lateral \(\s*select g\.meta from public\.standards g\s+where g\.teacher_id is null and g\.active\s+and ([\s\S]*?)\s+limit 1\) cat on true/.exec(
+      save.sql,
+    );
+  assert.ok(join, "sync_workspace does not look up the shared catalog's copy of a custom standard");
+  // The same match the reload uses: code, framework and grade.
+  for (const col of ["code", "framework", "grade"]) {
+    assert.match(join[1], new RegExp(`g\\.${col} = `), `the save's catalog match leaves out ${col}`);
+    assert.match(stdCte, new RegExp(`g\\.${col} = s\\.${col}`), `the reload's catalog match leaves out ${col}`);
+  }
+  assert.ok(
+    save.sql.includes("where kv.value is distinct from cat.meta -> kv.key"),
+    "sync_workspace stores values equal to the catalog's",
+  );
+});
+
+test("the custom-standards section builds no dead list of codes", () => {
+  // The delete matches the full key; a leftover `into ids` is dead code that
+  // invites someone to delete by code again.
+  assert.doesNotMatch(save.sql, /into\s+ids/i);
+});
