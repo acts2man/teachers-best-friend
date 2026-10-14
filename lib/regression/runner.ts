@@ -433,7 +433,11 @@ export async function stepCase(
       return normalizeRecognizedResponses(a, pile.studentId, g?.responses ?? []);
     });
     const parts = Object.fromEntries(activeQuestions(a).map((q) => [q.id, expectedParts(q)]));
-    const score = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping", parts);
+    const scored = scoreAnswers(answers.answers, replayed, e.kind as "answer_reading" | "grouping", parts);
+    // The page shows these side by side: give each its question number.
+    const numberOf = new Map(a.questions.map((q) => [q.id, q.number]));
+    const numbered = (l: typeof scored.partsMissing) => l.map((x) => ({ ...x, number: numberOf.get(x.questionId) }));
+    const score = { ...scored, partsMissing: numbered(scored.partsMissing), needsHumanCheck: numbered(scored.needsHumanCheck) };
     return { state: s, result: { status: score.passed ? "passed" : "failed", progress: "Answers scored", metrics: { answers: score } } };
   }
 
