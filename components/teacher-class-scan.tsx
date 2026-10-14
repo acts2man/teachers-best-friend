@@ -27,7 +27,11 @@ import { ImageViewer } from "./image-viewer";
 import { deviceId, useScanSession } from "./use-scan-session";
 import {
   GRADING_STALE_MS,
+  groupLayout,
+  inFlightMatches,
   isEmptySession,
+  parseProgress,
+  planResume,
   type ScanPage,
   type ScanProgress,
   type ScanSession,
@@ -50,6 +54,9 @@ import {
   NAME_CONCURRENCY,
   planNameBatches,
   planScanBatches,
+  planRemainingBatches,
+  groupMixedPiles,
+  namePilesFor,
   resolveScannedGroups,
   ungradedReservations,
   type GradedGroup,
@@ -136,17 +143,7 @@ function parseDraft(raw: string | null): Draft | null {
         .map((page: Page) => ({ ...page, pages: page.pages ?? 1 })),
       );
     if (!piles.some((pile) => pile.length)) return null;
-    const usable =
-      progress &&
-      Array.isArray(progress.graded) &&
-      Number.isInteger(progress.nextBatch) &&
-      progress.nextBatch >= 0
-        ? {
-            graded: progress.graded as GradedGroup[],
-            nextBatch: progress.nextBatch as number,
-            scanId: typeof progress.scanId === "string" ? progress.scanId : null,
-          }
-        : null;
+    const usable = parseProgress(progress);
     return { piles, progress: usable };
   } catch {
     return null;
@@ -378,9 +375,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // the unmount-only cleanup always sees the current state and release fn.
   const scanningRef = useRef(scanning);
   const releaseRef = useRef(sync.releaseGrading);
+  // The latest gradeCaptured, for the "Grade again" toast, whose action
+  // outlives the render that created it.
+  const gradeCapturedRef = useRef<(fresh?: boolean) => Promise<void>>(async () => {});
+  // Rows already on the matching screen (here or from the other device): the
+  // "Grade again" prompt must not re-grade over them.
+  const groupsRef = useRef(false);
   useEffect(() => {
     scanningRef.current = scanning;
     releaseRef.current = sync.releaseGrading;
+    gradeCapturedRef.current = gradeCaptured;
+    groupsRef.current = !!groups;
   });
   useEffect(() => () => {
     if (scanningRef.current) releaseRef.current();
@@ -608,7 +613,15 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     pages: Page[],
     explicit: number[] | null,
     resume?: Progress | null,
+    /** On a resume, the grouping the saved progress was graded against
+     * (planResume). Used as is: never re-derived from the piles or the names,
+     * so the banked answers stay on the groups they were read from (G3). */
+    resumeGroups?: number[][] | null,
+    /** Which piles came from a whole-stack upload: split by names, while
+     * the declared piles beside them stay one student each. */
+    stackPiles?: boolean[],
   ) {
+    toast.dismiss("scan-regrade-" + a.id);
     // Mirrors what has been banked, so the in-flight job id can be recorded
     // against the right point without waiting for a re-render.
     let banked: GradedGroup[] = resume?.graded ?? [];
@@ -641,9 +654,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // One request per student pile the teacher declared (per page when they
       // declared none), a few at a time, so a name can never be read onto
       // another child's pages.
+      const mixed = !!explicit && !!stackPiles?.some(Boolean);
       const slices = planNameBatches(
         pages.map((p) => p.stripId),
-        explicit ? groupPagesByCapture(explicit) : null,
+        resumeGroups ?? (explicit ? (mixed ? namePilesFor(explicit, stackPiles!) : groupPagesByCapture(explicit)) : null),
       );
       const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
         // Tried again, with backoff, before a page is left for the teacher:
@@ -689,9 +703,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
-      const pageGroups = explicit
-        ? groupPagesByCapture(explicit)
-        : groupPagesByName(names, (name) => rosterMatchCount(name, students));
+      const rosterMatches = (name: string) => rosterMatchCount(name, students);
+      const pageGroups = resumeGroups
+        ? resumeGroups
+        : explicit
+          ? mixed
+            ? groupMixedPiles(explicit, stackPiles!, names, rosterMatches)
+            : groupPagesByCapture(explicit)
+          : groupPagesByName(names, rosterMatches);
+      // What every banked group number below refers to. Saved with the
+      // progress so a resume can check it is looking at the same pages.
+      const layout = groupLayout(pageGroups, ids);
       // Pages whose name read failed or was skipped (a page with no name area
       // to read -- a PDF page -- is unread too, but nothing failed there).
       const failedReads = names.filter((n) => n.failed && pages[n.page]?.stripId).length;
@@ -711,18 +733,23 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // them only to try fewer pages. The photographs are the expensive part and
       // there are exactly as many of them either way.
       partial.current = { pageGroups, names, ids, nameIds, graded: resume?.graded ?? [] };
-      const batches = planScanBatches(
+      // Resume where an interrupted run stopped rather than grading, and paying,
+      // from the top again: only the students not yet graded are planned,
+      // numbered in the whole scan. Only ever with the saved layout
+      // (gradeCaptured checks it with planResume): progress numbered against
+      // other groups is never used.
+      const resuming = resume && resumeGroups ? resume : null;
+      const batches = planRemainingBatches(
         pageGroups,
         ids,
         activeQuestions(a).length,
-        undefined,
-        undefined,
+        resuming?.graded ?? [],
         pages.map((p) => p.bytes),
       );
-      // Resume where an interrupted run stopped rather than grading, and paying,
-      // from the top again.
-      const resuming = resume && resume.nextBatch <= batches.length ? resume : null;
-      let inFlight = resuming?.scanId ?? null;
+      // A job still running is waited on only if it was sent for exactly the
+      // students the first remaining batch holds; otherwise its answers are
+      // numbered against other children, and the batch is sent again.
+      let inFlight = resuming && batches[0] && inFlightMatches(resuming, batches[0].groupIndexes) ? resuming.scanId : null;
       const graded = await gradeInBatches(
         batches,
         async (batch, index) => {
@@ -771,7 +798,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             // numbered against its own smaller request, and resuming it as the
             // whole batch would put one student's answers on another.
             batch === batches[index]
-              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id }) }
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, layout, inFlight: batch.groupIndexes }) }
               : undefined,
           );
           return d.result;
@@ -782,9 +809,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           // Kept on the ref as well as in state: a failure is handled in the
           // same tick, where the state from this run has not landed yet.
           if (partial.current) partial.current.graded = soFar;
-          setProgress({ graded: soFar, nextBatch, scanId: null });
+          setProgress({ graded: soFar, nextBatch, scanId: null, layout });
         },
-        resuming?.nextBatch ?? 0,
+        0,
         resuming?.graded ?? [],
         // A full set of answers per student; a batch that returns fewer is
         // re-asked for the missing students rather than banked with blanks.
@@ -913,20 +940,63 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     }
   }
 
-  /** Grade everything scanned so far, one request per student's whole pile. */
-  async function gradeCaptured() {
+  /** Saved grading progress that no longer matches the pages (planResume
+   * said "changed"): say so, and offer to grade the stack again from the top.
+   * Pages already paid for are not charged again. */
+  function askToRegrade() {
+    toast.error(
+      "Grading stopped part-way, and the pages are not exactly the ones it was reading (or it was started before an update), so the answers read so far can’t be matched to the right students. Grade the stack again — pages already paid for cost nothing.",
+      {
+        // One prompt per assessment, replaced rather than stacked: every Done
+        // press and every change from the other device asks again.
+        id: "scan-regrade-" + a.id,
+        duration: Infinity,
+        action: {
+          label: "Grade again",
+          onClick: () => {
+            // The latest panel state, not the render that showed the toast:
+            // pages added since are graded too, and a run already going (here
+            // or on the other device) is not started twice.
+            if (scanningRef.current || groupsRef.current) return;
+            setProgress(null);
+            void gradeCapturedRef.current(true);
+          },
+        },
+      },
+    );
+  }
+
+  /** `fresh`: ignore saved progress and grade from the start (the teacher
+   * chose "Grade again" after askToRegrade). */
+  async function gradeCaptured(fresh = false) {
+    if (scanningRef.current) return;
     if (busyScanning || !captured.length) return;
     if (!ready()) return;
     if (gradingElsewhere) {
       toast.error("This class is being graded on your other device. It will show here when it's done.");
       return;
     }
+    // A stack uploaded whole is one pile on screen, but that pile is not a
+    // student: the names split it. Grading it as declared piles put every
+    // page under one student (G3).
+    const explicit = piles.map((pile) => pile.length);
+    const stackPiles = piles.map((pile) => pile.some((p) => p.stack));
+    const plan = fresh ? null : planResume(progress, captured.map((p) => p.bodyId));
+    if (plan?.kind === "changed") {
+      // The pages are not the ones the saved answers were read from. Putting
+      // those answers back by position is how one child's work lands on
+      // another, so the app does not try: the teacher grades again.
+      askToRegrade();
+      return;
+    }
     setScanning(true);
     try {
       await gradePages(
         captured,
-        piles.map((pile) => pile.length),
-        progress,
+        explicit,
+        plan?.kind === "resume" ? progress : null,
+        plan?.kind === "resume" ? plan.pageGroups : null,
+        stackPiles,
       );
     } catch (e) {
       // Show whatever got through before saying what went wrong. A class set
@@ -977,6 +1047,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       return;
     }
     setScanning(true);
+    // A new stack starts from nothing: progress from an earlier scan is not
+    // this stack's, and would only trigger a "pages changed" prompt.
+    setProgress(null);
+    toast.dismiss("scan-regrade-" + a.id);
     setGroups(null);
     setDiscarded(new Set());
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
@@ -987,6 +1061,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           key: crypto.randomUUID(),
           label: raw.name || "Page",
           ...(await preparePage(raw)),
+          stack: true,
         });
       }
       setPiles([pages]);
@@ -1343,7 +1418,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             <Action
               className="guided-primary"
               disabled={busyScanning || busy || gradingElsewhere}
-              onClick={gradeCaptured}
+              onClick={() => void gradeCaptured()}
             >
               {scanning ? <LoaderCircle className="spin" size={20} /> : <Check size={20} />}
               {/* What this will cost, before they commit to it. A stack

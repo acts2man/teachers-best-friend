@@ -106,11 +106,22 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   - It re-asks short groups, and re-asks multi-part answers that came back with too few
     parts (`partsShortfall` `:1341`, `settleShortParts` `:1417`, which sends the leftovers to
     Unsure).
-- **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId}`
-  (`components/teacher-class-scan.tsx:774`, `:785`), keyed by **whole-scan group index**.
-  See gaps G1 and G3.
-- **Resume.** A rerun accepts the saved progress if `nextBatch <= batches.length`
-  (`components/teacher-class-scan.tsx:724`).
+- **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId,
+  layout, inFlight}` (`setProgress` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
+  **whole-scan group index**. `layout` is the body upload ids of every group those indexes
+  refer to (`groupLayout`, `lib/scan-session.ts`).
+- **Resume.** `gradeCaptured` asks `planResume(progress, pageIds)` (`lib/scan-session.ts`):
+  - `resume` only when the pages on screen are exactly the layout's pages in the same
+    order; the run then uses the **saved** grouping, never one re-derived from the piles,
+    plans only the students not yet graded (`planRemainingBatches`, whole-scan numbering),
+    and waits on an in-flight job only if it was sent for exactly those students
+    (`inFlightMatches`);
+  - `changed` (pages added, removed, reordered, merged in, or progress saved before layouts
+    existed) stops and asks the teacher to grade again (`askToRegrade`). Nothing is
+    guessed; already-paid pages cost nothing the second time.
+  - A whole-stack upload marks its pages `stack: true`; its pile is split by names, never
+    graded as one declared student, and declared piles beside it stay one student each
+    (`groupMixedPiles`, `namePilesFor`; G3, G17).
 
 ### 1.7 Matching screen (teacher review)
 
@@ -233,7 +244,8 @@ computer can share one scan. They are separate from the workspace.
     unconditional upsert (`:193-212`).
 - **Client.** `components/use-scan-session.ts`:
   - debounced 800 ms (`:12`) and polled (`:196-218`);
-  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1);
+  - on 409 it merges and retries once (`:116-125`), **even mid-grade** (gap G1); the merge
+    keeps the progress with more students graded (`mergeSessions`);
   - merging is in `mergeSessions` (`lib/scan-session.ts:203-240`).
 - **Local draft.** `localStorage['tbf.scan-draft.<assessmentId>']` holds piles and progress
   (`components/teacher-class-scan.tsx:83`, `:410-421`). Its 7-day lifetime is checked only
@@ -333,7 +345,10 @@ unassigned is always allowed.
     reverses names inside each request, for both declared piles and name-split stacks;
   - `tests/name-grouping-cases.test.mjs`, `tests/name-pass-per-student.test.mjs`,
     `tests/same-name-split.test.mjs`, `tests/teacher-class-scan.test.mjs`.
-- **Open:** gaps G1, G2, G3 and G12 are ways this rule breaks today.
+- **Open:** gaps G1 (pages merged in mid-grade), G2 and G12 are ways this rule breaks
+  today. G3 is fixed in code (#140); the resume is guarded by
+  `tests/invariants/scan-resume-layout.test.mjs` (`planResume`, `planRemainingBatches`,
+  `inFlightMatches` in `lib/scan-session.ts` / `lib/teacher-class-scan.ts`).
 
 **R4. Never mark an answer correct when it is wrong; never mark it blank when the student wrote something; uncertain goes to Unsure.**
 - **Why:**
@@ -511,9 +526,11 @@ Where a small change has the widest effect, roughly in order.
    - It folds case, strips spaces and cuts at words such as "is", "for" and "because"
      (`:90-105`), so it is lossy by design.
    - It must stay one-directional: it may take credit away, never grant it.
-6. **`components/teacher-class-scan.tsx` resume and sync** (`:401-408`, `:715-760`;
-   `components/use-scan-session.ts`; `lib/scan-session.ts` `mergeSessions`). Progress is saved
-   as group indexes and reused after the piles may have changed (G1, G3).
+6. **`components/teacher-class-scan.tsx` resume and sync** (`gradeCaptured`, `gradePages`;
+   `components/use-scan-session.ts`; `lib/scan-session.ts` `planResume`, `mergeSessions`).
+   Progress is saved as whole-scan group indexes plus the `layout` they refer to. Anything
+   that renumbers groups, or reuses progress without `planResume`, moves answers between
+   children (G1, G3). A resume plans only the ungraded students; never skip by `nextBatch`.
 7. **`app/api/workspace/route.ts` schema.** It is deliberately loose for assessments
    (`z.any()`). It will accept any field, and that field is then dropped by the database (R2).
 8. **Migrations applied by hand.** Merging a PR does not apply its SQL. The app can ship ahead
@@ -528,22 +545,23 @@ These are ways the code breaks the rules today. Each one is reproduced or confir
 reading the code, as marked. None has a test in the suite, because each test would fail on
 `main`; a fix should land together with its test.
 
-- **G1. Resuming after the piles changed re-maps saved answers by index** (R3; from reading
-  the code).
-  - Banked `progress.graded` is keyed by whole-scan group index. A resume accepts it if
-    `nextBatch <= batches.length` (`components/teacher-class-scan.tsx:724`), against the
-    **current** piles.
-  - `addPages`, `addCameraGroups` and `undoLast` change the piles without clearing progress
-    (`:501`, `:548`, `:576-584`).
-  - `mergeSessions` can add another device's pages or piles (`lib/scan-session.ts:212-229`),
-    including during a 409 retry mid-grade (`components/use-scan-session.ts:116-124`).
-  - Nothing records which pages a saved progress covered.
+- **G1. Resuming after the piles changed re-mapped saved answers by index** (R3).
+  - **Fixed in code by the G3 PR (#140):** progress records its `layout`; `planResume` refuses
+    a resume unless the pages are exactly the layout's, and the run then plans only the
+    ungraded students (`planRemainingBatches`), waiting on an in-flight job only if it was
+    sent for exactly those students (`inFlightMatches`). Pages added, removed, reordered or
+    merged in from the other device now stop and ask (`askToRegrade`).
+  - **Still open (the G1 PR):** the other device's pages can be merged into the piles while
+    this device grades (`components/use-scan-session.ts` 409 handler applies even while
+    paused). The run grades its own copy, so those pages get no row on the matching screen
+    and are dropped on save with no message.
 - **G2. A front page with no name, in a stack without declared piles, joins the student before
   it** (R3; by design, `lib/teacher-class-scan.ts:270`). A child who forgot to write their name
   is graded as the previous child. The camera's "Next student" piles avoid it, but the desktop
   whole-stack upload and Import from Photos with no split do not.
-- **G3. A failed whole-stack upload resumes as ONE student, wearing the wrong name** (R3;
-  reproduced with the lib functions, 14 Oct).
+- **G3. FIXED in code (G3 PR, awaiting review). A failed whole-stack upload resumed as ONE
+  student, wearing the wrong name** (R3; reproduced with the lib functions, 14 Oct; guarded by
+  `tests/invariants/scan-resume-layout.test.mjs`). What it was:
   - `startStackScan` grades by name (`components/teacher-class-scan.tsx:992-993`). If it fails
     partway, its progress survives, and the auto-resume (`:401-408`) runs `gradeCaptured`,
     which passes the single pile `[N]` (`:926-929`).
@@ -613,3 +631,6 @@ reading the code, as marked. None has a test in the suite, because each test wou
   `class_scan_sessions` keeps transcribed answers and names read for 7 days; the localStorage
   draft is expired only when it is read; camera shots in IndexedDB never expire. All of them
   sit on shared school devices. Check `docs/student-data-flow.md` against this.
+- **G17. FIXED in code (#140). A stack upload followed by camera piles lost the camera piles'
+  boundaries** (R3; #140 review). Now only the stack pile is split by names
+  (`groupMixedPiles`); guarded by `tests/invariants/scan-resume-layout.test.mjs`.
