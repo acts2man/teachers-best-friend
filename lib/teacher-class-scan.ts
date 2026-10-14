@@ -1213,6 +1213,34 @@ export function planScanBatches(
 }
 
 /**
+ * The batches still to send: every group not yet in `graded`, planned afresh
+ * and numbered in the WHOLE scan (`groupIndexes`). A resume uses this instead
+ * of "skip the first nextBatch batches of a re-planned stack": the plan
+ * depends on the question count and on constants a deploy can change, so the
+ * batch a saved `nextBatch` pointed at may hold different students now -- an
+ * in-flight answer mapped through the new plan put one child's answers on
+ * another (#140 review). What is graded is a fact about groups, not batches.
+ */
+export function planRemainingBatches(
+  pageGroups: number[][],
+  pageUploadIds: string[],
+  questionCount: number,
+  graded: GradedGroup[],
+  pageBytes: (number | undefined)[] = [],
+): ScanBatch[] {
+  const done = new Set(graded.map((g) => g.group));
+  const remaining = pageGroups.map((_, i) => i).filter((i) => !done.has(i));
+  return planScanBatches(
+    remaining.map((i) => pageGroups[i]),
+    pageUploadIds,
+    questionCount,
+    undefined,
+    undefined,
+    pageBytes,
+  ).map((b) => ({ ...b, groupIndexes: b.groupIndexes.map((k) => remaining[k]) }));
+}
+
+/**
  * Runs a class scan's batches and puts the answers back into whole-scan
  * numbering.
  *

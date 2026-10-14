@@ -46,7 +46,23 @@ export type ScanProgress = {
    * progress saved before it existed, which therefore cannot be resumed.
    */
   layout?: string[][];
+  /** The whole-scan groups of the batch `scanId` was sent for. A resume
+   * waits on that job only if the next batch it plans holds exactly these
+   * groups; otherwise the job's answers are numbered against some other set
+   * of students, and it is sent again (free: pages are charged once). */
+  inFlight?: number[];
 };
+
+/** Whether a saved in-flight job may be waited on for this batch. */
+export function inFlightMatches(progress: ScanProgress | null | undefined, groupIndexes: number[]): boolean {
+  const saved = progress?.inFlight;
+  return (
+    !!progress?.scanId &&
+    Array.isArray(saved) &&
+    saved.length === groupIndexes.length &&
+    saved.every((g, i) => g === groupIndexes[i])
+  );
+}
 
 /** The layout a run's progress is numbered against: each group's body ids. */
 export function groupLayout(pageGroups: number[][], ids: string[]): string[][] {
@@ -96,11 +112,14 @@ export function parseProgress(raw: unknown): ScanProgress | null {
     Array.isArray(p.layout) && p.layout.every((g) => Array.isArray(g) && g.every((id) => typeof id === "string"))
       ? (p.layout as string[][])
       : undefined;
+  const inFlight =
+    Array.isArray(p.inFlight) && p.inFlight.every((g) => Number.isInteger(g)) ? (p.inFlight as number[]) : undefined;
   return {
     graded: p.graded,
     nextBatch: p.nextBatch as number,
     scanId: typeof p.scanId === "string" ? p.scanId : null,
     ...(layout ? { layout } : {}),
+    ...(inFlight ? { inFlight } : {}),
   };
 }
 
@@ -281,12 +300,17 @@ export function mergeSessions(server: ScanSession, local: ScanSession): ScanSess
     }
     for (const p of fresh) onServer.add(p.bodyId);
   }
+  // "Further" is more students graded. nextBatch counts batches of a plan
+  // that differs between runs (planRemainingBatches), so it says nothing
+  // across two devices. Either way planResume still checks the pages.
   const progress =
     !server.progress
       ? local.progress
       : !local.progress
         ? server.progress
-        : local.progress.nextBatch > server.progress.nextBatch
+        : local.progress.graded.length > server.progress.graded.length ||
+            (local.progress.graded.length === server.progress.graded.length &&
+              local.progress.nextBatch > server.progress.nextBatch)
           ? local.progress
           : server.progress;
   const groups = server.groups ?? local.groups;

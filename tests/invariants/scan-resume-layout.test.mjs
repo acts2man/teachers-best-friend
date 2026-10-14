@@ -118,11 +118,77 @@ test("the panel resumes only through planResume and never grades a stack upload 
   assert.ok(banks.length >= 2, "found the progress writes");
   for (const b of banks) assert.match(b, /layout/, `progress saved without its layout: ${b}`);
   // The resume path in gradePages uses the saved groups and nothing else.
-  assert.match(src, /const resuming = resume && resumeGroups && resume\.nextBatch <= batches\.length/);
+  assert.match(src, /const resuming = resume && resumeGroups \? resume : null/);
   assert.match(src, /const pageGroups = resumeGroups\s*\?\s*resumeGroups/);
   assert.match(src.slice(src.indexOf("async function startStackScan(")), /stack: true,/);
 });
 
 test("groupLayout records each group's body ids in group order", () => {
   assert.deepEqual(S.groupLayout([[0, 1], [2]], ["a", "b", "c"]), [["a", "b"], ["c"]]);
+});
+
+// ---- #140 review: the batch plan can change between a run and its resume ----
+// nextBatch and the in-flight job are numbered against the batches as first
+// planned; the plan depends on the question count (and on constants a deploy
+// can change). Reproduced: 30 one-page students, 10 questions (6 per batch),
+// batch 1 in flight; the key grows to 40 questions (1 per batch); the resume
+// waited on the old job and laid its answers on the NEW batch 1 -- student 6's
+// answers on student 1. Now a resume plans only the ungraded students, numbered
+// in the whole scan, and waits on a job only if it was sent for exactly them.
+
+const thirty = Array.from({ length: 30 }, (_, i) => [i]);
+const thirtyIds = thirty.map((_, i) => "p" + i);
+/** A fake model: answers each group with its own whole-scan number. */
+const answerFor = (batch) => ({ groups: batch.groups.map((_, g) => ({ group: g, responses: [{ questionId: "q1", answer: "from group " + batch.groupIndexes[g], verdict: "other" }] })) });
+
+test("drift reproduced: re-planning and skipping nextBatch lays an in-flight answer on the wrong student", async () => {
+  const first = C.planScanBatches(thirty, thirtyIds, 10);
+  const inFlightJob = answerFor(first[1]); // sent for groups 6-11
+  const replanned = C.planScanBatches(thirty, thirtyIds, 40);
+  const banked = first[0].groupIndexes.map((g) => ({ group: g, responses: [] }));
+  let waited = false;
+  const graded = await C.gradeInBatches(replanned, async (b) => (waited ? answerFor(b) : ((waited = true), inFlightJob)), undefined, 1, banked);
+  const wrong = graded.filter((g) => g.responses[0] && g.responses[0].answer !== "from group " + g.group);
+  assert.ok(wrong.length > 0, "the old resume put no answer on the wrong group -- the reproduction is stale");
+});
+
+test("a resume grades every remaining student once, each with their own answers, whatever the plan does", async () => {
+  for (const [firstQ, resumeQ] of [[10, 40], [40, 10], [10, 10]]) {
+    const first = C.planScanBatches(thirty, thirtyIds, firstQ);
+    const banked = first[0].groupIndexes.map((g) => ({ group: g, responses: [{ questionId: "q1", answer: "from group " + g, verdict: "other" }] }));
+    const progress = { graded: banked, nextBatch: 1, scanId: "job-1", inFlight: first[1].groupIndexes };
+    const batches = C.planRemainingBatches(thirty, thirtyIds, resumeQ, banked);
+    const wait = S.inFlightMatches(progress, batches[0].groupIndexes);
+    assert.equal(wait, firstQ === resumeQ, `${firstQ}->${resumeQ}: wait on the old job only when it holds the same students`);
+    const inFlightJob = answerFor(first[1]);
+    let first_ = true;
+    const graded = await C.gradeInBatches(batches, async (b) => {
+      const r = first_ && wait ? inFlightJob : answerFor(b);
+      first_ = false;
+      return r;
+    }, undefined, 0, banked);
+    assert.deepEqual(graded.map((g) => g.group).sort((x, y) => x - y), thirty.map((_, i) => i), `${firstQ}->${resumeQ}: every student graded exactly once`);
+    for (const g of graded) assert.equal(g.responses[0].answer, "from group " + g.group, `${firstQ}->${resumeQ}: group ${g.group} holds another student's answer`);
+  }
+});
+
+test("two devices: the progress kept is the one with more students graded", () => {
+  const page = (bodyId) => ({ key: bodyId, label: "Page", bodyId, stripId: null, pages: 1 });
+  const base = { v: 1, piles: [[page("a")]], groups: null, discarded: [], pageUploadIds: [], grading: null };
+  const more = { graded: [{ group: 0, responses: [] }, { group: 1, responses: [] }], nextBatch: 1, scanId: null };
+  const fewer = { graded: [{ group: 0, responses: [] }], nextBatch: 3, scanId: null };
+  assert.equal(S.mergeSessions({ ...base, progress: fewer }, { ...base, progress: more }).progress, more);
+  assert.equal(S.mergeSessions({ ...base, progress: more }, { ...base, progress: fewer }).progress, more);
+});
+
+test("the panel plans only the ungraded students and never skips by nextBatch", () => {
+  const src = readFileSync("components/teacher-class-scan.tsx", "utf8").replace(/\/\/.*$/gm, "");
+  const run = src.slice(src.indexOf("async function gradePages("), src.indexOf("function showGraded("));
+  assert.match(run, /planRemainingBatches\(/);
+  assert.doesNotMatch(run, /resume\.nextBatch|resuming\?\.nextBatch/, "a resume must not skip batches by number");
+  assert.match(run, /inFlightMatches\(resuming, batches\[0\]\.groupIndexes\)/);
+  assert.match(run, /inFlight: batch\.groupIndexes/, "an in-flight job records the students it was sent for");
+  const ask = src.slice(src.indexOf("function askToRegrade("), src.indexOf("async function gradeCaptured("));
+  assert.match(ask, /id: "scan-regrade-" \+ a\.id/, "the prompt replaces itself instead of stacking");
+  assert.match(ask, /gradeCapturedRef\.current\(true\)/, "the button runs the latest panel state");
 });

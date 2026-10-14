@@ -28,6 +28,7 @@ import { deviceId, useScanSession } from "./use-scan-session";
 import {
   GRADING_STALE_MS,
   groupLayout,
+  inFlightMatches,
   isEmptySession,
   parseProgress,
   planResume,
@@ -53,6 +54,7 @@ import {
   NAME_CONCURRENCY,
   planNameBatches,
   planScanBatches,
+  planRemainingBatches,
   resolveScannedGroups,
   ungradedReservations,
   type GradedGroup,
@@ -371,9 +373,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // the unmount-only cleanup always sees the current state and release fn.
   const scanningRef = useRef(scanning);
   const releaseRef = useRef(sync.releaseGrading);
+  // The latest gradeCaptured, for the "Grade again" toast, whose action
+  // outlives the render that created it.
+  const gradeCapturedRef = useRef<(fresh?: boolean) => Promise<void>>(async () => {});
   useEffect(() => {
     scanningRef.current = scanning;
     releaseRef.current = sync.releaseGrading;
+    gradeCapturedRef.current = gradeCaptured;
   });
   useEffect(() => () => {
     if (scanningRef.current) releaseRef.current();
@@ -713,20 +719,23 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // them only to try fewer pages. The photographs are the expensive part and
       // there are exactly as many of them either way.
       partial.current = { pageGroups, names, ids, nameIds, graded: resume?.graded ?? [] };
-      const batches = planScanBatches(
+      // Resume where an interrupted run stopped rather than grading, and paying,
+      // from the top again: only the students not yet graded are planned,
+      // numbered in the whole scan. Only ever with the saved layout
+      // (gradeCaptured checks it with planResume): progress numbered against
+      // other groups is never used.
+      const resuming = resume && resumeGroups ? resume : null;
+      const batches = planRemainingBatches(
         pageGroups,
         ids,
         activeQuestions(a).length,
-        undefined,
-        undefined,
+        resuming?.graded ?? [],
         pages.map((p) => p.bytes),
       );
-      // Resume where an interrupted run stopped rather than grading, and paying,
-      // from the top again.
-      // Only ever with the saved layout (gradeCaptured checks it with
-      // planResume): progress numbered against other groups is never used.
-      const resuming = resume && resumeGroups && resume.nextBatch <= batches.length ? resume : null;
-      let inFlight = resuming?.scanId ?? null;
+      // A job still running is waited on only if it was sent for exactly the
+      // students the first remaining batch holds; otherwise its answers are
+      // numbered against other children, and the batch is sent again.
+      let inFlight = resuming && batches[0] && inFlightMatches(resuming, batches[0].groupIndexes) ? resuming.scanId : null;
       const graded = await gradeInBatches(
         batches,
         async (batch, index) => {
@@ -775,7 +784,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             // numbered against its own smaller request, and resuming it as the
             // whole batch would put one student's answers on another.
             batch === batches[index]
-              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, layout }) }
+              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, layout, inFlight: batch.groupIndexes }) }
               : undefined,
           );
           return d.result;
@@ -788,7 +797,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           if (partial.current) partial.current.graded = soFar;
           setProgress({ graded: soFar, nextBatch, scanId: null, layout });
         },
-        resuming?.nextBatch ?? 0,
+        0,
         resuming?.graded ?? [],
         // A full set of answers per student; a batch that returns fewer is
         // re-asked for the missing students rather than banked with blanks.
@@ -917,20 +926,26 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     }
   }
 
-  /** Grade everything scanned so far, one request per student's whole pile. */
   /** Saved grading progress that no longer matches the pages (planResume
    * said "changed"): say so, and offer to grade the stack again from the top.
    * Pages already paid for are not charged again. */
   function askToRegrade() {
     toast.error(
-      "The pages changed after grading stopped, so the answers read so far can’t be matched to the right students. Grade the stack again — pages already paid for cost nothing.",
+      "Grading stopped part-way, and the pages are not exactly the ones it was reading (or it was started before an update), so the answers read so far can’t be matched to the right students. Grade the stack again — pages already paid for cost nothing.",
       {
+        // One prompt per assessment, replaced rather than stacked: every Done
+        // press and every change from the other device asks again.
+        id: "scan-regrade-" + a.id,
         duration: Infinity,
         action: {
           label: "Grade again",
           onClick: () => {
+            // The latest panel state, not the render that showed the toast:
+            // pages added since are graded too, and a run already going (here
+            // or on the other device) is not started twice.
+            if (scanningRef.current) return;
             setProgress(null);
-            void gradeCaptured(true);
+            void gradeCapturedRef.current(true);
           },
         },
       },
@@ -940,6 +955,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   /** `fresh`: ignore saved progress and grade from the start (the teacher
    * chose "Grade again" after askToRegrade). */
   async function gradeCaptured(fresh = false) {
+    if (scanningRef.current) return;
     if (busyScanning || !captured.length) return;
     if (!ready()) return;
     if (gradingElsewhere) {
@@ -1015,6 +1031,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       return;
     }
     setScanning(true);
+    // A new stack starts from nothing: progress from an earlier scan is not
+    // this stack's, and would only trigger a "pages changed" prompt.
+    setProgress(null);
     setGroups(null);
     setDiscarded(new Set());
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
