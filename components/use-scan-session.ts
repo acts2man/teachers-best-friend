@@ -95,16 +95,6 @@ export function useScanSession({
     pausedRef.current = paused;
   });
   const saving = useRef(false);
-  // The other device's work that arrived while this one was busy (paused).
-  const pending = useRef<ScanSession | null>(null);
-  useEffect(() => {
-    if (paused || !pending.current) return;
-    const theirs = pending.current;
-    pending.current = null;
-    // Theirs as the base, this device's run on top: its pages, its progress
-    // or its matching rows are kept (mergeSessions drops nothing).
-    applyRef.current(latest.current ? mergeSessions(theirs, latest.current) : theirs);
-  }, [paused]);
   // Shown as a one-line note when the other device's work appears here.
   const [notice, setNotice] = useState("");
 
@@ -130,12 +120,7 @@ export function useScanSession({
             const theirs = parseSession(remote.state);
             agreed.current = theirs ? sessionFingerprint(theirs) : null;
             state = theirs ? mergeSessions(theirs, state) : state;
-            // Not while this device is grading, uploading or saving: a page the
-            // other device added would join the piles mid-run, get no row on
-            // the matching screen, and be lost (G1). Held until this device is
-            // done, then merged with whatever it has by then.
-            if (pausedRef.current) pending.current = state;
-            else applyRef.current(state);
+            applyRef.current(state);
             continue;
           }
           if (!r.ok) return;

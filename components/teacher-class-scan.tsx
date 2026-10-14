@@ -588,7 +588,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   function keepForNextGrading(left: Page[][]) {
     const count = left.flat().length;
     setRemoteGrading(null);
-    setPaidIds(new Set());
+    // Pages already paid for stay marked so: the cost shown for grading the
+    // rest must not price them again.
+    const keptIds = new Set(left.flat().map((p) => p.bodyId));
+    setPaidIds((paid) => new Set([...paid].filter((id) => keptIds.has(id))));
     setProgress(null);
     setEdited([...left, []]);
     setPageUploadIds([]);
@@ -1153,7 +1156,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // Pages no row covers -- the rest of a run that stopped part-way, or
       // pages the other device added mid-grade -- are kept for the next
       // grading instead of cleared with the rest (G1).
-      const left = pagesWithoutRow(piles, groups);
+      const left = pagesWithoutRow(piles, groups, discarded);
       if (left.length) keepForNextGrading(left);
       else reset();
       // Straight into grading by question, not the one-student-at-a-time list
@@ -1258,7 +1261,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // Papers the roster could not narrow to one student. The teacher answers
   // these; nothing is chosen for them, and nothing is saved until they have.
   // Pages on screen that no row covers: kept for the next grading on save.
-  const notGraded = pagesWithoutRow(piles, groups).flat().length;
+  const notGraded = pagesWithoutRow(piles, groups, discarded).flat().length;
   const undecided = live.filter((g) => g.candidateIds.length > 0 || g.unassigned);
   // Two papers on one student. Not blocked -- a child really can hand in two
   // sheets -- but it is the shape a misread name makes, so it is said plainly
@@ -1732,8 +1735,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           )}
           {notGraded > 0 && (
             <p className="key-notice" role="status">
-              {notGraded} scanned page{notGraded === 1 ? " is" : "s are"} not in any row above (grading
-              stopped part-way, or {notGraded === 1 ? "it was" : "they were"} added on your other device).{" "}
+              {notGraded} scanned page{notGraded === 1 ? " is" : "s are"} not in a row that will be saved
+              (grading stopped part-way, a row has no answers or no name, or{" "}
+              {notGraded === 1 ? "it was" : "they were"} added on your other device).{" "}
               {notGraded === 1 ? "It stays" : "They stay"} here after you save, ready to grade.
             </p>
           )}

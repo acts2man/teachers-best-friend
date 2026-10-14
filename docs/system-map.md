@@ -546,12 +546,15 @@ reading the code, as marked. None has a test in the suite, because each test wou
     ungraded students (`planRemainingBatches`), waiting on an in-flight job only if it was
     sent for exactly those students (`inFlightMatches`). Pages added, removed, reordered or
     merged in from the other device now stop and ask (`askToRegrade`).
-  - **Fixed in code by the G1 PR (stacked on #140):** the other device's pages arriving
-    through the 409 retry are held until this device stops grading
-    (`components/use-scan-session.ts`, `pending`), then merged. And on save, pages no row
-    covers -- those, or the rest of a run that stopped part-way -- are kept on screen for the
-    next grading (`pagesWithoutRow`, `keepForNextGrading`) instead of cleared with the rest.
-    Guarded by `tests/invariants/scan-pages-not-dropped.test.mjs`.
+  - **Fixed in code by the G1 PR (#144, stacked on #140):** on save, pages no SAVED row
+    covers are kept on screen for the next grading (`pagesWithoutRow`, `keepForNextGrading`)
+    instead of cleared with the rest: pages the other device merged in mid-grade, the rest of
+    a run that stopped part-way, and rows the save skips (no answers, a cleared name). A row
+    the teacher discarded counts as handled. Guarded by
+    `tests/invariants/scan-pages-not-dropped.test.mjs`.
+  - Still open: the 409 retry in `components/use-scan-session.ts` applies the other device's
+    state mid-run (unchanged; holding it back was tried and removed after review, because it
+    could resurrect a just-saved class and drop the other device's pages from the server).
   - Reproduced 14 Oct: the wrong-student part of G1 was the name-split path (G3's
     mechanism). With the teacher's own camera piles, group numbers follow the piles in
     order, so a page added to a pile stayed with the right student even on main.
