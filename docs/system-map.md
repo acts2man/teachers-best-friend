@@ -7,7 +7,8 @@ claim cites `file:line` as of that commit. Line numbers drift; the function name
 search by name when a line has moved. Anything not checked against the running system says
 so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
 G4 fix (atomic revision check). R4 and G14 re-checked 2026-10-14 on `main` at `6ab8606` for the
-G14 fix (#143). R6 and G18 re-checked 2026-10-14 on `main` at `ed58f7a` for the G18 fix.
+G14 fix (#143). R6 and G18 re-checked 2026-10-14 on `main` at `ed58f7a` for the G18 fix;
+§1.8 step 6, R7 and G4 re-checked on `ed58f7a` for the G4 fallback removal.
 Migrations listed here are the repo's copies; production is applied **by hand**
 (`supabase/migrations/README.md`), so "in the repo" is not proof it is live.
 
@@ -173,9 +174,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - clamps titles to 200 characters (`:165-166`);
    - calls `updateWorkspace(id, workspace, revision)` and returns **409 when it returns null**
      (`:170-175`).
-6. `updateWorkspace` (`lib/teacher-server.ts:483-511`). On Supabase it makes **one** call,
-   `sync_workspace_if_revision(p_teacher, p_data, p_expected_revision)` (`:492`, helper
-   `syncWorkspaceIfRevision` at `:340-365`;
+6. `updateWorkspace` (`lib/teacher-server.ts:472-482`). On Supabase it makes **one** call,
+   `sync_workspace_if_revision(p_teacher, p_data, p_expected_revision)` (`:481`, helper
+   `syncWorkspaceIfRevision` at `:342-354`;
    `supabase/migrations/20261014120000_atomic_workspace_revision.sql`). In one transaction
    that function:
    - locks the `teacher_workspaces` row (`select ... for update`), so a second save for the
@@ -183,16 +184,14 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    - returns null when there is no row or the revision differs, which the route turns into the
      409. It does not raise, so a stale save is never a 500;
    - otherwise calls `sync_workspace(p_teacher, p_data)` and returns the new revision.
-   - **Until that migration is applied** (it is applied by hand), PostgREST answers
-     "function does not exist" (PGRST202). `updateWorkspace` then logs "GAP G4 OPEN" with
-     `console.error` **on every such save** and falls back to the old check-then-write
-     (`:494-501`; RPC at `:325-334`), where gap G4 is still open. Only PGRST202 falls back;
-     any other error, a 42883 raised inside the function included, is a 500.
-   - The reset (`replaceWorkspace`, `:513-545`) goes through the same function, carrying the
+   - Any error from it, the function missing (PGRST202) included, is a 500. There is no
+     non-atomic fallback: it was removed on 14 Oct 2026 once the migration was applied and
+     every production save that day (4 of 4) went through the function.
+   - The reset (`replaceWorkspace`, `:493-525`) goes through the same function, carrying the
      revision it has just read, and reads again once if a save lands in between. If it loses
      twice it throws a 409 ("Your classroom changed while it was being reset. Try again.");
      it never falls back to an unlocked sync. It calls `sync_workspace` directly only when
-     there is no row yet or the function is missing (PGRST202). Reason: a direct `sync_workspace` writes the child tables first and
+     there is no row yet. Reason: a direct `sync_workspace` writes the child tables first and
      the workspace row last, the opposite lock order, so the two together can deadlock.
 7. `sync_workspace(p_teacher, p_data)` is the current body as rebuilt by
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
@@ -454,7 +453,7 @@ unassigned is always allowed.
   tab's save would delete what that save added. No incident is recorded: the guard predates
   this repository's history (23 Sep 2026).
 - **Enforced by:**
-  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:492`), made under a
+  - the revision check in `updateWorkspace` (`lib/teacher-server.ts:481`), made under a
     row lock inside `sync_workspace_if_revision`
     (`supabase/migrations/20261014120000_atomic_workspace_revision.sql`), and the 409 in the
     route (`app/api/workspace/route.ts:170-175`);
@@ -464,11 +463,10 @@ unassigned is always allowed.
     an in-memory database;
   - `tests/invariants/atomic-revision.test.mjs`: two (and five) saves carrying the same
     revision at the same moment, against a database that models the row lock, write exactly
-    once; the fallback before the migration is applied (logged every time, PGRST202 only);
-    the reset takes the same locked path; and the migration locks the row and compares
+    once; a missing function is a 500, never a fallback to the unlocked check (and the
+    fallback is absent from the source); the reset takes the same locked path; and the migration locks the row and compares
     before it syncs. Proof on the database: `supabase/checks/atomic-revision-round-trip.sql`
     (two-session race script included; run it in psql).
-- **Open until the migration is applied:** gap G4.
 - **Residual risk (deadlock):** `initializeWorkspace` (first load, no row yet, so it cannot
   collide with a locked save) and the SQL `reset_teacher_data()` still call `sync_workspace`
   directly, child tables first and the workspace row last. If one runs at the same moment as a
@@ -649,21 +647,18 @@ reading the code, as marked. None has a test in the suite, because each test wou
     row holding **every page**.
   - `pickRead` names that row after the **most confidently read name in the whole stack**. In
     the reproduction, Ana's answers were pre-filled under Ben.
-- **G4. The revision check is not atomic on Supabase** (R7). **Fixed in code; migration pending
-  application.** Two saves carrying the current revision that arrived together both passed; the
-  second whole-workspace replace won, and whatever the first added was deleted.
+- **G4. FIXED (migration applied by hand 14 Oct 2026; fallback removed). The revision check
+  was not atomic on Supabase** (R7). Two saves carrying the current revision that arrived
+  together both passed; the second whole-workspace replace won, and whatever the first added
+  was deleted.
   - The fix: `sync_workspace_if_revision` checks the revision under a row lock and syncs in
     the same transaction (`supabase/migrations/20261014120000_atomic_workspace_revision.sql`;
-    `lib/teacher-server.ts:340-365`, `:492`). The reset (`replaceWorkspace`) takes the same
+    `lib/teacher-server.ts:342-354`, `:481`). The reset (`replaceWorkspace`) takes the same
     path. Guarded by `tests/invariants/atomic-revision.test.mjs`.
-  - **Still open on production until that migration is applied by hand.** Until then every
-    save logs "GAP G4 OPEN: sync_workspace_if_revision does not exist" and uses the old
-    check-then-write (`lib/teacher-server.ts:494-501`).
-  - **Once the migration is confirmed applied** (run `supabase/checks/atomic-revision-round-trip.sql`
-    against production), **remove the fallback**: the PGRST202 branch in
-    `syncWorkspaceIfRevision`, the check-then-write after it in `updateWorkspace`, and the
-    `"missing"` break in `replaceWorkspace`; then make a missing function a 500 and remove
-    this entry.
+  - Confirmed in real use on 14 Oct: 4 of 4 production saves went through
+    `rpc/sync_workspace_if_revision` with 200, none on the fallback. The fallback (the
+    PGRST202 branch, the check-then-write in `updateWorkspace`, the `"missing"` break in
+    `replaceWorkspace`) is removed; a missing function is now a 500.
   - **Residual deadlock risk:** `initializeWorkspace` and the SQL `reset_teacher_data()` still
     call `sync_workspace` directly, which locks the child rows first and the workspace row
     last, the reverse of the locked save. Run at the same moment for one teacher, Postgres

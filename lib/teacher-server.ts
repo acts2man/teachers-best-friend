@@ -334,32 +334,21 @@ async function syncWorkspace(id: string, workspace: Workspace) {
  * One atomic save: sync_workspace_if_revision locks the teacher_workspaces
  * row, compares the revision and runs sync_workspace in one transaction
  * (supabase/migrations/20261014120000_atomic_workspace_revision.sql; gap G4).
- * Returns the new revision, null when the revision is stale or there is no
- * row, or "missing" when the migration has not been applied yet.
+ * Returns the new revision, or null when the revision is stale or there is no
+ * row. Any error -- a missing function included -- fails the save
+ * with a 500: there is no non-atomic fallback any more (confirmed applied and
+ * in use on production, 14 Oct 2026).
  */
 async function syncWorkspaceIfRevision(
   id: string,
   workspace: Workspace,
   revision: number,
-): Promise<number | null | "missing"> {
+): Promise<number | null> {
   const { data, error } = await createServiceClient().rpc(
     "sync_workspace_if_revision",
     { p_teacher: id, p_data: workspace, p_expected_revision: revision },
   );
   if (!error) return data === null || data === undefined ? null : Number(data);
-  // PGRST202 is PostgREST saying the function does not exist -- the migration
-  // is not applied. Only that falls back. Anything else (including a 42883
-  // raised INSIDE the function, which the direct sync would hit too) fails
-  // the save.
-  if (error.code === "PGRST202") {
-    // Every time, not once: each fallback is a save made with gap G4 open.
-    console.error(
-      "GAP G4 OPEN: sync_workspace_if_revision does not exist, so this workspace save used the NON-atomic " +
-        "revision check (two simultaneous saves can both be written). Apply " +
-        "supabase/migrations/20261014120000_atomic_workspace_revision.sql.",
-    );
-    return "missing";
-  }
   throw rpcFailure("sync_workspace_if_revision", error);
 }
 
@@ -489,16 +478,7 @@ export async function updateWorkspace(
     // Gap G4 / rule R7: the revision check and the write are ONE step, made
     // under a row lock -- two saves carrying the same revision can no longer
     // both pass.
-    const saved = await syncWorkspaceIfRevision(id, workspace, revision);
-    if (saved !== "missing") return saved;
-    // Deploy order: the migration is applied by hand, so this code may reach
-    // production before it. Until then, fall back to the old check-then-write
-    // (gap G4 open, logged on every save above) rather than fail every save.
-    // REMOVE this fallback once the migration is confirmed applied.
-    const current = await workspaceRevision(id);
-    if (current === null || current !== revision) return null;
-    await syncWorkspace(id, workspace);
-    return (await workspaceRevision(id)) ?? revision + 1;
+    return syncWorkspaceIfRevision(id, workspace, revision);
   }
 
   const result = await (await sitesDatabase())
@@ -517,7 +497,7 @@ export async function replaceWorkspace(id: string, workspace: Workspace) {
     // sync_workspace_if_revision, so the two running together for one teacher
     // can deadlock. The reset is unconditional, so it carries the revision it
     // just read; if a save lands in between, it reads again once. It syncs
-    // directly only with no row yet or the function missing (PGRST202).
+    // directly only with no row yet.
     // Losing twice is a retryable 409, never an unlocked sync: that would
     // re-open the deadlock and could let a concurrently saved student survive
     // the reset.
@@ -525,7 +505,6 @@ export async function replaceWorkspace(id: string, workspace: Workspace) {
       const current = await workspaceRevision(id);
       if (current === null) break;
       const saved = await syncWorkspaceIfRevision(id, workspace, current);
-      if (saved === "missing") break;
       if (saved !== null) return;
       if (attempt === 1)
         throw new HttpError(
