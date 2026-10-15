@@ -38,7 +38,7 @@ test("a code with its title appended matches that code exactly as the first choi
     ["F-IF.7 — Graph Functions and Key Features", "F-IF.7"],
     ["F-BF.3 — Transform Function Graphs", "F-BF.3"],
   ]) {
-    assert.deepEqual(matchCatalogCode(wrote, catalog), { code, how: "exact" }, wrote);
+    assert.deepEqual(matchCatalogCode(wrote, catalog), { code, how: "titled" }, wrote);
     const { questions, records } = settleStandards(
       [{ number: 1, standard: wrote, secondary: "A-APR.3", alignment: 90, confidence: 90, reasoning: "r" }],
       catalog,
@@ -47,15 +47,38 @@ test("a code with its title appended matches that code exactly as the first choi
     assert.equal(questions[0].secondChoice, undefined, "not the second choice");
     assert.equal(questions[0].alignment, 90, "with the AI's own alignment");
     assert.equal(questions[0].reasoning, "r", "and no 'isn't in your standards list' note");
-    assert.equal(records[0].how, "exact");
+    assert.equal(records[0].how, "titled", "recorded apart from a bare exact match, so the prompt change can be checked");
   }
 });
 
 test("every separator the AI uses before a title", () => {
   for (const sep of [" — ", " – ", " - ", ": ", " ("])
     assert.equal(matchCatalogCode("N-CN.7" + sep + "Solve quadratic equations with complex solutions" + (sep === " (" ? ")" : ""), catalog).code, "N-CN.7", JSON.stringify(sep));
+  // Dashes without spaces (a dash never appears inside a code).
+  assert.equal(matchCatalogCode("F-IF.7—Graph functions", catalog).code, "F-IF.7");
   // And a spelling the matcher already handled, with a title on it.
   assert.equal(matchCatalogCode("HSF-IF.C.7 — Graph functions", catalog).code, "F-IF.7");
+});
+
+// From the review of this PR.
+test("a bracketed sub-part is the sub-part, not its parent", () => {
+  const withE = [...catalog, { code: "F-IF.7e" }];
+  assert.deepEqual(matchCatalogCode("F-IF.7 (e)", withE), { code: "F-IF.7e", how: "titled" });
+  assert.deepEqual(matchCatalogCode("F-IF.7 (e) — graph trig functions", withE), { code: "F-IF.7e", how: "titled" });
+  assert.deepEqual(matchCatalogCode("7.RP.2 (a) — proportional", [{ code: "7.RP.2" }, { code: "7.RP.2a" }]).code, "7.RP.2a");
+  // Without the sub-part in the list, it is still the standard it belongs to.
+  assert.equal(matchCatalogCode("F-IF.7 (e)", catalog).code, "F-IF.7");
+});
+
+test("a code that itself contains a separator: the longest catalog code that fits", () => {
+  for (const [codes, wrote, want] of [
+    [["4.4", "4.4 (D)"], "4.4 (D) — compute", "4.4 (D)"],
+    [["4.4", "4.4 (D)"], "4.4 (D): compute", "4.4 (D)"],
+    [["Unit 3", "Unit 3 - Fractions"], "Unit 3 - Fractions — add like fractions", "Unit 3 - Fractions"],
+    [["ALG 1", "ALG 1: Linear"], "ALG 1: Linear — slope", "ALG 1: Linear"],
+    [["4.4", "4.4 (D)"], "4.4 — place value", "4.4"],
+  ])
+    assert.equal(matchCatalogCode(wrote, codes.map((code) => ({ code }))).code, want, wrote);
 });
 
 test("a title naming a different standard: the match is by the code only", () => {

@@ -20,7 +20,7 @@
  */
 import type { Standard } from "./teacher-types";
 
-export type MatchHow = "exact" | "spelling" | "parent" | "";
+export type MatchHow = "exact" | "spelling" | "parent" | "titled" | "";
 
 /**
  * A code reduced to what identifies it: upper case, no spaces, "." and "-"
@@ -53,20 +53,30 @@ function parentKey(key: string): string {
   return m ? m[1] : "";
 }
 
+/** Where a title can start after a code: " — ", " – " (spaces optional
+ * around a dash, which never appears inside a code), " - ", ": " or " (". */
+const TITLE_START = /\s*[—–]\s*|\s+-\s+|:\s+|\s+\(/g;
+
 /**
- * The code alone, when the AI writes it with its title after it:
- * "F-IF.7 — Graph Functions and Key Features" -> "F-IF.7". The title starts at
- * the first " — ", " – ", " - ", ": " or " (". Only the text BEFORE it is
- * kept, so the title can never be what matches (Ricky, 14 Oct 2026: codeKey
- * read the title's words as more code segments, and 10 of 10 first choices in
- * his two reads on 15 Oct matched nothing). A code itself never contains one
- * of these with spaces ("F-IF.7", "7.RP.A.3"), so a bare code is unchanged.
+ * The code, when the AI writes it with its title after it:
+ * "F-IF.7 — Graph Functions and Key Features" -> "F-IF.7" (Ricky, 14 Oct
+ * 2026: codeKey read the title's words as more code segments, and 10 of 10
+ * first choices in his two reads on 15 Oct matched nothing).
+ *
+ * Every text BEFORE a possible title start, longest first -- a custom or
+ * state code can itself contain one ("4.4 (D)", "Unit 3 - Fractions"), and
+ * the longest catalog code that fits is the one meant. Only a beginning is
+ * ever tried, never what follows, so a title can never be what matches.
  */
-export function codePart(raw: string): string {
+export function codeParts(raw: string): string[] {
   const s = (raw ?? "").trim();
-  const m = s.match(/^(.*?)(?:\s+[—–-]\s+|:\s+|\s+\()/);
-  return m ? m[1].trim() : s;
+  const cuts: string[] = [];
+  for (const m of s.matchAll(TITLE_START)) if (m.index) cuts.push(s.slice(0, m.index).trim());
+  return [...new Set(cuts.reverse())].filter(Boolean);
 }
+
+/** A sub-part letter written in brackets, joined on: "F-IF.7 (e)" -> "F-IF.7e". */
+const joinSubPart = (code: string) => code.replace(/^(.*\d)\s*\(([a-z])\)$/i, "$1$2");
 
 /**
  * The catalog code the AI meant by `raw`, and how it was found:
@@ -74,14 +84,29 @@ export function codePart(raw: string): string {
  *   "spelling" -- the same code written differently (see codeKey);
  *   "parent"   -- a sub-part the catalog does not list ("F-IF.7e"), whose
  *                 parent it does ("F-IF.7");
+ *   "titled"   -- the code with more after it: a title ("F-IF.7 — Graph
+ *                 Functions") or a bracketed sub-part ("F-IF.7 (e)"), kept
+ *                 apart so standardMatches shows whether the read still adds
+ *                 titles;
  *   ""         -- no catalog code, or more than one it could be.
  */
 export function matchCatalogCode(raw: string, catalog: Pick<Standard, "code">[]): { code: string; how: MatchHow } {
   const whole = matchWritten(raw, catalog);
-  if (whole.code) return whole;
-  // A title appended: match the code before it, and only that.
-  const code = codePart(raw);
-  return code && code !== (raw ?? "").trim() ? matchWritten(code, catalog) : whole;
+  if (whole.code && whole.how !== "parent") return whole;
+  // What the AI wrote as the code: the whole text with a bracketed sub-part
+  // joined, then each beginning before a possible title, longest first (each
+  // with its sub-part joined too). A real match (exact or spelling) anywhere
+  // beats a parent, so "4.4 (D) — compute" is "4.4 (D)", not the "4.4" a
+  // "4.4D" would fall back to.
+  const tries = [joinSubPart((raw ?? "").trim()), ...codeParts(raw).flatMap((p) => [joinSubPart(p), p])];
+  let parent = whole.code ? whole : null;
+  for (const t of [...new Set(tries)]) {
+    const hit = matchWritten(t, catalog);
+    if (!hit.code) continue;
+    if (hit.how !== "parent") return { code: hit.code, how: t === (raw ?? "").trim() ? hit.how : "titled" };
+    parent ??= hit;
+  }
+  return parent ?? { code: "", how: "" };
 }
 
 function matchWritten(raw: string, catalog: Pick<Standard, "code">[]): { code: string; how: MatchHow } {
