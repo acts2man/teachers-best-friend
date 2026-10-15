@@ -60,8 +60,10 @@ test("still a catalog code or nothing: no title matches on its own", () => {
 });
 
 test("a bare catalog code and the matcher's known spellings still match", () => {
-  const out = read(["W.4.1", "CCSS.ELA-LITERACY.W.4.2"]);
-  assert.deepEqual(out.traits.map((t) => t.standard), ["W.4.1", "W.4.2"]);
+  const out = read(["W.4.1", "CCSS.ELA-LITERACY.W.4.2", "W.4.1a"]);
+  // A sub-part the catalog does not list rolls up to its standard, as in the
+  // assignment read; the ELA catalogs list parent standards only.
+  assert.deepEqual(out.traits.map((t) => t.standard), ["W.4.1", "W.4.2", "W.4.1"]);
 });
 
 test("the rubric prompt asks for the code only", () => {

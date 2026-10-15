@@ -1100,8 +1100,8 @@ export function finalizeAnalysis(
       .safeParse(output);
     if (!parsed.success)
       throw new HttpError(422, "The rubric couldn’t be read reliably.");
-    // Only a standard the catalog actually contains is kept, matched exactly
-    // as the assignment read matches (matchCatalogCode): a code written with
+    // Only a standard the catalog actually contains is kept, matched the same
+    // way the assignment read does (matchCatalogCode): a code written with
     // its title matches by the code part, a known spelling matches, and a code
     // the model invented -- or a title on its own -- is dropped to an empty
     // string, so the teacher never confirms a code that is not real.
