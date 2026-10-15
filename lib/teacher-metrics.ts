@@ -1,4 +1,5 @@
-import { mastery } from "./teacher-data";
+import { MASTERY_LEVELS, masteryLevel, masteryPercent, needsReteach } from "./mastery-levels";
+import { mastery, masteryRaw } from "./teacher-data";
 import type {
   Assessment,
   Question,
@@ -78,8 +79,9 @@ function levelBreakdown(
         name,
         questions: active.filter((q) => levelOf(q) === level).length,
         assessed: rs.length,
+        // Rounded down, like every percentage coloured by a mastery level.
         percentCorrect: rs.length
-          ? Math.round(
+          ? masteryPercent(
               rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length,
             )
           : null,
@@ -195,49 +197,31 @@ export function alignmentSuggestions(
 
 export function studentOverall(student: Student, catalog: Standard[]) {
   const scores = catalog
-    .map((standard) => mastery(student, standard.code))
+    .map((standard) => masteryRaw(student, standard.code))
     .filter((score): score is number => score !== null);
   return scores.length
-    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+    ? masteryPercent(scores.reduce((sum, score) => sum + score, 0) / scores.length)
     : null;
 }
 
+/** The class in the four mastery levels (lib/mastery-levels.ts), each
+ * student by their overall score, plus those with no evidence yet. */
 export function performanceBands(students: Student[], catalog: Standard[]) {
   const bands = [
-    {
-      id: "high",
-      name: "High",
-      range: "80–100%",
-      description: "Meeting or extending current standards",
-      min: 80,
-      max: 100,
+    ...MASTERY_LEVELS.map((l) => ({
+      id: l.level.toLowerCase(),
+      name: l.level as string,
+      range: l.range,
+      description: l.description,
+      tone: l.tone as string,
       students: [] as Student[],
-    },
-    {
-      id: "mid",
-      name: "Mid",
-      range: "65–79%",
-      description: "Developing toward consistent understanding",
-      min: 65,
-      max: 79,
-      students: [] as Student[],
-    },
-    {
-      id: "low",
-      name: "Low",
-      range: "Below 65%",
-      description: "Needs focused support and another check",
-      min: 0,
-      max: 64,
-      students: [] as Student[],
-    },
+    })),
     {
       id: "none",
       name: "No evidence yet",
       range: "Not scored",
       description: "Ready for an initial check-in",
-      min: -1,
-      max: -1,
+      tone: "none",
       students: [] as Student[],
     },
   ];
@@ -245,8 +229,8 @@ export function performanceBands(students: Student[], catalog: Standard[]) {
     const score = studentOverall(student, catalog);
     const band =
       score === null
-        ? bands[3]
-        : bands.find((item) => score >= item.min && score <= item.max)!;
+        ? bands[bands.length - 1]
+        : bands[MASTERY_LEVELS.indexOf(masteryLevel(score))];
     band.students.push(student);
   }
   return bands;
@@ -256,8 +240,8 @@ export function sharedGapGroups(students: Student[], catalog: Standard[]) {
   return catalog
     .map((standard) => {
       const members = students.filter((student) => {
-        const score = mastery(student, standard.code);
-        return score !== null && score < 70;
+        // Developing: the level the app recommends reteaching for.
+        return needsReteach(mastery(student, standard.code));
       });
       return {
         standard,
@@ -267,9 +251,9 @@ export function sharedGapGroups(students: Student[], catalog: Standard[]) {
             ? "Whole class"
             : "Small group",
         average: members.length
-          ? Math.round(
+          ? masteryPercent(
               members.reduce(
-                (sum, student) => sum + (mastery(student, standard.code) || 0),
+                (sum, student) => sum + (masteryRaw(student, standard.code) || 0),
                 0,
               ) / members.length,
             )

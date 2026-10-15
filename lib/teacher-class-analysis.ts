@@ -12,6 +12,13 @@ import {
   responseMatch,
 } from "./teacher-metrics";
 import { activeQuestions, rubricDimensions } from "./teacher-workflow";
+import {
+  MASTERY_LEVELS,
+  MASTERY_LEVELS_NOTE,
+  masteryLevel,
+  masteryPercent,
+  type MasteryLevel,
+} from "./mastery-levels";
 
 /** One error type and the students who made it, most common first. */
 export type ErrorTypeTally = {
@@ -22,18 +29,27 @@ export type ErrorTypeTally = {
   count: number;
 };
 
+/** Students sorted into the four levels (lib/mastery-levels.ts). */
+export type ByLevel = Record<MasteryLevel, Student[]>;
+
+const emptyLevels = (): ByLevel => ({ Developing: [], Approaching: [], Proficient: [], Exceeding: [] });
+
 export type StandardMastery = {
   standard: Standard;
-  strong: Student[];
-  weak: Student[];
+  /** Every graded student, by their level on this standard. */
+  byLevel: ByLevel;
+  /** Developing: the students the app recommends reteaching. */
+  reteach: Student[];
+  /** Exceeding: the students the app recommends extension for. */
+  extend: Student[];
   notGraded: Student[];
-  percentMastered: number | null;
-  instruction: "Whole class" | "Small group" | "On track";
+  /** The class's average on this standard, rounded down, or null. */
+  averagePercent: number | null;
+  /** How to reteach the Developing students; "No reteach needed" when none. */
+  instruction: "Whole class" | "Small group" | "No reteach needed";
   /** The error types tagged on this standard's answers, most common first. */
   errorTypes: ErrorTypeTally[];
 };
-
-const MASTERY_THRESHOLD = 70;
 
 /**
  * Tallies the error types a teacher tagged across a set of responses, with the
@@ -105,21 +121,22 @@ export function studentErrorTypes(
 /** One rubric dimension's class picture for a writing assessment. */
 export type WritingDimensionSummary = {
   dimension: RubricDimension;
-  /** Mean confirmed level as a percentage of the dimension's max, or null. */
+  /** Mean confirmed level as a percentage of the dimension's max, rounded
+   * down, or null. */
   averagePercent: number | null;
   /** The mean level shown against the max, e.g. "3.1 / 4", or "—". */
   averageLabel: string;
-  strong: Student[];
-  weak: Student[];
+  /** Every scored student, by their level on this trait. */
+  byLevel: ByLevel;
   notScored: Student[];
 };
 
 /**
  * Per-dimension class breakdown for a writing assessment, from the teacher's
  * confirmed rubric scores -- no AI call. Mirrors classAnalysis for key-based
- * assessments: only confirmed scores count, a student at or above the mastery
- * threshold is "strong", the rest "weak", and students with no confirmed score
- * on that dimension are listed separately.
+ * assessments: only confirmed scores count, each student is placed in a
+ * mastery level by their score as a percentage of the trait's max, and
+ * students with no confirmed score on that dimension are listed separately.
  */
 export function writingClassAnalysis(
   a: Assessment,
@@ -127,8 +144,7 @@ export function writingClassAnalysis(
 ): WritingDimensionSummary[] {
   return rubricDimensions(a).map((dimension) => {
     const max = dimension.max > 0 ? dimension.max : 4;
-    const strong: Student[] = [];
-    const weak: Student[] = [];
+    const byLevel = emptyLevels();
     const notScored: Student[] = [];
     const levels: number[] = [];
     for (const student of students) {
@@ -144,7 +160,7 @@ export function writingClassAnalysis(
         continue;
       }
       levels.push(r.rubricScore);
-      (responseMatch(r) >= MASTERY_THRESHOLD ? strong : weak).push(student);
+      byLevel[masteryLevel(responseMatch(r)).level].push(student);
     }
     const averageLevel = levels.length
       ? levels.reduce((sum, n) => sum + n, 0) / levels.length
@@ -152,13 +168,12 @@ export function writingClassAnalysis(
     return {
       dimension,
       averagePercent:
-        averageLevel === null ? null : Math.round((averageLevel / max) * 100),
+        averageLevel === null ? null : masteryPercent((averageLevel / max) * 100),
       averageLabel:
         averageLevel === null
           ? "—"
           : `${(Math.round(averageLevel * 10) / 10).toFixed(1)} / ${max}`,
-      strong,
-      weak,
+      byLevel,
       notScored,
     };
   });
@@ -182,8 +197,8 @@ export function classAnalysis(
     .filter((standard): standard is Standard => !!standard)
     .map((standard) => {
       const qs = questions.filter((q) => q.standard === standard.code);
-      const strong: Student[] = [];
-      const weak: Student[] = [];
+      const byLevel = emptyLevels();
+      const averages: number[] = [];
       const notGraded: Student[] = [];
       for (const student of students) {
         const responses = qs.flatMap((q) => {
@@ -197,39 +212,42 @@ export function classAnalysis(
           notGraded.push(student);
           continue;
         }
-        const average = Math.round(
+        // The true average, never rounded first: 69.9 is Developing.
+        const average =
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
-            responses.length,
-        );
-        (average >= MASTERY_THRESHOLD ? strong : weak).push(student);
+          responses.length;
+        averages.push(average);
+        byLevel[masteryLevel(average).level].push(student);
       }
-      const assessed = strong.length + weak.length;
+      const assessed = averages.length;
+      const reteach = byLevel.Developing;
       const qIds = new Set(qs.map((q) => q.id));
       return {
         standard,
-        strong,
-        weak,
+        byLevel,
+        reteach,
+        extend: byLevel.Exceeding,
         notGraded,
+        averagePercent: assessed
+          ? masteryPercent(averages.reduce((a, b) => a + b, 0) / assessed)
+          : null,
         errorTypes: tallyErrorTypes(
           a.responses.filter((r) => qIds.has(r.questionId)),
           students,
         ),
-        percentMastered: assessed
-          ? Math.round((strong.length / assessed) * 100)
-          : null,
-        instruction: (!assessed || !weak.length
-          ? "On track"
-          : weak.length >= Math.ceil(assessed / 2)
+        instruction: (!reteach.length
+          ? "No reteach needed"
+          : reteach.length >= Math.ceil(assessed / 2)
             ? "Whole class"
             : "Small group") as StandardMastery["instruction"],
       };
     });
-  return rows.sort((a, b) => (a.percentMastered ?? 101) - (b.percentMastered ?? 101));
+  return rows.sort((a, b) => (a.averagePercent ?? 101) - (b.averagePercent ?? 101));
 }
 
 export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) {
   const graded = analysis.reduce(
-    (sum, row) => sum + row.strong.length + row.weak.length,
+    (sum, row) => sum + MASTERY_LEVELS.reduce((n, l) => n + row.byLevel[l.level].length, 0),
     0,
   );
   return (
@@ -252,17 +270,19 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
       .map((row) => {
         const lines = [
           row.standard.code + " — " + row.standard.title,
-          row.percentMastered === null
+          row.averagePercent === null
             ? "Not yet graded for this class"
-            : row.percentMastered + "% of graded students showed mastery",
-          "Strong (" +
-            row.strong.length +
-            "): " +
-            (row.strong.map((s) => s.name).join(", ") || "None yet"),
-          "Needs reteaching (" +
-            row.weak.length +
-            "): " +
-            (row.weak.map((s) => s.name).join(", ") || "None"),
+            : "Class average " + row.averagePercent + "% (" + masteryLevel(row.averagePercent).level + ")",
+          ...MASTERY_LEVELS.map(
+            (l) =>
+              l.level +
+              " " +
+              l.range +
+              " (" +
+              row.byLevel[l.level].length +
+              "): " +
+              (row.byLevel[l.level].map((s) => s.name).join(", ") || "None"),
+          ),
         ];
         if (row.notGraded.length)
           lines.push(row.notGraded.length + " student(s) not yet graded on this standard");
@@ -274,13 +294,19 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
               "): " +
               e.students.map((s) => s.name).join(", "),
           );
-        lines.push("Suggested next step: " + row.instruction);
+        lines.push(
+          "Suggested next step: " +
+            (row.reteach.length ? "reteach the Developing students (" + row.instruction.toLowerCase() + ")" : "no reteach needed") +
+            (row.extend.length ? "; extension for the Exceeding students" : ""),
+        );
         return lines.join("\n");
       })
       .join("\n\n") +
     cognitiveReportSection(a) +
     commonErrorSection(analysis) +
-    "\n\nGenerated instantly from this assessment's graded responses — no additional AI review."
+    "\n\n" +
+    MASTERY_LEVELS_NOTE +
+    "\nGenerated instantly from this assessment's graded responses — no additional AI review."
   );
 }
 

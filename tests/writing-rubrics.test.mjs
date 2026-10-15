@@ -140,7 +140,7 @@ test("writingClassAnalysis breaks the class down per trait, most needs-work surf
   ];
   let a = writingAssessment(4, "informational");
   const p = a.rubric[0]; // max 4
-  // Ana strong (4 -> 100%), Ben weak (1 -> 25%) on Purpose; both confirmed.
+  // Ana 4 -> 100% (Exceeding), Ben 1 -> 25% (Developing) on Purpose; both confirmed.
   a = replaceWritingResponses(a, "s1", normalizeWritingScores(a, "s1", [{ dimensionId: p.id, score: 4, reason: "x" }]));
   a = replaceWritingResponses(a, "s2", normalizeWritingScores(a, "s2", [{ dimensionId: p.id, score: 1, reason: "y" }]));
   a = confirmWritingScores(a, "s1");
@@ -148,8 +148,8 @@ test("writingClassAnalysis breaks the class down per trait, most needs-work surf
   const rows = writingClassAnalysis(a, students);
   const purpose = rows.find((r) => r.dimension.id === p.id);
   assert.equal(purpose.averageLabel, "2.5 / 4");
-  assert.deepEqual(purpose.strong.map((s) => s.name), ["Ana"]);
-  assert.deepEqual(purpose.weak.map((s) => s.name), ["Ben"]);
+  assert.deepEqual(purpose.byLevel.Exceeding.map((s) => s.name), ["Ana"]);
+  assert.deepEqual(purpose.byLevel.Developing.map((s) => s.name), ["Ben"]);
   // Conventions was never scored -> both students not scored.
   const conv = rows.find((r) => r.dimension.name === "Conventions");
   assert.equal(conv.notScored.length, 2);

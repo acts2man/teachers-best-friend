@@ -1,4 +1,5 @@
 import { isSecondChoice, withoutStandardNote } from "./standard-match";
+import { masteryPercent } from "./mastery-levels";
 import type {
   AnswerRegion,
   Assessment,
@@ -885,7 +886,7 @@ export function studentReport(a: Assessment, student: Student) {
           qs.some((q) => q.id === r.questionId),
         );
         const match = rs.length
-          ? Math.round(
+          ? masteryPercent(
               rs.reduce((sum, response) => sum + responseMatch(response), 0) /
                 rs.length,
             )
