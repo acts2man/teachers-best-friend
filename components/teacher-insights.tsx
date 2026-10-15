@@ -48,7 +48,7 @@ import {
   SectionTitle,
   Pick,
   Pill,
-  Score,
+  MasteryScore,
   Meter,
   Avatar,
   AvatarStack,
@@ -94,6 +94,15 @@ import {
   classMastery,
   priorities,
 } from "@/lib/teacher-data";
+import {
+  MASTERY_LEVELS,
+  MASTERY_LEVELS_NOTE,
+  levelClass,
+  needsReteach,
+} from "@/lib/mastery-levels";
+/** A student's status on a standard is a level (three records or more), or
+ * one of the not-yet states. */
+const isLevel = (status: string) => MASTERY_LEVELS.some((l) => l.level === status);
 import type { Standard, Student, Group } from "@/lib/teacher-types";
 
 export function StandardsView() {
@@ -557,7 +566,7 @@ export function DiagnosticsView() {
   const cross = students.filter((st) => {
     const m = mastery(st, "4.OA.A.3"),
       r = mastery(st, "RI.4.2");
-    return m !== null && r !== null && m < 70 && r < 70;
+    return needsReteach(m) && needsReteach(r);
   });
   async function generateGroups() {
     const map = new Map<string, string[]>();
@@ -568,10 +577,10 @@ export function DiagnosticsView() {
         .sort((a, b) => a.m - b.m);
       const weakest = ordered[0];
       const key =
-        weakest && weakest.m < 70
+        weakest && needsReteach(weakest.m)
           ? weakest.s.code
           : catalog.length &&
-              catalog.every((s) => masteryStatus(st, s.code) === "Mastered")
+              catalog.every((s) => masteryStatus(st, s.code) === "Exceeding")
             ? "Enrichment"
             : "Independent practice";
       map.set(key, [...(map.get(key) || []), st.id]);
@@ -760,7 +769,7 @@ export function DiagnosticsView() {
                       >
                         <Avatar student={st} size="small" />
                         <span>{st.name}</span>
-                        <Score value={mastery(st, focus)} />
+                        <MasteryScore value={mastery(st, focus)} />
                       </button>
                     ))}
                   </div>
@@ -803,7 +812,7 @@ export function DiagnosticsView() {
                 </div>
               )}
               <p className="method-note">
-                Priority combines the share of students below 70%, the number
+                Priority combines the share of students at Developing (below 70%), the number
                 affected, and a prerequisite-impact weight. Use this planning
                 aid alongside your observations.
               </p>
@@ -826,9 +835,11 @@ export function DiagnosticsView() {
               description="Select any score to open the student’s evidence."
             >
               <div className="heatmap-legend">
-                <span className="good">80%+</span>
-                <span className="medium">65–79%</span>
-                <span className="low">Below 65%</span>
+                {MASTERY_LEVELS.map((l) => (
+                  <span key={l.level} className={"level-" + l.tone}>
+                    {l.level} {l.range}
+                  </span>
+                ))}
               </div>
             </SectionTitle>
             {students.length && catalog.length ? (
@@ -857,7 +868,7 @@ export function DiagnosticsView() {
                     <TableCell>Class average</TableCell>
                     {catalog.map((s) => (
                       <TableCell key={s.code}>
-                        <Score value={classMastery(students, s.code)} />
+                        <MasteryScore value={classMastery(students, s.code)} />
                       </TableCell>
                     ))}
                   </TableRow>
@@ -890,7 +901,7 @@ export function DiagnosticsView() {
                               " percent"
                             }
                           >
-                            <Score value={mastery(st, s.code)} />
+                            <MasteryScore value={mastery(st, s.code)} />
                           </button>
                         </TableCell>
                       ))}
@@ -905,8 +916,9 @@ export function DiagnosticsView() {
               />
             )}
             <p className="method-note">
-              Scores average the three most recent evidence records. “Mastered”
-              additionally requires at least three records.
+              Scores average the three most recent evidence records, rounded
+              down. {MASTERY_LEVELS_NOTE} A student&apos;s level on a standard
+              shows once there are at least three records.
             </p>
           </div>
         </TabsContent>
@@ -1225,10 +1237,10 @@ export function StudentsView() {
       s.name.toLowerCase().includes(query.toLowerCase()) &&
       (filter === "All students" ||
         (filter === "Needs support" &&
-          catalog.some((c) => (mastery(s, c.code) ?? 100) < 65)) ||
+          catalog.some((c) => needsReteach(mastery(s, c.code)))) ||
         (filter === "Ready for enrichment" &&
           catalog.length &&
-          catalog.every((c) => masteryStatus(s, c.code) === "Mastered"))),
+          catalog.every((c) => masteryStatus(s, c.code) === "Exceeding"))),
   );
   const bands = performanceBands(students, catalog);
   const gapGroups = sharedGapGroups(students, catalog);
@@ -1389,7 +1401,7 @@ export function StudentsView() {
                             evidence records
                           </span>
                         </div>
-                        <Score value={mastery(student, s.code)} />
+                        <MasteryScore value={mastery(student, s.code)} />
                         <span className="mastery-status">
                           {masteryStatus(student, s.code)}
                         </span>
@@ -1411,9 +1423,9 @@ export function StudentsView() {
                 </strong>
                 <Pill
                   tone={
-                    masteryStatus(student, focus) === "Mastered"
-                      ? "green"
-                      : "amber"
+                    isLevel(masteryStatus(student, focus))
+                      ? levelClass(mastery(student, focus))
+                      : "neutral"
                   }
                 >
                   {masteryStatus(student, focus)}
@@ -1453,7 +1465,7 @@ export function StudentsView() {
                             <strong>{e.source}</strong>
                             <small>{e.date}</small>
                           </span>
-                          <Score value={e.score} />
+                          <MasteryScore value={e.score} />
                         </div>
                       ))}
                   </div>
@@ -1465,8 +1477,8 @@ export function StudentsView() {
                 />
               )}
               <p className="method-note">
-                Mastery requires three or more records and an average of at
-                least 80% across the three latest.
+                The level uses the average of the three latest records (it shows
+                once there are three or more). {MASTERY_LEVELS_NOTE}
               </p>
             </section>
           </div>
@@ -1618,7 +1630,7 @@ export function StudentsView() {
           >
             {[
               ["students", "Students"],
-              ["levels", "High / Mid / Low"],
+              ["levels", "Mastery levels"],
               ["standards", "Shared skill gaps"],
             ].map(([value, label]) => (
               <button
@@ -1681,9 +1693,10 @@ export function StudentsView() {
               </div>
               <div className="student-grid">
                 {filtered.map((s) => {
-                  const mastered = catalog.filter(
-                    (c) => masteryStatus(s, c.code) === "Mastered",
-                  ).length;
+                  const proficient = catalog.filter((c) => {
+                    const status = masteryStatus(s, c.code);
+                    return status === "Proficient" || status === "Exceeding";
+                  }).length;
                   const weak = catalog
                     .map((c) => ({ s: c, m: mastery(s, c.code) }))
                     .filter(
@@ -1707,25 +1720,17 @@ export function StudentsView() {
                           <span
                             key={c.code}
                             title={c.title + ": " + masteryStatus(s, c.code)}
-                            className={
-                              masteryStatus(s, c.code) === "Mastered"
-                                ? "good"
-                                : (mastery(s, c.code) ?? 100) < 65
-                                  ? "low"
-                                  : mastery(s, c.code) === null
-                                    ? "unknown"
-                                    : "medium"
-                            }
+                            className={levelClass(mastery(s, c.code))}
                           />
                         ))}
                       </div>
                       <div className="student-card-footer">
                         <strong>
-                          {mastered}
-                          <span> / {catalog.length} skills mastered</span>
+                          {proficient}
+                          <span> / {catalog.length} skills Proficient or above</span>
                         </strong>
                         <span>
-                          {weak && weak.m < 70
+                          {weak && needsReteach(weak.m)
                             ? "Next: " + weak.s.title
                             : weak
                               ? "Keep the curiosity growing"
@@ -1755,14 +1760,14 @@ export function StudentsView() {
             <div className="student-groups-grid">
               {bands.map((band) => (
                 <section
-                  className={`panel student-group-card ${band.id}`}
+                  className={`panel student-group-card band-${band.tone}`}
                   key={band.id}
                 >
                   <header>
                     <span className="group-icon">
                       <Layers size={21} />
                     </span>
-                    <Pill>{band.range}</Pill>
+                    <Pill tone={band.tone === "none" ? "neutral" : "level-" + band.tone}>{band.range}</Pill>
                   </header>
                   <h2>{band.name}</h2>
                   <p>{band.description}</p>
@@ -1774,7 +1779,7 @@ export function StudentsView() {
                       >
                         <Avatar student={member} size="small" />
                         <span>{member.name}</span>
-                        <Score value={studentOverall(member, catalog)} />
+                        <MasteryScore value={studentOverall(member, catalog)} />
                       </button>
                     ))}
                     {!band.students.length && (
@@ -1833,7 +1838,7 @@ export function StudentsView() {
                         >
                           <Avatar student={member} size="small" />
                           <span>{member.name}</span>
-                          <Score value={mastery(member, group.standard.code)} />
+                          <MasteryScore value={mastery(member, group.standard.code)} />
                         </button>
                       ))}
                     </div>
@@ -1860,7 +1865,7 @@ export function StudentsView() {
                   </section>
                 ))}
                 <p className="method-note group-method-note">
-                  Shared-gap groups include students below 70% on the same
+                  Shared-gap groups include students at Developing (below 70%) on the same
                   standard. A whole-class suggestion appears when at least half
                   the class shares that gap.
                 </p>

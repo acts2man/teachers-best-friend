@@ -1,3 +1,4 @@
+import { masteryLevel, masteryPercent, needsReteach, type MasteryLevel } from "./mastery-levels";
 import { isSecondChoice } from "./standard-match";
 import type {
   Workspace,
@@ -540,34 +541,37 @@ export function createDemoWorkspace(): Workspace {
     settings: { teacherName: "", school: "", reduceMotion: false },
   };
 }
+/** A student's score on a standard: the average of the three latest records,
+ * rounded DOWN so it never shows a level it has not reached (69.9 is 69,
+ * Developing -- see lib/mastery-levels.ts). */
 export function mastery(student: Student, code: string): number | null {
   const e = student.evidence
     .filter((x) => x.standard === code)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-3);
   return e.length
-    ? Math.round(e.reduce((sum, x) => sum + x.score, 0) / e.length)
+    ? masteryPercent(e.reduce((sum, x) => sum + x.score, 0) / e.length)
     : null;
 }
-export function masteryStatus(student: Student, code: string) {
+/** The student's level on a standard, once there are three records to judge. */
+export function masteryStatus(
+  student: Student,
+  code: string,
+): MasteryLevel | "No evidence" | "Building evidence" {
   const n = student.evidence.filter((x) => x.standard === code).length,
     m = mastery(student, code);
   return m === null
     ? "No evidence"
     : n < 3
       ? "Building evidence"
-      : m >= 80
-        ? "Mastered"
-        : m >= 65
-          ? "Developing"
-          : "Needs support";
+      : masteryLevel(m).level;
 }
 export function classMastery(students: Student[], code: string) {
   const vals = students
     .map((x) => mastery(x, code))
     .filter((x): x is number => x !== null);
   return vals.length
-    ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+    ? masteryPercent(vals.reduce((a, b) => a + b, 0) / vals.length)
     : 0;
 }
 export function priorities(
@@ -577,8 +581,8 @@ export function priorities(
   return all
     .map((standard) => {
       const struggling = students.filter((s) => {
-        const m = mastery(s, standard.code);
-        return m !== null && m < 70;
+        // Developing: the level the app recommends reteaching for.
+        return needsReteach(mastery(s, standard.code));
       });
       const rate = students.length ? struggling.length / students.length : 0;
       const prerequisiteImpact =

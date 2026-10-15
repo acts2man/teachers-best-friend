@@ -71,7 +71,10 @@ import {
   emailContent,
   TextLink,
   Avatar,
+  LevelPill,
+  LevelStudents,
 } from "./teacher-shared";
+import { MASTERY_LEVELS_NOTE, levelClass, masteryLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   classAnalysisReport,
@@ -2479,43 +2482,16 @@ function WritingClassPanel({
               <span className="group-icon">
                 <Target size={21} />
               </span>
-              <Pill tone={row.averagePercent === null ? "neutral" : row.averagePercent >= 80 ? "green" : row.averagePercent >= 65 ? "neutral" : "amber"}>
+              <Pill tone={row.averagePercent === null ? "neutral" : levelClass(row.averagePercent)}>
                 Avg {row.averageLabel}
+                {row.averagePercent !== null && " · " + masteryLevel(row.averagePercent).level}
               </Pill>
             </header>
             <h2>{row.dimension.name}</h2>
             {row.averagePercent !== null && (
-              <Meter
-                value={row.averagePercent}
-                tone={row.averagePercent >= 80 ? "green" : row.averagePercent >= 65 ? "" : "orange"}
-              />
+              <Meter value={row.averagePercent} tone={levelClass(row.averagePercent)} />
             )}
-            {row.weak.length > 0 && (
-              <>
-                <span className="cell-meta">Still developing ({row.weak.length})</span>
-                <div className="group-members">
-                  {row.weak.map((member) => (
-                    <button key={member.id} onClick={() => go("/students?id=" + member.id)}>
-                      <Avatar student={member} size="small" />
-                      <span>{member.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            {row.strong.length > 0 && (
-              <>
-                <span className="cell-meta">Strong ({row.strong.length})</span>
-                <div className="group-members">
-                  {row.strong.map((member) => (
-                    <button key={member.id} onClick={() => go("/students?id=" + member.id)}>
-                      <Avatar student={member} size="small" />
-                      <span>{member.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+            <LevelStudents byLevel={row.byLevel} onOpen={(member) => go("/students?id=" + member.id)} />
             {row.notScored.length > 0 && (
               <span className="cell-meta">
                 {row.notScored.length} student{row.notScored.length === 1 ? "" : "s"} not
@@ -2755,9 +2731,7 @@ function CognitiveBreakdown({
             {r.percentCorrect !== null && (
               <Meter
                 value={r.percentCorrect}
-                tone={
-                  r.percentCorrect >= 80 ? "green" : r.percentCorrect >= 65 ? "" : "orange"
-                }
+                tone={levelClass(r.percentCorrect)}
               />
             )}
             <span className="cell-meta">
@@ -2888,74 +2862,28 @@ function ClassAnalysisPanel({
                       : "green"
                 }
               >
-                {row.instruction === "On track" ? "On track" : row.instruction}
+                {row.instruction === "No reteach needed"
+                  ? "No reteach needed"
+                  : "Reteach: " + row.instruction.toLowerCase()}
               </Pill>
             </header>
             <h2>{row.standard.title}</h2>
             <p>
               {row.standard.code} ·{" "}
-              {row.percentMastered === null
+              {row.averagePercent === null
                 ? "Not yet graded"
-                : row.percentMastered + "% of graded students mastered this"}
+                : "Class average " + row.averagePercent + "%"}{" "}
+              <LevelPill percent={row.averagePercent} />
             </p>
-            {row.percentMastered !== null && (
-              <Meter
-                value={row.percentMastered}
-                tone={
-                  row.percentMastered >= 80
-                    ? "green"
-                    : row.percentMastered >= 65
-                      ? ""
-                      : "orange"
-                }
-              />
+            {row.averagePercent !== null && (
+              <Meter value={row.averagePercent} tone={levelClass(row.averagePercent)} />
             )}
-            {row.strong.length > 0 && (
-              <>
-                <span className="cell-meta">Strong ({row.strong.length})</span>
-                <div className="group-members">
-                  {row.strong.map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={() =>
-                        go(
-                          "/students?id=" +
-                            member.id +
-                            "&standard=" +
-                            row.standard.code,
-                        )
-                      }
-                    >
-                      <Avatar student={member} size="small" />
-                      <span>{member.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            {row.weak.length > 0 && (
-              <>
-                <span className="cell-meta">Needs reteaching ({row.weak.length})</span>
-                <div className="group-members">
-                  {row.weak.map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={() =>
-                        go(
-                          "/students?id=" +
-                            member.id +
-                            "&standard=" +
-                            row.standard.code,
-                        )
-                      }
-                    >
-                      <Avatar student={member} size="small" />
-                      <span>{member.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+            <LevelStudents
+              byLevel={row.byLevel}
+              onOpen={(member) =>
+                go("/students?id=" + member.id + "&standard=" + row.standard.code)
+              }
+            />
             {row.notGraded.length > 0 && (
               <span className="cell-meta">
                 {row.notGraded.length} student{row.notGraded.length === 1 ? "" : "s"} not
@@ -2968,46 +2896,63 @@ function ClassAnalysisPanel({
                 <ErrorTypeList tallies={row.errorTypes} go={go} />
               </>
             )}
-            {row.weak.length > 0 && (
+            {(row.reteach.length > 0 || row.extend.length > 0) && (
               <div className="review-heading-actions">
-                <Action
-                  variant="secondary small"
-                  onClick={() =>
-                    go(
-                      "/lessons?standard=" +
-                        encodeURIComponent(row.standard.code) +
-                        "&assessment=" +
-                        a.id +
-                        "&students=" +
-                        row.weak.map((member) => member.id).join(","),
-                    )
-                  }
-                >
-                  <BookOpen size={15} />
-                  Reteach {row.weak.length === 1 ? "this student" : "this group"}
-                </Action>
-                <Action
-                  variant="secondary small"
-                  onClick={() =>
-                    go(
-                      "/lessons?standard=" +
-                        encodeURIComponent(row.standard.code) +
-                        "&assessment=" +
-                        a.id,
-                    )
-                  }
-                >
-                  Reteach whole class
-                </Action>
+                {row.reteach.length > 0 && (
+                  <Action
+                    variant="secondary small"
+                    onClick={() =>
+                      go(
+                        "/lessons?standard=" +
+                          encodeURIComponent(row.standard.code) +
+                          "&assessment=" +
+                          a.id +
+                          "&students=" +
+                          row.reteach.map((member) => member.id).join(","),
+                      )
+                    }
+                  >
+                    <BookOpen size={15} />
+                    Reteach Developing {row.reteach.length === 1 ? "student" : "group"}
+                  </Action>
+                )}
+                {row.reteach.length > 0 && (
+                  <Action
+                    variant="secondary small"
+                    onClick={() =>
+                      go(
+                        "/lessons?standard=" +
+                          encodeURIComponent(row.standard.code) +
+                          "&assessment=" +
+                          a.id,
+                      )
+                    }
+                  >
+                    Reteach whole class
+                  </Action>
+                )}
+                {row.extend.length > 0 && (
+                  <Action
+                    variant="secondary small"
+                    onClick={() =>
+                      go(
+                        "/resources?category=Enrichment&standard=" +
+                          encodeURIComponent(row.standard.code),
+                      )
+                    }
+                  >
+                    Extension for Exceeding ({row.extend.length})
+                  </Action>
+                )}
               </div>
             )}
           </section>
         ))}
       </div>
       <p className="method-note group-method-note">
-        Mastery is 70% or higher average match on this assessment&apos;s
-        reviewed questions for that standard. Only teacher-confirmed responses
-        count.
+        {MASTERY_LEVELS_NOTE} A student&apos;s level is their average match on
+        this assessment&apos;s reviewed questions for that standard. Only
+        teacher-confirmed responses count.
       </p>
     </div>
   );

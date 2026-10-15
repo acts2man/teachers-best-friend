@@ -1,4 +1,5 @@
 "use client";
+import { levelClass } from "@/lib/mastery-levels";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
@@ -1088,13 +1089,7 @@ function StudentDepthBreakdown({
             {r.percentCorrect !== null && (
               <Meter
                 value={r.percentCorrect}
-                tone={
-                  r.percentCorrect >= 80
-                    ? "green"
-                    : r.percentCorrect >= 65
-                      ? ""
-                      : "orange"
-                }
+                tone={levelClass(r.percentCorrect)}
               />
             )}
             <span className="cell-meta">

@@ -1,4 +1,5 @@
 "use client";
+import { MASTERY_LEVELS, levelClass, masteryLevelOf, type MasteryLevel } from "@/lib/mastery-levels";
 import type {ReactNode} from "react";
 import {ArrowUpRight,ArrowRight,Lightbulb,FileText} from "lucide-react";
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from "@/components/ui/select";
@@ -15,6 +16,15 @@ export function Avatar({student,size=""}:{student:Pick<Student,"name"|"color">;s
 export function AvatarStack({students,limit=4}:{students:Student[];limit?:number}){return <div className="avatar-stack">{students.slice(0,limit).map(s=><Avatar key={s.id} student={s} size="small"/>)}{students.length>limit&&<span className="avatar small more">+{students.length-limit}</span>}</div>}
 export function Meter({value,tone=""}:{value:number;tone?:string}){return <Progress aria-label={value+" percent"} value={value} className={"meter "+tone}/>}
 export function Score({value,title}:{value:number|null;title?:string}){return <span title={value===null?title:undefined} className={"score "+(value===null?"unknown":value>=80?"good":value>=65?"medium":"low")}>{value===null?"—":value+"%"}</span>}
+/** A mastery percentage, coloured by its level (lib/mastery-levels.ts). Use
+ * this, not Score, for anything a student has mastered or not: Score is for
+ * other percentages (alignment, name-match confidence). */
+export function MasteryScore({value,title}:{value:number|null;title?:string}){const l=masteryLevelOf(value);return <span title={l?l.level+" ("+l.range+")":title} className={"score "+(value===null?"unknown":levelClass(value))}>{value===null?"—":value+"%"}</span>}
+/** The level's name in its colour, or nothing when there is no score. */
+export function LevelPill({percent}:{percent:number|null}){const l=masteryLevelOf(percent);return l?<span className={"pill "+levelClass(percent)}>{l.level}</span>:null}
+/** Students grouped by mastery level, Developing first: the four-level list
+ * the class analysis, the writing panel and the reports share. */
+export function LevelStudents({byLevel,onOpen}:{byLevel:Record<MasteryLevel,Student[]>;onOpen:(s:Student)=>void}){return <>{MASTERY_LEVELS.filter(l=>byLevel[l.level].length).map(l=><div className="level-students" key={l.level}><span className={"cell-meta level-label level-"+l.tone}>{l.level} · {l.range} ({byLevel[l.level].length})</span><div className="group-members">{byLevel[l.level].map(m=><button key={m.id} onClick={()=>onOpen(m)}><Avatar student={m} size="small"/><span>{m.name}</span></button>)}</div></div>)}</>}
 export function EmptyState({title,description,children}:{title:string;description:string;children?:ReactNode}){return <Empty className="empty-state"><EmptyHeader><EmptyMedia variant="icon"><FileText/></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{children}</Empty>}
 export function Modal({open,onClose,title,description,children,wide=false}:{open:boolean;onClose:()=>void;title:string;description?:string;children:ReactNode;wide?:boolean}){return <Dialog open={open} onOpenChange={v=>!v&&onClose()}><DialogContent className={"teacher-modal "+(wide?"wide":"")}><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description||"Review the details below."}</DialogDescription></DialogHeader>{children}</DialogContent></Dialog>}
 export function Ring({value,label,small=false}:{value:number;label:string;small?:boolean}){const r=small?43:66,c=2*Math.PI*r;return <div className={"ring-chart "+(small?"small":"")} role="img" aria-label={label+": "+value+" percent"}><svg viewBox={small?"0 0 108 108":"0 0 168 168"}><circle cx={small?54:84} cy={small?54:84} r={r} className="ring-track"/><circle cx={small?54:84} cy={small?54:84} r={r} className="ring-value" strokeDasharray={c} strokeDashoffset={c*(1-value/100)}/></svg><div><strong>{value}<small>%</small></strong><span>{label}</span></div></div>}
