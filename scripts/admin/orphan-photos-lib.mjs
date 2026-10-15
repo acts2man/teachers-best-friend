@@ -41,7 +41,7 @@ export function compare(objects, rows, window = LOST_WINDOW, { now = Date.now(),
     .filter((o) => !byPath.has(o.path) && settled(o) && !isPlaceholder(o.path))
     .sort((a, b) => a.path.localeCompare(b.path));
   const missing = rows.filter((r) => !r.purged_at && !inBucket.has(r.object_path)).map((r) => r.object_path).sort();
-  // A purged row whose file is still there: the 30-day job said it removed it.
+  // A purged row whose file is still there: the purge job said it removed it.
   const purgedButPresent = objects.filter((o) => byPath.get(o.path)?.purged_at).map((o) => o.path).sort();
   const counts = {};
   for (const o of orphans) {

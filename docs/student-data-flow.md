@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live".
+Last verified against the running system: 2026-10-12 (section 3 retention re-checked 2026-10-14 against the code on the photo-retention-14d branch: built, not yet live until that PR merges and its migration is applied; sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live".
 
 ---
 
@@ -19,8 +19,8 @@ Teacher's browser
                       └─(5)─> back to the app, then to the teacher
 ```
 
-Confirming a student's grading deletes that student's scanned pages straight away.
-A daily job (6) sweeps up anything still left once its retention window passes.
+Every uploaded page is deleted 14 days after upload by a daily job (6). Confirming a
+student's grading does not delete anything sooner.
 
 Metering records a SHA-256 of each uploaded file's bytes (`teacher_uploads.content_sha256`,
 carried into `page_charges`) so the same page is never charged twice. It is a hash, not a
@@ -142,10 +142,10 @@ the whole of a view-as session, and this is the last place to make an exception.
 | What is transmitted | Photographs and PDFs of assessments and completed student work |
 | Encrypted | Yes, TLS in transit, encrypted at rest |
 | Stored here | Bucket `teacher-documents`, private, no public URLs |
-| Retained | Until the teacher confirms that student's grading, which deletes the pages immediately; **30 days from upload** at the outside, then deleted by the job in step 6 |
+| Retained | **14 days from upload**, then deleted by the job in step 6, which runs daily and takes up to 200 rows per table per run (busiest day so far: 134 uploads). Confirming a student's grading does not delete pages early (removed 14 Oct 2026; it ran on one confirm button of eight) |
 | Used for training | No |
 | Other use | No |
-| Deletable | Yes: immediately by the teacher, automatically on confirming that student's grading, and automatically at 30 days |
+| Deletable | Yes: immediately by the teacher (deleting the account removes every file; deleting an assessment removes the pages recorded against it -- not the name-area copies a class scan uploads, which no assessment records; deleting a class is not promised here, because class removal does not yet delete exactly the pages of the students it removes), and automatically at 14 days |
 
 Object paths are namespaced by owner (`<teacher id>/<upload id>`) and the bucket is not
 public, so a file is reachable only through an authenticated, authorised request.
@@ -321,7 +321,7 @@ before it counts, which is the safeguard that remains.
 **Effect on retention.** None new. A `writing` scan is a `responses`-style
 scan for retention: its `scans.params`/`scans.result` are the delivery buffer
 cleared 48 hours after the scan (step 6), and the pages follow the same Storage
-retention and per-student deletion-on-confirm as every other student upload.
+retention (14 days from upload) as every other student upload.
 
 ### Grading asks for three more things per answer (8 Oct 2026)
 
@@ -419,7 +419,7 @@ browser and again on the server.
 
 ## 8. Regression fixtures (`regression-fixtures` bucket, PR 1, 12 Oct 2026; NOT YET LIVE)
 
-**This is an exception to the 30-day image window, and it must not be used until the
+**This is an exception to the 14-day image window, and it must not be used until the
 four published pages say so.** Copies of an assessment's photos (whole pages and the
 name-area strips) can be kept in a private bucket, with the teacher-confirmed results in
 `regression_cases`, to replay real cases after every AI change. Copying refuses any
@@ -457,9 +457,9 @@ data is involved in this path.
   in the Data Processing Addendum and giving districts notice.
 - Changing the retention window means updating four published pages: Privacy Policy,
   Student Data Privacy Commitments, How We Use AI, and the Data Processing Addendum.
-  They currently all say deleted on confirming that student's grading, and 30 days at
-  the outside. Both halves of that sentence have to stay true: the second is the
-  backstop for work whose grading is never confirmed.
+  They currently all say deleted automatically 14 days after upload, all at once on
+  deleting the account, and the recorded pages on deleting an assessment. Confirming grading deletes
+  nothing early, and none of the pages may say it does (`tests/photo-retention.test.mjs`).
 - Changing the AI provider or model means re-checking the training and retention terms
   before the change ships, not after.
 - **Adding or changing an AI mode means re-reading section 4 before it ships.** A new

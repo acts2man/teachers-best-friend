@@ -2,8 +2,8 @@
 
 **A Teacher's Best Friend**
 
-Effective date: [EFFECTIVE DATE]
-Last updated: [EFFECTIVE DATE]
+Effective date: October 14, 2026
+Last updated: October 14, 2026
 
 > **DRAFT — not for publication.** Placeholders in brackets must be filled in, the
 > commitments in this document must be true of the running system before it goes
@@ -25,8 +25,8 @@ We take a deliberately minimal approach to student information:
 - **We do not use student work to train AI models**, and our AI provider is
   contractually prohibited from doing so with data sent through our account.
 - **We do not sell student information**, and we do not serve advertising of any kind.
-- **We delete uploaded worksheet images automatically** rather than keeping them
-  indefinitely.
+- **We delete uploaded worksheet images automatically 14 days after upload** rather
+  than keeping them indefinitely.
 - **We are directly regulated by California's Student Online Personal Information
   Protection Act (SOPIPA)**, and we comply with it whether or not a school district
   has signed a contract with us. See our Student Data Privacy Commitments for detail.
@@ -153,7 +153,7 @@ We use the information described above only to:
 
 | Data | Retention |
 |---|---|
-| Uploaded worksheet images | Deleted as soon as you confirm that student's grading, and automatically 30 days after upload in any case |
+| Uploaded worksheet images | Deleted automatically 14 days after upload. Deleting your account deletes them all straight away; deleting an assessment deletes the pages recorded against it |
 | Roster photographs | Deleted immediately after names are read |
 | Grading results held for delivery | Cleared 48 hours after the scan |
 | Extracted answer text, scores, misconception records | Kept while the account is active |

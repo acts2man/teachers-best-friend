@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 function bundle(path){const result=buildSync({entryPoints:[path],bundle:true,platform:"node",format:"cjs",write:false});const shim={exports:{}};new Function("module","exports",result.outputFiles[0].text)(shim,shim.exports);return shim.exports}
 const {matchRosterStudent,groupPagesByName,resolveScannedGroups,applyScannedGroups,ungradedReservations}=bundle("lib/teacher-class-scan.ts");
 
@@ -315,58 +315,36 @@ test("removing a student works on a workspace with no groups",()=>{
   assert.deepEqual(next.groups,[]);
 });
 
-// Student work photos are deleted once the grading that came off them is
-// confirmed -- what both pilot teachers asked for. These guard the two ways
-// that could go wrong: deleting a teacher's own documents, and deleting a page
-// whose grading is still in progress.
-const {releasedStudentUploads,forgetUploads}=bundle("lib/teacher-workflow.ts");
-
-function graded(verifiedFor){
-  const questions=[
-    {id:"q1",number:1,text:"a",passage:"",answer:"1",standard:"4.OA.1",secondary:"",skill:"",dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false},
-    {id:"q2",number:2,text:"b",passage:"",answer:"2",standard:"4.OA.1",secondary:"",skill:"",dok:1,alignment:100,confidence:100,level:"On grade",reasoning:"",verified:true,excluded:false},
-  ];
-  const resp=(studentId,questionId)=>({
-    id:studentId+"-"+questionId,studentId,questionId,answer:"1",correct:true,match:100,
-    misconception:"",confidence:99,verified:verifiedFor.includes(studentId),
+// Confirming a student's grading deletes no photos (14 Oct 2026, decided by
+// both pilot founders): every student work photo is deleted 14 days after
+// upload by the nightly purge, and that is the one rule the privacy pages
+// state. Deleting on confirm used to happen on one button out of eight and
+// took away photos a teacher still needed. These pin that no confirm path
+// deletes, and that every place that does delete is one where the teacher
+// asked for something to go.
+test("no confirm path deletes uploads: deleteUploads is called only where the teacher removes something",()=>{
+  const callers={};
+  for(const dir of ["components","app","lib"]){
+    for(const f of readdirSync(dir,{recursive:true})){
+      if(!/\.(ts|tsx)$/.test(f))continue;
+      const src=readFileSync(dir+"/"+f,"utf8");
+      const n=(src.match(/\bdeleteUploads\(/g)||[]).length;
+      if(n&&!(dir==="lib"&&f==="connection.ts"))callers[dir+"/"+f]=n;
+    }
+  }
+  assert.deepEqual(callers,{
+    "components/teacher-assessments.tsx":2, // delete an assessment; passage photo once its text is read
+    "components/teacher-classes.tsx":2,     // delete a class; roster photo once its names are read
+    "components/teacher-insights.tsx":1,    // clear a class's students
+    "components/teacher-scan.tsx":1,        // passage photo once its text is read
   });
-  return {
-    id:"a1",classId:"c1",title:"Quiz",subject:"Math",grade:4,framework:"Common Core",createdAt:"",
-    status:"Ready",source:"manual",targetStandards:["4.OA.1"],answerKeyVerified:true,questions,
-    responses:["s1","s2"].flatMap(sid=>questions.map(q=>resp(sid,q.id))),
-    // p1/p2 are s1's scanned pages, p3 is s2's. blank1 and key1 are the
-    // teacher's own documents and must never be released.
-    uploadIds:["blank1","key1","p1","p2","p3"],
-    studentUploadIds:{s1:["p1","p2"],s2:["p3"]},
-  };
-}
-
-test("a student's pages are released once all their grading is confirmed",()=>{
-  assert.deepEqual(releasedStudentUploads(graded(["s1"])).sort(),["p1","p2"]);
 });
-test("the blank assessment and answer key are never released",()=>{
-  const released=releasedStudentUploads(graded(["s1","s2"]));
-  assert.equal(released.includes("blank1"),false);
-  assert.equal(released.includes("key1"),false);
-  assert.deepEqual(released.sort(),["p1","p2","p3"]);
-});
-test("nothing is released while grading is still unconfirmed",()=>{
-  assert.deepEqual(releasedStudentUploads(graded([])),[]);
-});
-test("a page a still-in-progress student points at is held back",()=>{
-  const a=graded(["s1"]);
-  a.studentUploadIds={s1:["p1","shared"],s2:["shared"]};
-  assert.deepEqual(releasedStudentUploads(a),["p1"]);
-});
-test("forgetUploads unlinks the released pages and leaves the rest",()=>{
-  const a=graded(["s1"]);
-  const next=forgetUploads(a,["p1","p2"]);
-  assert.deepEqual(next.studentUploadIds,{s1:[],s2:["p3"]});
-  assert.deepEqual(next.uploadIds,["blank1","key1","p3"]);
-});
-test("forgetUploads with nothing released returns the assessment untouched",()=>{
-  const a=graded([]);
-  assert.equal(forgetUploads(a,[]),a);
+test("the review screen's confirm button only confirms",()=>{
+  const src=readFileSync("components/teacher-review.tsx","utf8");
+  const body=src.slice(src.indexOf("async function approveClear()"),src.indexOf("async function uploadPages("));
+  assert.ok(body.length>0);
+  assert.doesNotMatch(body,/deleteUploads|uploadIds/);
+  assert.doesNotMatch(src,/free up the photos/);
 });
 
 // Clearing a roster back to empty: the students and their work go, the

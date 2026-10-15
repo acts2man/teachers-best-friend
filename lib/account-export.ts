@@ -9,11 +9,10 @@
  *   - one CSV row per piece of standards evidence, for the thing a teacher
  *     actually does with it, which is open it in a spreadsheet
  *
- * Neither contains an image or a reference to one. Not because it would be
- * awkward to include them, but because they are already deleted: pages go when
- * the teacher confirms that student's grading, and at 30 days regardless. An
- * export that quietly named files that no longer exist would be worse than
- * one that says so.
+ * Neither contains an image or a reference to one. Photos of student work are
+ * deleted 14 days after upload, so any file an export named would soon be
+ * gone; an export that quietly named files that no longer exist would be worse
+ * than one that says so.
  *
  * No imports beyond a type, so the test can bundle it on its own.
  */
@@ -66,8 +65,8 @@ export function buildExportJson(w: Workspace, meta: ExportMeta) {
     application: "A Teacher's Best Friend",
     note:
       "Everything this account holds, apart from uploaded images and PDFs. " +
-      "Those are deleted when you confirm a student's grading, and 30 days " +
-      "after upload in any case, so there are none left to include.",
+      "Those are deleted automatically 14 days after upload, so they are " +
+      "not part of the export.",
     counts: {
       classes: clean.classes?.length ?? 0,
       students: clean.students?.length ?? 0,

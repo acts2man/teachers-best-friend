@@ -73,7 +73,7 @@ the three above. The full nightly sequence is now:
 
 | Time (UTC) | Job | What it clears |
 |---|---|---|
-| 09:00 | `purge-expired-uploads` | Uploaded images and PDFs past 30 days |
+| 09:00 | `purge-expired-uploads` | Uploaded images and PDFs 14 days after upload |
 | 09:15 | `purge-expired-student-notes` | Teacher notes past a teacher-set expiry |
 | 09:30 | `roll-expired-billing-periods` | Rolls billing periods that have ended |
 | 09:45 | `purge-scan-payloads` | `scans.params`, `.result`, `.error` past 48 hours |

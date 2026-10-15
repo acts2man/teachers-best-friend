@@ -1,6 +1,6 @@
 # How A Teacher's Best Friend Uses AI
 
-Effective date: [EFFECTIVE DATE]
+Effective date: October 14, 2026
 
 > **DRAFT — not for publication.** Every statement here must be true of the running
 > system before it is posted. See the accompanying pre-publication checklist.
@@ -74,10 +74,11 @@ sees on a page, and the image is deleted automatically on a schedule rather than
 
 ## Where your work is stored
 
-Uploaded images go to private storage that only your account can reach. A student's
-scanned pages are **deleted as soon as you confirm that student's grading** — once the
-scores are in, the photograph has nothing left to give. Anything still sitting there is
-**deleted automatically 30 days after upload** regardless.
+Uploaded images go to private storage that only your account can reach. Photos of
+student work are **deleted automatically 14 days after upload**. Confirming a student's
+grading does not delete them sooner: for those two weeks you can still open the photo to
+check a score or change one. Deleting your account deletes every photo straight away;
+deleting an assessment deletes the pages recorded against it.
 
 The results — the extracted answers, the scores, the mastery records — stay as long as
 your account is active, because that's the part you actually need. The photograph is
