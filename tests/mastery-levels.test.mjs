@@ -22,9 +22,9 @@ function bundle(path) {
   return m.exports;
 }
 const levels = bundle("lib/mastery-levels.ts");
-const { mastery, masteryStatus, priorities } = bundle("lib/teacher-data.ts");
-const { performanceBands, sharedGapGroups } = bundle("lib/teacher-metrics.ts");
-const { classAnalysis, writingClassAnalysis } = bundle("lib/teacher-class-analysis.ts");
+const { mastery, masteryStatus, priorities, classMastery } = bundle("lib/teacher-data.ts");
+const { performanceBands, sharedGapGroups, studentOverall, dokBreakdown } = bundle("lib/teacher-metrics.ts");
+const { classAnalysis, writingClassAnalysis, classAnalysisReport } = bundle("lib/teacher-class-analysis.ts");
 
 const student = (id, scores, code = "S.1") => ({
   id, classId: "c1", name: "Student " + id, color: "#000", notes: "",
@@ -122,6 +122,49 @@ test("class analysis groups students by level, on the true average", () => {
   assert.equal("percentMastered" in row, false);
 });
 
+// From the review of this PR.
+test("averages across standards or students are built from true values, not rounded twice", () => {
+  // 69.67 and 70.33: each shows 69 / 70, but together they average exactly 70.
+  const two = { ...student("x", []), evidence: [
+    ...[70, 70, 69].map((score, i) => ({ id: "a" + i, standard: "S.1", score, date: "2026-10-0" + (i + 1), source: "c" })),
+    ...[70, 71, 70].map((score, i) => ({ id: "b" + i, standard: "S.2", score, date: "2026-10-0" + (i + 1), source: "c" })),
+  ] };
+  assert.equal(studentOverall(two, [std("S.1"), std("S.2")]), 70, "Approaching, not 69 Developing");
+  assert.equal(classMastery([student("a", [70, 70, 69]), student("b", [70, 71, 70])], "S.1"), 70);
+  assert.equal(levels.masteryLevel(240 / 3 - 1e-12).level, "Proficient", "level and shown number agree at the boundary");
+});
+
+test("a standard no student has evidence on has no class average (not a red 0%)", () => {
+  assert.equal(classMastery([student("a", [])], "S.1"), null);
+});
+
+test("cognitive-level percentages are rounded down like every level-coloured number", () => {
+  const q = (id, dok) => ({ id, number: 1, standard: "S.1", dok, verified: true, excluded: false });
+  const r = (id, qid, match) => ({ id, studentId: "s", questionId: qid, correct: match === 100, match, verified: true });
+  const rows = dokBreakdown([q("q1", 1), q("q2", 1), q("q3", 1)], [r("1", "q1", 100), r("2", "q2", 100), r("3", "q3", 9)]);
+  assert.equal(rows[0].percentCorrect, 69, "69.67 shows 69 (red), not 70 (yellow)");
+});
+
+test("extension across standards: Exceeding on every standard assessed, unassessed ones do not block it", () => {
+  assert.equal(levels.exceedingOnAllAssessed(["Exceeding", "No evidence", "Building evidence"]), true);
+  assert.equal(levels.exceedingOnAllAssessed(["Exceeding", "Proficient"]), false);
+  assert.equal(levels.exceedingOnAllAssessed(["No evidence"]), false);
+});
+
+test("the class report lists each level and names the reteach and extension groups", () => {
+  const roster = ["a", "d"].map((id) => student(id, []));
+  const q = { id: "q1", number: 1, text: "", passage: "", answer: "", standard: "S.1", secondary: "", skill: "", dok: 1, alignment: 90, confidence: 90, level: "", reasoning: "", verified: true, excluded: false };
+  const r = (studentId, match) => ({ id: studentId, studentId, questionId: "q1", answer: "", correct: match === 100, match, misconception: "", confidence: 90, verified: true });
+  const a = { id: "a1", classId: "c1", title: "Quiz", subject: "Math", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true, questions: [q], responses: [r("a", 60), r("d", 95)] };
+  // One of two students Developing is half the class: whole-class reteach.
+  const text = classAnalysisReport(a, classAnalysis(a, roster, [std("S.1")]));
+  assert.match(text, /Developing 0–69% \(1\): Student a/);
+  assert.match(text, /Exceeding 90–100% \(1\): Student d/);
+  assert.match(text, /Suggested next step: reteach the Developing students \(whole class\); extension for the Exceeding students/);
+  assert.match(text, /Developing 0–69% \(reteach and support\), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% \(extension\)/);
+  assert.doesNotMatch(text, /mastery/i);
+});
+
 test("writing traits use the same levels", () => {
   const roster = ["a", "b"].map((id) => student(id, []));
   const a = {
@@ -139,7 +182,7 @@ test("writing traits use the same levels", () => {
 });
 
 test("no other mastery cut-off or 'Mastered' wording is left in the app", () => {
-  const files = ["lib/teacher-class-analysis.ts", "lib/teacher-data.ts", "lib/teacher-metrics.ts", "components/teacher-insights.tsx", "components/teacher-assessments.tsx", "components/teacher-review.tsx", "components/teacher-guide.tsx"];
+  const files = ["lib/teacher-class-analysis.ts", "lib/teacher-data.ts", "lib/teacher-metrics.ts", "lib/teacher-workflow.ts", "components/teacher-insights.tsx", "components/teacher-assessments.tsx", "components/teacher-review.tsx", "components/teacher-guide.tsx", "components/teacher-shared.tsx"];
   for (const f of files) {
     const src = readFileSync(f, "utf8");
     assert.doesNotMatch(src, /MASTERY_THRESHOLD/, f);
@@ -147,6 +190,6 @@ test("no other mastery cut-off or 'Mastered' wording is left in the app", () => 
     assert.doesNotMatch(src, /["“]Mastered["”]/, f + ": the 'Mastered' label");
     assert.doesNotMatch(src, /percentMastered/, f);
     // Mastery colours and splits come from lib/mastery-levels.ts.
-    assert.doesNotMatch(src, /(?:mastery\([^)]*\)|percentCorrect|averagePercent|\bm|score)\s*(?:\?\?\s*\d+\)?\s*)?[<>]=?\s*(?:65|70|80)\b/, f + ": a hand-written mastery cut-off");
+    assert.doesNotMatch(src, /(?:mastery\([^)]*\)|\.mastery|percentCorrect|averagePercent|percentMastered|\bm|score)\s*(?:\?\?\s*\d+\)?\s*)?[<>]=?\s*(?:65|70|80|90)\b/, f + ": a hand-written mastery cut-off");
   }
 });

@@ -1,5 +1,5 @@
 import { MASTERY_LEVELS, masteryLevel, masteryPercent, needsReteach } from "./mastery-levels";
-import { mastery } from "./teacher-data";
+import { mastery, masteryRaw } from "./teacher-data";
 import type {
   Assessment,
   Question,
@@ -79,8 +79,9 @@ function levelBreakdown(
         name,
         questions: active.filter((q) => levelOf(q) === level).length,
         assessed: rs.length,
+        // Rounded down, like every percentage coloured by a mastery level.
         percentCorrect: rs.length
-          ? Math.round(
+          ? masteryPercent(
               rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length,
             )
           : null,
@@ -196,7 +197,7 @@ export function alignmentSuggestions(
 
 export function studentOverall(student: Student, catalog: Standard[]) {
   const scores = catalog
-    .map((standard) => mastery(student, standard.code))
+    .map((standard) => masteryRaw(student, standard.code))
     .filter((score): score is number => score !== null);
   return scores.length
     ? masteryPercent(scores.reduce((sum, score) => sum + score, 0) / scores.length)
@@ -250,9 +251,9 @@ export function sharedGapGroups(students: Student[], catalog: Standard[]) {
             ? "Whole class"
             : "Small group",
         average: members.length
-          ? Math.round(
+          ? masteryPercent(
               members.reduce(
-                (sum, student) => sum + (mastery(student, standard.code) || 0),
+                (sum, student) => sum + (masteryRaw(student, standard.code) || 0),
                 0,
               ) / members.length,
             )

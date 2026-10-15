@@ -545,13 +545,18 @@ export function createDemoWorkspace(): Workspace {
  * rounded DOWN so it never shows a level it has not reached (69.9 is 69,
  * Developing -- see lib/mastery-levels.ts). */
 export function mastery(student: Student, code: string): number | null {
+  const raw = masteryRaw(student, code);
+  return raw === null ? null : masteryPercent(raw);
+}
+/** The same average, not rounded: what averages across standards or students
+ * are built from, so nothing is rounded twice (two students at 69.67 and
+ * 70.33 average 70, Approaching -- not 69). */
+export function masteryRaw(student: Student, code: string): number | null {
   const e = student.evidence
     .filter((x) => x.standard === code)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-3);
-  return e.length
-    ? masteryPercent(e.reduce((sum, x) => sum + x.score, 0) / e.length)
-    : null;
+  return e.length ? e.reduce((sum, x) => sum + x.score, 0) / e.length : null;
 }
 /** The student's level on a standard, once there are three records to judge. */
 export function masteryStatus(
@@ -566,13 +571,15 @@ export function masteryStatus(
       ? "Building evidence"
       : masteryLevel(m).level;
 }
-export function classMastery(students: Student[], code: string) {
+/** The class average on a standard, rounded down, or null when no student
+ * has evidence (it used to be 0 -- a red "0%" for a standard never assessed). */
+export function classMastery(students: Student[], code: string): number | null {
   const vals = students
-    .map((x) => mastery(x, code))
+    .map((x) => masteryRaw(x, code))
     .filter((x): x is number => x !== null);
   return vals.length
     ? masteryPercent(vals.reduce((a, b) => a + b, 0) / vals.length)
-    : 0;
+    : null;
 }
 export function priorities(
   students: Student[],
@@ -594,7 +601,7 @@ export function priorities(
       return {
         standard,
         students: struggling,
-        mastery: classMastery(students, standard.code),
+        mastery: classMastery(students, standard.code) ?? 0,
         score: Math.round(
           rate * 1 * prerequisiteImpact * struggling.length * 10,
         ),

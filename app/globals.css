@@ -1031,8 +1031,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .score.level-green,.pill.level-green,.heatmap-legend .level-green{color:#25642b;background:#e5f4e6;border-color:#c8e6ca}
 .score.level-none,.mastery-blocks>.level-none{color:hsl(calc(82deg + var(--th)) calc(18% * var(--ts)) 70.8%);background:hsl(calc(80deg + var(--th)) calc(39% * var(--ts)) 95.5%)}
 .meter.level-red [data-slot=progress-indicator],.mastery-blocks>.level-red{background:#d9534f!important}
-.meter.level-yellow [data-slot=progress-indicator],.mastery-blocks>.level-yellow{background:#e0b400!important}
+.meter.level-yellow [data-slot=progress-indicator],.mastery-blocks>.level-yellow{background:#9c7a00!important}
 .meter.level-blue [data-slot=progress-indicator],.mastery-blocks>.level-blue{background:#4a86c8!important}
-.meter.level-green [data-slot=progress-indicator],.mastery-blocks>.level-green{background:#4caf50!important}
-.student-group-card.band-red{border-top:3px solid #d9534f}.student-group-card.band-yellow{border-top:3px solid #e0b400}.student-group-card.band-blue{border-top:3px solid #4a86c8}.student-group-card.band-green{border-top:3px solid #4caf50}.student-group-card.band-none{border-top:3px solid #a1aaa3}
-.level-students{display:flex;flex-direction:column;gap:6px}.cell-meta.level-label{font-weight:600}.cell-meta.level-label.level-red{color:#a3261f}.cell-meta.level-label.level-yellow{color:#7a5a00}.cell-meta.level-label.level-blue{color:#1d4f91}.cell-meta.level-label.level-green{color:#25642b}
+.meter.level-green [data-slot=progress-indicator],.mastery-blocks>.level-green{background:#2e7d32!important}
+.student-group-card.band-red{border-top:3px solid #d9534f}.student-group-card.band-yellow{border-top:3px solid #9c7a00}.student-group-card.band-blue{border-top:3px solid #4a86c8}.student-group-card.band-green{border-top:3px solid #2e7d32}.student-group-card.band-none{border-top:3px solid #a1aaa3}
+.level-students{display:flex;flex-direction:column;gap:6px}.heatmap-legend{flex-wrap:wrap}.cell-meta.level-label{font-weight:600}.cell-meta.level-label.level-red{color:#a3261f}.cell-meta.level-label.level-yellow{color:#7a5a00}.cell-meta.level-label.level-blue{color:#1d4f91}.cell-meta.level-label.level-green{color:#25642b}

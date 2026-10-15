@@ -97,13 +97,15 @@ import {
 import {
   MASTERY_LEVELS,
   MASTERY_LEVELS_NOTE,
+  exceedingOnAllAssessed,
   levelClass,
   needsReteach,
 } from "@/lib/mastery-levels";
+import type { Standard, Student, Group } from "@/lib/teacher-types";
+
 /** A student's status on a standard is a level (three records or more), or
  * one of the not-yet states. */
 const isLevel = (status: string) => MASTERY_LEVELS.some((l) => l.level === status);
-import type { Standard, Student, Group } from "@/lib/teacher-types";
 
 export function StandardsView() {
   const { w, classroom, save, busy, go } = useTeacher();
@@ -580,7 +582,7 @@ export function DiagnosticsView() {
         weakest && needsReteach(weakest.m)
           ? weakest.s.code
           : catalog.length &&
-              catalog.every((s) => masteryStatus(st, s.code) === "Exceeding")
+              exceedingOnAllAssessed(catalog.map((s) => masteryStatus(st, s.code)))
             ? "Enrichment"
             : "Independent practice";
       map.set(key, [...(map.get(key) || []), st.id]);
@@ -657,7 +659,7 @@ export function DiagnosticsView() {
                     </div>
                     <Meter
                       value={p.mastery}
-                      tone={i === 0 ? "orange" : i === 1 ? "purple" : "green"}
+                      tone={levelClass(p.mastery)}
                     />
                   </button>
                 ))}
@@ -1240,7 +1242,7 @@ export function StudentsView() {
           catalog.some((c) => needsReteach(mastery(s, c.code)))) ||
         (filter === "Ready for enrichment" &&
           catalog.length &&
-          catalog.every((c) => masteryStatus(s, c.code) === "Exceeding"))),
+          exceedingOnAllAssessed(catalog.map((c) => masteryStatus(s, c.code))))),
   );
   const bands = performanceBands(students, catalog);
   const gapGroups = sharedGapGroups(students, catalog);
@@ -1715,7 +1717,13 @@ export function StudentsView() {
                       </div>
                       <h2>{s.name}</h2>
                       <p>{s.evidence.length} evidence records</p>
-                      <div className="mastery-blocks">
+                      <div
+                        className="mastery-blocks"
+                        role="img"
+                        aria-label={catalog
+                          .map((c) => c.code + ": " + masteryStatus(s, c.code))
+                          .join(", ")}
+                      >
                         {catalog.map((c) => (
                           <span
                             key={c.code}

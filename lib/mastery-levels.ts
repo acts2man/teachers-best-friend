@@ -44,7 +44,9 @@ export const MASTERY_LEVELS: readonly MasteryLevelInfo[] = [
 /** The level for a mastery percentage (0–100), on its true value. */
 export function masteryLevel(percent: number): MasteryLevelInfo {
   let found = MASTERY_LEVELS[0];
-  for (const l of MASTERY_LEVELS) if (percent >= l.min) found = l;
+  // The same hair of tolerance as masteryPercent, so a level and the number
+  // shown beside it never disagree (3 × 80 / 3 = 79.99999… is Proficient).
+  for (const l of MASTERY_LEVELS) if (percent + 1e-9 >= l.min) found = l;
   return found;
 }
 
@@ -74,6 +76,15 @@ export function readyToExtend(percent: number | null | undefined): boolean {
 export function levelClass(percent: number | null | undefined): string {
   const l = masteryLevelOf(percent);
   return l ? "level-" + l.tone : "level-none";
+}
+
+/** Whether a student is Exceeding on every standard they have a level on (at
+ * least one): who the app suggests extension for across standards. Standards
+ * with no level yet do not hold them back -- a catalog standard never assessed
+ * kept every student out of enrichment (review of this PR). */
+export function exceedingOnAllAssessed(statuses: string[]): boolean {
+  const levels = statuses.filter((s) => MASTERY_LEVELS.some((l) => l.level === s));
+  return levels.length > 0 && levels.every((s) => s === "Exceeding");
 }
 
 /** The plain-language rule, for method notes and reports. */

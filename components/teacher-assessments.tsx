@@ -2854,13 +2854,7 @@ function ClassAnalysisPanel({
                 <Target size={21} />
               </span>
               <Pill
-                tone={
-                  row.instruction === "Whole class"
-                    ? "amber"
-                    : row.instruction === "Small group"
-                      ? "neutral"
-                      : "green"
-                }
+                tone={row.instruction === "Whole class" ? "amber" : "neutral"}
               >
                 {row.instruction === "No reteach needed"
                   ? "No reteach needed"
