@@ -54,6 +54,21 @@ function parentKey(key: string): string {
 }
 
 /**
+ * The code alone, when the AI writes it with its title after it:
+ * "F-IF.7 — Graph Functions and Key Features" -> "F-IF.7". The title starts at
+ * the first " — ", " – ", " - ", ": " or " (". Only the text BEFORE it is
+ * kept, so the title can never be what matches (Ricky, 14 Oct 2026: codeKey
+ * read the title's words as more code segments, and 10 of 10 first choices in
+ * his two reads on 15 Oct matched nothing). A code itself never contains one
+ * of these with spaces ("F-IF.7", "7.RP.A.3"), so a bare code is unchanged.
+ */
+export function codePart(raw: string): string {
+  const s = (raw ?? "").trim();
+  const m = s.match(/^(.*?)(?:\s+[—–-]\s+|:\s+|\s+\()/);
+  return m ? m[1].trim() : s;
+}
+
+/**
  * The catalog code the AI meant by `raw`, and how it was found:
  *   "exact"    -- written exactly as in the catalog;
  *   "spelling" -- the same code written differently (see codeKey);
@@ -62,6 +77,14 @@ function parentKey(key: string): string {
  *   ""         -- no catalog code, or more than one it could be.
  */
 export function matchCatalogCode(raw: string, catalog: Pick<Standard, "code">[]): { code: string; how: MatchHow } {
+  const whole = matchWritten(raw, catalog);
+  if (whole.code) return whole;
+  // A title appended: match the code before it, and only that.
+  const code = codePart(raw);
+  return code && code !== (raw ?? "").trim() ? matchWritten(code, catalog) : whole;
+}
+
+function matchWritten(raw: string, catalog: Pick<Standard, "code">[]): { code: string; how: MatchHow } {
   const wrote = (raw ?? "").trim();
   if (!wrote) return { code: "", how: "" };
   const exact = catalog.find((s) => s.code === wrote);

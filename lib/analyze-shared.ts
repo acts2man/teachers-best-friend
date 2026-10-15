@@ -55,10 +55,14 @@ export type Mode =
  * Middle/End, Lesson, ...) instead of invented questions, judged against the
  * story. v5 (12 Oct 2026): each question also says how many separate answers
  * it asks for (`parts`, kept as Question.answerParts), so grading knows how
- * many to expect. Each change alters what a read returns, so nothing from
- * an earlier version is reused.
+ * many to expect. v6 (15 Oct 2026): each standard and secondary is asked for
+ * as the catalog code only, never with its title -- Ricky's reads came back as
+ * "F-IF.7 — Graph Functions and Key Features" and none matched (the matcher
+ * now takes the code part too; see codePart in lib/standard-match.ts). Each
+ * change alters what a read returns, so nothing from an earlier version is
+ * reused.
  */
-export const READ_PROMPT_VERSION = 5;
+export const READ_PROMPT_VERSION = 6;
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
@@ -463,7 +467,7 @@ export function buildPrompt(
       p.framework +
       ". Intended standards chosen by the teacher: " +
       JSON.stringify(p.targetStandards) +
-      ". Identify the actual skill honestly; do not force an unrelated question onto a target standard. Explain any question outside these intended standards. Full grade and subject catalog: " +
+      ". Identify the actual skill honestly; do not force an unrelated question onto a target standard. Explain any question outside these intended standards. Write each standard and secondary as the catalog code exactly as listed -- the code only, never its title or a description (write F-IF.7, not \"F-IF.7 — Graph Functions\"). Full grade and subject catalog: " +
       JSON.stringify(catalogForPrompt(catalog)) +
       (p.passage?.trim()
         ? ". These questions are about the following reading passage; read it first and judge each question against the text it refers to, so a comprehension question is classified by the skill it actually asks for. Do not transcribe the passage into the questions or answer it yourself. Reading passage: " +
