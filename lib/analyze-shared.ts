@@ -1,4 +1,4 @@
-import { settleStandards } from "./standard-match";
+import { matchCatalogCode, settleStandards } from "./standard-match";
 import { z } from "zod";
 import { HttpError } from "@/lib/teacher-server";
 import { allStandards } from "@/lib/teacher-catalog";
@@ -698,7 +698,7 @@ export function buildPrompt(
     if (!hasContent && !p.text.trim())
       throw new HttpError(400, "Add a photo or PDF of your rubric first.");
     task =
-      "Read this teacher's writing rubric and turn it into structured scoring traits. A trait is one row or criterion the rubric scores -- for example Purpose/Organization, Evidence/Elaboration, Conventions. For each trait return: its name exactly as the rubric labels it; its maximum score as a whole number (the highest point value on that trait's scale -- if the rubric uses levels like 1-4, the max is 4); a concise one- to two-sentence descriptor in plain language of what distinguishes a high score from a low one on that trait; and the single best-matching standard code chosen ONLY from the supplied catalog below, or an empty string when no catalog standard reasonably fits. Do not invent standard codes and do not force an unrelated one. Return one entry per trait in the order the rubric lists them, and transcribe only what the rubric actually contains -- do not add traits it does not have. This rubric is for " +
+      "Read this teacher's writing rubric and turn it into structured scoring traits. A trait is one row or criterion the rubric scores -- for example Purpose/Organization, Evidence/Elaboration, Conventions. For each trait return: its name exactly as the rubric labels it; its maximum score as a whole number (the highest point value on that trait's scale -- if the rubric uses levels like 1-4, the max is 4); a concise one- to two-sentence descriptor in plain language of what distinguishes a high score from a low one on that trait; and the single best-matching standard code chosen ONLY from the supplied catalog below, or an empty string when no catalog standard reasonably fits. Write the standard as the catalog code exactly as listed -- the code only, never followed by its title, a dash or a description. Do not invent standard codes and do not force an unrelated one. Return one entry per trait in the order the rubric lists them, and transcribe only what the rubric actually contains -- do not add traits it does not have. This rubric is for " +
       gradePromptLabel(p.grade, p.subject) +
       ", subject " +
       p.subject +
@@ -1088,7 +1088,10 @@ export function finalizeAnalysis(
               name: z.string().max(120),
               max: z.number().int().min(1).max(20),
               descriptor: z.string().max(1000),
-              standard: z.string().max(40),
+              // No length limit: the AI may write a code with its title
+              // ("W.4.1 — Write opinion pieces on topics or texts…"), and a
+              // 40-character cap failed the whole rubric read with a 422.
+              standard: z.string(),
             }),
           )
           .min(1)
@@ -1097,16 +1100,17 @@ export function finalizeAnalysis(
       .safeParse(output);
     if (!parsed.success)
       throw new HttpError(422, "The rubric couldn’t be read reliably.");
-    // Only a standard the catalog actually contains is kept -- a suggested code
-    // the model invented is dropped to an empty string, exactly as the
-    // assignment read does, so the teacher never confirms a code that is not real.
-    const codes = new Set(catalog.map((s) => s.code));
+    // Only a standard the catalog actually contains is kept, matched exactly
+    // as the assignment read matches (matchCatalogCode): a code written with
+    // its title matches by the code part, a known spelling matches, and a code
+    // the model invented -- or a title on its own -- is dropped to an empty
+    // string, so the teacher never confirms a code that is not real.
     output.traits = parsed.data.traits
       .map((t) => ({
         name: t.name.trim(),
         max: t.max,
         descriptor: t.descriptor.trim(),
-        standard: codes.has(t.standard.trim()) ? t.standard.trim() : "",
+        standard: matchCatalogCode(t.standard.slice(0, 500), catalog).code,
       }))
       .filter((t) => t.name);
   }
