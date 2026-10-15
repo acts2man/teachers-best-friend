@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged). Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.10's prompt version re-checked 2026-10-15. Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
@@ -242,7 +242,9 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
 
 - Only for `assignment`, `passage`, `roster` and `answer_key` reads (`lib/analyze-server.ts:236-241`).
   **Never for grading or names**, so it cannot move a grade onto a student.
-- **Key.** `reuseFingerprintKey` (`lib/analyze-server.ts:299-322`) uses: the prompt version;
+- **Key.** `reuseFingerprintKey` (`lib/analyze-server.ts:299-322`) uses: the prompt version
+  (`READ_PROMPT_VERSION`, `lib/analyze-shared.ts`; 6 since 15 Oct 2026, when the read was told
+  to write standard codes without their titles -- bumping it is what forces a fresh read);
   the mode, subject, grade and framework; the target standards; the **length** of the passage;
   the model settings; and the **sorted, de-duplicated** page hashes.
 - **Lookup.** `reusablePriorResult` (`:342-385`) requires the same teacher, a complete and

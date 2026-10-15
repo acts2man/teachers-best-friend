@@ -143,7 +143,7 @@ test("the grading prompt carries the parts rule only when a question has parts, 
 });
 
 test("the worksheet read is asked for the number of parts (prompt version 5) and the read keeps it", () => {
-  assert.equal(shared.READ_PROMPT_VERSION, 5);
+  assert.ok(shared.READ_PROMPT_VERSION >= 5, "the parts change bumped the read to 5; later prompt changes bump it further");
   const w = { assessments: [], students: [], classes: [], customStandards: [], sharedStandards: [] };
   const catalog = [{ code: "S", title: "", grade: 11, framework: "California", subject: "Math" }];
   const p = shared.analyzeInput.parse({ mode: "assignment", text: "1. x", grade: 11, subject: "Math", framework: "California", targetStandards: ["S"] });
