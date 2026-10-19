@@ -625,9 +625,12 @@ export function questionAlignment(q: Question): number | null {
 /**
  * The assessment's average alignment across AI-scored, non-excluded questions,
  * or null when none have an AI score. Teacher-assigned questions (no AI score)
- * are left out of the average entirely rather than counted as 0. An AI-scored
- * question whose standard is not one of the intended standards still counts as 0
- * -- that is a real "measures something off-target", not a missing score.
+ * are left out of the average entirely rather than counted as 0. Each question
+ * counts with its OWN alignment, whether or not its standard is one of the
+ * assessment's target standards: counting those as 0 showed Michael's Story
+ * Organizer (nine boxes at 82–96%, five on W.4.3, not in his list) as 38%
+ * (19 Oct 2026). Questions outside the list are reported apart
+ * (offListQuestions).
  */
 export function alignment(a: Assessment): number | null {
   // The AI's unchecked second choice has no score and never counts (#129
@@ -636,16 +639,19 @@ export function alignment(a: Assessment): number | null {
     (q) => !q.excluded && !(isSecondChoice(q) && !q.verified) && questionAlignment(q) !== null,
   );
   if (!qs.length) return null;
-  return Math.round(
-    qs.reduce(
-      (sum, q) =>
-        sum +
-        (a.targetStandards.length && !a.targetStandards.includes(q.standard)
-          ? 0
-          : q.alignment),
-      0,
-    ) / qs.length,
-  );
+  return Math.round(qs.reduce((sum, q) => sum + q.alignment, 0) / qs.length);
+}
+
+/** How many of the assessment's questions (n of m, excluded ones left out) use
+ * a standard outside its target standards. Nothing is outside an empty list. */
+export function offListQuestions(
+  a: Pick<Assessment, "questions" | "targetStandards">,
+): { n: number; m: number } {
+  const qs = a.questions.filter((q) => !q.excluded);
+  const n = a.targetStandards.length
+    ? qs.filter((q) => q.standard && !a.targetStandards.includes(q.standard)).length
+    : 0;
+  return { n, m: qs.length };
 }
 export function makeManualQuestions(text: string): Question[] {
   return text

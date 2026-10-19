@@ -29,7 +29,7 @@ function bundle(entry) {
   return m.exports;
 }
 
-const { alignment, questionAlignment } = bundle("lib/teacher-data.ts");
+const { alignment, questionAlignment, offListQuestions } = bundle("lib/teacher-data.ts");
 const { studentReview } = bundle("lib/teacher-workflow.ts");
 
 const q = (id, over = {}) => ({
@@ -79,12 +79,13 @@ test("an assessment with no AI-scored questions has a null average (shows as a d
   assert.equal(alignment(a), null);
 });
 
-test("an off-target AI-scored question still counts as 0 (that is a real miss)", () => {
+test("an off-target AI-scored question counts with its own score, and is reported apart (Michael, 19 Oct)", () => {
   const a = {
     questions: [q("q1", { alignment: 100, standard: "7.RP.3" }), q("q2", { alignment: 100, standard: "6.NS.1" })],
     targetStandards: ["7.RP.3"],
   };
-  assert.equal(alignment(a), 50);
+  assert.equal(alignment(a), 100);
+  assert.deepEqual(offListQuestions(a), { n: 1, m: 2 });
 });
 
 // ---------------------------------------------------------------
