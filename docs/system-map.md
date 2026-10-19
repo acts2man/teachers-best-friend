@@ -549,6 +549,10 @@ page, and matched to a student on our side.
   - patched fields clamp or null bad values instead of raising
     (`20261012200000…:41`, `20261013120000`, `20261013130000`);
   - the `safe_int`, `safe_numeric`, `safe_bool` and `safe_date` casts.
+  - `assessments.points_possible` is `numeric` and written with `safe_numeric`, only when it
+    is above 0 and at most 1,000,000 (`20261020130000`, **in the repo, not yet applied to
+    production**). It was `integer` via `safe_int`, which dropped a 2.5 total on save; the bound
+    also keeps out `NaN`/`Infinity`, which jsonb cannot hold.
 - **Guarded by:** `tests/assessment-title-and-empty-read.test.mjs`.
 - **NO TEST YET:** `createdAt` is cast with a bare `::timestamptz`
   (`20261008190000…:119`), so a malformed `createdAt` fails the whole save.
