@@ -764,6 +764,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .app-sidebar .brand-area,.app-sidebar .side-content,.app-sidebar .side-footer{flex:0 0 auto}
 .app-sidebar .side-content{overflow:visible}
 .app-sidebar .side-footer{margin-top:auto}
+/* Phone menu (Michael, 19 Oct): the settings group sits directly under the pages, not pinned to the bottom. */
+.app-sidebar[data-mobile=true] .side-footer{margin-top:0}
 /* Tightened so the full rail fits without scrolling on common screen heights. */
 .app-sidebar .brand-area{padding:22px 20px 14px}
 .app-sidebar .side-content{padding:0 14px;gap:4px}
@@ -1039,3 +1041,5 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 
 /* Level next-step buttons on a class-analysis card can be long ("Offer optional reinforcement · Proficient (9)"): wrap inside the card on a phone instead of running past it. */
 .student-group-card .review-heading-actions .action{white-space:normal;max-width:100%;text-align:left;justify-content:flex-start}
+/* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
+.assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}

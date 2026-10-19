@@ -136,6 +136,7 @@ import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
   questionAlignment,
+  offListQuestions,
   makeManualQuestions,
   reconcileEvidence,
 } from "@/lib/teacher-data";
@@ -198,6 +199,9 @@ export function AssessmentView() {
     setTab(params.get("tab") || "questions");
   }, [params]);
   const a = assessments.find((x) => x.id === selected);
+  // Questions on standards outside the assessment's list (Michael, 19 Oct):
+  // said apart, no longer counted as 0 in the alignment.
+  const offList = a ? offListQuestions(a) : { n: 0, m: 0 };
   const catalog = a ? catalogFor(w, a.grade, a.framework) : [];
   const documents = a
     ? a.assignmentUploadIds?.length
@@ -755,6 +759,11 @@ export function AssessmentView() {
               <strong title={alignment(a) === null ? "No AI alignment score yet" : undefined}>
                 {alignment(a) === null ? "—" : alignment(a) + "%"}
               </strong>
+              {offList.n > 0 && (
+                <small className="off-list-note">
+                  {offList.n} of {offList.m} questions use standards outside your list
+                </small>
+              )}
             </div>
             <div>
               <span>Questions to review</span>
