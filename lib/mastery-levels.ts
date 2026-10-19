@@ -3,10 +3,14 @@
  * screen, report and recommendation reads its level, colour and cut-offs from
  * here; nothing else may compare a mastery percentage to a number.
  *
- *   Developing   0–69%   red     reteach and support
- *   Approaching  70–79%  yellow  no recommendation
- *   Proficient   80–89%  blue    no recommendation
- *   Exceeding    90–100% green   advanced application / extension
+ *   Developing   0–69%   red     Reteach
+ *   Approaching  70–79%  yellow  Offer targeted practice
+ *   Proficient   80–89%  blue    Offer optional reinforcement
+ *   Exceeding    90–100% green   Offer extension activity
+ *
+ * Every level's next step (Ricky, 19 Oct 2026) opens the same lesson
+ * generation with its intent (LessonIntent). Before that only Developing
+ * (reteach) and Exceeding (extension) had one.
  *
  * It replaced a single "mastered at 70%" cut (class analysis) that sat beside
  * 80/65 colour cut-offs and an 80% "Mastered" label elsewhere, so the same
@@ -20,6 +24,11 @@
 
 export type MasteryLevel = "Developing" | "Approaching" | "Proficient" | "Exceeding";
 
+/** What a generated lesson is for. "reteach" is the lesson the planner has
+ * always built. */
+export type LessonIntent = "reteach" | "practice" | "reinforcement" | "extension";
+export const LESSON_INTENTS = ["reteach", "practice", "reinforcement", "extension"] as const;
+
 export type MasteryLevelInfo = {
   level: MasteryLevel;
   /** Lowest percentage in the level (inclusive). */
@@ -28,17 +37,21 @@ export type MasteryLevelInfo = {
   range: string;
   /** Colour name; the CSS classes are `level-<tone>`. */
   tone: "red" | "yellow" | "blue" | "green";
-  /** What the app suggests for a student at this level, or nothing. */
+  /** Who the reteach groups and extension lists hold: Developing students are
+   * the ones the app reteaches, Exceeding the ones it extends. */
   recommendation: "reteach" | "extend" | null;
+  /** The next step for a student at this level: the button's label and the
+   * lesson it opens. */
+  nextStep: { label: string; intent: LessonIntent };
   /** One line for a teacher. */
   description: string;
 };
 
 export const MASTERY_LEVELS: readonly MasteryLevelInfo[] = [
-  { level: "Developing", min: 0, range: "0–69%", tone: "red", recommendation: "reteach", description: "Reteach and support" },
-  { level: "Approaching", min: 70, range: "70–79%", tone: "yellow", recommendation: null, description: "Close to the standard" },
-  { level: "Proficient", min: 80, range: "80–89%", tone: "blue", recommendation: null, description: "Meeting the standard" },
-  { level: "Exceeding", min: 90, range: "90–100%", tone: "green", recommendation: "extend", description: "Ready for advanced application and extension" },
+  { level: "Developing", min: 0, range: "0–69%", tone: "red", recommendation: "reteach", nextStep: { label: "Reteach", intent: "reteach" }, description: "Reteach and support" },
+  { level: "Approaching", min: 70, range: "70–79%", tone: "yellow", recommendation: null, nextStep: { label: "Offer targeted practice", intent: "practice" }, description: "Close to the standard: targeted practice" },
+  { level: "Proficient", min: 80, range: "80–89%", tone: "blue", recommendation: null, nextStep: { label: "Offer optional reinforcement", intent: "reinforcement" }, description: "Meeting the standard: optional reinforcement" },
+  { level: "Exceeding", min: 90, range: "90–100%", tone: "green", recommendation: "extend", nextStep: { label: "Offer extension activity", intent: "extension" }, description: "Ready for advanced application and extension" },
 ];
 
 /** The level for a mastery percentage (0–100), on its true value. */
@@ -89,4 +102,9 @@ export function exceedingOnAllAssessed(statuses: string[]): boolean {
 
 /** The plain-language rule, for method notes and reports. */
 export const MASTERY_LEVELS_NOTE =
-  "Levels: Developing 0–69% (reteach and support), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% (extension).";
+  "Levels: Developing 0–69% (reteach), Approaching 70–79% (targeted practice), Proficient 80–89% (optional reinforcement), Exceeding 90–100% (extension).";
+
+/** The intent a lesson link asked for, or "reteach" for anything else. */
+export function lessonIntent(raw: string | null | undefined): LessonIntent {
+  return (LESSON_INTENTS as readonly string[]).includes(raw ?? "") ? (raw as LessonIntent) : "reteach";
+}

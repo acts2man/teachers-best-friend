@@ -294,11 +294,19 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
               "): " +
               e.students.map((s) => s.name).join(", "),
           );
-        lines.push(
-          "Suggested next step: " +
-            (row.reteach.length ? "reteach the Developing students (" + row.instruction.toLowerCase() + ")" : "no reteach needed") +
-            (row.extend.length ? "; extension for the Exceeding students" : ""),
+        // Every level's next step (lib/mastery-levels.ts), for the levels
+        // that have students; the reteach says whole class or small group.
+        const steps = MASTERY_LEVELS.filter((l) => row.byLevel[l.level].length).map(
+          (l) =>
+            l.nextStep.label +
+            " (" +
+            l.level +
+            ", " +
+            row.byLevel[l.level].length +
+            (l.level === "Developing" ? ", " + row.instruction.toLowerCase() : "") +
+            ")",
         );
+        if (steps.length) lines.push("Suggested next steps: " + steps.join("; "));
         return lines.join("\n");
       })
       .join("\n\n") +

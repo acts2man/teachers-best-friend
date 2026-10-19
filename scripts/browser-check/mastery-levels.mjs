@@ -74,21 +74,51 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".skill-gap-groups", { timeout: 15000 });
   let body = await page.locator("main").innerText();
   check(!OLD_WORDS.test(body), `${tag} class analysis: no old mastery wording`);
-  check(/Developing 0–69% \(reteach and support\), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
+  check(/Developing 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
   check(/(Developing|Approaching|Proficient|Exceeding) · \d+–\d+% \(\d+\)/.test(body), `${tag} class analysis: students listed by level`);
   const pills = await page.$$eval(".skill-gap-groups .pill[class*='level-']", (els) => els.map((e) => e.textContent.trim()));
   check(pills.length > 0 && pills.every((t) => /^(Developing|Approaching|Proficient|Exceeding)$/.test(t)), `${tag} class analysis: each standard shows its level (${[...new Set(pills)].join(", ")})`);
-  // Reteach only where there are Developing students; extension only where there are Exceeding.
+  // Every level present has its next-step button, and no other (Ricky, 19 Oct).
   const cards = await page.$$eval(".skill-gap-groups .student-group-card", (els) =>
-    els.map((e) => ({
-      developing: /Developing · /.test(e.innerText),
-      exceeding: /Exceeding · /.test(e.innerText),
-      reteach: /Reteach Developing/.test(e.innerText),
-      extend: /Extension for Exceeding/.test(e.innerText),
-    })),
+    els.map((e) => {
+      const t = e.innerText;
+      const has = (l) => new RegExp(l + " · \\d").test(t);
+      return {
+        levels: ["Developing", "Approaching", "Proficient", "Exceeding"].filter(has),
+        buttons: [...e.querySelectorAll(".review-heading-actions button")].map((b) => b.innerText.trim()),
+      };
+    }),
   );
-  check(cards.length > 0 && cards.every((c) => c.reteach === c.developing), `${tag} class analysis: reteach offered exactly where students are Developing (${cards.filter((c) => c.reteach).length}/${cards.length})`);
-  check(cards.every((c) => c.extend === c.exceeding), `${tag} class analysis: extension offered exactly where students are Exceeding (${cards.filter((c) => c.extend).length}/${cards.length})`);
+  const STEP = { Developing: "Reteach", Approaching: "Offer targeted practice", Proficient: "Offer optional reinforcement", Exceeding: "Offer extension activity" };
+  const ok = cards.every((c) =>
+    ["Developing", "Approaching", "Proficient", "Exceeding"].every(
+      (l) => c.levels.includes(l) === c.buttons.some((b) => b.startsWith(STEP[l] + " · " + l)),
+    ),
+  );
+  check(cards.length > 0 && ok, `${tag} class analysis: each level present has its next-step button and no other (${cards.map((c) => c.buttons.length).join(",")} buttons)`);
+  // A next-step button opens the lesson generator with its level's intent:
+  // whichever non-reteach step this class has (the demo class has none at
+  // Approaching).
+  const INTENT = { "Offer targeted practice": "practice", "Offer optional reinforcement": "reinforcement", "Offer extension activity": "extension" };
+  let tried = false;
+  for (const [label, intent] of Object.entries(INTENT)) {
+    const btn = page.getByRole("button", { name: new RegExp(label + " · ") }).first();
+    if (!(await btn.count())) continue;
+    tried = true;
+    await btn.click();
+    await page.waitForURL(/\/lessons\?/, { timeout: 10000 });
+    const url = page.url();
+    const tab = (await page.locator("[role=tab]").first().innerText()).trim();
+    check(new RegExp("intent=" + intent).test(url) && /students=/.test(url) && tab === label, `${tag} class analysis: "${label}" opens the lesson generator with intent=${intent} (tab: ${tab})`);
+    await page.goto(`${BASE}/assessments?id=math-demo&tab=analysis`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".skill-gap-groups");
+    break;
+  }
+  if (!tried) check(false, `${tag} class analysis: a non-reteach next step to try`);
+  const clipped = await page.$$eval(".skill-gap-groups .student-group-card .review-heading-actions button", (els) =>
+    els.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > b.closest(".panel").getBoundingClientRect().right + 1).map((b) => b.innerText),
+  );
+  check(clipped.length === 0, `${tag} class analysis: no next-step button runs past its card${clipped.length ? " -- " + JSON.stringify(clipped) : ""}`);
   const red = await page.$eval(".skill-gap-groups .level-label.level-red, .skill-gap-groups .pill.level-red", (e) => getComputedStyle(e).color).catch(() => null);
   check(red === null || red === "rgb(163, 38, 31)", `${tag} class analysis: Developing is red (${red})`);
   await noSideScroll("class analysis");

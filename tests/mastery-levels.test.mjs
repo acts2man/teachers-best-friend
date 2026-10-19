@@ -151,7 +151,7 @@ test("extension across standards: Exceeding on every standard assessed, unassess
   assert.equal(levels.exceedingOnAllAssessed(["No evidence"]), false);
 });
 
-test("the class report lists each level and names the reteach and extension groups", () => {
+test("the class report lists each level and each level's next step", () => {
   const roster = ["a", "d"].map((id) => student(id, []));
   const q = { id: "q1", number: 1, text: "", passage: "", answer: "", standard: "S.1", secondary: "", skill: "", dok: 1, alignment: 90, confidence: 90, level: "", reasoning: "", verified: true, excluded: false };
   const r = (studentId, match) => ({ id: studentId, studentId, questionId: "q1", answer: "", correct: match === 100, match, misconception: "", confidence: 90, verified: true });
@@ -160,8 +160,8 @@ test("the class report lists each level and names the reteach and extension grou
   const text = classAnalysisReport(a, classAnalysis(a, roster, [std("S.1")]));
   assert.match(text, /Developing 0–69% \(1\): Student a/);
   assert.match(text, /Exceeding 90–100% \(1\): Student d/);
-  assert.match(text, /Suggested next step: reteach the Developing students \(whole class\); extension for the Exceeding students/);
-  assert.match(text, /Developing 0–69% \(reteach and support\), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% \(extension\)/);
+  assert.match(text, /Suggested next steps: Reteach \(Developing, 1, whole class\); Offer extension activity \(Exceeding, 1\)/);
+  assert.match(text, /Developing 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/);
   assert.doesNotMatch(text, /mastery/i);
 });
 

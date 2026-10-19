@@ -1036,3 +1036,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .meter.level-green [data-slot=progress-indicator],.mastery-blocks>.level-green{background:#2e7d32!important}
 .student-group-card.band-red{border-top:3px solid #d9534f}.student-group-card.band-yellow{border-top:3px solid #9c7a00}.student-group-card.band-blue{border-top:3px solid #4a86c8}.student-group-card.band-green{border-top:3px solid #2e7d32}.student-group-card.band-none{border-top:3px solid #a1aaa3}
 .level-students{display:flex;flex-direction:column;gap:6px}.heatmap-legend{flex-wrap:wrap}.cell-meta.level-label{font-weight:600}.cell-meta.level-label.level-red{color:#a3261f}.cell-meta.level-label.level-yellow{color:#7a5a00}.cell-meta.level-label.level-blue{color:#1d4f91}.cell-meta.level-label.level-green{color:#25642b}
+
+/* Level next-step buttons on a class-analysis card can be long ("Offer optional reinforcement · Proficient (9)"): wrap inside the card on a phone instead of running past it. */
+.student-group-card .review-heading-actions .action{white-space:normal;max-width:100%;text-align:left;justify-content:flex-start}
