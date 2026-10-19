@@ -1,4 +1,4 @@
-import { matchCatalogCode, settleStandards } from "./standard-match";
+import { codeParts, matchCatalogCode, settleStandards } from "./standard-match";
 import { z } from "zod";
 import { HttpError } from "@/lib/teacher-server";
 import { allStandards } from "@/lib/teacher-catalog";
@@ -662,7 +662,7 @@ export function buildPrompt(
       (mathCourse ? "the " + mathCourse + " course" : "grade " + (p.grade === 0 ? "K" : p.grade)) +
       " in " +
       label +
-      ". Use the exact standard codes as published by the state education agency" +
+      ". Use the exact standard codes as published by the state education agency, and write each code alone -- the code only, never followed by its title, a dash or a description; the title goes in its own field" +
       (state ? " at " + state.site : "") +
       ". If the state uses the Common Core or a close derivative, use the state's published codes.";
     if (mathCourse)
@@ -746,6 +746,29 @@ export function buildPrompt(
     schema = lessonSchema;
   }
   return { task, schema };
+}
+
+/**
+ * The code to store for one entry of a generated standards list, or "" to
+ * drop that entry (never the list). The AI may write the code with its title
+ * ("F-IF.7 — Graph functions…"), as in the assignment and rubric reads (#158,
+ * #160):
+ *   1. a code the class's catalog already has (matchCatalogCode, but never a
+ *      parent for a sub-part) keeps the catalog's exact spelling;
+ *   2. otherwise the longest beginning before a title (codeParts) -- or the
+ *      whole text -- that is shaped like a code: at most 40 characters, a
+ *      digit in it, and no word of three or more lower-case letters
+ *      ("MA.4.NSO.1.1", "4.4 (D)", "111.26(b)(4)(A)", "CALC.1");
+ *   3. otherwise nothing: a title alone, or a title before the code, is not a
+ *      code.
+ */
+export function listCode(raw: string, catalog: Pick<Standard, "code">[]): string {
+  // Not a parent: a list may well hold a sub-part the catalog does not yet
+  // ("F-IF.7e" beside "F-IF.7"), and it is its own standard here.
+  const known = matchCatalogCode(raw.slice(0, 500), catalog);
+  if (known.code && known.how !== "parent") return known.code;
+  const codeShaped = (c: string) => c.length > 0 && c.length <= 40 && /\d/.test(c) && !/[a-z]{3,}/.test(c);
+  return [raw.trim(), ...codeParts(raw.slice(0, 500))].find(codeShaped) ?? "";
 }
 
 /**
@@ -1031,7 +1054,9 @@ export function finalizeAnalysis(
         standards: z
           .array(
             z.object({
-              code: z.string().min(1).max(40),
+              // No length limit: one code written with its title used to fail
+              // the whole list with a 422. Only a code is stored (listCode).
+              code: z.string(),
               title: z.string().max(120),
               domain: z.string().max(160),
               cluster: z.string().max(300),
@@ -1050,14 +1075,15 @@ export function finalizeAnalysis(
     const state = stateFor(p.framework);
     const seen = new Set<string>();
     output.standards = parsed.data.standards
+      .map((item) => ({ ...item, code: listCode(item.code, catalog) }))
       .filter((item) => {
-        const key = item.code.trim();
+        const key = item.code;
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
       })
       .map((item) => ({
-        code: item.code.trim(),
+        code: item.code,
         title: item.title.trim() || item.cluster.slice(0, 60),
         subject: p.subject,
         grade: p.grade,
