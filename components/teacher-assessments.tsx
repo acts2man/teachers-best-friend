@@ -127,13 +127,13 @@ import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
+import { DokGrid } from "./dok-grid";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
 import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { DokGrid } from "./dok-grid";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
