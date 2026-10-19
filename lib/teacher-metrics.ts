@@ -240,7 +240,7 @@ export function sharedGapGroups(students: Student[], catalog: Standard[]) {
   return catalog
     .map((standard) => {
       const members = students.filter((student) => {
-        // Developing: the level the app recommends reteaching for.
+        // Beginning: the level the app recommends reteaching for.
         return needsReteach(mastery(student, standard.code));
       });
       return {

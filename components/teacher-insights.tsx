@@ -585,7 +585,7 @@ export function DiagnosticsView() {
           : catalog.length &&
               exceedingOnAllAssessed(catalog.map((s) => masteryStatus(st, s.code)))
             ? "Enrichment"
-            : "Independent practice";
+            : "Additional Practice";
       map.set(key, [...(map.get(key) || []), st.id]);
     }
     const next = [...map].map(([code, ids]) => ({
@@ -815,7 +815,7 @@ export function DiagnosticsView() {
                 </div>
               )}
               <p className="method-note">
-                Priority combines the share of students at Developing (below 70%), the number
+                Priority combines the share of students at Beginning (69% or below), the number
                 affected, and a prerequisite-impact weight. Use this planning
                 aid alongside your observations.
               </p>
@@ -920,7 +920,7 @@ export function DiagnosticsView() {
             )}
             <p className="method-note">
               Scores average the three most recent evidence records, rounded
-              down. {MASTERY_LEVELS_NOTE} A student&apos;s level on a standard
+              to the nearest whole percent. {MASTERY_LEVELS_NOTE} A student&apos;s level on a standard
               shows once there are at least three records.
             </p>
           </div>
@@ -1871,7 +1871,7 @@ export function StudentsView() {
                   </section>
                 ))}
                 <p className="method-note group-method-note">
-                  Shared-gap groups include students at Developing (below 70%) on the same
+                  Shared-gap groups include students at Beginning (69% or below) on the same
                   standard. A whole-class suggestion appears when at least half
                   the class shares that gap.
                 </p>

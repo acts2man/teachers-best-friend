@@ -542,8 +542,8 @@ export function createDemoWorkspace(): Workspace {
   };
 }
 /** A student's score on a standard: the average of the three latest records,
- * rounded DOWN so it never shows a level it has not reached (69.9 is 69,
- * Developing -- see lib/mastery-levels.ts). */
+ * rounded to the nearest whole percent, the number its level is read from
+ * (69.5 is 70, Approaching -- see lib/mastery-levels.ts). */
 export function mastery(student: Student, code: string): number | null {
   const raw = masteryRaw(student, code);
   return raw === null ? null : masteryPercent(raw);
@@ -571,10 +571,10 @@ export function masteryStatus(
       ? "Building evidence"
       : masteryLevel(m).level;
 }
-/** The class average on a standard, rounded down, or null when no student
+/** The class average on a standard, rounded to the nearest whole percent, or null when no student
  * has evidence (it used to be 0 -- a red "0%" for a standard never assessed). */
 /** How many of the catalog's skills the student is at or above the 70%
- * standard score on -- every skill with a score that is not Developing
+ * standard score on -- every skill with a score that is not Beginning
  * (lib/mastery-levels.ts). The student card's count (Ricky, 15 Oct 2026); it
  * used to count Proficient and above (80%+). */
 export function skillsAtStandard(student: Student, catalog: Pick<Standard, "code">[]): number {
@@ -598,7 +598,7 @@ export function priorities(
   return all
     .map((standard) => {
       const struggling = students.filter((s) => {
-        // Developing: the level the app recommends reteaching for.
+        // Beginning: the level the app recommends reteaching for.
         return needsReteach(mastery(s, standard.code));
       });
       const rate = students.length ? struggling.length / students.length : 0;

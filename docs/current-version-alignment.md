@@ -13,7 +13,7 @@ This implementation follows the current workflow described in the product brief 
 | Understand individual performance | Show a question-level comparison, teacher-reviewed observations, and an individual standards report. Partial scores are labeled provisional. |
 | Compare cognitive demand | Report Webb's DOK and Costa's Levels of Questioning separately for each problem and across the assignment. |
 | Choose a useful next teaching step | Select an assessment and confirmed missed problem, then carry the student, group, standard, and observations into visual, hands-on, or auditory reteaching. |
-| Form flexible instructional groups | View the four mastery levels (Developing, Approaching, Proficient, Exceeding) or group students who share a standard gap at Developing. Label whole-class opportunities when at least half of the class shares the gap. |
+| Form flexible instructional groups | View the four mastery levels (Beginning, Approaching, Proficient, Exceeding) or group students who share a standard gap at Beginning. Label whole-class opportunities when at least half of the class shares the gap. |
 | Keep the app approachable | The primary navigation is Overview, Assignments, Student work, Reteach, and Students. Standards are in the toolkit; resources are accessible through reteaching. |
 | Replace generic AI branding | An original book-and-learning-partnership logo replaces sparkle branding. Motion is restrained and respects reduced-motion preferences. |
 

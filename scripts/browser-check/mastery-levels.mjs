@@ -1,11 +1,14 @@
 // Ricky's four mastery levels, in a browser at 390x844 and 1366x768.
 //
 // Proven when: every screen that showed mastery uses the four levels and the
-// same cut-offs -- Developing 0–69% red, Approaching 70–79% yellow, Proficient
+// same cut-offs -- Beginning 0–69% red, Approaching 70–79% yellow, Proficient
 // 80–89% blue, Exceeding 90–100% green -- with no "Mastered" or "Mastery is
 // 70%" left; every mastery percentage on screen is coloured by the level that
-// number is in; reteach is offered for Developing and extension for
-// Exceeding only; and nothing scrolls sideways.
+// number is in; reteach is offered for Beginning and extension for
+// Exceeding only; each level's next step has its recommendation beside it
+// (Reteach Recommended / Monitor / Ready to Move On / Extension Recommended);
+// and nothing scrolls sideways. (Ricky renamed the lowest level and moved the
+// boundaries to the rounded percentage on 19 Oct.)
 // Seeded demo data only; /api/* is mocked.
 import { chromium } from "playwright";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -24,7 +27,7 @@ const check = (c, m) => (c ? pass : fail).push(m);
 mkdirSync(SHOTS, { recursive: true });
 
 const LEVELS = [
-  ["Developing", 0, "level-red"],
+  ["Beginning", 0, "level-red"],
   ["Approaching", 70, "level-yellow"],
   ["Proficient", 80, "level-blue"],
   ["Exceeding", 90, "level-green"],
@@ -74,24 +77,24 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".skill-gap-groups", { timeout: 15000 });
   let body = await page.locator("main").innerText();
   check(!OLD_WORDS.test(body), `${tag} class analysis: no old mastery wording`);
-  check(/Developing 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
-  check(/(Developing|Approaching|Proficient|Exceeding) · \d+–\d+% \(\d+\)/.test(body), `${tag} class analysis: students listed by level`);
-  const pills = await page.$$eval(".skill-gap-groups .pill[class*='level-']", (els) => els.map((e) => e.textContent.trim()));
-  check(pills.length > 0 && pills.every((t) => /^(Developing|Approaching|Proficient|Exceeding)$/.test(t)), `${tag} class analysis: each standard shows its level (${[...new Set(pills)].join(", ")})`);
+  check(/Beginning 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
+  check(/(Beginning|Approaching|Proficient|Exceeding) · \d+–\d+% \(\d+\)/.test(body), `${tag} class analysis: students listed by level`);
+  const pills = await page.$$eval(".skill-gap-groups .pill[class*='level-']:not(.level-advice)", (els) => els.map((e) => e.textContent.trim()));
+  check(pills.length > 0 && pills.every((t) => /^(Beginning|Approaching|Proficient|Exceeding)$/.test(t)), `${tag} class analysis: each standard shows its level (${[...new Set(pills)].join(", ")})`);
   // Every level present has its next-step button, and no other (Ricky, 19 Oct).
   const cards = await page.$$eval(".skill-gap-groups .student-group-card", (els) =>
     els.map((e) => {
       const t = e.innerText;
       const has = (l) => new RegExp(l + " · \\d").test(t);
       return {
-        levels: ["Developing", "Approaching", "Proficient", "Exceeding"].filter(has),
+        levels: ["Beginning", "Approaching", "Proficient", "Exceeding"].filter(has),
         buttons: [...e.querySelectorAll(".review-heading-actions button")].map((b) => b.innerText.trim()),
       };
     }),
   );
-  const STEP = { Developing: "Reteach", Approaching: "Offer targeted practice", Proficient: "Offer optional reinforcement", Exceeding: "Offer extension activity" };
+  const STEP = { Beginning: "Reteach", Approaching: "Offer targeted practice", Proficient: "Offer optional reinforcement", Exceeding: "Offer extension activity" };
   const ok = cards.every((c) =>
-    ["Developing", "Approaching", "Proficient", "Exceeding"].every(
+    ["Beginning", "Approaching", "Proficient", "Exceeding"].every(
       (l) => c.levels.includes(l) === c.buttons.some((b) => b.startsWith(STEP[l] + " · " + l)),
     ),
   );
@@ -115,12 +118,30 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     break;
   }
   if (!tried) check(false, `${tag} class analysis: a non-reteach next step to try`);
+  // Each next-step button has its level's recommendation beside it, in the
+  // level's colour (Ricky, 19 Oct).
+  const ADVICE = { Beginning: ["Reteach Recommended", "level-red"], Approaching: ["Monitor", "level-yellow"], Proficient: ["Ready to Move On", "level-blue"], Exceeding: ["Extension Recommended", "level-green"] };
+  const steps = await page.$$eval(".skill-gap-groups .level-next-step", (els) =>
+    els.map((e) => {
+      const pill = e.querySelector(".level-advice");
+      const btn = e.querySelector("button");
+      const p = pill.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      const overlap = !(p.right <= b.left || b.right <= p.left || p.bottom <= b.top || b.bottom <= p.top);
+      return { advice: pill.textContent.trim(), cls: pill.className, button: btn.innerText.trim(), overlap };
+    }),
+  );
+  const adviceOk = steps.every((x) => {
+    const level = Object.keys(ADVICE).find((l) => x.button.includes(" · " + l + " ("));
+    return level && x.advice === ADVICE[level][0] && x.cls.includes(ADVICE[level][1]) && !x.overlap;
+  });
+  check(steps.length > 0 && adviceOk, `${tag} class analysis: each next-step button has its level's recommendation beside it (${[...new Set(steps.map((x) => x.advice))].join(", ")})`);
   const clipped = await page.$$eval(".skill-gap-groups .student-group-card .review-heading-actions button", (els) =>
     els.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > b.closest(".panel").getBoundingClientRect().right + 1).map((b) => b.innerText),
   );
   check(clipped.length === 0, `${tag} class analysis: no next-step button runs past its card${clipped.length ? " -- " + JSON.stringify(clipped) : ""}`);
   const red = await page.$eval(".skill-gap-groups .level-label.level-red, .skill-gap-groups .pill.level-red", (e) => getComputedStyle(e).color).catch(() => null);
-  check(red === null || red === "rgb(163, 38, 31)", `${tag} class analysis: Developing is red (${red})`);
+  check(red === null || red === "rgb(163, 38, 31)", `${tag} class analysis: Beginning is red (${red})`);
   await noSideScroll("class analysis");
   await page.screenshot({ path: join(SHOTS, `class-analysis-${tag}.png`), fullPage: true });
 
@@ -130,7 +151,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".heatmap-legend");
   const legend = await page.$$eval(".heatmap-legend span", (els) => els.map((e) => [e.textContent.trim(), e.className]));
   check(
-    JSON.stringify(legend) === JSON.stringify([["Developing 0–69%", "level-red"], ["Approaching 70–79%", "level-yellow"], ["Proficient 80–89%", "level-blue"], ["Exceeding 90–100%", "level-green"]]),
+    JSON.stringify(legend) === JSON.stringify([["Beginning 0–69%", "level-red"], ["Approaching 70–79%", "level-yellow"], ["Proficient 80–89%", "level-blue"], ["Exceeding 90–100%", "level-green"]]),
     `${tag} heatmap: legend is the four levels (${legend.map((l) => l[0]).join(" | ")})`,
   );
   body = await page.locator("main").innerText();
@@ -149,7 +170,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   check(blocks.length > 0 && blocks.every((c) => /^level-(red|yellow|blue|green|none)$/.test(c)), `${tag} students: skill blocks use the level colours (${[...new Set(blocks)].join(", ")})`);
   await page.getByRole("button", { name: "Mastery levels" }).click();
   const bands = await page.$$eval(".student-groups-grid .student-group-card h2", (els) => els.map((e) => e.textContent.trim()));
-  check(JSON.stringify(bands) === JSON.stringify(["Developing", "Approaching", "Proficient", "Exceeding", "No evidence yet"]), `${tag} mastery levels view: ${bands.join(", ")}`);
+  check(JSON.stringify(bands) === JSON.stringify(["Beginning", "Approaching", "Proficient", "Exceeding", "No evidence yet"]), `${tag} mastery levels view: ${bands.join(", ")}`);
   await percentsMatch("mastery levels view");
   await noSideScroll("mastery levels view");
   await page.screenshot({ path: join(SHOTS, `levels-${tag}.png`), fullPage: true });
@@ -160,7 +181,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   body = await page.locator("main").innerText();
   check(!OLD_WORDS.test(body), `${tag} student page: no old mastery wording`);
   const statuses = await page.$$eval(".mastery-status", (els) => els.map((e) => e.textContent.trim()));
-  check(statuses.length > 0 && statuses.every((s) => /^(Developing|Approaching|Proficient|Exceeding|Building evidence|No evidence)$/.test(s)), `${tag} student page: statuses are levels (${[...new Set(statuses)].join(", ")})`);
+  check(statuses.length > 0 && statuses.every((s) => /^(Beginning|Approaching|Proficient|Exceeding|Building evidence|No evidence)$/.test(s)), `${tag} student page: statuses are levels (${[...new Set(statuses)].join(", ")})`);
   await percentsMatch("student page");
   await noSideScroll("student page");
   await page.screenshot({ path: join(SHOTS, `student-${tag}.png`), fullPage: true });

@@ -2457,7 +2457,7 @@ function WritingReview({
 }
 
 // The class picture for a writing assessment: each rubric trait with the class
-// average, and the students who are strong, still developing, or not yet scored.
+// average, and the students who are strong, still working toward it, or not yet scored.
 function WritingClassPanel({
   assessment: a,
   students,
@@ -2901,29 +2901,31 @@ function ClassAnalysisPanel({
             )}
             {MASTERY_LEVELS.some((l) => row.byLevel[l.level].length > 0) && (
               <div className="review-heading-actions">
-                {/* Each level's next step (lib/mastery-levels.ts), for the
-                    students at that level: the same lesson generation, with
-                    the level's intent. */}
+                {/* Each level's recommendation and next step
+                    (lib/mastery-levels.ts), for the students at that level:
+                    the same lesson generation, with the level's intent. */}
                 {MASTERY_LEVELS.filter((l) => row.byLevel[l.level].length > 0).map((l) => (
-                  <Action
-                    key={l.level}
-                    variant="secondary small"
-                    onClick={() =>
-                      go(
-                        "/lessons?standard=" +
-                          encodeURIComponent(row.standard.code) +
-                          "&assessment=" +
-                          a.id +
-                          "&students=" +
-                          row.byLevel[l.level].map((member) => member.id).join(",") +
-                          "&intent=" +
-                          l.nextStep.intent,
-                      )
-                    }
-                  >
-                    <BookOpen size={15} />
-                    {l.nextStep.label} · {l.level} ({row.byLevel[l.level].length})
-                  </Action>
+                  <div className="level-next-step" key={l.level}>
+                    <span className={"pill level-advice level-" + l.tone}>{l.advice}</span>
+                    <Action
+                      variant="secondary small"
+                      onClick={() =>
+                        go(
+                          "/lessons?standard=" +
+                            encodeURIComponent(row.standard.code) +
+                            "&assessment=" +
+                            a.id +
+                            "&students=" +
+                            row.byLevel[l.level].map((member) => member.id).join(",") +
+                            "&intent=" +
+                            l.nextStep.intent,
+                        )
+                      }
+                    >
+                      <BookOpen size={15} />
+                      {l.nextStep.label} · {l.level} ({row.byLevel[l.level].length})
+                    </Action>
+                  </div>
                 ))}
                 {row.reteach.length > 0 && (
                   <Action

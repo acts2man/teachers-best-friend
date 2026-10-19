@@ -1026,7 +1026,7 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* "These are 2 different students" wraps on a phone instead of running off the card. */
 .action.name-match-split{white-space:normal;max-width:100%;height:auto;min-height:36px;text-align:left}
 
-/* Mastery levels (lib/mastery-levels.ts): Developing red, Approaching yellow, Proficient blue, Exceeding green. Text colours meet 4.5:1 on their backgrounds. */
+/* Mastery levels (lib/mastery-levels.ts): Beginning red, Approaching yellow, Proficient blue, Exceeding green. Text colours meet 4.5:1 on their backgrounds. */
 .score.level-red,.pill.level-red,.heatmap-legend .level-red{color:#a3261f;background:#fdecea;border-color:#f7d4d0}
 .score.level-yellow,.pill.level-yellow,.heatmap-legend .level-yellow{color:#7a5a00;background:#fff5cc;border-color:#f3e3a1}
 .score.level-blue,.pill.level-blue,.heatmap-legend .level-blue{color:#1d4f91;background:#e6f0fb;border-color:#c9dcf3}
@@ -1041,5 +1041,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 
 /* Level next-step buttons on a class-analysis card can be long ("Offer optional reinforcement · Proficient (9)"): wrap inside the card on a phone instead of running past it. */
 .student-group-card .review-heading-actions .action{white-space:normal;max-width:100%;text-align:left;justify-content:flex-start}
+/* Each level's recommendation beside its next-step button (Ricky, 19 Oct): one level per line, the label above the button on a phone and in its own column on a computer so the buttons line up. */
+.student-group-card .level-next-step{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%}.student-group-card .level-advice{white-space:nowrap}
+@media(min-width:700px){.student-group-card .level-next-step{display:grid;grid-template-columns:11.5rem minmax(0,1fr);align-items:center;gap:10px}.student-group-card .level-next-step .action{justify-self:start}}
 /* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
 .assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}
