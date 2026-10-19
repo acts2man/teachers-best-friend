@@ -1044,8 +1044,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* Each level's recommendation beside its next-step button (Ricky, 19 Oct): one level per line, the label above the button on a phone and in its own column on a computer so the buttons line up. */
 .student-group-card .level-next-step{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%}.student-group-card .level-advice{white-space:nowrap}
 @media(min-width:700px){.student-group-card .level-next-step{display:grid;grid-template-columns:11.5rem minmax(0,1fr);align-items:center;gap:10px}.student-group-card .level-next-step .action{justify-self:start}}
-/* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
-.assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}
 /* The class DOK grid (components/dok-grid.tsx): standards down, DOK 1-4 across, each cell in its level's colours. On a phone each standard is a card with its four cells in one row. */
 .dok-grid-panel{display:flex;flex-direction:column;gap:12px}.dok-grid{display:flex;flex-direction:column;gap:6px}
 .dok-grid-head,.dok-grid-row{display:grid;grid-template-columns:minmax(150px,1.5fr) repeat(4,minmax(0,1fr));gap:6px;align-items:stretch}
@@ -1057,3 +1055,5 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .dok-cell.level-none,.dok-grid-legend .level-none{color:#5d6561;background:#f1f2f0;border-color:#e2e5e2}
 .dok-grid-note{margin:0}
 @media(max-width:699px){.dok-grid-head{display:none}.dok-grid{gap:10px}.dok-grid-row{grid-template-columns:repeat(4,minmax(0,1fr));padding:10px;border:1px solid #e2e5e2;border-radius:12px}.dok-grid-standard{grid-column:1/-1}.dok-cell{min-height:0;padding:6px 5px}.dok-cell-dok{display:block}.dok-cell strong{font-size:16px}.dok-cell-advice{font-size:10px;letter-spacing:-.1px}}
+/* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
+.assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}
