@@ -18,6 +18,7 @@ import {
   masteryLevel,
   masteryPercent,
   type MasteryLevel,
+  type MasteryLevelInfo,
 } from "./mastery-levels";
 
 /** One error type and the students who made it, most common first. */
@@ -245,6 +246,83 @@ export function classAnalysis(
       };
     });
   return rows.sort((a, b) => (a.averagePercent ?? 101) - (b.averagePercent ?? 101));
+}
+
+/** The four Webb DOK levels, as the grid's columns. */
+export const DOK_LEVELS = [
+  { dok: 1, name: "Recall" },
+  { dok: 2, name: "Skill & concept" },
+  { dok: 3, name: "Strategic thinking" },
+  { dok: 4, name: "Extended reasoning" },
+] as const;
+
+/** One cell of the DOK grid: the class on one standard at one DOK level. */
+export type DokCell = {
+  dok: 1 | 2 | 3 | 4;
+  /** Active questions on this standard at this DOK. 0 is a grey "No
+   * questions" cell. */
+  questions: number;
+  /** Students with at least one verified answer in the cell. */
+  studentsGraded: number;
+  /** The class's score: each student's mean answer match in the cell, then
+   * the mean across students, rounded like every level-coloured number; null
+   * when no answer in the cell is graded. */
+  percent: number | null;
+  /** The level of that score, or null with it. */
+  level: MasteryLevelInfo | null;
+};
+
+export type DokGridRow = { standard: Standard; cells: DokCell[] };
+
+/**
+ * The class DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1-2.3):
+ * one row per standard -- the same standards, in the same order, as the
+ * class-analysis cards (classAnalysis), so the grid and the cards beside it
+ * never disagree -- and one cell per DOK level 1-4.
+ *
+ * A cell counts the same answers the cards do: verified answers to the
+ * assessment's active questions on that primary standard, now also at that
+ * DOK. Each student's answers in the cell are averaged first, then the
+ * students, as the card's "Class average" is.
+ *
+ * A question with no DOK (the column is nullable) is left out of every cell
+ * -- not guessed as DOK 1 -- and counted in `noDok` so the screen can say so.
+ * Percentage mode only (G2 reads the same cells in 0–4).
+ */
+export function dokGrid(
+  a: Assessment,
+  students: Student[],
+  catalog: Standard[],
+): { rows: DokGridRow[]; noDok: number } {
+  const questions = activeQuestions(a);
+  const dokOf = (q: { dok?: number | null }) =>
+    q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
+  const rows = classAnalysis(a, students, catalog).map(({ standard }) => ({
+    standard,
+    cells: DOK_LEVELS.map(({ dok }): DokCell => {
+      const qs = questions.filter((q) => q.standard === standard.code && dokOf(q) === dok);
+      const ids = new Set(qs.map((q) => q.id));
+      const averages: number[] = [];
+      for (const student of students) {
+        const rs = a.responses.filter(
+          (r) => r.studentId === student.id && r.verified && ids.has(r.questionId),
+        );
+        if (rs.length)
+          averages.push(rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length);
+      }
+      const average = averages.length
+        ? averages.reduce((x, y) => x + y, 0) / averages.length
+        : null;
+      return {
+        dok,
+        questions: qs.length,
+        studentsGraded: averages.length,
+        percent: average === null ? null : masteryPercent(average),
+        level: average === null ? null : masteryLevel(average),
+      };
+    }),
+  }));
+  return { rows, noDok: questions.filter((q) => dokOf(q) === null).length };
 }
 
 export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) {

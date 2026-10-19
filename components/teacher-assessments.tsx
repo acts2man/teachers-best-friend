@@ -77,6 +77,7 @@ import {
 import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, levelClass, masteryLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
+  dokGrid,
   classAnalysisReport,
   assessmentErrorTypes,
   type ErrorTypeTally,
@@ -132,6 +133,7 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
+import { DokGrid } from "./dok-grid";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -2722,12 +2724,15 @@ function CognitiveBreakdown({
   questions,
   responses,
   heading,
+  showDok = true,
 }: {
   questions: Question[];
   responses: import("@/lib/teacher-types").StudentResponse[];
   heading: string;
+  /** False where the DOK grid already shows DOK (class analysis). */
+  showDok?: boolean;
 }) {
-  const dok = dokBreakdown(questions, responses);
+  const dok = showDok ? dokBreakdown(questions, responses) : [];
   const costa = costaBreakdown(questions, responses);
   if (!dok.length && !costa.length) return null;
   const group = (title: string, rows: CognitiveRow[]) =>
@@ -2850,10 +2855,14 @@ function ClassAnalysisPanel({
           <ErrorTypeList tallies={errorTypes} go={go} />
         </div>
       )}
+      {/* The DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1) replaces
+          the one-line-per-DOK rows here; Costa's levels stay below it. */}
+      <DokGrid {...dokGrid(a, students, catalog)} />
       <CognitiveBreakdown
         questions={a.questions}
         responses={a.responses}
-        heading="Depth of knowledge across this assessment"
+        heading="Costa's levels across this assessment"
+        showDok={false}
       />
       <div className="student-groups-grid skill-gap-groups">
         {analysis.map((row) => (
