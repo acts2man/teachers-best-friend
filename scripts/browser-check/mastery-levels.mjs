@@ -114,7 +114,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".student-grid");
   body = await page.locator("main").innerText();
   check(!OLD_WORDS.test(body), `${tag} students: no old mastery wording`);
-  check(/skills Proficient or above/.test(body), `${tag} students: cards count skills Proficient or above`);
+  check(/\d+\/\d+ skills at or above 70% standard score/.test(body), `${tag} students: cards count skills at or above 70% standard score`);
   const blocks = await page.$$eval(".mastery-blocks > span", (els) => els.map((e) => e.className));
   check(blocks.length > 0 && blocks.every((c) => /^level-(red|yellow|blue|green|none)$/.test(c)), `${tag} students: skill blocks use the level colours (${[...new Set(blocks)].join(", ")})`);
   await page.getByRole("button", { name: "Mastery levels" }).click();

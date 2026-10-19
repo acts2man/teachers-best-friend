@@ -92,6 +92,7 @@ import {
   mastery,
   masteryStatus,
   classMastery,
+  skillsAtStandard,
   priorities,
 } from "@/lib/teacher-data";
 import {
@@ -1695,10 +1696,7 @@ export function StudentsView() {
               </div>
               <div className="student-grid">
                 {filtered.map((s) => {
-                  const proficient = catalog.filter((c) => {
-                    const status = masteryStatus(s, c.code);
-                    return status === "Proficient" || status === "Exceeding";
-                  }).length;
+                  const atStandard = skillsAtStandard(s, catalog);
                   const weak = catalog
                     .map((c) => ({ s: c, m: mastery(s, c.code) }))
                     .filter(
@@ -1734,8 +1732,8 @@ export function StudentsView() {
                       </div>
                       <div className="student-card-footer">
                         <strong>
-                          {proficient}
-                          <span> / {catalog.length} skills Proficient or above</span>
+                          {atStandard}
+                          <span>/{catalog.length} skills at or above 70% standard score</span>
                         </strong>
                         <span>
                           {weak && needsReteach(weak.m)

@@ -573,6 +573,16 @@ export function masteryStatus(
 }
 /** The class average on a standard, rounded down, or null when no student
  * has evidence (it used to be 0 -- a red "0%" for a standard never assessed). */
+/** How many of the catalog's skills the student is at or above the 70%
+ * standard score on -- every skill with a score that is not Developing
+ * (lib/mastery-levels.ts). The student card's count (Ricky, 15 Oct 2026); it
+ * used to count Proficient and above (80%+). */
+export function skillsAtStandard(student: Student, catalog: Pick<Standard, "code">[]): number {
+  return catalog.filter((c) => {
+    const m = mastery(student, c.code);
+    return m !== null && !needsReteach(m);
+  }).length;
+}
 export function classMastery(students: Student[], code: string): number | null {
   const vals = students
     .map((x) => masteryRaw(x, code))
