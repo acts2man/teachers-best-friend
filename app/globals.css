@@ -1046,3 +1046,7 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 @media(min-width:700px){.student-group-card .level-next-step{display:grid;grid-template-columns:11.5rem minmax(0,1fr);align-items:center;gap:10px}.student-group-card .level-next-step .action{justify-self:start}}
 /* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
 .assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}
+/* Grading mode (lib/grading-mode.ts): two buttons, at setup and on the test. */
+.grading-mode-choice{display:inline-flex;flex-wrap:wrap;gap:6px}.grading-mode-choice button{border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);background:white;color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;font-weight:600}.grading-mode-choice button.selected{background:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 19.8%);border-color:transparent;color:#f7f7ef}
+.grading-mode-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0}.grading-mode-row>span{font-size:13px;font-weight:600}.grading-mode-row small{flex-basis:100%;color:#4f5a55;font-size:12.5px;line-height:1.45}
+.grading-mode-setup{display:flex;flex-direction:column;gap:8px;margin-top:16px}.grading-mode-setup strong{font-size:14px}
