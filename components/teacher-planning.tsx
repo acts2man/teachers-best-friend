@@ -77,6 +77,7 @@ import {
   type LessonContent,
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
+import { MASTERY_LEVELS, lessonIntent as intentFrom } from "@/lib/mastery-levels";
 import { themes, themeById } from "@/lib/themes";
 import type { Lesson, Resource, Student, Standard } from "@/lib/teacher-types";
 
@@ -228,6 +229,10 @@ export function ReteachView() {
     catalog = catalogFor(w, contextGrade, contextFramework);
   const [audience, setAudience] = useState(params.get("student") || ""),
     [standard, setStandard] = useState(params.get("standard") || ""),
+    // What the lesson is for: each mastery level's next step (the class
+    // analysis links here with ?intent=). No intent is a reteach lesson.
+    lessonIntent = intentFrom(params.get("intent")),
+    intentStep = MASTERY_LEVELS.find((l) => l.nextStep.intent === lessonIntent)!.nextStep,
     [modality, setModality] = useState("Visual"),
     [duration, setDuration] = useState("15"),
     [tab, setTab] = useState("build"),
@@ -409,6 +414,7 @@ export function ReteachView() {
         text: notes,
         framework: contextFramework,
         grade: contextGrade,
+        intent: lessonIntent,
       });
       setCustom(d.result);
       setEdited(false);
@@ -497,6 +503,7 @@ export function ReteachView() {
               {sourceAssessment
                 ? "Student work from " + sourceAssessment.title
                 : "Flexible group based on a shared standard gap"}
+              {lessonIntent !== "reteach" && " · Next step: " + intentStep.label}
             </p>
           </div>
           {sourceAssessment && (
@@ -519,7 +526,9 @@ export function ReteachView() {
       )}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="page-tabs">
-          <TabsTrigger value="build">Build a reteach lesson</TabsTrigger>
+          <TabsTrigger value="build">
+            {lessonIntent === "reteach" ? "Build a reteach lesson" : intentStep.label}
+          </TabsTrigger>
           <TabsTrigger value="plan">
             Saved lesson plans <span>{plans.length}</span>
           </TabsTrigger>

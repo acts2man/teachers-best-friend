@@ -74,7 +74,7 @@ import {
   LevelPill,
   LevelStudents,
 } from "./teacher-shared";
-import { MASTERY_LEVELS_NOTE, levelClass, masteryLevel } from "@/lib/mastery-levels";
+import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, levelClass, masteryLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   classAnalysisReport,
@@ -2890,8 +2890,32 @@ function ClassAnalysisPanel({
                 <ErrorTypeList tallies={row.errorTypes} go={go} />
               </>
             )}
-            {(row.reteach.length > 0 || row.extend.length > 0) && (
+            {MASTERY_LEVELS.some((l) => row.byLevel[l.level].length > 0) && (
               <div className="review-heading-actions">
+                {/* Each level's next step (lib/mastery-levels.ts), for the
+                    students at that level: the same lesson generation, with
+                    the level's intent. */}
+                {MASTERY_LEVELS.filter((l) => row.byLevel[l.level].length > 0).map((l) => (
+                  <Action
+                    key={l.level}
+                    variant="secondary small"
+                    onClick={() =>
+                      go(
+                        "/lessons?standard=" +
+                          encodeURIComponent(row.standard.code) +
+                          "&assessment=" +
+                          a.id +
+                          "&students=" +
+                          row.byLevel[l.level].map((member) => member.id).join(",") +
+                          "&intent=" +
+                          l.nextStep.intent,
+                      )
+                    }
+                  >
+                    <BookOpen size={15} />
+                    {l.nextStep.label} · {l.level} ({row.byLevel[l.level].length})
+                  </Action>
+                ))}
                 {row.reteach.length > 0 && (
                   <Action
                     variant="secondary small"
@@ -2901,41 +2925,11 @@ function ClassAnalysisPanel({
                           encodeURIComponent(row.standard.code) +
                           "&assessment=" +
                           a.id +
-                          "&students=" +
-                          row.reteach.map((member) => member.id).join(","),
-                      )
-                    }
-                  >
-                    <BookOpen size={15} />
-                    Reteach Developing {row.reteach.length === 1 ? "student" : "group"}
-                  </Action>
-                )}
-                {row.reteach.length > 0 && (
-                  <Action
-                    variant="secondary small"
-                    onClick={() =>
-                      go(
-                        "/lessons?standard=" +
-                          encodeURIComponent(row.standard.code) +
-                          "&assessment=" +
-                          a.id,
+                          "&intent=reteach",
                       )
                     }
                   >
                     Reteach whole class
-                  </Action>
-                )}
-                {row.extend.length > 0 && (
-                  <Action
-                    variant="secondary small"
-                    onClick={() =>
-                      go(
-                        "/resources?category=Enrichment&standard=" +
-                          encodeURIComponent(row.standard.code),
-                      )
-                    }
-                  >
-                    Extension for Exceeding ({row.extend.length})
                   </Action>
                 )}
               </div>
