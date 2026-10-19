@@ -418,10 +418,12 @@ Another test? We need Ricky to tell us.
 Ricky posted this in #app-ideas on 13 Oct, between 4:15 and 6:10 pm PT, with two
 mockups made from sample data [REPORTED, read from Slack 14 Oct]. In his words,
 shortened:
+(On 19 Oct Ricky renamed his lowest level "Beginning"; this section uses the
+new name throughout.)
 
 - **Mastery bands.** 90–100% Exceeding ("we recommend an extension lesson");
   80–89% Proficient (no recommendation); 70–79% Approaching (no recommendation);
-  69% or below Developing ("we recommend support … and reteach lessons"). He
+  69% or below Beginning ("we recommend support … and reteach lessons"). He
   restated these at 6:10 pm, so they replace the 80 / 60–79 / under-60 colours
   in his earlier grid mockup.
 - **A standards × DOK grid.** One row per standard, one column per DOK level,
@@ -445,7 +447,7 @@ over:
   students under 70% as needing reteaching, with "Reteach this group" or
   "Reteach whole class" buttons that open the lesson planner for that standard.
   It also lists the error types per standard, with the students. Under 70% is
-  exactly Ricky's Developing band. **What is new** is splitting today's "70% and
+  exactly Ricky's Beginning band. **What is new** is splitting today's "70% and
   up" group into Approaching, Proficient and Exceeding, and recommending an
   extension lesson for Exceeding.
 - **A per-student progress view already exists.** [VERIFIED
@@ -462,10 +464,10 @@ over:
     analysis counts a student as "strong" on a standard at 70%+. Writing rubric
     traits use the same 70.
   - [VERIFIED `lib/teacher-data.ts` `masteryStatus`] The Insights map says
-    "Mastered" at 80%+, "Developing" at 65–79%, "Needs support" below that. It
-    averages a student's last three results on the standard, and shows
-    "Building evidence" until there are three. Note that its "Developing"
-    (65–79%) is not Ricky's Developing (69% or below).
+    "Mastered" at 80%+, a middle label at 65–79%, "Needs support" below that.
+    It averages a student's last three results on the standard, and shows
+    "Building evidence" until there are three. Note that its middle band
+    (65–79%) is not Ricky's lowest level (69% or below).
   - [VERIFIED `components/teacher-assessments.tsx`] In class analysis, the bar
     for "% of students who mastered this" is green at 80%+ and orange under 65%.
     That is a share of students, not a student's score.
@@ -506,14 +508,14 @@ over:
 
 1. **One mastery rule with Ricky's four bands.** One function would turn a
    student's percentage on a standard into Exceeding, Proficient, Approaching
-   or Developing. It would apply wherever a *student's score on a standard* is
+   or Beginning. It would apply wherever a *student's score on a standard* is
    shown: class analysis, the Insights map, the student page, the tracker and
    the printed report. It would not apply to the "% of students" bar or to the
    scan-matching confidence, which measure other things. Scores would be
    rounded to a whole percent first, so 79.6% would be 80% (Proficient) and no
    score would fall between bands.
 2. **Class analysis per test, by band.** Each standard would show how many
-   students are in each band, and list them. Developing would keep today's
+   students are in each band, and list them. Beginning would keep today's
    reteach buttons. Exceeding would get "Recommended: an extension lesson",
    with a button that opens the lesson planner for that standard.
 3. **The test's standards report, tested standards only.** Untested standards
@@ -580,8 +582,8 @@ generates a lesson by itself.
 
 - **Short tests land on the edges.** A percentage is only as fine as the number
   of questions behind it. With one question on a standard, a student can only
-  be 0% (Developing) or 100% (Exceeding). With three questions, two right is
-  67% (Developing). With four, three right is 75% (Approaching). On a 4-point
+  be 0% (Beginning) or 100% (Exceeding). With three questions, two right is
+  67% (Beginning). With four, three right is 75% (Approaching). On a 4-point
   writing trait, a 3 is 75% (Approaching) and a 4 is 100% (Exceeding), so **no
   single 4-point trait can ever be Proficient**. Options: show the band only
   when a standard has enough questions (say 4 or more) and "too few questions
@@ -592,8 +594,8 @@ generates a lesson by itself.
   today's class-analysis "strong" line moves from 70 to 80, and a standard that
   showed "75% of students mastered" could show fewer, with no grade changed. We
   would say so on the screen the first time.
-- **Two meanings of "Developing".** Insights' "Developing" is 65–79% today;
-  Ricky's is 69% or below. The rule would switch everywhere at once, so the two
+- **Two different middle bands.** Insights' middle label is 65–79% today;
+  Ricky's lowest level is 69% or below. The rule would switch everywhere at once, so the two
   meanings are never on screen together.
 - **"Building evidence" in Insights.** That map waits for three results before
   saying "Mastered", and averages the last three. Should the bands apply to the

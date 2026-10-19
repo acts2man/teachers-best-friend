@@ -1,5 +1,5 @@
 // Ricky, 19 Oct 2026: every mastery level has a next step.
-//   Developing  -> "Reteach"
+//   Beginning   -> "Reteach"
 //   Approaching -> "Offer targeted practice"
 //   Proficient  -> "Offer optional reinforcement"
 //   Exceeding   -> "Offer extension activity"
@@ -31,7 +31,7 @@ test("each level has its next step and lesson intent", () => {
   assert.deepEqual(
     levels.MASTERY_LEVELS.map((l) => [l.level, l.nextStep.label, l.nextStep.intent]),
     [
-      ["Developing", "Reteach", "reteach"],
+      ["Beginning", "Reteach", "reteach"],
       ["Approaching", "Offer targeted practice", "practice"],
       ["Proficient", "Offer optional reinforcement", "reinforcement"],
       ["Exceeding", "Offer extension activity", "extension"],

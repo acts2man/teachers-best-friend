@@ -22,7 +22,7 @@ export function Score({value,title}:{value:number|null;title?:string}){return <s
 export function MasteryScore({value,title}:{value:number|null;title?:string}){const l=masteryLevelOf(value);return <span title={l?l.level+" ("+l.range+")":title} className={"score "+(value===null?"unknown":levelClass(value))}>{value===null?"—":value+"%"}</span>}
 /** The level's name in its colour, or nothing when there is no score. */
 export function LevelPill({percent}:{percent:number|null}){const l=masteryLevelOf(percent);return l?<span className={"pill "+levelClass(percent)}>{l.level}</span>:null}
-/** Students grouped by mastery level, Developing first: the four-level list
+/** Students grouped by mastery level, Beginning first: the four-level list
  * the class analysis, the writing panel and the reports share. */
 export function LevelStudents({byLevel,onOpen}:{byLevel:Record<MasteryLevel,Student[]>;onOpen:(s:Student)=>void}){return <>{MASTERY_LEVELS.filter(l=>byLevel[l.level].length).map(l=><div className="level-students" key={l.level}><span className={"cell-meta level-label level-"+l.tone}>{l.level} · {l.range} ({byLevel[l.level].length})</span><div className="group-members">{byLevel[l.level].map(m=><button key={m.id} onClick={()=>onOpen(m)}><Avatar student={m} size="small"/><span>{m.name}</span></button>)}</div></div>)}</>}
 export function EmptyState({title,description,children}:{title:string;description:string;children?:ReactNode}){return <Empty className="empty-state"><EmptyHeader><EmptyMedia variant="icon"><FileText/></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{children}</Empty>}

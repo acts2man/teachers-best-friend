@@ -32,20 +32,21 @@ export type ErrorTypeTally = {
 /** Students sorted into the four levels (lib/mastery-levels.ts). */
 export type ByLevel = Record<MasteryLevel, Student[]>;
 
-const emptyLevels = (): ByLevel => ({ Developing: [], Approaching: [], Proficient: [], Exceeding: [] });
+const emptyLevels = (): ByLevel => ({ Beginning: [], Approaching: [], Proficient: [], Exceeding: [] });
 
 export type StandardMastery = {
   standard: Standard;
   /** Every graded student, by their level on this standard. */
   byLevel: ByLevel;
-  /** Developing: the students the app recommends reteaching. */
+  /** Beginning: the students the app recommends reteaching. */
   reteach: Student[];
   /** Exceeding: the students the app recommends extension for. */
   extend: Student[];
   notGraded: Student[];
-  /** The class's average on this standard, rounded down, or null. */
+  /** The class's average on this standard, rounded to the nearest whole
+   * percent, or null. */
   averagePercent: number | null;
-  /** How to reteach the Developing students; "No reteach needed" when none. */
+  /** How to reteach the Beginning students; "No reteach needed" when none. */
   instruction: "Whole class" | "Small group" | "No reteach needed";
   /** The error types tagged on this standard's answers, most common first. */
   errorTypes: ErrorTypeTally[];
@@ -122,7 +123,7 @@ export function studentErrorTypes(
 export type WritingDimensionSummary = {
   dimension: RubricDimension;
   /** Mean confirmed level as a percentage of the dimension's max, rounded
-   * down, or null. */
+   * to the nearest whole percent, or null. */
   averagePercent: number | null;
   /** The mean level shown against the max, e.g. "3.1 / 4", or "—". */
   averageLabel: string;
@@ -212,7 +213,8 @@ export function classAnalysis(
           notGraded.push(student);
           continue;
         }
-        // The true average, never rounded first: 69.9 is Developing.
+        // The unrounded average; masteryLevel rounds it once (69.5 is
+        // Approaching, 69.4 is Beginning).
         const average =
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
           responses.length;
@@ -220,7 +222,7 @@ export function classAnalysis(
         byLevel[masteryLevel(average).level].push(student);
       }
       const assessed = averages.length;
-      const reteach = byLevel.Developing;
+      const reteach = byLevel.Beginning;
       const qIds = new Set(qs.map((q) => q.id));
       return {
         standard,
@@ -294,16 +296,19 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
               "): " +
               e.students.map((s) => s.name).join(", "),
           );
-        // Every level's next step (lib/mastery-levels.ts), for the levels
-        // that have students; the reteach says whole class or small group.
+        // Every level's recommendation and next step (lib/mastery-levels.ts),
+        // for the levels that have students; the reteach says whole class or
+        // small group.
         const steps = MASTERY_LEVELS.filter((l) => row.byLevel[l.level].length).map(
           (l) =>
+            l.advice +
+            ": " +
             l.nextStep.label +
             " (" +
             l.level +
             ", " +
             row.byLevel[l.level].length +
-            (l.level === "Developing" ? ", " + row.instruction.toLowerCase() : "") +
+            (l.level === "Beginning" ? ", " + row.instruction.toLowerCase() : "") +
             ")",
         );
         if (steps.length) lines.push("Suggested next steps: " + steps.join("; "));
