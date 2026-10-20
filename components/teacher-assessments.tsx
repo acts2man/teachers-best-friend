@@ -132,6 +132,8 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
+import { GradingModeChoice } from "./grading-mode-choice";
+import { gradingModeOf, switchGradingMode } from "@/lib/grading-mode";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -783,6 +785,29 @@ export function AssessmentView() {
                 {new Set(a.responses.map((r) => r.studentId)).size} added
               </strong>
             </div>
+          </div>
+          {/* How this test is graded (lib/grading-mode.ts): switchable any
+              time, and switching changes no stored grade. */}
+          <div className="grading-mode-row">
+            <span>Grading</span>
+            <GradingModeChoice
+              value={gradingModeOf(a)}
+              disabled={busy}
+              onChange={(mode) =>
+                save(
+                  switchGradingMode(w, a.id, mode),
+                  mode === "sbg"
+                    ? "Grading set to Standards-Based (0–4)"
+                    : "Grading set to Percentage",
+                )
+              }
+            />
+            {gradingModeOf(a) === "sbg" && (
+              <small>
+                Scoring out of 4 is coming next. Until then this test still
+                shows percentages, and nothing you have graded changes.
+              </small>
+            )}
           </div>
           {w.classes.length > 1 && (
             <div className="linked-classes">

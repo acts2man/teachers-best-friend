@@ -49,6 +49,8 @@ const PERSISTED = {
     "passage", "genre", "rubric", "targetStandards", "answerKeyUploadIds",
     "assignmentUploadIds", "studentUploadIds", "answerKeyVerified", "classIds",
     "pointsPossible", "studentOrder",
+    // Grading mode (docs/design/grading-modes-and-dok-grid.md, G1).
+    "gradingMode",
   ],
   // Custom standards (20261014130000): the columns, plus everything else in
   // the row's `meta` jsonb. Unlisted until then because half of it was lost.

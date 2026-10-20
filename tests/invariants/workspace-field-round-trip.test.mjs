@@ -87,6 +87,7 @@ test("the parser sees the fields added by the newest patch migrations", () => {
     ["Question", "answerParts"],
     ["Question", "secondChoice"],
     ["StudentResponse", "gradedAlone"],
+    ["Assessment", "gradingMode"],
     ["Standard", "skills"],
     ["Standard", "misconception"],
     ["Standard", "example"],
