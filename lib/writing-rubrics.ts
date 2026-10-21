@@ -94,14 +94,16 @@ const CONVENTIONS: Record<GradeBand, string> = {
 /**
  * Response writing (constructed response / RACES): a student answers a question
  * in writing, citing and explaining text evidence. Five traits, all on a 4-point
- * scale (4 Excellent, 3 Proficient, 2 Developing, 1 Beginning). Not an SBAC
+ * scale named like the mastery levels (Ricky, 20 Oct 2026): 1 Beginning,
+ * 2 Approaching, 3 Proficient, 4 Exceeding -- it was 4 Excellent, 3 Proficient,
+ * 2 Developing, 1 Beginning, which named two scores after one level. Not an SBAC
  * rubric -- it is ours, from Michael's ask -- and grade-agnostic; a teacher who
  * uses a different RACES variant can upload their own with the rubric upload.
  */
 function responseRubric(grade: number): RubricDimension[] {
   const g = ccssGrade(grade);
   const levels =
-    " (4 Excellent, 3 Proficient, 2 Developing, 1 Beginning.)";
+    " (1 Beginning, 2 Approaching, 3 Proficient, 4 Exceeding.)";
   return [
     {
       id: crypto.randomUUID(),
