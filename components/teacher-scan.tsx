@@ -37,6 +37,7 @@ import {
   preparationGaps,
   confirmedGradesAtRisk,
   gradesClearedByReread,
+  parsePointsTotal,
 } from "@/lib/teacher-workflow";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { GradingModeChoice } from "./grading-mode-choice";
@@ -351,10 +352,8 @@ export function ScanView() {
       // Optional whole-test total. A blank, zero or non-number clears it, so a
       // score shows as a percentage only. Editing keeps whatever was set unless
       // the field was changed.
-      pointsPossible:
-        points.trim() && Number(points) > 0
-          ? Math.round(Number(points))
-          : undefined,
+      // Decimals are kept (2.5 stays 2.5); blank or unusable is no total.
+      pointsPossible: parsePointsTotal(points) ?? undefined,
       ...(gradingMode === "sbg" ? { gradingMode: "sbg" as const } : {}),
       ...(editing
         ? { classIds: editing.classIds }
@@ -1108,9 +1107,9 @@ export function ScanView() {
                   Points possible (optional)
                   <input
                     type="number"
-                    min="1"
-                    step="1"
-                    inputMode="numeric"
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
                     value={points}
                     onChange={(e) => setPoints(e.target.value)}
                     placeholder="e.g. 20"

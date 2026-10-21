@@ -105,6 +105,8 @@ import {
   questionPoints,
   setQuestionPoints,
   totalPoints,
+  parsePointsTotal,
+  editAssessmentMeta,
   assignmentNextStep,
   preparationGaps,
   applyAnswerKey,
@@ -466,23 +468,15 @@ export function AssessmentView() {
       toast.error("Give the assessment a name.");
       return;
     }
-    const raw = editMeta.points.trim();
-    const points = raw ? Math.round(Number(raw)) : undefined;
-    if (raw && (!Number.isFinite(points!) || points! <= 0)) {
-      toast.error("Points possible must be a whole number above zero, or blank.");
+    // Decimals are kept (2.5 stays 2.5). A new total is split evenly across
+    // the questions, replacing any per-question points; an unchanged total
+    // leaves them alone (editAssessmentMeta).
+    const points = parsePointsTotal(editMeta.points);
+    if (points === null) {
+      toast.error("Points possible must be a number above zero (2.5 is fine), or blank.");
       return;
     }
-    // A new total is split evenly across the questions, replacing any
-    // per-question points; an unchanged total leaves them alone.
-    const next: Assessment =
-      points !== undefined && points !== totalPoints(a)
-        ? {
-            ...a,
-            title,
-            pointsPossible: points,
-            questions: a.questions.map((q) => ({ ...q, points: undefined })),
-          }
-        : { ...a, title, pointsPossible: points ?? a.pointsPossible };
+    const next = editAssessmentMeta(a, title, points);
     if (
       await save(
         { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? next : x)) },
@@ -697,9 +691,9 @@ export function AssessmentView() {
                   Points possible (optional)
                   <input
                     type="number"
-                    min="1"
-                    step="1"
-                    inputMode="numeric"
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
                     placeholder="e.g. 20"
                     value={editMeta.points}
                     onChange={(e) =>

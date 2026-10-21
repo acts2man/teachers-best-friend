@@ -262,6 +262,42 @@ export function roundPoints(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * A points total as a teacher typed it (the Edit dialog, the setup screen).
+ * Blank is "no total" (undefined). Otherwise it must be above 0 and at most
+ * 1,000,000 -- what the database keeps (20261020130000) -- and it is kept to
+ * 0.01 like every other points value, so 2.5 stays 2.5. null when it is not a
+ * usable total. It was rounded to a whole number, so a 2.5-point test read
+ * back as 3.
+ */
+export function parsePointsTotal(raw: string): number | undefined | null {
+  const text = raw.trim();
+  if (!text) return undefined;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000) return null;
+  const value = roundPoints(n);
+  return value > 0 ? value : null;
+}
+
+/**
+ * The Edit dialog's save: the new title, and the total. A total that differs
+ * from what the test is worth now is split evenly across the questions,
+ * replacing their own points. An unchanged total -- 2.5 opened and saved as
+ * 2.5 -- never touches the questions. (Rounding the total to 3 made every
+ * rename of a 2.5-point test look like a new total and wiped the questions'
+ * own points.)
+ */
+export function editAssessmentMeta(a: Assessment, title: string, points: number | undefined): Assessment {
+  return points !== undefined && points !== totalPoints(a)
+    ? {
+        ...a,
+        title,
+        pointsPossible: points,
+        questions: a.questions.map((q) => ({ ...q, points: undefined })),
+      }
+    : { ...a, title, pointsPossible: points ?? a.pointsPossible };
+}
+
 /** "3", "1.5", "0.33" -- no trailing zeros. */
 export function pointsText(n: number): string {
   return String(roundPoints(n));
