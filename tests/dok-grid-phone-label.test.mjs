@@ -10,10 +10,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildSync } from "esbuild";
+import { createRequire } from "node:module";
 
-const r = buildSync({ entryPoints: ["components/dok-grid.tsx"], bundle: true, platform: "node", format: "cjs", write: false, external: ["react", "react/jsx-runtime"], jsx: "automatic" });
+// The app's own files are bundled; packages (React, Radix) load for real, so
+// the component imports whatever UI it needs without a stub to keep in step.
+const require = createRequire(import.meta.url);
+const r = buildSync({ entryPoints: ["components/dok-grid.tsx"], bundle: true, platform: "node", format: "cjs", write: false, packages: "external", jsx: "automatic", absWorkingDir: process.cwd() });
 const m = { exports: {} };
-new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, (id) => (id.startsWith("react") ? {} : null));
+new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
 const { shortAdvice } = m.exports;
 
 test("the short recommendations", () => {
