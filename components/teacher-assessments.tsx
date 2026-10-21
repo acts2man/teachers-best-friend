@@ -134,8 +134,7 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { GradingModeChoice } from "./grading-mode-choice";
-import { gradingModeOf, switchGradingMode } from "@/lib/grading-mode";
+import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS } from "@/lib/grading-mode";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -459,6 +458,23 @@ export function AssessmentView() {
   // a blank clears it (back to percentage-only). A non-empty title is required.
   async function saveMeta() {
     if (!a || !editMeta) return;
+    // Standards-Based: every question is locked at 4 points, so there is no
+    // total to set -- only the name changes.
+    if (gradingModeOf(a) === "sbg") {
+      const renamed = editMeta.title.trim().slice(0, 200);
+      if (!renamed) {
+        toast.error("Give the assessment a name.");
+        return;
+      }
+      if (
+        await save(
+          { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? { ...a, title: renamed } : x)) },
+          "Assessment updated",
+        )
+      )
+        setEditMeta(null);
+      return;
+    }
     // Trim to the database's 1-200 char limit so a long name can never fail the
     // save with assessments_title_check.
     const title = editMeta.title.trim().slice(0, 200);
@@ -693,6 +709,13 @@ export function AssessmentView() {
                     }
                   />
                 </label>
+                {gradingModeOf(a) === "sbg" ? (
+                  <p className="field-help">
+                    Standards-Based: every question is worth {SBG_QUESTION_POINTS} points
+                    ({pointsText(totalPoints(a))} in all). This is set when the test is
+                    created and can&rsquo;t be changed.
+                  </p>
+                ) : (<>
                 <label className="block-label">
                   Points possible (optional)
                   <input
@@ -712,6 +735,7 @@ export function AssessmentView() {
                   across the questions; to make one question worth more than another,
                   set its points in the question list.
                 </p>
+                </>)}
                 <Action type="submit" disabled={busy || !editMeta.title.trim()}>
                   <Check size={16} />
                   Save assessment
@@ -792,22 +816,13 @@ export function AssessmentView() {
               time, and switching changes no stored grade. */}
           <div className="grading-mode-row">
             <span>Grading</span>
-            <GradingModeChoice
-              value={gradingModeOf(a)}
-              disabled={busy}
-              onChange={(mode) =>
-                save(
-                  switchGradingMode(w, a.id, mode),
-                  mode === "sbg"
-                    ? "Grading set to Standards-Based (0–4)"
-                    : "Grading set to Percentage",
-                )
-              }
-            />
+            {/* Shown, not switched: the mode is chosen once, when the test is
+                set up (Ricky, 20 Oct 2026). */}
+            <strong className="grading-mode-shown">{gradingModeLabel(a)}</strong>
             {gradingModeOf(a) === "sbg" && (
               <small>
                 Scoring out of 4 is coming next. Until then this test still
-                shows percentages, and nothing you have graded changes.
+                shows percentages.
               </small>
             )}
           </div>
@@ -1231,6 +1246,11 @@ export function AssessmentView() {
                           <TableCell data-label="Points">
                             {q.excluded ? (
                               <span className="cell-meta">—</span>
+                            ) : gradingModeOf(a) === "sbg" ? (
+                              // Locked at 4 on a Standards-Based test.
+                              <span className="locked-points" title="Every question is out of 4 on a Standards-Based test">
+                                {SBG_QUESTION_POINTS}
+                              </span>
                             ) : (
                               <QuestionPoints
                                 key={q.id + ":" + questionPoints(a, q)}
@@ -1300,7 +1320,10 @@ export function AssessmentView() {
               {activeQuestions(a).length > 0 && (
                 <p className="cell-meta points-total" role="status">
                   Total: {pointsText(totalPoints(a))} point{totalPoints(a) === 1 ? "" : "s"} — the
-                  sum of the questions. Change a question&rsquo;s points in the list above.
+                  sum of the questions.{" "}
+                  {gradingModeOf(a) === "sbg"
+                    ? "Standards-Based: every question is out of " + SBG_QUESTION_POINTS + ", and that can't be changed."
+                    : <>Change a question&rsquo;s points in the list above.</>}
                 </p>
               )}
               {(() => {

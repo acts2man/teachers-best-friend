@@ -1,3 +1,4 @@
+import { gradingModeOf, SBG_QUESTION_POINTS } from "./grading-mode";
 import { isSecondChoice, withoutStandardNote } from "./standard-match";
 import { masteryPercent } from "./mastery-levels";
 import type {
@@ -239,6 +240,9 @@ export function confirmAllQuestions(a: Assessment): { assessment: Assessment; co
  * exactly as it did.
  */
 export function questionPoints(a: Assessment, q: Question): number {
+  // Standards-Based: every question is out of 4, locked. Any points it carried
+  // are left as they are, just not read.
+  if (gradingModeOf(a) === "sbg") return SBG_QUESTION_POINTS;
   if (typeof q.points === "number" && q.points > 0) return q.points;
   // What is left of the total once questions with their own points are
   // counted, shared by the rest -- so a question added after points were set
@@ -282,6 +286,8 @@ export function pointsEarned(a: Assessment, r: StudentResponse): number {
  * not shift when this one changes; the total becomes the sum.
  */
 export function setQuestionPoints(a: Assessment, questionId: string, points: number): Assessment {
+  // Locked at 4 on a Standards-Based test.
+  if (gradingModeOf(a) === "sbg") return a;
   const value = roundPoints(Math.max(0, Math.min(1000, points)));
   const questions = a.questions.map((q) => ({
     ...q,

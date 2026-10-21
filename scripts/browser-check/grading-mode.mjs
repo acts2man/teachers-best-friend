@@ -1,13 +1,16 @@
-// The grading mode (docs/design/grading-modes-and-dok-grid.md, G1), in a
-// browser at 390x844 and 1366x768.
+// The grading mode (G1, then Ricky's change of 20 Oct 2026), in a browser at
+// 390x844 and 1366x768.
 //
-// Proven when: a test shows a Grading switch with Percentage on; switching it
-// to Standards-Based saves the test with gradingMode "sbg" and the teacher's
-// last mode, and changes no grade, question or evidence in the save; the
-// switch reads Standards-Based after a reload of what was saved; the setup
-// screen for a new test starts in Standards-Based (the mode used last); and
-// switching back saves the test exactly as it was. Nothing scrolls sideways.
-// Seeded demo data only; /api/* is mocked and every save is captured.
+// Proven when: a test's page shows its mode ("Percentage" or
+// "Standards-Based (0–4)") with no way to switch it; on a Standards-Based test
+// every question's points read a locked 4 (no points editor), the total says
+// it can't be changed, the "coming next" note is shown, and the Edit dialog
+// has no total -- renaming saves the name and nothing else; a Percentage test
+// keeps its points editor; the setup screen for a NEW test offers the choice,
+// starts in the mode used last and says it is final; editing an existing test
+// in setup shows its mode without a choice. (Hiding "Points possible" for a
+// Standards-Based test is on setup's second step; tests/sbg-setup-only.) Nothing scrolls sideways. Seeded demo data; /api/* is mocked and
+// every save is captured.
 import { chromium } from "playwright";
 import { readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -26,18 +29,21 @@ mkdirSync(SHOTS, { recursive: true });
 
 const original = JSON.parse(readFileSync(join(OUT, "fixture.json"), "utf8"));
 original.classes = original.classes.map((c) => ({ ...c, demo: false }));
-const ID = "math-demo";
-const strip = (a) => JSON.stringify({ ...a, gradingMode: undefined });
+const SBG = "math-demo"; // made Standards-Based, its questions carrying old points
+const PCT = "ela-demo";
+const sbgTest = original.assessments.find((a) => a.id === SBG);
+sbgTest.gradingMode = "sbg";
+sbgTest.questions.forEach((q, i) => (q.points = i === 0 ? 6 : 1));
+original.settings.lastGradingMode = "sbg";
 
 const browser = await chromium.launch({ executablePath: CHROMIUM });
 for (const [W, H] of [[390, 844], [1366, 768]]) {
   const tag = `${W}x${H}`;
-  let current = structuredClone(original);
   let saved = null;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   await ctx.route("**/api/workspace", (r) => {
     if (r.request().method() === "GET")
-      return r.fulfill(json({ workspace: current, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null }));
+      return r.fulfill(json({ workspace: original, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null }));
     saved = JSON.parse(r.request().postData() || "{}").workspace;
     return r.fulfill(json({ revision: 8 }));
   });
@@ -45,52 +51,60 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await ctx.route("**/api/events", (r) => r.fulfill({ status: 204, body: "" }));
   await ctx.route("**/api/scans/session**", (r) => r.fulfill(json({ state: null, revision: 0 })));
   const page = await ctx.newPage();
-  const pressed = async () =>
-    page.$$eval(".grading-mode-row .grading-mode-choice button", (bs) => bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.innerText.trim()));
   const noSideScroll = async (where) =>
-    check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${tag} ${where}: no sideways scroll`);
+    check(!(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), `${tag} ${where}: no sideways scroll`);
 
-  await page.goto(`${BASE}/assessments?id=${ID}`, { waitUntil: "networkidle" });
+  // Standards-Based test.
+  await page.goto(`${BASE}/assessments?id=${SBG}&tab=questions`, { waitUntil: "networkidle" });
   await page.waitForSelector(".grading-mode-row", { timeout: 15000 });
-  check(JSON.stringify(await pressed()) === JSON.stringify(["Percentage"]), `${tag} test page: Grading switch reads Percentage (${await pressed()})`);
-  await noSideScroll("test page");
-  await page.locator(".grading-mode-row").screenshot({ path: join(SHOTS, `switch-percentage-${tag}.png`) });
+  const row = (await page.locator(".grading-mode-row").innerText()).replace(/\s+/g, " ");
+  check(/Standards-Based \(0–4\)/.test(row) && /Scoring out of 4 is coming next/.test(row), `${tag} SBG test: shows its mode and the coming-next note (${row})`);
+  check((await page.locator(".grading-mode-row button").count()) === 0, `${tag} SBG test: no switch on the test page`);
+  const locked = await page.locator(".locked-points").allInnerTexts();
+  const active = sbgTest.questions.filter((q) => !q.excluded).length;
+  check(locked.length === active && locked.every((t) => t.trim() === "4"), `${tag} SBG test: every question reads a locked 4 (${locked.join(",")})`);
+  check((await page.locator('td[data-label="Points"] input').count()) === 0, `${tag} SBG test: no points editor`);
+  const total = (await page.locator(".points-total").innerText()).replace(/\s+/g, " ");
+  check(new RegExp(`Total: ${active * 4} points`).test(total) && /can't be changed/.test(total), `${tag} SBG test: total is ${active} × 4 and locked (${total})`);
+  await page.locator(".grading-mode-row").screenshot({ path: join(SHOTS, `sbg-row-${tag}.png`) });
+  await noSideScroll("SBG test");
 
-  await page.getByRole("button", { name: "Standards-Based (0–4)" }).click();
-  await page.waitForFunction(() => document.querySelector(".grading-mode-row button[aria-pressed=true]")?.innerText.includes("Standards"), null, { timeout: 10000 });
-  const before = original.assessments.find((a) => a.id === ID);
-  const after = saved?.assessments.find((a) => a.id === ID);
-  check(after?.gradingMode === "sbg", `${tag} switch: the save carries gradingMode "sbg" (${after?.gradingMode})`);
-  check(saved?.settings.lastGradingMode === "sbg", `${tag} switch: the save remembers Standards-Based as the last mode`);
-  check(!!after && strip(after) === strip(before), `${tag} switch: no grade, question or point changed in the save`);
-  check(JSON.stringify(saved?.students) === JSON.stringify(original.students), `${tag} switch: no evidence changed`);
-  check(saved?.assessments.filter((a) => a.id !== ID).every((a) => !a.gradingMode), `${tag} switch: no other test changed mode`);
-  check(/Until then this test still\s+shows percentages/.test(await page.locator(".grading-mode-row").innerText()), `${tag} switch: says scores still show as percentages for now`);
-  await page.locator(".grading-mode-row").screenshot({ path: join(SHOTS, `switch-sbg-${tag}.png`) });
+  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Edit assessment" });
+  await dialog.waitFor();
+  check((await dialog.locator('input[type="number"]').count()) === 0, `${tag} SBG Edit dialog: no total to set`);
+  check(/every question is worth 4 points/.test(await dialog.innerText()), `${tag} SBG Edit dialog: says every question is worth 4`);
+  await dialog.locator("input").first().fill("Renamed SBG quiz");
+  await dialog.getByRole("button", { name: "Save assessment" }).click();
+  await dialog.waitFor({ state: "hidden", timeout: 10000 });
+  const after = saved?.assessments.find((a) => a.id === SBG);
+  check(
+    after?.title === "Renamed SBG quiz" && after.gradingMode === "sbg" && JSON.stringify(after.questions) === JSON.stringify(sbgTest.questions) && after.pointsPossible === sbgTest.pointsPossible,
+    `${tag} SBG rename: only the name changed`,
+  );
 
-  // Reload what was saved.
-  current = saved;
-  await page.goto(`${BASE}/assessments?id=${ID}`, { waitUntil: "networkidle" });
+  // Percentage test keeps its editor.
+  await page.goto(`${BASE}/assessments?id=${PCT}&tab=questions`, { waitUntil: "networkidle" });
   await page.waitForSelector(".grading-mode-row");
-  check(JSON.stringify(await pressed()) === JSON.stringify(["Standards-Based (0–4)"]), `${tag} reload: the switch still reads Standards-Based (${await pressed()})`);
+  const pctRow = (await page.locator(".grading-mode-row").innerText()).replace(/\s+/g, " ");
+  check(/Percentage/.test(pctRow) && !/coming next/.test(pctRow) && (await page.locator(".grading-mode-row button").count()) === 0, `${tag} Percentage test: shows its mode, no switch (${pctRow})`);
+  check((await page.locator(".locked-points").count()) === 0 && (await page.locator('td[data-label="Points"] input').count()) > 0, `${tag} Percentage test: points stay editable`);
 
-  // A new test starts in the mode used last.
+  // New test: the choice, starting in the last mode; no total for SBG.
   await page.goto(`${BASE}/scan`, { waitUntil: "networkidle" });
-  const setup = page.locator(".grading-mode-choice").first();
+  const setup = page.locator(".grading-mode-setup");
   await setup.waitFor({ timeout: 15000 });
-  const setupPressed = await setup.locator("button[aria-pressed=true]").innerText();
-  check(setupPressed.trim() === "Standards-Based (0–4)", `${tag} setup: a new test starts in the last mode (${setupPressed.trim()})`);
+  const pressed = (await setup.locator("button[aria-pressed=true]").innerText()).trim();
+  check(pressed === "Standards-Based (0–4)", `${tag} new test: offers the choice, starting in the last mode (${pressed})`);
+  check(/can't be changed once the test is created/.test(await setup.innerText()), `${tag} new test: says the choice is final`);
+  await setup.screenshot({ path: join(SHOTS, `setup-new-${tag}.png`) });
   await noSideScroll("setup");
-  await setup.locator("xpath=..").screenshot({ path: join(SHOTS, `setup-${tag}.png`) });
 
-  // Switch back: exactly the test it was.
-  await page.goto(`${BASE}/assessments?id=${ID}`, { waitUntil: "networkidle" });
-  await page.waitForSelector(".grading-mode-row");
-  await page.getByRole("button", { name: "Percentage" }).click();
-  await page.waitForFunction(() => document.querySelector(".grading-mode-row button[aria-pressed=true]")?.innerText === "Percentage", null, { timeout: 10000 });
-  const back = saved.assessments.find((a) => a.id === ID);
-  check(JSON.stringify(back) === JSON.stringify(before), `${tag} switch back: the saved test is exactly the original`);
-  check(saved.settings.lastGradingMode === "percentage", `${tag} switch back: Percentage is now the last mode`);
+  // Editing an existing test in setup: its mode, no choice.
+  await page.goto(`${BASE}/scan?assessment=${PCT}`, { waitUntil: "networkidle" });
+  const edit = page.locator(".grading-mode-setup");
+  await edit.waitFor({ timeout: 15000 });
+  check((await edit.locator("button").count()) === 0 && /Percentage/.test(await edit.innerText()) && /Chosen when this test was created/.test(await edit.innerText()), `${tag} editing a test in setup: shows its mode, no choice`);
   await ctx.close();
 }
 await browser.close();
