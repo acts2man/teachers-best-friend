@@ -2882,7 +2882,7 @@ function ClassAnalysisPanel({
       )}
       {/* The DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1) replaces
           the one-line-per-DOK rows here; Costa's levels stay below it. */}
-      <DokGrid {...dokGrid(a, students, catalog)} />
+      <DokGrid {...dokGrid(a, students, catalog)} assessment={a} students={students} go={go} />
       <CognitiveBreakdown
         questions={a.questions}
         responses={a.responses}

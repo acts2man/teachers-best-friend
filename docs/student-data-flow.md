@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live".
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live.
 
 ---
 
@@ -358,6 +358,35 @@ second solve's disagreements are shown to the teacher to settle before the key
 can be confirmed. Free to the teacher (`FREE_MODES` in `lib/page-ledger.ts`).
 
 **Effect on identity.** None: no student data is in the request.
+
+### Lesson plans (`lesson`), and lessons planned from the DOK grid (21 Oct 2026)
+
+A lesson request carries no student work. It sends the standard (its catalog
+entry), the grade, framework, duration, modality, the next step it is for
+(`intent`), and the teacher's notes as data. Those notes are pre-filled, when a
+lesson is opened for named students, with the text of any misconception noted on
+their verified wrong answers -- whatever the teacher typed there, which could
+include a name. That is unchanged by this entry and is the one free-text path.
+
+**Added by the DOK grid's cell panel (D2):** a lesson planned from a cell of a
+test's DOK grid also sends
+
+- `dok`: the Webb DOK level(s) to pitch it at, numbers 1–4; and
+- `errorTypes`: the error types the teacher tagged on that standard's answers
+  at those levels, as **names from the fixed lists in `lib/error-types.ts` and
+  counts** ("Sign error", 5) -- worked out by `lessonFocus` in
+  `lib/teacher-class-analysis.ts`.
+
+`buildPrompt` drops any name that is not on a list, so no free text can ride
+along. No student name, id, answer or wrong-answer text is sent: the panel
+shows the class's most common wrong answers to the teacher, but they are never
+part of the request. The counts are a class-level aggregate on one standard;
+they carry no identity. The published pages say so (how-we-use-ai, privacy §8,
+student-data-privacy "What is sent").
+
+The grading prompt's error-type suggestion now also covers ELA (Michael's
+reading and writing lists, 20 Oct 2026): the request carries the list for the
+test's ELA area -- names only, as it already did for math.
 
 ## 5. Results back to the teacher
 

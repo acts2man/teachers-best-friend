@@ -218,6 +218,9 @@ Submitted work is sent to OpenAI's API for analysis. Specifically:
 - Our agreement with the provider prohibits using data submitted through our account to
   train their models.
 - We never send your class roster, or any list of student names, to the AI provider.
+- A lesson plan built from a test's depth-of-knowledge grid sends the standard, the
+  depth-of-knowledge level and the class's count of each common error type (from a fixed
+  list) — never a student's name or anything a student wrote.
 - When a single student's responses are analyzed, no name is sent — only internal
   identifiers. In whole-class scanning, the AI reads the name the student wrote on the
   page so pages can be sorted back to the right student, and the graded page image may

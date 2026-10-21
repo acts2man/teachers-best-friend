@@ -193,7 +193,9 @@ through our account to train or improve their models. This is the default for AP
 customers and we have not opted out of it.
 
 **What is sent.** The image of the work, the question text, and the relevant academic
-standards. Class rosters and student lists are never sent. When analyzing a single
+standards. Class rosters and student lists are never sent. A lesson plan built from a
+test's depth-of-knowledge grid also sends the depth-of-knowledge level and the class's
+count of each common error type, from a fixed list — never a student's name or answer. When analyzing a single
 student's responses, no name is sent — only internal identifiers meaningless outside our
 system. In whole-class scanning, the AI reads the name the student wrote on the page so
 pages can be sorted back to the right student, and the graded page image may show that

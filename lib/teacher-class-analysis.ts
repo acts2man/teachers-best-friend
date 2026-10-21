@@ -1,3 +1,4 @@
+import { errorTypesFor } from "./error-types";
 import type {
   Assessment,
   RubricDimension,
@@ -270,6 +271,8 @@ export type DokCell = {
   percent: number | null;
   /** The level of that score, or null with it. */
   level: MasteryLevelInfo | null;
+  /** The questions in the cell, for its panel (D2). */
+  questionIds: string[];
 };
 
 export type DokGridRow = { standard: Standard; cells: DokCell[] };
@@ -316,6 +319,7 @@ export function dokGrid(
       return {
         dok,
         questions: qs.length,
+        questionIds: qs.map((q) => q.id),
         studentsGraded: averages.length,
         percent: average === null ? null : masteryPercent(average),
         level: average === null ? null : masteryLevel(average),
@@ -323,6 +327,75 @@ export function dokGrid(
     }),
   }));
   return { rows, noDok: questions.filter((q) => dokOf(q) === null).length };
+}
+
+/**
+ * What the DOK grid's cell panel shows about one cell (design doc 2.4): the
+ * error types the teacher tagged on the cell's answers, from the subject's
+ * fixed list, most common first; and the most common wrong answers, for a
+ * subject or area with no list (ELA Language) or a cell nobody has tagged
+ * yet. Verified answers only, like the cell's score. The wrong answers are
+ * shown to the teacher; they are never sent to the AI (see lessonFocus).
+ */
+export function dokCellDetail(
+  a: Assessment,
+  students: Student[],
+  questionIds: string[],
+): { errorTypes: ErrorTypeTally[]; wrongAnswers: { answer: string; count: number }[] } {
+  const ids = new Set(questionIds);
+  const listed = new Set(errorTypesFor(a.subject, a.elaArea));
+  const answers = a.responses.filter((r) => r.verified && ids.has(r.questionId));
+  const errorTypes = tallyErrorTypes(answers, students).filter((t) => listed.has(t.errorType));
+  const wrong = new Map<string, { answer: string; count: number }>();
+  for (const r of answers) {
+    if (responseMatch(r) >= 100) continue;
+    const answer = (r.finalAnswer || r.answer || "").trim();
+    if (!answer) continue;
+    const key = answer.toLowerCase().replace(/\s+/g, " ");
+    const entry = wrong.get(key) || { answer, count: 0 };
+    entry.count += 1;
+    wrong.set(key, entry);
+  }
+  const wrongAnswers = [...wrong.values()]
+    .sort((x, y) => y.count - x.count || x.answer.localeCompare(y.answer))
+    .slice(0, 5);
+  return { errorTypes, wrongAnswers };
+}
+
+/**
+ * The DOK level a cell's next step aims at (Ricky, 20 Oct 2026): the cell's
+ * own level, except an extension, which always aims one level up -- DOK 4
+ * stays at 4.
+ */
+export function nextStepDok(level: MasteryLevelInfo, dok: number): number {
+  return level.nextStep.intent === "extension" ? Math.min(4, dok + 1) : dok;
+}
+
+/**
+ * What a lesson planned from a test's DOK grid is aimed at: the DOK levels
+ * (1-4, each once, in order) and the error types the teacher tagged on that
+ * standard's answers at those levels, as fixed-list names and counts only. This
+ * is all that reaches the AI from the class's work -- no student, no answer,
+ * no free text (docs/student-data-flow.md section 4).
+ */
+export function lessonFocus(
+  a: Assessment,
+  standard: string,
+  doks: number[],
+): { dok: number[]; errorTypes: { name: string; count: number }[] } {
+  const dok = [...new Set(doks.filter((d) => Number.isInteger(d) && d >= 1 && d <= 4))].sort();
+  const listed = new Set(errorTypesFor(a.subject, a.elaArea));
+  const ids = activeQuestions(a)
+    .filter((q) => q.standard === standard && dok.includes(q.dok))
+    .map((q) => q.id);
+  const errorTypes = tallyErrorTypes(
+    a.responses.filter((r) => r.verified && ids.includes(r.questionId)),
+    [],
+  )
+    .filter((t) => listed.has(t.errorType))
+    .slice(0, 10)
+    .map((t) => ({ name: t.errorType, count: t.count }));
+  return { dok, errorTypes };
 }
 
 export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) {

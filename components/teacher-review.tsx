@@ -768,7 +768,7 @@ function AnswerGroupCard({
   onReteach: () => void;
 }) {
   const worth = questionPoints(a, q);
-  const types = errorTypesFor(a.subject);
+  const types = errorTypesFor(a.subject, a.elaArea);
   const [errorType, setErrorType] = useState(g.errorType || g.suggestedErrorType);
   const [viewing, setViewing] = useState<string | null>(null);
   const closeViewing = useCallback(() => setViewing(null), [setViewing]);
