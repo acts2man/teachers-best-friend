@@ -12,9 +12,11 @@ import {
   UserPlus,
   Undo2,
   ZoomIn,
+  AlertCircle,
+  RotateCw,
 } from "lucide-react";
 import { analyzeRequest, resumeScan, isRetryableAnalyzeError } from "@/lib/analyze-client";
-import { uploadFile } from "@/lib/upload-client";
+import { uploadFile, type UploadOptions } from "@/lib/upload-client";
 import { readJson } from "@/lib/utils";
 import { splitForClassScan, uprightPage } from "@/lib/image-prep";
 import { describeFailure, useOnline } from "@/lib/connection";
@@ -33,6 +35,8 @@ import {
   isEmptySession,
   parseProgress,
   planResume,
+  placeRetriedPage,
+  type FailedPage,
   type ScanPage,
   type ScanProgress,
   type ScanSession,
@@ -246,6 +250,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const online = useOnline();
   const [scanning, setScanning] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Pages that still failed to upload after uploadFile's own retries. The rest
+  // of the batch carries on; each of these waits here with a Retry button,
+  // remembering which student's pile it belongs in and where. Not kept in the
+  // draft: a photo cannot be saved to the browser's storage.
+  const [failedPages, setFailedPages] = useState<FailedPage[]>([]);
   const [status, setStatus] = useState("");
   // piles[i] is student i's pages, in the order they were scanned. There is
   // always an open pile at the end for the student being scanned right now.
@@ -454,8 +463,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     [captured, paidPages],
   );
 
-  async function upload(file: File) {
-    const d = await uploadFile(file);
+  async function upload(file: File, options?: UploadOptions) {
+    const d = await uploadFile(file, options);
     return { id: d.id, pages: Number(d.pages) || 1, bytes: Number(d.size) || 0 };
   }
 
@@ -465,7 +474,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * old 18% name band could hold the first question on a phone photo. See
    * docs/student-data-flow.md section 4 for what each request now carries.
    */
-  async function preparePage(raw: File): Promise<Omit<Page, "key" | "label">> {
+  async function preparePage(raw: File, options?: UploadOptions): Promise<Omit<Page, "key" | "label">> {
     // A phone records its rotation in EXIF instead of rotating the pixels, so a
     // page shot in portrait arrives sideways. Straighten first: the name area is
     // the top of an upright page, which is only the top once rotated.
@@ -474,15 +483,50 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (!split) {
       // A PDF, or a browser that could not do the work. Grade the whole page and
       // read no name from it; the teacher names that pile.
-      const whole = await upload(page);
+      const whole = await upload(page, options);
       return { bodyId: whole.id, stripId: null, pages: whole.pages, bytes: whole.bytes };
     }
-    const body = await upload(split.page);
+    const body = await upload(split.page, options);
     // The name area is uploaded too, but it is never reserved and never
     // charged: it is the top of a page the teacher is already paying for.
     // Charging per upload rather than per page would bill this class set twice.
-    const strip = await upload(split.nameArea);
+    const strip = await upload(split.nameArea, options);
     return { bodyId: body.id, stripId: strip.id, pages: body.pages, bytes: body.bytes };
+  }
+
+  /** A page that still failed after uploadFile's retries: it waits with a
+   * Retry button, remembering its student's pile and its place in it. */
+  function pageFailed(file: File, pile: number, index: number, stack: boolean, error: unknown) {
+    setFailedPages((f) => [
+      ...f,
+      {
+        key: crypto.randomUUID(),
+        file,
+        label: file.name || "Page",
+        pile,
+        index,
+        ...(stack ? { stack: true as const } : {}),
+        reason: describeFailure(error, "It couldn't be uploaded."),
+      },
+    ]);
+  }
+
+  /** Try a failed page again; on success it goes back where it was. */
+  async function retryPage(failed: FailedPage) {
+    if (busyScanning) return;
+    setAdding(true);
+    setStatus("Uploading " + failed.label + "…");
+    try {
+      // recoverFirst: an earlier try may have stored it after all.
+      const prepared = await preparePage(failed.file, { recoverFirst: true });
+      setPiles((p) => placeRetriedPage(p, failed, { key: failed.key, label: failed.label, ...prepared }));
+      setFailedPages((f) => f.filter((x) => x.key !== failed.key));
+    } catch (e) {
+      toast.error(describeFailure(e, failed.label + " still couldn't be uploaded. Try again in a moment."));
+    } finally {
+      setAdding(false);
+      setStatus("");
+    }
   }
 
   function canAccept(count: number) {
@@ -511,9 +555,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setGroups(null);
     setAdding(true);
     try {
+      const pile = piles.length - 1;
+      let added = piles[pile].length;
       for (const raw of files) {
         setStatus("Adding page " + (captured.length + 1) + "…");
-        const prepared = await preparePage(raw);
+        // One page that will not upload does not stop the rest (20 Oct).
+        let prepared;
+        try {
+          prepared = await preparePage(raw);
+        } catch (e) {
+          pageFailed(raw, pile, added, false, e);
+          continue;
+        }
+        added++;
         setPiles((p) => {
           const next = p.map((pile) => [...pile]);
           next[next.length - 1].push({
@@ -524,8 +578,6 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           return next;
         });
       }
-    } catch (e) {
-      toast.error(describeFailure(e, "That page couldn't be uploaded."));
     } finally {
       setAdding(false);
       setStatus("");
@@ -558,11 +610,25 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setGroups(null);
     setAdding(true);
     try {
+      // The first group continues the open pile; each later one opens the next.
+      const first = piles.length - 1;
       for (let g = 0; g < groups.length; g++) {
         if (g > 0) setPiles((p) => [...p, []]);
+        let added = g === 0 ? piles[first].length : 0;
         for (const raw of groups[g]) {
           setStatus("Uploading scanned pages…");
-          const prepared = await preparePage(raw);
+          // One photo that still will not upload (after uploadFile's retries)
+          // no longer ends the batch: it waits with a Retry button and the
+          // rest carry on. A 72-page scan stopped twice on 20 Oct when a
+          // single storage write failed.
+          let prepared;
+          try {
+            prepared = await preparePage(raw);
+          } catch (e) {
+            pageFailed(raw, first + g, added, false, e);
+            continue;
+          }
+          added++;
           setPiles((p) => {
             const next = p.map((pile) => [...pile]);
             next[next.length - 1].push({
@@ -574,8 +640,6 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           });
         }
       }
-    } catch (e) {
-      toast.error(describeFailure(e, "Those pages couldn't be uploaded."));
     } finally {
       setAdding(false);
       setStatus("");
@@ -627,6 +691,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
+    setFailedPages([]);
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
     void releaseStack(pageUploadIds);
@@ -1014,6 +1079,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       toast.error("This class is being graded on your other device. It will show here when it's done.");
       return;
     }
+    if (failedPages.length) {
+      toast.error(
+        (failedPages.length === 1 ? "1 page didn't" : failedPages.length + " pages didn't") +
+          " upload. Retry or leave out each one before grading.",
+      );
+      return;
+    }
     // A stack uploaded whole is one pile on screen, but that pile is not a
     // student: the names split it. Grading it as declared piles put every
     // page under one student (G3).
@@ -1094,16 +1166,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
     try {
       const pages: Page[] = [];
+      setFailedPages([]);
+      let failures = 0;
       for (const raw of files) {
+        let prepared;
+        try {
+          prepared = await preparePage(raw);
+        } catch (e) {
+          // Keep going; this one waits with a Retry button.
+          pageFailed(raw, 0, pages.length, true, e);
+          failures++;
+          continue;
+        }
         pages.push({
           key: crypto.randomUUID(),
           label: raw.name || "Page",
-          ...(await preparePage(raw)),
+          ...prepared,
           stack: true,
         });
       }
       setPiles([pages]);
-      await gradePages(pages, null);
+      // Not graded with a page missing: the teacher retries it (or leaves it
+      // out) first, then grades.
+      if (!failures) await gradePages(pages, null);
     } catch (e) {
       toast.error(
         describeFailure(e, "The pages couldn't be read.") +
@@ -1476,6 +1561,43 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                 </Action>
               )}
             </>
+          )}
+          {failedPages.length > 0 && (
+            <div className="review-notice failed-pages" data-tone="warn" role="status">
+              <AlertCircle size={18} />
+              <div>
+                <p>
+                  {failedPages.length === 1 ? "1 page didn't" : failedPages.length + " pages didn't"}{" "}
+                  upload after three tries. Every other page is saved. Retry{" "}
+                  {failedPages.length === 1 ? "it" : "each one"}, or leave it out, before grading.
+                </p>
+                <ul>
+                  {failedPages.map((f) => (
+                    <li key={f.key}>
+                      <span>
+                        {f.label}
+                        {!f.stack && <> · student {f.pile + 1}</>}
+                      </span>
+                      <Action
+                        variant="secondary small"
+                        disabled={busyScanning || busy}
+                        onClick={() => void retryPage(f)}
+                      >
+                        <RotateCw size={15} />
+                        Retry
+                      </Action>
+                      <button
+                        className="text-link"
+                        disabled={busyScanning || busy}
+                        onClick={() => setFailedPages((all) => all.filter((x) => x.key !== f.key))}
+                      >
+                        Leave it out
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           )}
           {captured.length > 0 && !groups && (
             <Action

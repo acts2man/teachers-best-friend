@@ -1,3 +1,4 @@
+import { writeWithRetry } from "@/lib/storage-retry";
 import { cookies, headers } from "next/headers";
 import { HttpError } from "@/lib/http-error";
 import {
@@ -539,10 +540,13 @@ export async function saveDocument(
   ]);
   if (hasSupabaseConfig()) {
     const supabase = await createClient();
-    const { error: uploadError } = await supabase.storage
-      .from(DOCUMENT_BUCKET)
-      .upload(objectPath, bytes, { contentType: file.type, upsert: false });
-    if (uploadError) throw uploadError;
+    // A storage 5xx or a lost answer is tried again (lib/storage-retry.ts);
+    // the row below is inserted once, after the bytes are stored.
+    await writeWithRetry(() =>
+      supabase.storage
+        .from(DOCUMENT_BUCKET)
+        .upload(objectPath, bytes, { contentType: file.type, upsert: false }),
+    );
     const { error: rowError } = await supabase.from("teacher_uploads").insert({
       id,
       owner_id: ownerId,
