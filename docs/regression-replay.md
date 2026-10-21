@@ -114,7 +114,7 @@ again every 2.5s until the case is done. A run of any length is many short reque
 
 ## Before the first case: the data decision
 
-Copying photos keeps them **past the published 30-day window**. Read
+Copying photos keeps them **past the published 14-day window**. Read
 `docs/student-data-flow.md` section 8 first. Until the four published pages describe
 this, allow-list **only synthetic sets** (papers a founder wrote for testing, with
 invented names).
@@ -140,13 +140,11 @@ All SQL runs in the Supabase SQL editor (project `mmzbgmquhfdfqaootrvh`).
    from public.assessments a where a.legacy_id = '<assessment id>';
    ```
 4. **Open `/regression`** in the app. Anyone not on the list sees a 404.
-5. **Copy the photos as soon as the scan is saved, before the teacher confirms.**
-   Confirming a student's grading can delete that student's photos (the published
-   "deleted once you confirm" rule), so a set copied afterwards may be missing exactly
-   the students the teacher finished. Each copied page records which student it was
-   saved to, so the case keeps them after their pages are unlinked.
+5. **Copy the photos within 14 days of the scan.** Every photo is deleted 14 days
+   after upload, so a set copied later is missing its pages. Each copied page records
+   which student it was saved to, so the case keeps them after their pages are unlinked.
    Paste the assessment id, press **Copy photos** (it copies a few per request until
-   none are left; photos already removed by the 30-day purge are reported, not copied),
+   none are left; photos already removed by the 14-day purge are reported, not copied),
    then, once the teacher has confirmed the grading, **Make cases**. A kind the teacher
    has not confirmed is skipped with the reason.
 6. Press **Run test cases**. Each case shows its numbers as it finishes; the run is saved

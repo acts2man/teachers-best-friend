@@ -26,7 +26,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { describeFailure } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -53,11 +53,9 @@ import {
   questionSummary,
   setGroupErrorType,
   assignmentNextStep,
-  forgetUploads,
   groupAnswers,
   parseAnswerKey,
   preparationGaps,
-  releasedStudentUploads,
   responseFlag,
   gradebookCsv,
   reteachGroup,
@@ -564,7 +562,7 @@ function GradeByQuestion({
                 <p>
                   {autoConfirmIds.length} answer
                   {autoConfirmIds.length === 1 ? "" : "s"} match your key and are already counted —
-                  no need to confirm them. Confirm only to lock them in and free up the photos.
+                  no need to confirm them. Confirm only to lock them in.
                 </p>
               ) : (
                 <p>Every answer is decided and confirmed. Results are ready below.</p>
@@ -1229,34 +1227,12 @@ export function StudentResponseReview({
         ids.has(r.id) ? { ...r, verified: true } : r,
       ),
     };
-    // Both pilot teachers asked for student work photos to go once the class
-    // analysis is in. Confirming the last question of a student's work is that
-    // moment for that student: the grades no longer need the photograph.
-    const released = releasedStudentUploads(confirmed);
-    const saved = await onSave(
-      forgetUploads(confirmed, released),
-      summary.clear.length +
-        " clear answers confirmed" +
-        (released.length
-          ? " · " +
-            released.length +
-            " scanned page" +
-            (released.length === 1 ? "" : "s") +
-            " deleted"
-          : ""),
-    );
-    // Unlinked first, deleted second: a failed delete leaves a file the nightly
-    // purge still collects, where the reverse would leave a live thumbnail
-    // pointing at nothing.
-    if (saved !== false) {
-      const kept = await deleteUploads(released);
-      if (kept)
-        toast.error(
-          kept +
-            (kept === 1 ? " scanned page" : " scanned pages") +
-            " couldn't be deleted just now. They'll be removed automatically — tell us if you need them gone sooner.",
-        );
-    }
+    // Confirming deletes no photos. Student work photos are deleted 14 days
+    // after upload by the nightly purge, whichever way the grading was
+    // confirmed -- the one rule the privacy pages state. Deleting here used to
+    // happen on this button only, and took away a photo the teacher could
+    // still need to check a "Change" or re-read the test.
+    await onSave(confirmed, summary.clear.length + " clear answers confirmed");
   }
 
   /** `replaceConfirmed`: the teacher's answer when this student already has

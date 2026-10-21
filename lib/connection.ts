@@ -61,9 +61,10 @@ export function describeFailure(error: unknown, fallback: string) {
  * Every caller used to fire these and swallow the outcome
  * (`.catch(() => {})`), which meant a photograph of a child's work could fail
  * to delete and nobody -- teacher or us -- would ever know. The nightly purge
- * still catches it within the retention window, so nothing lingers forever, but
- * "deleted when you confirm the grading" is a published commitment and a silent
- * failure quietly turns that into "deleted within 30 days".
+ * still catches it within the 14-day retention window, so nothing lingers
+ * forever, but where a teacher asked for something gone now (deleting an
+ * assessment, a class, a roster photo) a silent failure quietly turns that
+ * into "deleted within 14 days".
  *
  * Resolves to the number that did not go, so a caller can tell the teacher the
  * truth. Deliberately never throws: a failed cleanup must not undo the save

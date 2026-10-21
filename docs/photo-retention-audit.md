@@ -1,5 +1,12 @@
 # Photo deletion on confirm: what the code does (13 Oct 2026)
 
+> **Outcome (14 Oct 2026).** Both founders chose 14-day retention as the single rule.
+> Confirming no longer deletes photos on any path (the one button that did,
+> `approveClear`, no longer does), every photo is deleted 14 days after upload by the
+> nightly purge, and the published pages say exactly that. Migration
+> `20261014120000_photo_retention_14_days.sql`; guard `tests/photo-retention.test.mjs`.
+> The report below describes the code as it was on 13 Oct.
+
 A report, not a change. Requested in round 3: "The privacy policy says photos are
 deleted when the teacher confirms a student and after 30 days at most. In the
 database, none of the pilot teacher's ~400 uploads were purged on confirm, though the

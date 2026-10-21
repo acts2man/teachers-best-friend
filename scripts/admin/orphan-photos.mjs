@@ -1,5 +1,5 @@
 // Orphaned student photos in the teacher-documents bucket: files with no
-// teacher_uploads row, which the 30-day purge (it works from the rows) will
+// teacher_uploads row, which the 14-day purge (it works from the rows) will
 // therefore never remove. Admin-only; run by hand with the service-role key.
 //
 // WHY: on 12 Oct 2026 the 05:54 PT backup was restored into the live database
