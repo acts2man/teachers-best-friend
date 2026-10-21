@@ -1044,5 +1044,20 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 /* Each level's recommendation beside its next-step button (Ricky, 19 Oct): one level per line, the label above the button on a phone and in its own column on a computer so the buttons line up. */
 .student-group-card .level-next-step{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%}.student-group-card .level-advice{white-space:nowrap}
 @media(min-width:700px){.student-group-card .level-next-step{display:grid;grid-template-columns:11.5rem minmax(0,1fr);align-items:center;gap:10px}.student-group-card .level-next-step .action{justify-self:start}}
+/* The class DOK grid (components/dok-grid.tsx): standards down, DOK 1-4 across, each cell in its level's colours. On a phone each standard is a card with its four cells in one row. */
+.dok-grid-panel{display:flex;flex-direction:column;gap:12px}.dok-grid{display:flex;flex-direction:column;gap:6px}
+.dok-grid-head,.dok-grid-row{display:grid;grid-template-columns:minmax(150px,1.5fr) repeat(4,minmax(0,1fr));gap:6px;align-items:stretch}
+.dok-grid-head span{display:flex;flex-direction:column;font-size:12px;color:#4f5a55}.dok-grid-head strong{font-size:13px;color:var(--ink)}
+.dok-grid-standard{display:flex;flex-direction:column;justify-content:center;min-width:0}.dok-grid-standard strong{font-size:13.5px}.dok-grid-standard span{font-size:12px;color:#4f5a55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dok-cell{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;min-height:76px;padding:8px 10px;border:1px solid transparent;border-radius:9px;overflow-wrap:normal;word-break:normal;hyphens:none}
+.dok-cell strong{font-size:18px;line-height:1.1}.dok-cell-advice{font-size:11.5px;font-weight:600;line-height:1.25}.dok-cell small{font-size:11px}.dok-cell-empty{font-size:12px}.dok-cell-dok{display:none;font-size:11px;font-weight:700}
+.dok-cell.level-red{color:#a3261f;background:#fdecea;border-color:#f7d4d0}.dok-cell.level-yellow{color:#7a5a00;background:#fff5cc;border-color:#f3e3a1}.dok-cell.level-blue{color:#1d4f91;background:#e6f0fb;border-color:#c9dcf3}.dok-cell.level-green{color:#25642b;background:#e5f4e6;border-color:#c8e6ca}
+.dok-cell.level-none,.dok-grid-legend .level-none{color:#5d6561;background:#f1f2f0;border-color:#e2e5e2}
+.dok-grid-note{margin:0}
+@media(max-width:699px){.dok-grid-head{display:none}.dok-grid{gap:10px}.dok-grid-row{grid-template-columns:repeat(4,minmax(0,1fr));padding:10px;border:1px solid #e2e5e2;border-radius:12px}.dok-grid-standard{grid-column:1/-1}.dok-cell{min-height:0;padding:6px 5px}.dok-cell-dok{display:block}.dok-cell strong{font-size:16px}.dok-cell-advice{font-size:10px;letter-spacing:-.1px}}
 /* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
 .assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}
+/* Grading mode (lib/grading-mode.ts): two buttons, at setup and on the test. */
+.grading-mode-choice{display:inline-flex;flex-wrap:wrap;gap:6px}.grading-mode-choice button{border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);background:white;color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;font-weight:600}.grading-mode-choice button.selected{background:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 19.8%);border-color:transparent;color:#f7f7ef}
+.grading-mode-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0}.grading-mode-row>span{font-size:13px;font-weight:600}.grading-mode-row small{flex-basis:100%;color:#4f5a55;font-size:12.5px;line-height:1.45}
+.grading-mode-setup{display:flex;flex-direction:column;gap:8px;margin-top:16px}.grading-mode-setup strong{font-size:14px}

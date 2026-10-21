@@ -39,6 +39,8 @@ import {
   gradesClearedByReread,
 } from "@/lib/teacher-workflow";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
+import { GradingModeChoice } from "./grading-mode-choice";
+import { gradingModeOf, lastGradingMode, type GradingMode } from "@/lib/grading-mode";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
@@ -87,6 +89,8 @@ export function ScanView() {
   // What the whole assessment is worth (optional). Kept as a string for the
   // input; parsed to a number in makeAssessment.
   const [points, setPoints] = useState("");
+  // A new test starts in the mode the teacher used last (lib/grading-mode.ts).
+  const [gradingMode, setGradingMode] = useState<GradingMode>(() => lastGradingMode(w));
   const [uploading, setUploading] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [error, setError] = useState(""),
@@ -169,6 +173,7 @@ export function ScanView() {
     setFramework(editing.framework);
     setTargets(editing.targetStandards);
     setPoints(editing.pointsPossible ? String(editing.pointsPossible) : "");
+    setGradingMode(gradingModeOf(editing));
   }, [editing?.id]);
   function scopeChange(field: string, value: string) {
     setTargets([]);
@@ -350,6 +355,7 @@ export function ScanView() {
         points.trim() && Number(points) > 0
           ? Math.round(Number(points))
           : undefined,
+      ...(gradingMode === "sbg" ? { gradingMode: "sbg" as const } : {}),
       ...(editing
         ? { classIds: editing.classIds }
         : linked.length
@@ -372,6 +378,8 @@ export function ScanView() {
       await save(
         {
           ...w,
+          // The mode this test was set up in is the one the next new test starts in.
+          settings: { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -398,6 +406,8 @@ export function ScanView() {
       await save(
         {
           ...w,
+          // The mode this test was set up in is the one the next new test starts in.
+          settings: { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -534,6 +544,8 @@ export function ScanView() {
           await save(
             {
               ...w,
+              // The mode this test was set up in is the one the next new test starts in.
+              settings: { ...w.settings, lastGradingMode: gradingMode },
               assessments: editing
                 ? w.assessments.map((item) => (item.id === a.id ? a : item))
                 : [a, ...w.assessments],
@@ -730,6 +742,16 @@ export function ScanView() {
                       )}
                     />
                   </label>
+                </div>
+                {/* How the test is graded (lib/grading-mode.ts); a new test
+                    starts in the mode the teacher used last. */}
+                <div className="grading-mode-setup">
+                  <strong>Grading</strong>
+                  <GradingModeChoice value={gradingMode} onChange={setGradingMode} />
+                  <p className="field-help">
+                    You can switch this on the test at any time; nothing you
+                    have graded changes when you do.
+                  </p>
                 </div>
                 {!editing && w.classes.length > 1 && (
                   <div className="link-classes">

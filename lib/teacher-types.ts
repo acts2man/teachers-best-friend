@@ -179,6 +179,10 @@ export type Assessment = {
   // present, a whole-test score is shown both ways: the percentage and points
   // out of this total. Optional -- absent means percentage only, as before.
   pointsPossible?: number;
+  /** How the test is graded (lib/grading-mode.ts): "sbg" is Standards-Based,
+   * every question out of 4. Absent is Percentage -- every test made before
+   * modes existed, and any test switched back. */
+  gradingMode?: "sbg";
   /** Student ids in the order their work was scanned, so the matching screen,
    * the review list and Grade by question follow the pile on the teacher's
    * desk. Absent until a class scan is saved. */
@@ -249,6 +253,9 @@ export type Workspace = {
     school: string;
     reduceMotion: boolean;
     theme?: string;
+    /** The grading mode the teacher used last, which a new test starts in
+     * (lib/grading-mode.ts). */
+    lastGradingMode?: "percentage" | "sbg";
   };
 };
 export type Priority = {

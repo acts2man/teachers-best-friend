@@ -197,8 +197,10 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    `tests/invariants/lib/workspace-sql.mjs`: the whole definition in
    `supabase/migrations/20261008190000_points_final_answers_stable_order.sql:37-317`, plus the
    patches in `20261012200000` (answerParts), `20261013120000` (gradedAlone),
-   `20261013130000` (secondChoice) and `20261014130000` (custom standards keyed per framework,
-   their extras saved in `meta`; **in the repo, not yet applied to production**). For each table it **upserts the rows it is sent and deletes
+   `20261013130000` (secondChoice), `20261014130000` (custom standards keyed per framework,
+   their extras saved in `meta`; **in the repo, not yet applied to production**) and
+   `20261020120000` (assessment `gradingMode`, only `'sbg'` stored; **in the repo, not yet
+   applied to production**). For each table it **upserts the rows it is sent and deletes
    every row it is not sent**:
 
    | Table | Delete statement |
@@ -547,7 +549,7 @@ page, and matched to a student on our side.
 - **Enforced by:**
   - titles clamped in the route (`app/api/workspace/route.ts:165-166`);
   - patched fields clamp or null bad values instead of raising
-    (`20261012200000…:41`, `20261013120000`, `20261013130000`);
+    (`20261012200000…:41`, `20261013120000`, `20261013130000`, `20261020120000`);
   - the `safe_int`, `safe_numeric`, `safe_bool` and `safe_date` casts.
   - `assessments.points_possible` is `numeric` and written with `safe_numeric`, only when it
     is above 0 and at most 1,000,000 (`20261020130000`, **in the repo, not yet applied to
