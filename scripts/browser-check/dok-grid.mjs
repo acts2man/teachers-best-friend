@@ -1,5 +1,7 @@
 // The class DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1-2.3 and
-// 2.7, D1), in a browser at 390x844, 412x915 and 1366x768.
+// 2.7, D1), in a browser at 360x780, 390x844, 412x915 and 1366x768 -- on the
+// demo data, and with every answer right so every cell is Exceeding, the
+// longest label ("Extension Recommended"), which ran out of its cell at 360.
 //
 // Proven when, on Class analysis: the grid has one row per standard card and
 // four DOK cells per row; every scored cell is in the colour of its level
@@ -33,14 +35,26 @@ math.questions[5].dok = 3; // a second DOK on 4.NBT.B.5
 math.questions[1].dok = null; // a question with no DOK
 const LEVEL = (p) => (p >= 90 ? ["green", "Extension Recommended"] : p >= 80 ? ["blue", "Ready to Move On"] : p >= 70 ? ["yellow", "Monitor"] : ["red", "Reteach Recommended"]);
 
+// Every answer right: every scored cell is Exceeding, "Extension Recommended".
+const allRight = structuredClone(w);
+for (const r of allRight.assessments.find((a) => a.id === "math-demo").responses) Object.assign(r, { match: 100, correct: true });
+
+// Every answer at 85%: every scored cell is Proficient, "Ready to Move On".
+const allProficient = structuredClone(w);
+for (const r of allProficient.assessments.find((a) => a.id === "math-demo").responses) Object.assign(r, { match: 85, correct: false });
+
 const browser = await chromium.launch({ executablePath: CHROMIUM });
-for (const [W, H] of [[390, 844], [412, 915], [1366, 768]]) {
-  const tag = `${W}x${H}`;
+for (const [W, H, data, label] of [
+  [360, 780, w, "demo"], [390, 844, w, "demo"], [412, 915, w, "demo"], [1366, 768, w, "demo"],
+  [360, 780, allRight, "all-exceeding"], [390, 844, allRight, "all-exceeding"], [412, 915, allRight, "all-exceeding"], [1366, 768, allRight, "all-exceeding"],
+  [360, 780, allProficient, "all-proficient"], [1366, 768, allProficient, "all-proficient"],
+]) {
+  const tag = `${W}x${H} ${label}`;
   const phone = W < 700;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   await ctx.route("**/api/workspace", (r) =>
     r.request().method() === "GET"
-      ? r.fulfill(json({ workspace: w, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null }))
+      ? r.fulfill(json({ workspace: data, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null }))
       : r.fulfill(json({ revision: 8 })),
   );
   await ctx.route("**/api/quota", (r) => r.fulfill(json({ plan_id: "starter", quota: 150, used: 20, remaining: 130, can_scan: true })));
@@ -56,10 +70,24 @@ for (const [W, H] of [[390, 844], [412, 915], [1366, 768]]) {
       cells: [...row.querySelectorAll(".dok-cell")].map((c) => ({
         cls: c.className,
         score: c.querySelector("strong")?.textContent.trim() ?? null,
-        advice: c.querySelector(".dok-cell-advice")?.textContent.trim() ?? null,
+        // The full recommendation (the cell's title), and what is shown: on a
+        // phone the short form ("Extension"), on a computer the full one.
+        advice: c.querySelector(".dok-cell-advice")?.getAttribute("title") ?? null,
+        shown: c.querySelector(".dok-cell-advice")?.innerText.trim() ?? null,
         text: c.innerText.replace(/\s+/g, " ").trim(),
         top: Math.round(c.getBoundingClientRect().top),
-        clipped: c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1,
+        // Clipped or spilling: content wider or taller than the cell, or any
+        // line of text running past the cell's inner edge.
+        clipped:
+          c.scrollWidth > c.clientWidth + 1 ||
+          c.scrollHeight > c.clientHeight + 1 ||
+          [...c.querySelectorAll("strong, span, small")].some((t) => {
+            const range = document.createRange();
+            range.selectNodeContents(t);
+            const box = c.getBoundingClientRect();
+            const pad = parseFloat(getComputedStyle(c).paddingRight) || 0;
+            return [...range.getClientRects()].some((r) => r.right > box.right - pad + 0.5 || r.left < box.left - 0.5);
+          }),
       })),
     }));
     return {
@@ -91,8 +119,8 @@ for (const [W, H] of [[390, 844], [412, 915], [1366, 768]]) {
   check(g.rows.every((r) => r.cells.every((c) => !c.clipped)), `${tag}: nothing clipped in any cell`);
   // No word is broken across lines ("Recommend / ed"): every word of a
   // recommendation fits its cell's width.
-  const broken = await page.$$eval(".dok-cell-advice", (els) =>
-    els.filter((e) => {
+  const broken = await page.$$eval(".dok-cell-advice > span", (els) =>
+    els.filter((e) => getComputedStyle(e).display !== "none").filter((e) => {
       const range = document.createRange();
       return e.textContent.split(" ").some((word, i, words) => {
         const start = words.slice(0, i).join(" ").length + (i ? 1 : 0);
@@ -110,7 +138,14 @@ for (const [W, H] of [[390, 844], [412, 915], [1366, 768]]) {
   } else {
     check(g.head !== "none", `${tag}: computer: one header row of DOK 1–4`);
   }
-  await page.locator(".dok-grid-panel").screenshot({ path: join(SHOTS, `grid-${tag}.png`) });
+  const SHORT = { "Reteach Recommended": "Reteach", "Extension Recommended": "Extension" };
+  check(
+    scored.every((c) => c.shown === (phone ? SHORT[c.advice] ?? c.advice : c.advice)),
+    `${tag}: ${phone ? "phone: the short recommendation is shown" : "computer: the full recommendation is shown"} (${[...new Set(scored.map((c) => c.shown))].join(", ")})`,
+  );
+  if (label === "all-exceeding")
+    check(scored.every((c) => c.advice === "Extension Recommended"), `${tag}: every scored cell is Exceeding`);
+  await page.locator(".dok-grid-panel").screenshot({ path: join(SHOTS, `grid-${W}x${H}-${label}.png`) });
   await ctx.close();
 }
 await browser.close();
