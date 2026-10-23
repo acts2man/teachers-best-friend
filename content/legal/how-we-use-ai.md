@@ -58,11 +58,17 @@ no pipeline that would collect student work for that purpose.
 - The question text
 - A short list of candidate academic standards
 - The expected answer, when you have provided an answer key
+- When you build a lesson plan from a test's depth-of-knowledge grid: the standard, the
+  depth-of-knowledge level, and how many answers showed each common error type (for
+  example "Sign error: 5"). Only those counts, from a fixed list of error types — never a
+  student's name or anything a student wrote.
 
 **Not sent:**
 - Student names. When the app analyzes student responses, it transmits an internal
   identifier — a random string meaningless outside our system.
-- Your students' history, mastery records, or notes you have written about them.
+- Your students' history, mastery records, or notes you have written about them. (A
+  lesson plan may carry the class's count of each common error type on one standard, as
+  above — a total for the class, never a record of any one student.)
 - Anything about other students, other classes, or other teachers.
 
 There is one honest exception. If a student wrote their name on the worksheet, that

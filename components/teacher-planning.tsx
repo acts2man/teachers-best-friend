@@ -78,6 +78,7 @@ import {
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
 import { MASTERY_LEVELS, lessonIntent as intentFrom } from "@/lib/mastery-levels";
+import { lessonFocus } from "@/lib/teacher-class-analysis";
 import { themes, themeById } from "@/lib/themes";
 import type { Lesson, Resource, Student, Standard } from "@/lib/teacher-types";
 
@@ -233,6 +234,13 @@ export function ReteachView() {
     // analysis links here with ?intent=). No intent is a reteach lesson.
     lessonIntent = intentFrom(params.get("intent")),
     intentStep = MASTERY_LEVELS.find((l) => l.nextStep.intent === lessonIntent)!.nextStep,
+    // Planned from a cell of the DOK grid (?dok=2 or ?dok=2,3): the lesson is
+    // pitched at those levels and aimed at the class's common error types
+    // there -- fixed-list names and counts only (lessonFocus).
+    dokLevels = (params.get("dok") || "")
+      .split(",")
+      .map(Number)
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 4),
     [modality, setModality] = useState("Visual"),
     [duration, setDuration] = useState("15"),
     [tab, setTab] = useState("build"),
@@ -253,6 +261,10 @@ export function ReteachView() {
     .filter((id) => students.some((student) => student.id === id));
   const plans = w.lessons.filter((l) => l.classId === classroom.id),
     s = catalog.find((s) => s.code === standard);
+  const focus =
+    dokLevels.length && sourceAssessment && standard
+      ? lessonFocus(sourceAssessment, standard, dokLevels)
+      : null;
   useEffect(() => {
     const l = params.get("lesson"),
       st = params.get("standard");
@@ -415,6 +427,7 @@ export function ReteachView() {
         framework: contextFramework,
         grade: contextGrade,
         intent: lessonIntent,
+        ...(focus ? { dok: focus.dok, errorTypes: focus.errorTypes } : {}),
       });
       setCustom(d.result);
       setEdited(false);
@@ -504,7 +517,14 @@ export function ReteachView() {
                 ? "Student work from " + sourceAssessment.title
                 : "Flexible group based on a shared standard gap"}
               {lessonIntent !== "reteach" && " · Next step: " + intentStep.label}
+              {focus && " · DOK " + focus.dok.join(", ")}
             </p>
+            {focus && focus.errorTypes.length > 0 && (
+              <p className="lesson-focus-errors">
+                Aimed at:{" "}
+                {focus.errorTypes.map((e) => e.name + " (" + e.count + ")").join(", ")}
+              </p>
+            )}
           </div>
           {sourceAssessment && (
             <button

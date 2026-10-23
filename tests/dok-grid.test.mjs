@@ -89,7 +89,7 @@ test("a question with no DOK is left out of every cell and counted, never read a
 
 test("Class analysis shows the grid in place of the DOK rows", () => {
   const src = readFileSync("components/teacher-assessments.tsx", "utf8");
-  assert.match(src, /<DokGrid \{\.\.\.dokGrid\(a, students, catalog\)\} \/>/);
+  assert.match(src, /<DokGrid \{\.\.\.dokGrid\(a, students, catalog\)\}/);
   assert.match(src, /heading="Costa's levels across this assessment"\s+showDok=\{false\}/);
   assert.doesNotMatch(src, /heading="Depth of knowledge across this assessment"/);
   const grid = readFileSync("components/dok-grid.tsx", "utf8");

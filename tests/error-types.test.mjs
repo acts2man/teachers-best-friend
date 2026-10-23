@@ -46,13 +46,17 @@ function resp(id, questionId, answer, extra = {}) {
     misconception: "", confidence: 100, verified: true, ...extra };
 }
 
-test("the error type list lives in one place and holds Ricky's math types; ELA is empty for now", () => {
+test("the error type lists live in one place: Ricky's math types, Michael's ELA reading and writing types", () => {
   assert.deepEqual(errorTypesFor("Math"), [
     "Algebraic/Arithmetic error", "Sign error", "Conceptual/Setup error",
     "Wrong formula", "Graph/Table interpretation error",
   ]);
-  assert.deepEqual(errorTypesFor("ELA"), []);
-  assert.deepEqual(errorTypesFor("Mixed"), ERROR_TYPES.Math, "mixed offers the math types until ELA has its own");
+  // Michael's lists (Slack, 20 Oct 2026); an ELA test with no area is reading.
+  assert.equal(errorTypesFor("ELA", "reading").length, 8);
+  assert.deepEqual(errorTypesFor("ELA"), errorTypesFor("ELA", "reading"));
+  assert.equal(errorTypesFor("ELA", "writing").length, 8);
+  assert.deepEqual(errorTypesFor("ELA", "language"), [], "Language has no list yet");
+  assert.deepEqual(errorTypesFor("Mixed"), ERROR_TYPES.Math, "mixed offers the math types");
 });
 
 test("setGroupErrorType tags every response in the group without touching the score", () => {
@@ -141,7 +145,7 @@ test("untagged answers produce no error-type rows", () => {
 // --- component wiring ---
 test("Grade by question offers an error-type picker for a decided, below-full group", () => {
   const ui = readFileSync("components/teacher-review.tsx", "utf8");
-  assert.match(ui, /errorTypesFor\(a\.subject\)/, "reads the per-subject list");
+  assert.match(ui, /errorTypesFor\(a\.subject, a\.elaArea\)/, "reads the per-subject (and ELA area) list");
   // Every group below full credit offers a common error (8 Oct: "every
   // incorrect group must allow a common error to be chosen").
   assert.match(ui, /!fullCredit && types\.length > 0/, "only below full credit");

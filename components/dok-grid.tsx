@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { MASTERY_LEVELS } from "@/lib/mastery-levels";
 import { DOK_LEVELS, type DokCell, type DokGridRow } from "@/lib/teacher-class-analysis";
+import type { Assessment, Standard, Student } from "@/lib/teacher-types";
+import { DokCellPanel } from "./dok-cell-panel";
 
 /**
  * The class DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1-2.3, 2.7):
@@ -10,8 +13,23 @@ import { DOK_LEVELS, type DokCell, type DokGridRow } from "@/lib/teacher-class-a
  * questions is grey. On a computer it is a grid with one header row; on a
  * phone each standard is a small card with its four DOK cells in one row, so
  * nothing scrolls sideways.
+ *
+ * A scored cell opens its panel (D2, components/dok-cell-panel.tsx).
  */
-export function DokGrid({ rows, noDok }: { rows: DokGridRow[]; noDok: number }) {
+export function DokGrid({
+  rows,
+  noDok,
+  assessment,
+  students,
+  go,
+}: {
+  rows: DokGridRow[];
+  noDok: number;
+  assessment: Assessment;
+  students: Student[];
+  go: (url: string) => void;
+}) {
+  const [opened, setOpened] = useState<{ standard: Standard; cell: DokCell } | null>(null);
   if (!rows.length) return null;
   return (
     <div className="panel dok-grid-panel">
@@ -33,7 +51,12 @@ export function DokGrid({ rows, noDok }: { rows: DokGridRow[]; noDok: number }) 
               <span>{row.standard.title}</span>
             </div>
             {row.cells.map((cell) => (
-              <Cell key={cell.dok} code={row.standard.code} cell={cell} />
+              <Cell
+                key={cell.dok}
+                code={row.standard.code}
+                cell={cell}
+                onOpen={() => setOpened({ standard: row.standard, cell })}
+              />
             ))}
           </div>
         ))}
@@ -53,11 +76,21 @@ export function DokGrid({ rows, noDok }: { rows: DokGridRow[]; noDok: number }) 
           review.
         </p>
       )}
+      {opened && (
+        <DokCellPanel
+          assessment={assessment}
+          students={students}
+          standard={opened.standard}
+          cell={opened.cell}
+          onClose={() => setOpened(null)}
+          go={go}
+        />
+      )}
     </div>
   );
 }
 
-function Cell({ code, cell }: { code: string; cell: DokCell }) {
+function Cell({ code, cell, onOpen }: { code: string; cell: DokCell; onOpen: () => void }) {
   const qs = cell.questions + " question" + (cell.questions === 1 ? "" : "s");
   if (!cell.questions)
     return (
@@ -77,6 +110,10 @@ function Cell({ code, cell }: { code: string; cell: DokCell }) {
   return (
     <div
       className={"dok-cell level-" + cell.level.tone}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
       aria-label={`${code}, DOK ${cell.dok}: ${cell.percent}%, ${cell.level.level}, ${cell.level.advice}, ${qs}`}
     >
       <span className="dok-cell-dok">DOK {cell.dok}</span>

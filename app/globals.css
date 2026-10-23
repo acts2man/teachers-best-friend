@@ -309,6 +309,7 @@ html.confirm-bar-on{scroll-padding-bottom:104px}
 .reteach-context {display:flex;align-items:center;gap:14px;padding:17px 20px;border:1px solid hsl(calc(96deg + var(--th)) calc(25% * var(--ts)) 88.0%);background:hsl(calc(90deg + var(--th)) calc(29% * var(--ts)) 94.5%);border-radius:12px;margin-bottom:24px}
 .reteach-context>div {flex:1;min-width:0}
 .reteach-context strong {font-size:.95rem}
+.reteach-context .lesson-focus-errors {font-size:.85rem;margin-top:2px;overflow-wrap:anywhere}
 .reteach-context p {font-size:.875rem;color:#708273;margin-top:5px}
 .reteach-context .text-link {font-size:.875rem}
 .reteach-start {display:grid;grid-template-columns:1.4fr 1fr;gap:24px;align-items:start}
@@ -1055,6 +1056,13 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .dok-cell strong{font-size:18px;line-height:1.1}.dok-cell-advice{font-size:11.5px;font-weight:600;line-height:1.25}.dok-cell small{font-size:11px}.dok-cell-empty{font-size:12px}.dok-cell-dok{display:none;font-size:11px;font-weight:700}.dok-cell-advice .advice-short{display:none}
 .dok-cell.level-red{color:#a3261f;background:#fdecea;border-color:#f7d4d0}.dok-cell.level-yellow{color:#7a5a00;background:#fff5cc;border-color:#f3e3a1}.dok-cell.level-blue{color:#1d4f91;background:#e6f0fb;border-color:#c9dcf3}.dok-cell.level-green{color:#25642b;background:#e5f4e6;border-color:#c8e6ca}
 .dok-cell.level-none,.dok-grid-legend .level-none{color:#5d6561;background:#f1f2f0;border-color:#e2e5e2}
+/* A scored DOK cell opens its panel (components/dok-cell-panel.tsx). */
+.dok-cell[role=button]{cursor:pointer;transition:transform .12s,box-shadow .12s}.dok-cell[role=button]:hover{box-shadow:0 2px 8px rgb(0 0 0 / .08)}.dok-cell[role=button]:focus-visible{outline:3px solid hsl(calc(160deg + var(--th)) calc(20% * var(--ts)) 66.9%);outline-offset:2px}
+.dok-cell-panel{overflow-y:auto;max-height:100svh}.dok-cell-panel[data-side=bottom]{max-height:88svh;border-radius:16px 16px 0 0}.dok-cell-panel-body{display:flex;flex-direction:column;gap:18px;padding:0 16px 20px}.dok-cell-panel-body h3{font-size:14px;margin-bottom:6px}
+.dok-cell-panel-score{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:10px;border:1px solid transparent}.dok-cell-panel-score strong{font-size:26px;line-height:1.1}.dok-cell-panel-score span{font-weight:600;font-size:14px}.dok-cell-panel-score small{font-size:12.5px}
+.dok-cell-panel-score.level-red{color:#a3261f;background:#fdecea;border-color:#f7d4d0}.dok-cell-panel-score.level-yellow{color:#7a5a00;background:#fff5cc;border-color:#f3e3a1}.dok-cell-panel-score.level-blue{color:#1d4f91;background:#e6f0fb;border-color:#c9dcf3}.dok-cell-panel-score.level-green{color:#25642b;background:#e5f4e6;border-color:#c8e6ca}
+.dok-cell-errors{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.dok-cell-errors li{display:flex;flex-direction:column;gap:1px;font-size:13.5px;overflow-wrap:anywhere}.dok-cell-errors li span{font-size:12.5px;color:#4f5a55}
+.dok-cell-levels{border:0;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}.dok-cell-levels label{flex-direction:row;align-items:center;gap:8px;font-weight:500;font-size:13.5px}
 .dok-grid-note{margin:0}
 @media(max-width:699px){.dok-grid-head{display:none}.dok-grid{gap:10px}.dok-grid-row{grid-template-columns:repeat(4,minmax(0,1fr));padding:10px;border:1px solid #e2e5e2;border-radius:12px}.dok-grid-standard{grid-column:1/-1}.dok-cell{min-height:0;padding:6px 5px}.dok-cell-dok{display:block}.dok-cell strong{font-size:16px}.dok-cell-advice{font-size:10.5px}.dok-cell-advice .advice-full{display:none}.dok-cell-advice .advice-short{display:inline}}
 /* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
