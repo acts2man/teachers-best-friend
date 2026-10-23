@@ -30,6 +30,40 @@ export type ScanPage = {
   stack?: true;
 };
 
+/**
+ * A page that still failed to upload after uploadFile's retries. It waits on
+ * the scan screen with a Retry button while the rest of the batch carries on,
+ * and remembers where it belongs: the student's pile, and how many of that
+ * pile's pages came before it.
+ */
+export type FailedPage = {
+  key: string;
+  file: File;
+  label: string;
+  pile: number;
+  index: number;
+  stack?: true;
+  reason: string;
+};
+
+/**
+ * Puts a page that uploaded on a retry back where it was: into its student's
+ * pile, at its place among that pile's pages. If that pile is gone (the scan
+ * was reorganised meanwhile) it joins the last pile. A page from a whole stack
+ * is marked as one.
+ */
+export function placeRetriedPage(
+  piles: ScanPage[][],
+  failed: Pick<FailedPage, "pile" | "index" | "stack">,
+  page: ScanPage,
+): ScanPage[][] {
+  const next = piles.length ? piles.map((pile) => [...pile]) : [[]];
+  const target = failed.pile < next.length ? failed.pile : next.length - 1;
+  const placed = failed.stack ? { ...page, stack: true as const } : page;
+  next[target].splice(Math.min(Math.max(0, failed.index), next[target].length), 0, placed);
+  return next;
+}
+
 /** How far grading got: batches done, the next to send, one still running. */
 export type ScanProgress = {
   graded: GradedGroup[];

@@ -51,6 +51,15 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   (`supabase/migrations/20260923170000_a_scan_cannot_exist_uncharged.sql:158-178`).
 - Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:680-703`). It does
   **not** filter out purged rows; see gap G9.
+- **Retries** (20 Oct 2026: a 72-page class scan stopped twice on one storage 520):
+  - `uploadFile` tries 3 times, waiting 0.6 s then 1.8 s, on a 5xx, a dropped connection or an
+    unreadable reply only. A 4xx is never retried. Before each retry it looks the file up by
+    hash (`GET /api/uploads?sha256=`), so a retry never makes a second row or a second charge.
+  - `saveDocument` retries the storage write itself (`lib/storage-retry.ts`, 3 tries) on a 5xx
+    or no answer. A retry's "already exists" is success: the path is this upload's own.
+  - On the class scan a page that still fails no longer ends the batch: it waits in
+    `failedPages` with Retry / Leave it out (`placeRetriedPage`, `lib/scan-session.ts`), and
+    grading waits until none is left.
 
 ### 1.3 Charging
 

@@ -149,6 +149,8 @@ input,textarea,.pick {font-size:1rem}
 .review-notice {display:flex;gap:12px;align-items:center;background:hsl(calc(86deg + var(--th)) calc(26% * var(--ts)) 94.7%);border:1px solid hsl(calc(96deg + var(--th)) calc(25% * var(--ts)) 88.0%);border-radius:10px;padding:16px 18px;margin:18px 0}
 .review-notice>svg {color:hsl(calc(97deg + var(--th)) calc(18% * var(--ts)) 42.9%);flex-shrink:0}
 .review-notice p {font-size:.9rem;line-height:1.6;flex:1;color:hsl(calc(123deg + var(--th)) calc(10% * var(--ts)) 39.8%)}
+/* Pages that did not upload after three tries, each with Retry (lib/scan-session.ts FailedPage). */
+.failed-pages{align-items:flex-start}.failed-pages>div{flex:1;min-width:0}.failed-pages ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px}.failed-pages li{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.failed-pages li>span{flex:1 1 140px;min-width:0;overflow-wrap:anywhere;font-size:.88rem}
 .review-notice .text-link {flex-shrink:0}
 .assignment-status-bar {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;background:hsl(calc(96deg + var(--th)) calc(26% * var(--ts)) 96.3%);border:1px solid hsl(calc(98deg + var(--th)) calc(19% * var(--ts)) 88.8%);border-radius:12px;padding:22px 25px;margin-bottom:20px}
 .assignment-status-bar>div {display:flex;flex-direction:column;gap:8px;border-right:1px solid hsl(calc(100deg + var(--th)) calc(20% * var(--ts)) 88.2%)}
