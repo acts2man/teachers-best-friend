@@ -16,7 +16,7 @@ function bundle(path) {
   new Function("module", "exports", r.outputFiles[0].text)(m, m.exports);
   return m.exports;
 }
-const { gradingModeOf, lastGradingMode, setGradingMode, switchGradingMode, GRADING_MODES } = bundle("lib/grading-mode.ts");
+const { gradingModeOf, lastGradingMode, GRADING_MODES } = bundle("lib/grading-mode.ts");
 
 const graded = {
   id: "a1", classId: "c1", title: "Quiz", subject: "Math", grade: 4, framework: "Common Core", createdAt: "2026-10-01T00:00:00Z",
@@ -43,38 +43,24 @@ test("two modes; no mode is Percentage", () => {
   assert.equal(gradingModeOf({ gradingMode: "abc" }), "percentage");
 });
 
-test("switching changes no stored grade, and switching back is the same test", () => {
-  const sbg = setGradingMode(graded, "sbg");
-  assert.equal(sbg.gradingMode, "sbg");
-  assert.deepEqual({ ...sbg, gradingMode: undefined }, { ...graded, gradingMode: undefined }, "nothing but the mode changed");
-  assert.deepEqual(sbg.responses, graded.responses);
-  assert.deepEqual(sbg.questions, graded.questions, "question points untouched");
-  const back = setGradingMode(sbg, "percentage");
-  assert.deepEqual(back, graded, "Percentage is stored as no mode: exactly the test it was");
-  assert.equal("gradingMode" in back, false);
-});
-
 test("a new test starts in the mode the teacher used last", () => {
   assert.equal(lastGradingMode(w), "percentage", "nothing used yet");
-  const switched = switchGradingMode(w, "a2", "sbg");
-  assert.equal(lastGradingMode(switched), "sbg");
-  assert.equal(gradingModeOf(switched.assessments[1]), "sbg");
-  assert.equal(gradingModeOf(switched.assessments[0]), "percentage", "only that test switched");
-  assert.deepEqual(switched.students, w.students, "evidence untouched");
-  assert.equal(lastGradingMode(switchGradingMode(switched, "a2", "percentage")), "percentage");
+  assert.equal(lastGradingMode({ settings: { ...w.settings, lastGradingMode: "sbg" } }), "sbg");
+  assert.equal(lastGradingMode({ settings: { ...w.settings, lastGradingMode: "percentage" } }), "percentage");
 });
 
+// Ricky, 20 Oct 2026: the mode is chosen only when a test is created. The test
+// page's switch (G1) is gone; see tests/sbg-setup-only.test.mjs.
 test("setup offers the choice, starts in the last mode and remembers it", () => {
   const src = readFileSync("components/teacher-scan.tsx", "utf8");
   assert.match(src, /useState<GradingMode>\(\(\) => lastGradingMode\(w\)\)/);
   assert.match(src, /<GradingModeChoice value=\{gradingMode\} onChange=\{setGradingMode\} \/>/);
-  assert.equal((src.match(/settings: \{ \.\.\.w\.settings, lastGradingMode: gradingMode \}/g) || []).length, 3, "every save that creates a test");
+  assert.equal(
+    (src.match(/settings: editing \? w\.settings : \{ \.\.\.w\.settings, lastGradingMode: gradingMode \}/g) || []).length,
+    3,
+    "every save that creates a test remembers its mode; editing one does not",
+  );
   assert.match(src, /gradingMode === "sbg" \? \{ gradingMode: "sbg" as const \} : \{\}/);
-});
-
-test("the test page has the switch, and it only switches the mode", () => {
-  const src = readFileSync("components/teacher-assessments.tsx", "utf8");
-  assert.match(src, /<GradingModeChoice\s+value=\{gradingModeOf\(a\)\}[\s\S]{0,300}switchGradingMode\(w, a\.id, mode\)/);
 });
 
 test("the save schema keeps the teacher's last mode", () => {

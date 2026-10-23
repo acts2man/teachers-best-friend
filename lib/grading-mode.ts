@@ -8,9 +8,12 @@
  *               answer scores 0–4.
  *
  * The mode is a way of READING a test's grades, never a second copy of them:
- * a 0–4 score is stored in the same `match` (score × 25). So switching a test
- * between modes rewrites no grade and no question's points (setGradingMode),
- * and switching back shows exactly what was there before.
+ * a 0–4 score is stored in the same `match` (score × 25), and a Standards-Based
+ * test's questions keep whatever points they carried -- they are read as 4.
+ *
+ * The mode is chosen once, when the test is set up (Ricky, 20 Oct 2026); the
+ * test page shows it but cannot change it. On a Standards-Based test every
+ * question is worth SBG_QUESTION_POINTS, whatever points it carries.
  *
  * This file is the mode itself (G1). Reading scores and levels in 0–4 comes
  * with the grading screens (G2); until then a test in either mode shows
@@ -25,6 +28,15 @@ export const GRADING_MODES: readonly { mode: GradingMode; label: string; descrip
   { mode: "sbg", label: "Standards-Based (0–4)", description: "Every question is out of 4; each answer scores 0, 1, 2, 3 or 4." },
 ];
 
+/** What every question on a Standards-Based test is worth, always: it cannot
+ * be edited (Ricky, 20 Oct 2026). */
+export const SBG_QUESTION_POINTS = 4;
+
+/** The mode's name as the test page shows it. */
+export function gradingModeLabel(a: Pick<Assessment, "gradingMode">): string {
+  return GRADING_MODES.find((m) => m.mode === gradingModeOf(a))!.label;
+}
+
 /** A test's mode. Anything but "sbg" -- including no mode at all, which is
  * every test made before modes existed -- is Percentage. */
 export function gradingModeOf(a: Pick<Assessment, "gradingMode">): GradingMode {
@@ -32,26 +44,7 @@ export function gradingModeOf(a: Pick<Assessment, "gradingMode">): GradingMode {
 }
 
 /** The mode a new test starts in: the one the teacher used last (set when
- * they create a test or switch one), or Percentage. */
+ * they create a test), or Percentage. */
 export function lastGradingMode(w: Pick<Workspace, "settings">): GradingMode {
   return w.settings.lastGradingMode === "sbg" ? "sbg" : "percentage";
-}
-
-/** The test in the given mode, with nothing else changed: no grade, no
- * question points, no evidence. Percentage is stored as no mode at all, so a
- * test switched back is exactly the test it was before. */
-export function setGradingMode(a: Assessment, mode: GradingMode): Assessment {
-  const rest = { ...a };
-  delete rest.gradingMode;
-  return mode === "sbg" ? { ...rest, gradingMode: "sbg" } : rest;
-}
-
-/** The workspace with one test switched, remembered as the teacher's last
- * mode for their next new test. */
-export function switchGradingMode(w: Workspace, assessmentId: string, mode: GradingMode): Workspace {
-  return {
-    ...w,
-    assessments: w.assessments.map((a) => (a.id === assessmentId ? setGradingMode(a, mode) : a)),
-    settings: { ...w.settings, lastGradingMode: mode },
-  };
 }

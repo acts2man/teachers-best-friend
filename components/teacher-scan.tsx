@@ -41,7 +41,7 @@ import {
 } from "@/lib/teacher-workflow";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { GradingModeChoice } from "./grading-mode-choice";
-import { gradingModeOf, lastGradingMode, type GradingMode } from "@/lib/grading-mode";
+import { gradingModeLabel, gradingModeOf, lastGradingMode, type GradingMode } from "@/lib/grading-mode";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
@@ -377,8 +377,8 @@ export function ScanView() {
       await save(
         {
           ...w,
-          // The mode this test was set up in is the one the next new test starts in.
-          settings: { ...w.settings, lastGradingMode: gradingMode },
+          // The mode a new test was set up in is the one the next new test starts in.
+          settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -405,8 +405,8 @@ export function ScanView() {
       await save(
         {
           ...w,
-          // The mode this test was set up in is the one the next new test starts in.
-          settings: { ...w.settings, lastGradingMode: gradingMode },
+          // The mode a new test was set up in is the one the next new test starts in.
+          settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -543,8 +543,8 @@ export function ScanView() {
           await save(
             {
               ...w,
-              // The mode this test was set up in is the one the next new test starts in.
-              settings: { ...w.settings, lastGradingMode: gradingMode },
+              // The mode a new test was set up in is the one the next new test starts in.
+              settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
               assessments: editing
                 ? w.assessments.map((item) => (item.id === a.id ? a : item))
                 : [a, ...w.assessments],
@@ -742,14 +742,23 @@ export function ScanView() {
                     />
                   </label>
                 </div>
-                {/* How the test is graded (lib/grading-mode.ts); a new test
-                    starts in the mode the teacher used last. */}
+                {/* How the test is graded (lib/grading-mode.ts). Chosen here,
+                    once, when the test is created -- a new test starts in the
+                    mode the teacher used last -- and never changed after
+                    (Ricky, 20 Oct 2026): editing a test shows its mode. */}
                 <div className="grading-mode-setup">
                   <strong>Grading</strong>
-                  <GradingModeChoice value={gradingMode} onChange={setGradingMode} />
+                  {editing ? (
+                    <span className="grading-mode-shown">{gradingModeLabel(editing)}</span>
+                  ) : (
+                    <GradingModeChoice value={gradingMode} onChange={setGradingMode} />
+                  )}
                   <p className="field-help">
-                    You can switch this on the test at any time; nothing you
-                    have graded changes when you do.
+                    {editing
+                      ? "Chosen when this test was created; it can't be changed."
+                      : gradingMode === "sbg"
+                        ? "Every question is out of 4 points. This can't be changed once the test is created."
+                        : "Choose now: this can't be changed once the test is created."}
                   </p>
                 </div>
                 {!editing && w.classes.length > 1 && (
@@ -1102,7 +1111,7 @@ export function ScanView() {
                   />
                 </label>
               )}
-              {mode === "assignment" && (
+              {mode === "assignment" && gradingMode !== "sbg" && (
                 <label className="block-label">
                   Points possible (optional)
                   <input
