@@ -81,8 +81,21 @@ function Cell({ code, cell }: { code: string; cell: DokCell }) {
     >
       <span className="dok-cell-dok">DOK {cell.dok}</span>
       <strong>{cell.percent}%</strong>
-      <span className="dok-cell-advice">{cell.level.advice}</span>
+      {/* A phone's cell is about 60px wide inside at 360px: "Recommended" is
+          one word longer than that, so phones show the short form ("Reteach",
+          "Extension"); the full recommendation is the cell's label. */}
+      <span className="dok-cell-advice" title={cell.level.advice}>
+        <span className="advice-full">{cell.level.advice}</span>
+        <span className="advice-short">{shortAdvice(cell.level.advice)}</span>
+      </span>
       <small>{qs}</small>
     </div>
   );
+}
+
+/** The recommendation without "Recommended", for a phone's narrow cell:
+ * "Reteach Recommended" is "Reteach", "Extension Recommended" "Extension";
+ * "Monitor" and "Ready to Move On" wrap on whole words and stay as they are. */
+export function shortAdvice(advice: string): string {
+  return advice.replace(/\s+Recommended$/, "");
 }
