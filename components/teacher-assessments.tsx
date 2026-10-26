@@ -74,7 +74,7 @@ import {
   LevelPill,
   LevelStudents,
 } from "./teacher-shared";
-import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, masteryLevel, rubricLevel } from "@/lib/mastery-levels";
+import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, rubricLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   dokGrid,
