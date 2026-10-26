@@ -50,8 +50,11 @@ test("Auto/Manual is a toggle, remembered per teacher", () => {
 });
 
 test("the manual shutter works in both modes and auto-snap is gated on Auto", () => {
-  // The shutter button always calls shoot and is never disabled by `auto`.
-  assert.match(src, /className="scan-camera-shutter"[\s\S]*onClick=\{shoot\}/);
+  // The shutter button always calls shoot and is never disabled by `auto`:
+  // on the finger going down (26 Oct 2026, a tap that slid did nothing as a
+  // click), and on a keyboard's Enter/Space, which is a click with no pointer.
+  assert.match(src, /className="scan-camera-shutter"[\s\S]*onPointerDown=\{\(e\) => \{[\s\S]*?shoot\(\);/);
+  assert.match(src, /className="scan-camera-shutter"[\s\S]*onClick=\{\(e\) => \{\s*if \(e\.detail === 0\) shoot\(\);/);
   assert.ok(
     !/scan-camera-shutter[\s\S]*disabled=\{[^}]*\bauto\b/.test(src),
     "the shutter is not disabled in manual mode",

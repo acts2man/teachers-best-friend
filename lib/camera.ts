@@ -228,3 +228,42 @@ export function partitionByGroup<T extends { group: number }>(
     if (item.group >= 0 && item.group < groups.length) groups[item.group].push(item);
   return groups.filter((g) => g.length > 0);
 }
+
+/**
+ * The framing guide (Ricky, 26 Oct 2026): says when the page fills the frame.
+ * "Move closer" while the detected page takes up less than `minFill` of what
+ * the screen shows -- the saved photo is exactly that region (coverCrop), so a
+ * small page is a small, hard-to-read page -- and "Hold steady" once it fills
+ * enough. Nothing when no page is detected: the edge detector cannot tell
+ * "too far" from "not a page", and a wrong instruction is worse than none.
+ */
+export type FramingGuide = "closer" | "steady" | null;
+
+/** How much of the screen the page must cover to read "Hold steady". A
+ * letter page held to fill a portrait phone screen edge to edge covers about
+ * 70-80%; 45% leaves room for a margin around it while still keeping the
+ * handwriting large. */
+export const FILL_FOR_STEADY = 0.45;
+
+/** The area of a polygon (shoelace formula), in square pixels. */
+export function polygonArea(points: { x: number; y: number }[]): number {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+/** The guide for a page outline already mapped into on-screen pixels. */
+export function framingGuide(
+  onScreen: { x: number; y: number }[] | null,
+  viewW: number,
+  viewH: number,
+  minFill = FILL_FOR_STEADY,
+): FramingGuide {
+  if (!onScreen || onScreen.length < 3 || viewW <= 0 || viewH <= 0) return null;
+  const fill = polygonArea(onScreen) / (viewW * viewH);
+  return fill >= minFill ? "steady" : "closer";
+}
