@@ -1,4 +1,5 @@
 import { errorTypesFor } from "./error-types";
+import { isSbg, score4Text } from "./grading-mode";
 import type {
   Assessment,
   RubricDimension,
@@ -17,7 +18,9 @@ import {
   MASTERY_LEVELS,
   MASTERY_LEVELS_NOTE,
   masteryLevel,
+  masteryLevel4,
   masteryPercent,
+  SCORE4_RANGES,
   rubricLevel,
   type MasteryLevel,
   type MasteryLevelInfo,
@@ -49,6 +52,10 @@ export type StandardMastery = {
   /** The class's average on this standard, rounded to the nearest whole
    * percent, or null. */
   averagePercent: number | null;
+  /** On a Standards-Based test, the class's average on this standard out of 4
+   * (unrounded; shown to one decimal), and every level above is on the 0–4
+   * cuts. Null on a percentage test, or when nobody is graded. */
+  average4: number | null;
   /** How to reteach the Beginning students; "No reteach needed" when none. */
   instruction: "Whole class" | "Small group" | "No reteach needed";
   /** The error types tagged on this standard's answers, most common first. */
@@ -201,6 +208,7 @@ export function classAnalysis(
   catalog: Standard[],
 ): StandardMastery[] {
   const questions = activeQuestions(a);
+  const sbg = isSbg(a);
   const codes = [...new Set(questions.map((q) => q.standard).filter(Boolean))];
   const rows: StandardMastery[] = codes
     .map((code) => catalog.find((s) => s.code === code))
@@ -228,7 +236,8 @@ export function classAnalysis(
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
           responses.length;
         averages.push(average);
-        byLevel[masteryLevel(average).level].push(student);
+        // Standards-Based: the same average read as 0–4, on the 0–4 cuts.
+        byLevel[(sbg ? masteryLevel4(average / 25) : masteryLevel(average)).level].push(student);
       }
       const assessed = averages.length;
       const reteach = byLevel.Beginning;
@@ -242,6 +251,7 @@ export function classAnalysis(
         averagePercent: assessed
           ? masteryPercent(averages.reduce((a, b) => a + b, 0) / assessed)
           : null,
+        average4: sbg && assessed ? averages.reduce((a, b) => a + b, 0) / assessed / 25 : null,
         errorTypes: tallyErrorTypes(
           a.responses.filter((r) => qIds.has(r.questionId)),
           students,
@@ -432,12 +442,14 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
           row.standard.code + " — " + row.standard.title,
           row.averagePercent === null
             ? "Not yet graded for this class"
-            : "Class average " + row.averagePercent + "% (" + masteryLevel(row.averagePercent).level + ")",
+            : row.average4 !== null
+              ? "Class average " + score4Text(row.average4) + " out of 4 (" + masteryLevel4(row.average4).level + ")"
+              : "Class average " + row.averagePercent + "% (" + masteryLevel(row.averagePercent).level + ")",
           ...MASTERY_LEVELS.map(
             (l) =>
               l.level +
               " " +
-              l.range +
+              (row.average4 !== null ? SCORE4_RANGES[l.level] : l.range) +
               " (" +
               row.byLevel[l.level].length +
               "): " +

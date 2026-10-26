@@ -59,7 +59,8 @@ import {
   TextLink,
   downloadText,
 } from "./teacher-shared";
-import { defaultFocusFor, progressOverTime } from "@/lib/teacher-workflow";
+import { defaultFocusFor, evidenceShown, progressOverTime } from "@/lib/teacher-workflow";
+import { masteryLevel4 } from "@/lib/mastery-levels";
 import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
@@ -1440,12 +1441,21 @@ export function StudentsView() {
                     className="evidence-bars"
                     role="img"
                     aria-label={history
-                      .map((e) => e.source + ": " + e.score + " percent")
+                      .map((e) => {
+                        // Standard Tracker: each test in its own mode.
+                        const shown = evidenceShown(w, student.id, e);
+                        return e.source + ": " + (shown.sbg ? shown.text.replace(" / 4", " out of 4") : e.score + " percent");
+                      })
                       .join("; ")}
                   >
                     {history.slice(-6).map((e) => (
                       <div key={e.id}>
-                        <span>{e.score}%</span>
+                        <span>
+                          {(() => {
+                            const shown = evidenceShown(w, student.id, e);
+                            return shown.sbg ? shown.text : e.score + "%";
+                          })()}
+                        </span>
                         <i
                           style={{ height: Math.max(8, e.score * 1.2) + "px" }}
                         />
@@ -1468,7 +1478,21 @@ export function StudentsView() {
                             <strong>{e.source}</strong>
                             <small>{e.date}</small>
                           </span>
-                          <MasteryScore value={e.score} />
+                          {(() => {
+                            // A Standards-Based test reads 0–4 with its 0–4
+                            // level; a percentage test as before.
+                            const shown = evidenceShown(w, student.id, e);
+                            return shown.sbg ? (
+                              <span
+                                className={"mastery-score tracker-score4 level-" + masteryLevel4(shown.score4).tone}
+                                title={masteryLevel4(shown.score4).level}
+                              >
+                                {shown.text}
+                              </span>
+                            ) : (
+                              <MasteryScore value={e.score} />
+                            );
+                          })()}
                         </div>
                       ))}
                   </div>

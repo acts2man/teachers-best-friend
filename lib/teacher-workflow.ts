@@ -1,14 +1,16 @@
-import { gradingModeOf, SBG_QUESTION_POINTS } from "./grading-mode";
+import { average4, gradingModeOf, isSbg, SBG_QUESTION_POINTS, score4OfMatch, score4Text } from "./grading-mode";
 import { isSecondChoice, withoutStandardNote } from "./standard-match";
-import { masteryPercent } from "./mastery-levels";
+import { masteryLevel4, masteryPercent } from "./mastery-levels";
 import type {
   AnswerRegion,
   Assessment,
+  Evidence,
   Group,
   Question,
   RubricDimension,
   Student,
   StudentResponse,
+  Workspace,
 } from "./teacher-types";
 import { provablyDifferent } from "./math-answer";
 import { expectedParts, partsAfterKeyEdit, partsRead, withParts } from "./answer-parts";
@@ -406,6 +408,9 @@ export function studentReview(a: Assessment, studentId: string) {
     score: counted.length ? Math.round((100 * earnedOf(counted)) / possibleOf(counted)) : null,
     pointsEarned: roundPoints(earnedOf(counted)),
     pointsPossible: totalPoints(a),
+    // Standards-Based: the average of the 0–4 scores over the same answers,
+    // unrounded (shown to one decimal with score4Text). Null in Percentage.
+    score4: isSbg(a) ? average4(counted.map(creditOf)) : null,
   };
   function earnedOf(rs: StudentResponse[]) {
     return rs.reduce((sum, r) => sum + pointsEarned(a, r), 0);
@@ -1416,7 +1421,44 @@ function csvField(value: unknown) {
  * is not a grade yet. `Reviewed` says how far along each student is, so a
  * half-checked class is obvious in the file rather than quietly understated.
  */
+/** An answer's stored credit, 0–100. */
+function creditOf(r: StudentResponse): number {
+  return Math.max(0, Math.min(100, r.match ?? (r.correct ? 100 : 0)));
+}
+
+/**
+ * One standard's average on a Standards-Based test, 0–4 (unrounded), over the
+ * given answers that are on that standard; null when there are none. Each
+ * standard shows this to one decimal with the 0–4 levels.
+ */
+export function standardAverage4(a: Assessment, responses: StudentResponse[], code: string): number | null {
+  const ids = new Set(activeQuestions(a).filter((q) => q.standard === code).map((q) => q.id));
+  return average4(responses.filter((r) => ids.has(r.questionId)).map(creditOf));
+}
+
+/**
+ * How one evidence record reads in the Standard Tracker (the student page's
+ * progress on one standard): each test in its own mode (Ricky, 20 Oct 2026).
+ * A record from a Standards-Based test reads 0–4, from that test's confirmed
+ * answers on the standard -- not from the stored whole percent, which can
+ * cross a 0–4 cut when rounded (3.45 is stored as 86, which reads 3.4) --
+ * falling back to the stored percent over 25 if the test is gone. Everything
+ * else reads as the percent it always did.
+ */
+export function evidenceShown(
+  w: Pick<Workspace, "assessments">,
+  studentId: string,
+  e: Pick<Evidence, "score" | "standard" | "assessmentId">,
+): { sbg: false; percent: number } | { sbg: true; score4: number; text: string } {
+  const a = e.assessmentId ? w.assessments.find((x) => x.id === e.assessmentId) : undefined;
+  if (!a || !isSbg(a)) return { sbg: false, percent: e.score };
+  const confirmed = a.responses.filter((r) => r.studentId === studentId && r.verified);
+  const score4 = standardAverage4(a, confirmed, e.standard) ?? e.score / 25;
+  return { sbg: true, score4, text: score4Text(score4) + " / 4" };
+}
+
 export function gradebookCsv(a: Assessment, students: Student[]) {
+  if (isSbg(a)) return gradebookCsv4(a, students);
   const questions = activeQuestions(a);
   const total = totalPoints(a);
   // Each question column is the points earned on it, headed with what it is
@@ -1449,6 +1491,43 @@ export function gradebookCsv(a: Assessment, students: Student[]) {
       }),
       final ? pointsText(review.pointsEarned) : incomplete ? "Incomplete" : "",
       final ? String(review.score) : incomplete ? "Incomplete" : "",
+      review.counted.length + "/" + questions.length,
+      review.needsGrading ? String(review.needsGrading) : "",
+    ];
+  });
+  return [header, ...rows].map((row) => row.map(csvField).join(",")).join("\n");
+}
+
+/**
+ * The gradebook for a Standards-Based test: each question's 0–4 score, the
+ * average to one decimal and its level -- no points. A credit given in
+ * Percentage that is not a quarter prints as its nearest whole score, as the
+ * screen shows it.
+ */
+function gradebookCsv4(a: Assessment, students: Student[]) {
+  const questions = activeQuestions(a);
+  const header = [
+    "Student",
+    ...questions.map((q) => "Q" + q.number + " (0–4)"),
+    "Average (0–4)",
+    "Level",
+    "Reviewed",
+    "Needs grading",
+  ];
+  const rows = students.map((student) => {
+    const review = studentReview(a, student.id);
+    const byQuestion = new Map(review.responses.map((r) => [r.questionId, r]));
+    const final = review.score4 !== null && review.complete;
+    const incomplete = review.score4 !== null && !review.complete;
+    return [
+      student.name,
+      ...questions.map((q) => {
+        const r = byQuestion.get(q.id);
+        if (!r || !countsAsGraded(a, r)) return "";
+        return String(score4OfMatch(creditOf(r)).score);
+      }),
+      final ? score4Text(review.score4!) : incomplete ? "Incomplete" : "",
+      final ? masteryLevel4(review.score4!).level : incomplete ? "Incomplete" : "",
       review.counted.length + "/" + questions.length,
       review.needsGrading ? String(review.needsGrading) : "",
     ];

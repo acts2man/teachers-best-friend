@@ -208,6 +208,23 @@ $patch$;
 
 ### 1.6 Every screen and report that shows a percentage today, and what it shows in SBG
 
+**Built (26 Oct 2026, G2):**
+- grading in 0–4: Grade by question's five buttons and the per-answer quick buttons;
+- the student's result and per-standard rows;
+- one answer's footer;
+- Grade by question's counts;
+- the class analysis cards and report text;
+- the gradebook CSV;
+- the Standard Tracker (the student page's progress on one standard), which reads each test in its own mode (Ricky, 20 Oct 2026).
+
+**Still percentages on a Standards-Based test**, so not in that build:
+- the DOK grid and its cell panel;
+- the class and student depth breakdowns (DOK / Costa);
+- the student report text;
+- writing tests.
+
+The cross-test screens other than the tracker stay percentages, as proposed below (Question A1).
+
 These are the **per-test** places: they read this test's answers, so they follow the test's mode.
 
 | Where | Code | Percentage (today) | SBG |
