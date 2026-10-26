@@ -3,8 +3,8 @@
  * screen, report and recommendation reads its level, colour and cut-offs from
  * here; nothing else may compare a mastery percentage to a number.
  *
- *   Beginning    0–69%   red     Reteach Recommended    Reteach
- *   Approaching  70–79%  yellow  Monitor                Offer targeted practice
+ *   Beginning    0–59%   red     Reteach Recommended    Reteach
+ *   Approaching  60–79%  yellow  Monitor                Offer targeted practice
  *   Proficient   80–89%  blue    Ready to Move On       Offer optional reinforcement
  *   Exceeding    90–100% green   Extension Recommended  Offer extension activity
  *
@@ -19,10 +19,13 @@
  * student could be "mastered" on one screen and amber on the next.
  *
  * Boundaries are on the percentage rounded to the nearest whole number (Ricky,
- * 19 Oct 2026): Beginning below 69.5, Approaching 69.5 to under 79.5,
+ * 19 Oct 2026): Beginning below 59.5, Approaching 59.5 to under 79.5,
  * Proficient 79.5 to under 89.5, Exceeding 89.5 and up. The percentage shown
- * beside a level is that same rounded value (masteryPercent), so 69.5 shows
- * "70%" and is Approaching -- the number on screen and the level always agree.
+ * beside a level is that same rounded value (masteryPercent), so 59.5 shows
+ * "60%" and is Approaching -- the number on screen and the level always agree.
+ * The Beginning line moved from 69.5 to 59.5 on 26 Oct 2026 (Ricky and
+ * Michael); the student card's "at or above 70% standard score" count did not
+ * move with it -- it has its own line (STANDARD_SCORE_PERCENT).
  * This replaced "true value, rounded down" (#159), under which 69.9 showed
  * 69% and sat in the lowest level.
  */
@@ -56,8 +59,8 @@ export type MasteryLevelInfo = {
 };
 
 export const MASTERY_LEVELS: readonly MasteryLevelInfo[] = [
-  { level: "Beginning", min: 0, range: "0–69%", tone: "red", recommendation: "reteach", nextStep: { label: "Reteach", intent: "reteach" }, advice: "Reteach Recommended", description: "Reteach and support" },
-  { level: "Approaching", min: 70, range: "70–79%", tone: "yellow", recommendation: null, nextStep: { label: "Offer targeted practice", intent: "practice" }, advice: "Monitor", description: "Close to the standard: targeted practice" },
+  { level: "Beginning", min: 0, range: "0–59%", tone: "red", recommendation: "reteach", nextStep: { label: "Reteach", intent: "reteach" }, advice: "Reteach Recommended", description: "Reteach and support" },
+  { level: "Approaching", min: 60, range: "60–79%", tone: "yellow", recommendation: null, nextStep: { label: "Offer targeted practice", intent: "practice" }, advice: "Monitor", description: "Close to the standard: targeted practice" },
   { level: "Proficient", min: 80, range: "80–89%", tone: "blue", recommendation: null, nextStep: { label: "Offer optional reinforcement", intent: "reinforcement" }, advice: "Ready to Move On", description: "Meeting the standard: optional reinforcement" },
   { level: "Exceeding", min: 90, range: "90–100%", tone: "green", recommendation: "extend", nextStep: { label: "Offer extension activity", intent: "extension" }, advice: "Extension Recommended", description: "Ready for advanced application and extension" },
 ];
@@ -77,7 +80,7 @@ export function masteryLevelOf(percent: number | null | undefined): MasteryLevel
 }
 
 /** A mastery percentage for display, rounded to the nearest whole number
- * (69.5 shows as 70). The level is read from this same number. */
+ * (59.5 shows as 60). The level is read from this same number. */
 export function masteryPercent(percent: number): number {
   // A hair of tolerance so a half that arithmetic left a hair short
   // (69.49999…) still rounds up, as the teacher would round it by hand.
@@ -109,9 +112,14 @@ export function exceedingOnAllAssessed(statuses: string[]): boolean {
   return levels.length > 0 && levels.every((s) => s === "Exceeding");
 }
 
+/** The student card's "skills at or above 70% standard score" line (Ricky, 15
+ * Oct 2026). Its own number, not the level table's: when the Beginning line
+ * moved to 59.5, the card kept counting skills at 70% and above. */
+export const STANDARD_SCORE_PERCENT = 70;
+
 /** The plain-language rule, for method notes and reports. */
 export const MASTERY_LEVELS_NOTE =
-  "Levels: Beginning 0–69% (reteach), Approaching 70–79% (targeted practice), Proficient 80–89% (optional reinforcement), Exceeding 90–100% (extension), on the percentage rounded to the nearest whole number.";
+  "Levels: Beginning 0–59% (reteach), Approaching 60–79% (targeted practice), Proficient 80–89% (optional reinforcement), Exceeding 90–100% (extension), on the percentage rounded to the nearest whole number.";
 
 /** The intent a lesson link asked for, or "reteach" for anything else. */
 export function lessonIntent(raw: string | null | undefined): LessonIntent {
