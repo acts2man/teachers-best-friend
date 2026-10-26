@@ -109,6 +109,51 @@ export function exceedingOnAllAssessed(statuses: string[]): boolean {
   return levels.length > 0 && levels.every((s) => s === "Exceeding");
 }
 
+/**
+ * The level for a score out of 4 (Ricky, 20 Oct 2026): Beginning below 1.95,
+ * Approaching 1.95–2.94, Proficient 2.95–3.44, Exceeding 3.45 and up. Like
+ * the percentage levels, read from the score rounded to one decimal -- the
+ * number shown -- so 1.95 shows "2.0" and is Approaching.
+ */
+export const SCORE4_CUTS: readonly { level: MasteryLevel; min: number }[] = [
+  { level: "Beginning", min: 0 },
+  { level: "Approaching", min: 2.0 },
+  { level: "Proficient", min: 3.0 },
+  { level: "Exceeding", min: 3.5 },
+];
+
+/** Each level's range on the 0–4 scale, as a teacher reads it (rounded to
+ * one decimal, like the score shown). */
+export const SCORE4_RANGES: Record<MasteryLevel, string> = {
+  Beginning: "0–1.9",
+  Approaching: "2.0–2.9",
+  Proficient: "3.0–3.4",
+  Exceeding: "3.5–4",
+};
+
+/** A 0–4 score rounded to one decimal, as shown. */
+export function score4Shown(score: number): number {
+  return Math.round(score * 10 + 1e-9) / 10;
+}
+
+/** The level for a 0–4 score (an average, or one rubric score). */
+export function masteryLevel4(score: number): MasteryLevelInfo {
+  const shown = score4Shown(score);
+  let found = SCORE4_CUTS[0];
+  for (const c of SCORE4_CUTS) if (shown >= c.min) found = c;
+  return MASTERY_LEVELS.find((l) => l.level === found.level)!;
+}
+
+/**
+ * The level for a writing rubric score. A rubric score is already a 0–4
+ * score, not a percentage: 2 of 4 is Approaching, where read as 50% it was
+ * the lowest level. A trait out of another maximum is put on the 0–4 scale
+ * first (3 of 6 is 2.0).
+ */
+export function rubricLevel(score: number, max: number): MasteryLevelInfo {
+  return masteryLevel4(max > 0 && max !== 4 ? (score / max) * 4 : score);
+}
+
 /** The plain-language rule, for method notes and reports. */
 export const MASTERY_LEVELS_NOTE =
   "Levels: Beginning 0–69% (reteach), Approaching 70–79% (targeted practice), Proficient 80–89% (optional reinforcement), Exceeding 90–100% (extension), on the percentage rounded to the nearest whole number.";

@@ -74,7 +74,7 @@ import {
   LevelPill,
   LevelStudents,
 } from "./teacher-shared";
-import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, levelClass, masteryLevel } from "@/lib/mastery-levels";
+import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, masteryLevel, rubricLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   dokGrid,
@@ -2480,9 +2480,17 @@ function WritingReview({
                   }
                 >
                   {level}
+                  {/* A 4-point trait's scores are named like the levels
+                      (Ricky, 20 Oct 2026): 1 Beginning to 4 Exceeding. */}
+                  {dimension.max === 4 && level > 0 && " " + rubricLevel(level, 4).level}
                 </Action>
               ))}
               <span className="cell-meta">of {dimension.max}</span>
+              {response?.rubricScore !== undefined && (
+                <Pill tone={"level-" + rubricLevel(response.rubricScore, dimension.max).tone}>
+                  {response.rubricScore} {rubricLevel(response.rubricScore, dimension.max).level}
+                </Pill>
+              )}
               {response?.verified ? (
                 <Pill tone="green">
                   <Check size={13} /> Confirmed
@@ -2535,16 +2543,18 @@ function WritingClassPanel({
               <span className="group-icon">
                 <Target size={21} />
               </span>
-              <Pill tone={row.averagePercent === null ? "neutral" : levelClass(row.averagePercent)}>
+              {/* The trait's level from the 0–4 cuts, not the average as a
+                  percentage (2 of 4 is Approaching). */}
+              <Pill tone={row.level ? "level-" + row.level.tone : "neutral"}>
                 Avg {row.averageLabel}
-                {row.averagePercent !== null && " · " + masteryLevel(row.averagePercent).level}
+                {row.level && " · " + row.level.level}
               </Pill>
             </header>
             <h2>{row.dimension.name}</h2>
-            {row.averagePercent !== null && (
-              <Meter value={row.averagePercent} tone={levelClass(row.averagePercent)} />
+            {row.averagePercent !== null && row.level && (
+              <Meter value={row.averagePercent} tone={"level-" + row.level.tone} />
             )}
-            <LevelStudents byLevel={row.byLevel} onOpen={(member) => go("/students?id=" + member.id)} />
+            <LevelStudents byLevel={row.byLevel} ranges={SCORE4_RANGES} onOpen={(member) => go("/students?id=" + member.id)} />
             {row.notScored.length > 0 && (
               <span className="cell-meta">
                 {row.notScored.length} student{row.notScored.length === 1 ? "" : "s"} not
