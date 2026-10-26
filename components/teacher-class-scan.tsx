@@ -58,6 +58,7 @@ import {
   rosterMatchCount,
   mergeNameReads,
   NAME_CONCURRENCY,
+  GRADE_CONCURRENCY,
   planNameBatches,
   planScanBatches,
   planRemainingBatches,
@@ -66,6 +67,7 @@ import {
   resolveScannedGroups,
   ungradedReservations,
   type GradedGroup,
+  type ScanBatch,
   type NameBox,
   type PageName,
   type ResolvedGroup,
@@ -748,7 +750,28 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // it from a number that did not move.
     if (reserved.charged === 0 && reserved.alreadyPaid > 0)
       toast.success("These pages are already paid for — this re-grade uses no credits.");
-    setStatus("Reading the name on each page…");
+    const started = Date.now();
+    let namesDoneAt = 0;
+    // Grading no longer waits for the names when it does not need them: with
+    // the teacher's own piles (or a resume's saved grouping) every student's
+    // pages are known before a single name is read, and the grading request is
+    // never shown a name. Only a whole-stack upload is split BY the names, so
+    // only there does grading still wait for them.
+    const mixed = !!explicit && !!stackPiles?.some(Boolean);
+    const known = resumeGroups ?? (explicit && !mixed ? groupPagesByCapture(explicit) : null);
+    let namesPending = true;
+    let total = 0;
+    let gradedCount = resume?.graded.length ?? 0;
+    const showStatus = () =>
+      setStatus(
+        namesPending && total
+          ? "Reading names and grading " + total + " student" + (total === 1 ? "" : "s") + "\u2026"
+          : namesPending
+            ? "Reading the name on each page\u2026"
+            : "Grading " + total + " student" + (total === 1 ? "" : "s") + "\u2026" +
+              (gradedCount ? " " + gradedCount + " of " + total + " done" : ""),
+      );
+    showStatus();
     try {
       // Batched for the same reason grading is: one request holding every strip
       // in a class set is a request whose size nobody chose. The batching and
@@ -757,66 +780,218 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // One request per student pile the teacher declared (per page when they
       // declared none), a few at a time, so a name can never be read onto
       // another child's pages.
-      const mixed = !!explicit && !!stackPiles?.some(Boolean);
-      const slices = planNameBatches(
-        pages.map((p) => p.stripId),
-        resumeGroups ?? (explicit ? (mixed ? namePilesFor(explicit, stackPiles!) : groupPagesByCapture(explicit)) : null),
-      );
-      const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
-        // Tried again, with backoff, before a page is left for the teacher:
-        // name reads are free to the teacher, a missed one costs them a tap
-        // (#125 follow-up c).
-        const read = await withRetry(
-          () =>
-            analyzeRequest({
-              mode: "name_strip",
-              uploadIds: slice.map((s) => s.id),
-              grade: a.grade,
-              subject: a.subject,
-              framework: a.framework,
-              assessmentId: a.id,
-            }),
-          {
-            // Only a passing fault: never a refusal, a spending cap or the
-            // poll deadline (isRetryableAnalyzeError).
-            retryable: isRetryableAnalyzeError,
-            // Every retried failure is logged, so the per-page failure rate
-            // can be measured even when the retry recovers it.
-            onRetry: (error, attempt) =>
-              logAppEvent("ai_failure", {
-                message: "name read failed; retrying: " + ((error as Error)?.message ?? ""),
-                assessmentId: a.id,
-                detail: { mode: "name_strip", kind: "error", attempt, retried: true },
-              }),
-          },
+      const readNames = async (): Promise<PageName[]> => {
+        const slices = planNameBatches(
+          pages.map((p) => p.stripId),
+          resumeGroups ?? (explicit ? (mixed ? namePilesFor(explicit, stackPiles!) : groupPagesByCapture(explicit)) : null),
         );
-        return read.result as { pages?: PageName[] };
-      }, (error) => {
-        // One pile's name read failing leaves that pile unnamed -- the
-        // teacher picks the student on the matching screen -- rather than
-        // stopping the whole class. All of them failing still stops it.
-        logAppEvent("ai_failure", { message: "name read failed: " + ((error as Error)?.message ?? ""), assessmentId: a.id, detail: { mode: "name_strip", kind: "error" } });
-        // Marked failed, not read as "no name": a page with no name joins the
-        // student before it, and a failed read must never do that.
-        return { failed: true };
-      });
-      // Each request numbered its answers within the strips it was shown; map
-      // them back to the page each strip was cut from.
-      const names = mergeNameReads(ids.length, slices, reads);
+        const reads = await mapLimit<(typeof slices)[number], { pages?: PageName[]; failed?: boolean }>(slices, NAME_CONCURRENCY, async (slice) => {
+          // Tried again, with backoff, before a page is left for the teacher:
+          // name reads are free to the teacher, a missed one costs them a tap
+          // (#125 follow-up c).
+          const read = await withRetry(
+            () =>
+              analyzeRequest({
+                mode: "name_strip",
+                uploadIds: slice.map((s) => s.id),
+                grade: a.grade,
+                subject: a.subject,
+                framework: a.framework,
+                assessmentId: a.id,
+              }),
+            {
+              // Only a passing fault: never a refusal, a spending cap or the
+              // poll deadline (isRetryableAnalyzeError).
+              retryable: isRetryableAnalyzeError,
+              // Every retried failure is logged, so the per-page failure rate
+              // can be measured even when the retry recovers it.
+              onRetry: (error, attempt) =>
+                logAppEvent("ai_failure", {
+                  message: "name read failed; retrying: " + ((error as Error)?.message ?? ""),
+                  assessmentId: a.id,
+                  detail: { mode: "name_strip", kind: "error", attempt, retried: true },
+                }),
+            },
+          );
+          return read.result as { pages?: PageName[] };
+        }, (error) => {
+          // One pile's name read failing leaves that pile unnamed -- the
+          // teacher picks the student on the matching screen -- rather than
+          // stopping the whole class. All of them failing still stops it --
+          // unless grading already started from the teacher's piles (below).
+          logAppEvent("ai_failure", { message: "name read failed: " + ((error as Error)?.message ?? ""), assessmentId: a.id, detail: { mode: "name_strip", kind: "error" } });
+          // Marked failed, not read as "no name": a page with no name joins the
+          // student before it, and a failed read must never do that.
+          return { failed: true };
+        });
+        // Each request numbered its answers within the strips it was shown; map
+        // them back to the page each strip was cut from.
+        return mergeNameReads(ids.length, slices, reads);
+      };
+
+      /**
+       * Grades the students in `pageGroups`, GRADE_CONCURRENCY requests at a
+       * time. One request per handful of students rather than one for the
+       * whole class: a class set asked for more output than the model would
+       * return in a single answer and came back incomplete. The photographs
+       * are the expensive part and there are exactly as many of them either
+       * way. Resumes where an interrupted run stopped rather than grading, and
+       * paying, from the top again: only the students not yet graded are
+       * planned, numbered in the whole scan, and only ever with the saved
+       * layout (gradeCaptured checks it with planResume).
+       */
+      const gradeGroups = async (pageGroups: number[][]): Promise<GradedGroup[]> => {
+        // What every banked group number below refers to. Saved with the
+        // progress so a resume can check it is looking at the same pages.
+        const layout = groupLayout(pageGroups, ids);
+        total = pageGroups.length;
+        showStatus();
+        const resuming = resume && resumeGroups ? resume : null;
+        const batches = planRemainingBatches(
+          pageGroups,
+          ids,
+          activeQuestions(a).length,
+          resuming?.graded ?? [],
+          pages.map((p) => p.bytes),
+        );
+        // A job still running is waited on only if it was sent for exactly the
+        // students the first remaining batch holds; otherwise its answers are
+        // numbered against other children, and the batch is sent again.
+        let inFlight = resuming && batches[0] && inFlightMatches(resuming, batches[0].groupIndexes) ? resuming.scanId : null;
+        // With several batches in flight, the one recorded for a phone that
+        // sleeps mid-grade is the FIRST one not yet back: a resume plans the
+        // ungraded students from the top, so that is the only job it can wait
+        // on. The others are sent again (free: pages are charged once).
+        const jobs = new Map<number, string>();
+        let resumeAt = 0;
+        const record = () => {
+          const id = (batches[resumeAt] && jobs.get(resumeAt)) || null;
+          // The students that job was sent for, so a resume can check it.
+          const sentFor = id ? batches[resumeAt].groupIndexes : undefined;
+          setProgress({ graded: banked, nextBatch: resumeAt, scanId: id, layout, inFlight: sentFor });
+        };
+        return gradeInBatches(
+          batches,
+          async (batch: ScanBatch, index: number) => {
+            // A batch already sent and still running is waited on, not repeated.
+            if (inFlight) {
+              const id = inFlight;
+              inFlight = null;
+              try {
+                return (await resumeScan(id)).result;
+              } catch {
+                // Gone or never finished; fall through and send it again.
+              }
+            }
+            const d = await analyzeRequest(
+              {
+                mode: "class_scan",
+                uploadIds: batch.uploadIds,
+                pageGroups: batch.groups,
+                // Set only when re-asking short multi-part answers.
+                onlyQuestionIds: batch.onlyQuestionIds ?? [],
+                // One teacher action, however many requests it takes.
+                batchIndex: index,
+                grade: a.grade,
+                subject: a.subject,
+                framework: a.framework,
+                assessmentId: a.id,
+              },
+              // Record the job before waiting on it, so a phone that sleeps
+              // mid-grade picks this exact one up instead of paying for another.
+              // Only for the batch itself: a retry or multi-part re-ask is
+              // numbered against its own smaller request, and resuming it as the
+              // whole batch would put one student's answers on another.
+              batch === batches[index]
+                ? {
+                    onScanId: (id) => {
+                      jobs.set(index, id);
+                      if (index === resumeAt) record();
+                    },
+                  }
+                : undefined,
+            );
+            return d.result;
+          },
+          // Banked after each batch, so an interruption never re-grades one.
+          (soFar, nextBatch) => {
+            banked = soFar;
+            gradedCount = soFar.length;
+            // Kept on the ref as well as in state: a failure is handled in the
+            // same tick, where the state from this run has not landed yet.
+            if (partial.current) partial.current.graded = soFar;
+            resumeAt = nextBatch;
+            record();
+            showStatus();
+          },
+          0,
+          resuming?.graded ?? [],
+          // A full set of answers per student; a batch that returns fewer is
+          // re-asked for the missing students rather than banked with blanks.
+          activeQuestions(a).length,
+          undefined,
+          (info) => {
+            // Logged either way: a retry, or a group still short after retries so
+            // a few answers may save blank. This is the one failure that otherwise
+            // leaves no trace (Ricky's "it skipped some" with nothing on screen).
+            // Short output from the model is an AI failure worth a record even
+            // when the retry recovers it: how often it happens is the number.
+            logAppEvent("ai_failure", {
+              message: info.retried ? "class_scan batch came back short; re-asking" : "class_scan batch still short after retries",
+              assessmentId: a.id,
+              detail: { mode: "class_scan", kind: "short", batch: info.batch, missing: info.missing.length, attempt: info.attempt, retried: info.retried },
+            });
+            console.warn(
+              info.retried
+                ? `class_scan batch ${info.batch}: students ${info.missing.join(", ")} came back short; re-asking (attempt ${info.attempt})`
+                : `class_scan batch ${info.batch}: students ${info.missing.join(", ")} still short after ${info.attempt} retr${info.attempt === 1 ? "y" : "ies"}; some answers may save blank`,
+            );
+          },
+          a,
+          (info) =>
+            logAppEvent("ai_failure", {
+              message: "multi-part answers came back short; re-asked once",
+              assessmentId: a.id,
+              detail: { mode: "class_scan", kind: "short_parts", batch: info.batch, reasked: info.reasked, unsure: info.unsure },
+            }),
+          GRADE_CONCURRENCY,
+        );
+      };
+
+      // Started now when the groups are already known, so the grading
+      // requests run while the names are still being read.
+      let grading: Promise<GradedGroup[]> | null = null;
+      if (known) {
+        // The pages are grouped now, so a failure from here on releases only
+        // the groups that never graded rather than the whole reserved stack.
+        runGroups = known;
+        grading = gradeGroups(known);
+        // Waited on below; this only stops a failure while the names are
+        // still being read from surfacing as an unhandled rejection.
+        grading.catch(() => {});
+      }
+      let names: PageName[];
+      try {
+        names = await readNames();
+      } catch (e) {
+        if (!grading) throw e;
+        // Every name read failed while the students were already being graded
+        // from the teacher's piles. Those grades are paid for and are on the
+        // right piles, so they are kept: every pile is left for the teacher to
+        // pick the student, as one pile's failed read already is.
+        names = mergeNameReads(ids.length, [], []);
+      }
+      namesPending = false;
+      namesDoneAt = Date.now();
 
       // Pass two: the work, with the name bands gone, grouped either by what the
       // teacher declared or by what pass one found. Shown no name at all.
       const rosterMatches = (name: string) => rosterMatchCount(name, students);
-      const pageGroups = resumeGroups
-        ? resumeGroups
+      const pageGroups = known
+        ? known
         : explicit
-          ? mixed
-            ? groupMixedPiles(explicit, stackPiles!, names, rosterMatches)
-            : groupPagesByCapture(explicit)
+          ? groupMixedPiles(explicit, stackPiles!, names, rosterMatches)
           : groupPagesByName(names, rosterMatches);
-      // What every banked group number below refers to. Saved with the
-      // progress so a resume can check it is looking at the same pages.
-      const layout = groupLayout(pageGroups, ids);
       // Pages whose name read failed or was skipped (a page with no name area
       // to read -- a PDF page -- is unread too, but nothing failed there).
       const failedReads = names.filter((n) => n.failed && pages[n.page]?.stripId).length;
@@ -826,124 +1001,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
             (failedReads === 1 ? " page's name" : " pages' names") +
             " could not be read. Those pages are left unmatched — pick the student for each on the next screen.",
         );
-      // The pages are grouped now, so a failure from here on releases only the
-      // groups that never graded rather than the whole reserved stack.
       runGroups = pageGroups;
-
-      // One request per handful of students rather than one for the whole class.
-      // A class set asked for more output than the model would return in a single
-      // answer and came back incomplete, which cost the teacher the scan and told
-      // them only to try fewer pages. The photographs are the expensive part and
-      // there are exactly as many of them either way.
-      partial.current = { pageGroups, names, ids, nameIds, graded: resume?.graded ?? [] };
-      // Resume where an interrupted run stopped rather than grading, and paying,
-      // from the top again: only the students not yet graded are planned,
-      // numbered in the whole scan. Only ever with the saved layout
-      // (gradeCaptured checks it with planResume): progress numbered against
-      // other groups is never used.
-      const resuming = resume && resumeGroups ? resume : null;
-      const batches = planRemainingBatches(
-        pageGroups,
-        ids,
-        activeQuestions(a).length,
-        resuming?.graded ?? [],
-        pages.map((p) => p.bytes),
-      );
-      // A job still running is waited on only if it was sent for exactly the
-      // students the first remaining batch holds; otherwise its answers are
-      // numbered against other children, and the batch is sent again.
-      let inFlight = resuming && batches[0] && inFlightMatches(resuming, batches[0].groupIndexes) ? resuming.scanId : null;
-      const graded = await gradeInBatches(
-        batches,
-        async (batch, index) => {
-          setStatus(
-            batches.length > 1
-              ? "Grading students " +
-                  (batch.groupIndexes[0] + 1) +
-                  "\u2013" +
-                  (batch.groupIndexes[batch.groupIndexes.length - 1] + 1) +
-                  " of " +
-                  pageGroups.length +
-                  "\u2026"
-              : "Grading " +
-                  pageGroups.length +
-                  " student" +
-                  (pageGroups.length === 1 ? "" : "s") +
-                  "\u2026",
-          );
-          // A batch already sent and still running is waited on, not repeated.
-          if (inFlight) {
-            const id = inFlight;
-            inFlight = null;
-            try {
-              return (await resumeScan(id)).result;
-            } catch {
-              // Gone or never finished; fall through and send it again.
-            }
-          }
-          const d = await analyzeRequest(
-            {
-              mode: "class_scan",
-              uploadIds: batch.uploadIds,
-              pageGroups: batch.groups,
-              // Set only when re-asking short multi-part answers.
-              onlyQuestionIds: batch.onlyQuestionIds ?? [],
-              // One teacher action, however many requests it takes.
-              batchIndex: index,
-              grade: a.grade,
-              subject: a.subject,
-              framework: a.framework,
-              assessmentId: a.id,
-            },
-            // Record the job before waiting on it, so a phone that sleeps
-            // mid-grade picks this exact one up instead of paying for another.
-            // Only for the batch itself: a retry or multi-part re-ask is
-            // numbered against its own smaller request, and resuming it as the
-            // whole batch would put one student's answers on another.
-            batch === batches[index]
-              ? { onScanId: (id) => setProgress({ graded: banked, nextBatch: index, scanId: id, layout, inFlight: batch.groupIndexes }) }
-              : undefined,
-          );
-          return d.result;
-        },
-        // Banked after each batch, so an interruption never re-grades one.
-        (soFar, nextBatch) => {
-          banked = soFar;
-          // Kept on the ref as well as in state: a failure is handled in the
-          // same tick, where the state from this run has not landed yet.
-          if (partial.current) partial.current.graded = soFar;
-          setProgress({ graded: soFar, nextBatch, scanId: null, layout });
-        },
-        0,
-        resuming?.graded ?? [],
-        // A full set of answers per student; a batch that returns fewer is
-        // re-asked for the missing students rather than banked with blanks.
-        activeQuestions(a).length,
-        undefined,
-        (info) => {
-          // Logged either way: a retry, or a group still short after retries so
-          // a few answers may save blank. This is the one failure that otherwise
-          // leaves no trace (Ricky's "it skipped some" with nothing on screen).
-          // Short output from the model is an AI failure worth a record even
-          // when the retry recovers it: how often it happens is the number.
-          logAppEvent("ai_failure", {
-            message: info.retried ? "class_scan batch came back short; re-asking" : "class_scan batch still short after retries",
-            assessmentId: a.id,
-            detail: { mode: "class_scan", kind: "short", batch: info.batch, missing: info.missing.length, attempt: info.attempt, retried: info.retried },
-          });
-          console.warn(
-            info.retried
-              ? `class_scan batch ${info.batch}: students ${info.missing.join(", ")} came back short; re-asking (attempt ${info.attempt})`
-              : `class_scan batch ${info.batch}: students ${info.missing.join(", ")} still short after ${info.attempt} retr${info.attempt === 1 ? "y" : "ies"}; some answers may save blank`,
-          );
-        },
-        a,
-        (info) =>
-          logAppEvent("ai_failure", {
-            message: "multi-part answers came back short; re-asked once",
-            assessmentId: a.id,
-            detail: { mode: "class_scan", kind: "short_parts", batch: info.batch, reasked: info.reasked, unsure: info.unsure },
-          }),
+      total = pageGroups.length;
+      showStatus();
+      partial.current = { pageGroups, names, ids, nameIds, graded: banked };
+      const graded = await (grading ?? gradeGroups(pageGroups));
+      // How long the teacher waited, for comparing runs (the same numbers are
+      // in the scans table: see docs/system-map.md, "Grading speed").
+      console.info(
+        `class scan: ${pageGroups.length} students, ${ids.length} pages graded in ${Math.round((Date.now() - started) / 1000)} s ` +
+          `(names done at ${Math.round((namesDoneAt - started) / 1000)} s; grading ${known ? "started with the names" : "waited for the names"}, ${GRADE_CONCURRENCY} at a time)`,
       );
       setProgress(null);
       showGraded(pageGroups, names, graded, ids, nameIds);

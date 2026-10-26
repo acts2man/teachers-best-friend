@@ -115,11 +115,20 @@ test("the panel resumes only through planResume and never grades a stack upload 
   assert.match(body, /plan\?\.kind === "changed"[\s\S]*askToRegrade\(\)[\s\S]*return;/, "a changed stack stops and asks");
   // Banked progress always carries the layout it is numbered against.
   const banks = [...src.matchAll(/setProgress\(\{[^}]*\}\)/g)].map((m) => m[0]);
-  assert.ok(banks.length >= 2, "found the progress writes");
+  // Since batches run three at a time, the after-batch and job-started
+  // writes are one: record(), which saves the layout with the in-flight job.
+  assert.ok(banks.length >= 1, "found the progress writes");
+  assert.ok(
+    banks.includes("setProgress({ graded: banked, nextBatch: resumeAt, scanId: id, layout, inFlight: sentFor })"),
+    "the grading run's progress write is record(), with its layout",
+  );
   for (const b of banks) assert.match(b, /layout/, `progress saved without its layout: ${b}`);
   // The resume path in gradePages uses the saved groups and nothing else.
   assert.match(src, /const resuming = resume && resumeGroups \? resume : null/);
-  assert.match(src, /const pageGroups = resumeGroups\s*\?\s*resumeGroups/);
+  // (Since grading starts beside the name pass, the saved groups are the
+  // "known" groups it starts from, and the ones the names never replace.)
+  assert.match(src, /const known = resumeGroups \?\? /);
+  assert.match(src, /const pageGroups = known\s*\?\s*known/);
   assert.match(src.slice(src.indexOf("async function startStackScan(")), /stack: true,/);
 });
 
@@ -187,7 +196,13 @@ test("the panel plans only the ungraded students and never skips by nextBatch", 
   assert.match(run, /planRemainingBatches\(/);
   assert.doesNotMatch(run, /resume\.nextBatch|resuming\?\.nextBatch/, "a resume must not skip batches by number");
   assert.match(run, /inFlightMatches\(resuming, batches\[0\]\.groupIndexes\)/);
-  assert.match(run, /inFlight: batch\.groupIndexes/, "an in-flight job records the students it was sent for");
+  // With batches three at a time, the job recorded is the first batch not
+  // yet back (the only one a resume, planning from the top, can wait on),
+  // with the students it was sent for -- and only the batch itself, never a
+  // retry or re-ask numbered against a smaller request.
+  assert.match(run, /const sentFor = id \? batches\[resumeAt\]\.groupIndexes : undefined/, "an in-flight job records the students it was sent for");
+  assert.match(run, /inFlight: sentFor/);
+  assert.match(run, /batch === batches\[index\]\s*\?\s*\{\s*onScanId:/);
   const ask = src.slice(src.indexOf("function askToRegrade("), src.indexOf("async function gradeCaptured("));
   assert.match(ask, /id: "scan-regrade-" \+ a\.id/, "the prompt replaces itself instead of stacking");
   assert.match(ask, /gradeCapturedRef\.current\(true\)/, "the button runs the latest panel state");
