@@ -323,20 +323,43 @@ export function clearClassStudents(w: Workspace, classId: string) {
       uploadIds: a.uploadIds.filter((id) => !uploadIds.has(id)),
     };
   });
+  const workspace: Workspace = {
+    ...w,
+    students: w.students.filter((s) => !ids.has(s.id)),
+    assessments,
+    groups: (w.groups || []).map((g) =>
+      g.studentIds?.some((id) => ids.has(id))
+        ? { ...g, studentIds: g.studentIds.filter((id) => !ids.has(id)) }
+        : g,
+    ),
+  };
   return {
-    workspace: {
-      ...w,
-      students: w.students.filter((s) => !ids.has(s.id)),
-      assessments,
-      groups: (w.groups || []).map((g) =>
-        g.studentIds?.some((id) => ids.has(id))
-          ? { ...g, studentIds: g.studentIds.filter((id) => !ids.has(id)) }
-          : g,
-      ),
-    },
-    uploadIds: [...uploadIds],
+    workspace,
+    // Not a page another student or test still uses (the same bytes are one
+    // upload).
+    uploadIds: uploadsNoLongerUsed(workspace, uploadIds),
     studentCount: leaving.length,
   };
+}
+
+/**
+ * Of these upload ids, the ones nothing left in the workspace still uses: no
+ * assessment's pages, answer key or student work, and no resource. Since one
+ * live upload row is kept per teacher per content hash (20261026120000), the
+ * same bytes uploaded to two tests are ONE upload -- so deleting the first
+ * test must not delete the page the second still shows.
+ */
+export function uploadsNoLongerUsed(w: Workspace, ids: Iterable<string>): string[] {
+  const used = new Set<string>();
+  for (const a of w.assessments) {
+    for (const id of a.uploadIds || []) used.add(id);
+    for (const id of a.assignmentUploadIds || []) used.add(id);
+    for (const id of a.answerKeyUploadIds || []) used.add(id);
+    for (const pages of Object.values(a.studentUploadIds || {}))
+      for (const id of pages || []) used.add(id);
+  }
+  for (const r of w.resources || []) if (r.uploadId) used.add(r.uploadId);
+  return [...new Set(ids)].filter((id) => !used.has(id));
 }
 
 /**
@@ -366,8 +389,7 @@ export function deleteAssessment(w: Workspace, assessmentId: string) {
     for (const pages of Object.values(target.studentUploadIds || {}))
       for (const id of pages || []) uploadIds.add(id);
   }
-  return {
-    workspace: {
+  const workspace: Workspace = {
       ...w,
       assessments: w.assessments.filter((a) => a.id !== assessmentId),
       students: w.students.map((s) =>
@@ -385,9 +407,9 @@ export function deleteAssessment(w: Workspace, assessmentId: string) {
           ? { ...l, assessmentId: undefined }
           : l,
       ),
-    },
-    uploadIds: [...uploadIds],
   };
+  // Not a page another test still uses (the same bytes are one upload).
+  return { workspace, uploadIds: uploadsNoLongerUsed(workspace, uploadIds) };
 }
 
 /**

@@ -40,6 +40,7 @@ import {
   classSummary,
   namesFromText,
   shortenName,
+  uploadsNoLongerUsed,
 } from "@/lib/teacher-classes";
 import {
   SAMPLE_CSV,
@@ -127,9 +128,7 @@ export function ClassesView() {
         .map((r) => r.uploadId)
         .filter((x): x is string => !!x),
     ]);
-    if (
-      await save(
-        {
+    const next = {
           ...w,
           classes: remaining,
           activeClassId:
@@ -146,12 +145,13 @@ export function ClassesView() {
           lessons: w.lessons.filter((l) => l.classId !== id),
           groups: w.groups.filter((g) => g.classId !== id),
           resources: w.resources.filter((r) => r.classId !== id),
-        },
-        "Class removed",
-      )
-    ) {
+    };
+    if (await save(next, "Class removed")) {
       setRemoveId(null);
-      const kept = await deleteUploads([...uploads]);
+      // Not a page a test still in use keeps: a shared assessment stays with
+      // its other classes (and, since 20261026120000, the same bytes are one
+      // upload) -- it used to lose its pages here.
+      const kept = await deleteUploads(uploadsNoLongerUsed(next, uploads));
       if (kept)
         toast.error(
           kept +

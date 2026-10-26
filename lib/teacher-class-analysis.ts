@@ -382,11 +382,19 @@ export function lessonFocus(
   a: Assessment,
   standard: string,
   doks: number[],
+  /** The DOK level(s) the errors are counted at: the cell the teacher opened.
+   * An extension aims one level up and a teacher can tick other levels, but
+   * the mistakes to address are the ones the panel showed -- the cell's own
+   * (review of #175). Defaults to `doks`. */
+  errorsFrom?: number[],
 ): { dok: number[]; errorTypes: { name: string; count: number }[] } {
-  const dok = [...new Set(doks.filter((d) => Number.isInteger(d) && d >= 1 && d <= 4))].sort();
+  const valid = (list: number[]) =>
+    [...new Set(list.filter((d) => Number.isInteger(d) && d >= 1 && d <= 4))].sort();
+  const dok = valid(doks);
+  const from = errorsFrom && valid(errorsFrom).length ? valid(errorsFrom) : dok;
   const listed = new Set(errorTypesFor(a.subject, a.elaArea));
   const ids = activeQuestions(a)
-    .filter((q) => q.standard === standard && dok.includes(q.dok))
+    .filter((q) => q.standard === standard && from.includes(q.dok))
     .map((q) => q.id);
   const errorTypes = tallyErrorTypes(
     a.responses.filter((r) => r.verified && ids.includes(r.questionId)),
