@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { describeFailure } from "@/lib/connection";
+import { navigate } from "@/lib/navigate";
 import { useUpdateAvailable } from "@/lib/app-version";
 import { installAppEventLogging } from "@/lib/app-events-client";
 import {
@@ -414,7 +415,7 @@ export default function TeacherApp({ view }: { view: string }) {
       window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
     save,
     reload,
-    go: (url: string) => router.push(url),
+    go: (url: string) => navigate(router, url),
   };
   const shownView = pending && pending.from === view ? pending.to : view;
   const title =
