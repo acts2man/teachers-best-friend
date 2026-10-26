@@ -4,7 +4,7 @@ import { useState } from "react";
 import { MASTERY_LEVELS } from "@/lib/mastery-levels";
 import { DOK_LEVELS, type DokCell, type DokGridRow } from "@/lib/teacher-class-analysis";
 import type { Assessment, Standard, Student } from "@/lib/teacher-types";
-import { DokCellPanel } from "./dok-cell-panel";
+import { DokCellPanel, NotTestedPanel } from "./dok-cell-panel";
 
 /**
  * The class DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1-2.3, 2.7):
@@ -67,7 +67,7 @@ export function DokGrid({
             {l.level} {l.range}
           </span>
         ))}
-        <span className="level-none">No questions</span>
+        <span className="level-none">Not Tested</span>
       </div>
       {noDok > 0 && (
         <p className="cell-meta dok-grid-note">
@@ -76,7 +76,10 @@ export function DokGrid({
           review.
         </p>
       )}
-      {opened && (
+      {opened && !opened.cell.questions && (
+        <NotTestedPanel standard={opened.standard} cell={opened.cell} onClose={() => setOpened(null)} />
+      )}
+      {opened && opened.cell.questions > 0 && opened.cell.level && (
         <DokCellPanel
           assessment={assessment}
           students={students}
@@ -92,11 +95,19 @@ export function DokGrid({
 
 function Cell({ code, cell, onOpen }: { code: string; cell: DokCell; onOpen: () => void }) {
   const qs = cell.questions + " question" + (cell.questions === 1 ? "" : "s");
+  // Ricky, 26 Oct 2026: "Not Tested", and tapping it says why.
   if (!cell.questions)
     return (
-      <div className="dok-cell level-none" aria-label={`${code}, DOK ${cell.dok}: no questions`}>
+      <div
+        className="dok-cell level-none"
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
+        aria-label={`${code}, DOK ${cell.dok}: not tested`}
+      >
         <span className="dok-cell-dok">DOK {cell.dok}</span>
-        <span className="dok-cell-empty">No questions</span>
+        <span className="dok-cell-empty">Not Tested</span>
       </div>
     );
   if (cell.percent === null || !cell.level)
