@@ -176,7 +176,9 @@ test("the class report lists each level and each level's next step", () => {
   assert.doesNotMatch(text, /mastery/i);
 });
 
-test("writing traits use the same levels", () => {
+// A rubric score is a 0–4 score (26 Oct 2026): its level is read on the 0–4
+// cuts, so a 2 of 4 is Approaching, not 50% Beginning as it was here.
+test("writing traits use the same four levels, read on the 0–4 cuts", () => {
   const roster = ["a", "b"].map((id) => student(id, []));
   const a = {
     id: "w1", classId: "c1", title: "Essay", subject: "ELA", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true,
@@ -188,8 +190,9 @@ test("writing traits use the same levels", () => {
   };
   const rows = writingClassAnalysis(a, roster);
   assert.equal(rows.length, 1);
-  assert.deepEqual(rows[0].byLevel.Beginning.map((s) => s.id), ["a"]);
+  assert.deepEqual(rows[0].byLevel.Approaching.map((s) => s.id), ["a"], "2 of 4 is Approaching");
   assert.deepEqual(rows[0].byLevel.Exceeding.map((s) => s.id), ["b"]);
+  assert.equal(rows[0].level.level, "Proficient", "the trait's average, (2 + 4) / 2 = 3.0, is Proficient");
 });
 
 test("no other mastery cut-off or 'Mastered' wording is left in the app", () => {
