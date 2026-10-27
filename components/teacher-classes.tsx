@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { describeFailure, deleteUploads } from "@/lib/connection";
 import { ScanCamera } from "./scan-camera";
+import { ClassGradingModeField } from "./grading-mode-choice";
+import { classGradingMode, gradingModeName, type GradingMode } from "@/lib/grading-mode";
 import { useTeacher } from "./teacher-context";
 import { Action, Modal, PageTitle, Pick, Pill, downloadText } from "./teacher-shared";
 import { frameworkLabel, frameworkOptions, stateFor } from "@/lib/states";
@@ -70,6 +72,8 @@ export function ClassesView() {
     [name, setName] = useState(""),
     [grade, setGrade] = useState(String(classroom.grade)),
     [framework, setFramework] = useState(classroom.framework),
+    // Chosen once, when the class is created (Ricky, 27 Oct 2026).
+    [mode, setMode] = useState<GradingMode>("percentage"),
     [edit, setEdit] = useState<Classroom | null>(null),
     [removeId, setRemoveId] = useState<string | null>(null);
   const options = frameworkOptions(w.customStandards.map((s) => s.framework));
@@ -88,7 +92,7 @@ export function ClassesView() {
           ...w,
           classes: [
             ...w.classes,
-            { id, name: name.trim(), grade: Number(grade), framework, demo: false },
+            { id, name: name.trim(), grade: Number(grade), framework, demo: false, gradingMode: mode },
           ],
           activeClassId: id,
         },
@@ -97,6 +101,7 @@ export function ClassesView() {
     ) {
       setAdd(false);
       setName("");
+      setMode("percentage");
       go("/students");
     }
   }
@@ -228,7 +233,7 @@ export function ClassesView() {
               <h2>{c.name}</h2>
               <p>
                 {c.grade === 0 ? "Kindergarten" : "Grade " + c.grade} ·{" "}
-                {frameworkLabel(c.framework)}
+                {frameworkLabel(c.framework)} · {gradingModeName(classGradingMode(w, c))}
               </p>
               <div className="class-stats">
                 <span>
@@ -297,6 +302,7 @@ export function ClassesView() {
             if (patch.grade !== undefined) setGrade(patch.grade);
             if (patch.framework !== undefined) setFramework(patch.framework);
           })}
+          <ClassGradingModeField value={mode} onChange={setMode} />
           <Action type="submit" disabled={busy || !name.trim()}>
             Create class
             <ArrowRight size={16} />
@@ -327,6 +333,11 @@ export function ClassesView() {
                   ...(patch.framework !== undefined ? { framework: patch.framework } : {}),
                 }),
             )}
+            <div className="grading-mode-setup">
+              <strong>Grading</strong>
+              <span className="grading-mode-shown">{gradingModeName(classGradingMode(w, edit))}</span>
+              <p className="field-help">Chosen when this class was created; it can&apos;t be changed.</p>
+            </div>
             <Action type="submit" disabled={busy || !edit.name.trim()}>
               <Check size={16} />
               Save class

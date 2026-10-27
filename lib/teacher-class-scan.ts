@@ -7,6 +7,7 @@ import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 import { expectedParts, partsRead } from "./answer-parts";
 import { sameReading } from "./math-answer";
+import { isDateString, localDateString } from "./school-year";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -1200,7 +1201,15 @@ export function applyScannedGroups(
   /** Let this scan replace grades the teacher already confirmed (G5): only
    * after the teacher chose "Replace" (confirmedGradesAtRisk / rescanWarning).
    * Off, a confirmed grade stays and the new read fills the rest. */
-  { replaceConfirmed = false }: { replaceConfirmed?: boolean } = {},
+  {
+    replaceConfirmed = false,
+    today = localDateString(),
+  }: {
+    replaceConfirmed?: boolean;
+    /** The day this class set is graded, "YYYY-MM-DD": the test's date given
+     * unless one is set already (lib/school-year.ts). */
+    today?: string;
+  } = {},
 ) {
   const newStudents: Student[] = [];
   const responsesByStudent = new Map<string, StudentResponse[]>();
@@ -1281,6 +1290,8 @@ export function applyScannedGroups(
     studentUploadIds: { ...a.studentUploadIds, ...studentUploadIds },
     responses,
     ...(studentOrder.length ? { studentOrder } : {}),
+    // Given the day its class set is graded, unless the teacher set a day.
+    ...(touchedIds.size && !isDateString(a.dateGiven) ? { dateGiven: today } : {}),
   };
   return {
     students: [...students, ...newStudents],

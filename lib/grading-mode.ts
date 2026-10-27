@@ -15,6 +15,11 @@
  * test page shows it but cannot change it. On a Standards-Based test every
  * question is worth SBG_QUESTION_POINTS, whatever points it carries.
  *
+ * Since 27 Oct 2026 (Ricky) the CLASS has the mode, chosen when the class is
+ * created, and every new test in it takes it -- the test setup no longer
+ * asks. A test keeps the mode it was made with: changing nothing about old
+ * tests, which may differ from their class's.
+ *
  * This file is the mode itself (G1) and how a Standards-Based test's grades
  * read in 0–4 (G2, 26 Oct 2026): blank is 0, a correct answer is 4, and the
  * teacher picks 0–4 for each group of wrong answers. A student's result, and
@@ -22,7 +27,8 @@
  * 0–4 levels (masteryLevel4).
  */
 import { masteryLevel4, score4Shown, type MasteryLevelInfo } from "./mastery-levels";
-import type { Assessment, Workspace } from "./teacher-types";
+import { assessmentInClass } from "./teacher-classes";
+import type { Assessment, Classroom, Workspace } from "./teacher-types";
 
 export type GradingMode = "percentage" | "sbg";
 
@@ -46,10 +52,25 @@ export function gradingModeOf(a: Pick<Assessment, "gradingMode">): GradingMode {
   return a.gradingMode === "sbg" ? "sbg" : "percentage";
 }
 
-/** The mode a new test starts in: the one the teacher used last (set when
- * they create a test), or Percentage. */
-export function lastGradingMode(w: Pick<Workspace, "settings">): GradingMode {
-  return w.settings.lastGradingMode === "sbg" ? "sbg" : "percentage";
+/**
+ * A class's grading mode: the one chosen when it was created. A class made
+ * before classes had one reads as Standards-Based only when it has tests and
+ * every one of them is Standards-Based; otherwise Percentage -- the same rule
+ * migration 20261027130000 writes into the database, so the class reads the
+ * same before and after it is applied.
+ */
+export function classGradingMode(
+  w: Pick<Workspace, "assessments">,
+  c: Pick<Classroom, "id" | "gradingMode">,
+): GradingMode {
+  if (c.gradingMode === "sbg" || c.gradingMode === "percentage") return c.gradingMode;
+  const tests = w.assessments.filter((a) => assessmentInClass(a, c.id));
+  return tests.length && tests.every((a) => gradingModeOf(a) === "sbg") ? "sbg" : "percentage";
+}
+
+/** The mode's name for a mode (rather than a test). */
+export function gradingModeName(mode: GradingMode): string {
+  return GRADING_MODES.find((m) => m.mode === mode)!.label;
 }
 
 /** Whether a test is graded Standards-Based (0–4). */

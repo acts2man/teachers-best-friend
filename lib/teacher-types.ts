@@ -183,6 +183,10 @@ export type Assessment = {
    * every question out of 4. Absent is Percentage -- every test made before
    * modes existed, and any test switched back. */
   gradingMode?: "sbg";
+  /** The day the test was given, "YYYY-MM-DD" (lib/school-year.ts): set to
+   * the day its class set is graded, editable on the test. Absent on a test
+   * from before 27 Oct 2026 (read as the day it was created). */
+  dateGiven?: string;
   /** Student ids in the order their work was scanned, so the matching screen,
    * the review list and Grade by question follow the pile on the teacher's
    * desk. Absent until a class scan is saved. */
@@ -194,6 +198,10 @@ export type Classroom = {
   grade: number;
   framework: string;
   demo: boolean;
+  /** How every new test in this class is graded (Ricky, 27 Oct 2026), chosen
+   * when the class is created. Absent on a class made before then: see
+   * classGradingMode (lib/grading-mode.ts). */
+  gradingMode?: "percentage" | "sbg";
 };
 export type Lesson = {
   id: string;
@@ -256,6 +264,10 @@ export type Workspace = {
     /** The grading mode the teacher used last, which a new test starts in
      * (lib/grading-mode.ts). */
     lastGradingMode?: "percentage" | "sbg";
+    /** The school year, as the year it starts (2026 = 2026–27): chosen at
+     * sign-up, editable in Settings (lib/school-year.ts). Absent: the
+     * current one. */
+    schoolYear?: number;
   };
 };
 export type Priority = {
