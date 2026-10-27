@@ -1,7 +1,7 @@
 // Ricky's spec (15 Oct 2026): four mastery levels replace the single
 // "mastered at 70%" idea everywhere.
 //
-//   Beginning 0–69% (red; reteach and support)    Approaching 70–79% (yellow)
+//   Beginning 0–59% (red; reteach and support)    Approaching 60–79% (yellow)
 //   Proficient 80–89% (blue)                      Exceeding 90–100% (green; extension)
 //
 // Before this, class analysis split students at 70 ("Mastery is 70% or
@@ -10,8 +10,9 @@
 // one idea. Now lib/mastery-levels.ts is the only definition.
 //
 // Ricky, 19 Oct 2026: the lowest level is "Beginning", and the boundaries are
-// on the percentage rounded to the nearest whole number -- the one shown. 69.5
-// shows 70% and is Approaching; 69.4 shows 69% and is Beginning. This replaced
+// on the percentage rounded to the nearest whole number -- the one shown. Since
+// 26 Oct 2026 (Ricky and Michael) the Beginning line is 59.5: 59.5 shows 60%
+// and is Approaching; 59.4 shows 59% and is Beginning. The rounding replaced
 // #159's "true value, rounded down" rule (69.9 showed 69 and sat in the lowest
 // level), and the tests below changed with it. Made-up students only (R8).
 import test from "node:test";
@@ -40,28 +41,29 @@ test("the four levels, with their colours and recommendations", () => {
   assert.deepEqual(
     levels.MASTERY_LEVELS.map((l) => [l.level, l.range, l.tone, l.recommendation]),
     [
-      ["Beginning", "0–69%", "red", "reteach"],
-      ["Approaching", "70–79%", "yellow", null],
+      ["Beginning", "0–59%", "red", "reteach"],
+      ["Approaching", "60–79%", "yellow", null],
       ["Proficient", "80–89%", "blue", null],
       ["Exceeding", "90–100%", "green", "extend"],
     ],
   );
 });
 
-test("the boundaries are on the rounded percentage: 69.4 Beginning, 69.5 Approaching, 89.5 Exceeding", () => {
+test("the boundaries are on the rounded percentage: 59.4 Beginning, 59.5 Approaching, 89.5 Exceeding", () => {
   const at = (p) => levels.masteryLevel(p).level;
   assert.equal(at(0), "Beginning");
-  assert.equal(at(69.4), "Beginning");
-  assert.equal(at(69.49), "Beginning");
-  assert.equal(at(69.5), "Approaching");
+  assert.equal(at(59.4), "Beginning");
+  assert.equal(at(59.49), "Beginning");
+  assert.equal(at(59.5), "Approaching");
+  assert.equal(at(69.4), "Approaching", "the old line is gone");
   assert.equal(at(79.4), "Approaching");
   assert.equal(at(79.5), "Proficient");
   assert.equal(at(89.4), "Proficient");
   assert.equal(at(89.5), "Exceeding");
   assert.equal(at(100), "Exceeding");
   assert.equal(levels.masteryLevelOf(null), null);
-  assert.equal(levels.needsReteach(69.4), true);
-  assert.equal(levels.needsReteach(69.5), false);
+  assert.equal(levels.needsReteach(59.4), true);
+  assert.equal(levels.needsReteach(59.5), false);
   assert.equal(levels.readyToExtend(89.4), false);
   assert.equal(levels.readyToExtend(89.5), true);
 });
@@ -72,8 +74,8 @@ test("the shown percentage is the rounded one, and its level is the level", () =
   assert.equal(levels.masteryPercent(240 / 3), 80, "floating point: three 80s average 80");
   assert.equal(levels.masteryPercent(208.5 / 3), 70, "floating point: a half that arithmetic leaves a hair short still rounds up");
   assert.equal(levels.masteryPercent(89.5), 90);
-  // A student's standard score: three records averaging 69.5 show 70, Approaching.
-  assert.equal(mastery(student("a", [70, 70, 68.5]), "S.1"), 70);
+  // A student's standard score: three records averaging 59.5 show 60, Approaching.
+  assert.equal(mastery(student("a", [60, 60, 58.5]), "S.1"), 60);
   for (let p = 0; p <= 100; p += 0.1) {
     const shown = levels.masteryPercent(p);
     assert.equal(levels.masteryLevel(p).level, levels.masteryLevel(shown).level, p + " and its shown " + shown);
@@ -81,8 +83,8 @@ test("the shown percentage is the rounded one, and its level is the level", () =
 });
 
 test("a student's standard reads the level, never 'Mastered'", () => {
-  assert.equal(masteryStatus(student("a", [70, 70, 68.2]), "S.1"), "Beginning", "69.4");
-  assert.equal(masteryStatus(student("b", [70, 70, 68.5]), "S.1"), "Approaching", "69.5 shows 70");
+  assert.equal(masteryStatus(student("a", [60, 60, 58.2]), "S.1"), "Beginning", "59.4");
+  assert.equal(masteryStatus(student("b", [60, 60, 58.5]), "S.1"), "Approaching", "59.5 shows 60");
   assert.equal(masteryStatus(student("c", [80, 85, 89]), "S.1"), "Proficient");
   assert.equal(masteryStatus(student("d", [90, 90, 88.2]), "S.1"), "Proficient", "89.4 is not Exceeding");
   assert.equal(masteryStatus(student("h", [90, 90, 88.5]), "S.1"), "Exceeding", "89.5 shows 90");
@@ -92,8 +94,8 @@ test("a student's standard reads the level, never 'Mastered'", () => {
   assert.equal(masteryStatus(student("g", []), "S.1"), "No evidence");
 });
 
-test("reteach groups and priorities take Beginning students only (69.4 in, 69.5 out)", () => {
-  const roster = [student("a", [70, 70, 68.2]), student("b", [70, 70, 68.5]), student("c", [95, 95, 95])];
+test("reteach groups and priorities take Beginning students only (59.4 in, 59.5 out)", () => {
+  const roster = [student("a", [60, 60, 58.2]), student("b", [60, 60, 58.5]), student("c", [95, 95, 95])];
   const [gap] = sharedGapGroups(roster, [std("S.1")]);
   assert.deepEqual(gap.students.map((s) => s.id), ["a"]);
   const [p] = priorities(roster, [std("S.1")]);
@@ -101,11 +103,11 @@ test("reteach groups and priorities take Beginning students only (69.4 in, 69.5 
 });
 
 test("the performance bands are the four levels", () => {
-  const roster = [student("a", [60, 60, 60]), student("b", [75, 75, 75]), student("c", [85, 85, 85]), student("d", [95, 95, 95]), student("e", [])];
+  const roster = [student("a", [50, 50, 50]), student("b", [75, 75, 75]), student("c", [85, 85, 85]), student("d", [95, 95, 95]), student("e", [])];
   const bands = performanceBands(roster, [std("S.1")]);
   assert.deepEqual(bands.map((b) => [b.name, b.range, b.students.map((s) => s.id).join()]), [
-    ["Beginning", "0–69%", "a"],
-    ["Approaching", "70–79%", "b"],
+    ["Beginning", "0–59%", "a"],
+    ["Approaching", "60–79%", "b"],
     ["Proficient", "80–89%", "c"],
     ["Exceeding", "90–100%", "d"],
     ["No evidence yet", "Not scored", "e"],
@@ -119,17 +121,17 @@ test("class analysis groups students by level, on the rounded average", () => {
   const a = {
     id: "a1", classId: "c1", title: "Quiz", subject: "Math", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true,
     questions: [q("q1"), q("q2")],
-    responses: [r("a", "q1", 70), r("a", "q2", 68.8), r("b", "q1", 70), r("b", "q2", 69), r("c", "q1", 80), r("c", "q2", 85), r("d", "q1", 90), r("d", "q2", 89)],
+    responses: [r("a", "q1", 60), r("a", "q2", 58.8), r("b", "q1", 60), r("b", "q2", 59), r("c", "q1", 80), r("c", "q2", 85), r("d", "q1", 90), r("d", "q2", 89)],
   };
   const [row] = classAnalysis(a, roster, [std("S.1")]);
   const ids = (list) => list.map((s) => s.id);
-  assert.deepEqual(ids(row.byLevel.Beginning), ["a"], "69.4 is Beginning");
-  assert.deepEqual(ids(row.byLevel.Approaching), ["b"], "69.5 shows 70 and is Approaching");
+  assert.deepEqual(ids(row.byLevel.Beginning), ["a"], "59.4 is Beginning");
+  assert.deepEqual(ids(row.byLevel.Approaching), ["b"], "59.5 shows 60 and is Approaching");
   assert.deepEqual(ids(row.byLevel.Proficient), ["c"]);
   assert.deepEqual(ids(row.byLevel.Exceeding), ["d"], "89.5 shows 90 and is Exceeding");
   assert.deepEqual(ids(row.reteach), ["a"], "reteach: Beginning only");
   assert.deepEqual(ids(row.extend), ["d"], "extension: Exceeding only");
-  assert.equal(row.averagePercent, 78, "the class average (77.725) is shown rounded to the nearest whole percent");
+  assert.equal(row.averagePercent, 73, "the class average (72.725) is shown rounded to the nearest whole percent");
   assert.equal("percentMastered" in row, false);
 });
 
@@ -166,17 +168,19 @@ test("the class report lists each level and each level's next step", () => {
   const roster = ["a", "d"].map((id) => student(id, []));
   const q = { id: "q1", number: 1, text: "", passage: "", answer: "", standard: "S.1", secondary: "", skill: "", dok: 1, alignment: 90, confidence: 90, level: "", reasoning: "", verified: true, excluded: false };
   const r = (studentId, match) => ({ id: studentId, studentId, questionId: "q1", answer: "", correct: match === 100, match, misconception: "", confidence: 90, verified: true });
-  const a = { id: "a1", classId: "c1", title: "Quiz", subject: "Math", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true, questions: [q], responses: [r("a", 60), r("d", 95)] };
+  const a = { id: "a1", classId: "c1", title: "Quiz", subject: "Math", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true, questions: [q], responses: [r("a", 50), r("d", 95)] };
   // One of two students Beginning is half the class: whole-class reteach.
   const text = classAnalysisReport(a, classAnalysis(a, roster, [std("S.1")]));
-  assert.match(text, /Beginning 0–69% \(1\): Student a/);
+  assert.match(text, /Beginning 0–59% \(1\): Student a/);
   assert.match(text, /Exceeding 90–100% \(1\): Student d/);
   assert.match(text, /Suggested next steps: Reteach Recommended: Reteach \(Beginning, 1, whole class\); Extension Recommended: Offer extension activity \(Exceeding, 1\)/);
-  assert.match(text, /Beginning 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/);
+  assert.match(text, /Beginning 0–59% \(reteach\), Approaching 60–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/);
   assert.doesNotMatch(text, /mastery/i);
 });
 
-test("writing traits use the same levels", () => {
+// A rubric score is a 0–4 score (26 Oct 2026): its level is read on the 0–4
+// cuts, so a 2 of 4 is Approaching, not 50% Beginning as it was here.
+test("writing traits use the same four levels, read on the 0–4 cuts", () => {
   const roster = ["a", "b"].map((id) => student(id, []));
   const a = {
     id: "w1", classId: "c1", title: "Essay", subject: "ELA", grade: 4, framework: "Common Core", createdAt: "", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true,
@@ -188,8 +192,9 @@ test("writing traits use the same levels", () => {
   };
   const rows = writingClassAnalysis(a, roster);
   assert.equal(rows.length, 1);
-  assert.deepEqual(rows[0].byLevel.Beginning.map((s) => s.id), ["a"]);
+  assert.deepEqual(rows[0].byLevel.Approaching.map((s) => s.id), ["a"], "2 of 4 is Approaching");
   assert.deepEqual(rows[0].byLevel.Exceeding.map((s) => s.id), ["b"]);
+  assert.equal(rows[0].level.level, "Proficient", "the trait's average, (2 + 4) / 2 = 3.0, is Proficient");
 });
 
 test("no other mastery cut-off or 'Mastered' wording is left in the app", () => {

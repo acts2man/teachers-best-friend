@@ -50,9 +50,12 @@ test("the response rubric has the five named rows, all on a 4-point scale", () =
   }
 });
 
-test("the response levels are named 4 Excellent down to 1 Beginning", () => {
-  const rows = defaultRubric("response", 4);
-  assert.match(rows[0].descriptor, /4 Excellent, 3 Proficient, 2 Developing, 1 Beginning/);
+test("the response levels are named like the mastery levels, 1 Beginning to 4 Exceeding", () => {
+  // Ricky, 20 Oct 2026; it was 4 Excellent, 3 Proficient, 2 Developing, 1 Beginning.
+  for (const row of defaultRubric("response", 4)) {
+    assert.match(row.descriptor, /\(1 Beginning, 2 Approaching, 3 Proficient, 4 Exceeding\.\)/, row.name);
+    assert.doesNotMatch(row.descriptor, /Excellent|Developing/, row.name);
+  }
 });
 
 test("the row descriptors carry Michael's wording", () => {

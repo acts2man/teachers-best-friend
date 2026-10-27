@@ -125,9 +125,28 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   - It re-asks short groups, and re-asks multi-part answers that came back with too few
     parts (`partsShortfall` `:1341`, `settleShortParts` `:1417`, which sends the leftovers to
     Unsure).
+- **Three at a time** (`GRADE_CONCURRENCY`, 26 Oct 2026). `gradeInBatches` keeps at most three
+  batches in flight, started in order. Each batch's answers go in their own slot, so what is
+  banked and returned is in batch order however the requests finish. A failed batch starts
+  nothing new; the batches already running finish and are banked, then the error is thrown.
+  `concurrency` defaults to 1 (one after another) for every other caller.
+- **Grading beside the name pass.** When the groups are known before any name is read
+  (declared piles with no whole-stack pile, or a resume's saved grouping), `gradePages` starts
+  grading at once and reads the names alongside. A whole-stack upload is split *by* the
+  names, so it still waits for them. If every name read fails while grading from declared
+  piles, the grades are kept and every pile is left for the teacher to pick the student.
+- **Grading speed.** The browser console logs each run's total time. The same numbers are in
+  `scans` (one row per request, `created_at`/`completed_at`, `stage` `name_strip` or
+  `class_scan`): a read-only query grouping a teacher's rows within ten minutes of each other
+  gives each run's wall time. The 21 Oct 2026 class set (36 piles, 10 grading requests) took
+  447 s one after another. Replayed with its recorded durations
+  (`tests/grading-concurrency.test.mjs`), the old order takes 454 s and the new one 141 s,
+  with identical names and grades.
 - **Banked progress.** Progress is saved after each batch as `{graded, nextBatch, scanId,
-  layout, inFlight}` (`setProgress` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
-  **whole-scan group index**. `layout` is the body upload ids of every group those indexes
+  layout, inFlight}` (`record()` in `gradePages`, `components/teacher-class-scan.tsx`), keyed by
+  **whole-scan group index**. With batches three at a time, `scanId`/`inFlight` are the job
+  of the **first batch not yet back**: that is the only one a resume, which plans the ungraded
+  students from the top, can wait on. The others are sent again (free: pages are charged once). `layout` is the body upload ids of every group those indexes
   refer to (`groupLayout`, `lib/scan-session.ts`).
 - **Resume.** `gradeCaptured` asks `planResume(progress, pageIds)` (`lib/scan-session.ts`):
   - `resume` only when the pages on screen are exactly the layout's pages in the same

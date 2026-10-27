@@ -25,8 +25,8 @@ test("the four levels: Beginning first, colours unchanged", () => {
   assert.deepEqual(
     levels.MASTERY_LEVELS.map((l) => [l.level, l.range, l.tone]),
     [
-      ["Beginning", "0–69%", "red"],
-      ["Approaching", "70–79%", "yellow"],
+      ["Beginning", "0–59%", "red"],
+      ["Approaching", "60–79%", "yellow"],
       ["Proficient", "80–89%", "blue"],
       ["Exceeding", "90–100%", "green"],
     ],
@@ -35,8 +35,9 @@ test("the four levels: Beginning first, colours unchanged", () => {
 
 test("boundaries on the rounded percentage, which is the one shown", () => {
   const at = (p) => [levels.masteryPercent(p), levels.masteryLevel(p).level];
-  assert.deepEqual(at(69.4), [69, "Beginning"]);
-  assert.deepEqual(at(69.5), [70, "Approaching"]);
+  // The Beginning line is 59.5 since 26 Oct 2026 (it was 69.5).
+  assert.deepEqual(at(59.4), [59, "Beginning"]);
+  assert.deepEqual(at(59.5), [60, "Approaching"]);
   assert.deepEqual(at(79.4), [79, "Approaching"]);
   assert.deepEqual(at(79.5), [80, "Proficient"]);
   assert.deepEqual(at(89.4), [89, "Proficient"]);
@@ -63,15 +64,16 @@ test('the practice group is "Additional Practice"', () => {
   assert.doesNotMatch(src, /Independent practice/i);
 });
 
-test('no copy of "Developing" is left, outside the response-writing rubric\'s own score names', () => {
-  // The response-writing rubric scores a trait 4 Excellent, 3 Proficient,
-  // 2 Developing, 1 Beginning: a rubric's score names, not the mastery level.
-  // Left as is and raised with Ricky (see the PR).
+test('no copy of "Developing" is left', () => {
+  // The response-writing rubric's own score names were the last copy; Ricky
+  // renamed them 1 Beginning / 2 Approaching / 3 Proficient / 4 Exceeding on
+  // 20 Oct 2026. Only the files that record the old name are left.
   const allowed = new Set(["lib/writing-rubrics.ts", "tests/response-writing-genre.test.mjs", "tests/level-updates-19-oct.test.mjs"]);
   const files = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
   const left = files.filter((f) => !allowed.has(f) && !/\.(png|jpe?g|ico|woff2?|pdf)$/.test(f) && /\bDeveloping\b/.test(readFileSync(f, "utf8")));
   assert.deepEqual(left, []);
-  for (const f of ["lib/writing-rubrics.ts"])
-    for (const line of readFileSync(f, "utf8").split("\n").filter((l) => /\bDeveloping\b/.test(l)))
-      assert.match(line, /2 Developing, 1 Beginning/, f + ": " + line.trim());
+  // writing-rubrics.ts keeps the old names only in its comment saying what
+  // they were; the scale itself has none.
+  const scale = readFileSync("lib/writing-rubrics.ts", "utf8").split("\n").filter((l) => /\bDeveloping\b/.test(l));
+  assert.ok(scale.every((l) => l.trim().startsWith("*")), "only in a comment: " + scale.join(" | "));
 });

@@ -158,3 +158,40 @@ export function DokCellPanel({
     </Sheet>
   );
 }
+
+/**
+ * A "Not Tested" box, tapped (Ricky, 26 Oct 2026): no question on this test
+ * was at that DOK level for that standard, so there is nothing to score.
+ */
+export function NotTestedPanel({
+  standard,
+  cell,
+  onClose,
+}: {
+  standard: Standard;
+  cell: DokCell;
+  onClose: () => void;
+}) {
+  const phone = useIsMobile();
+  const name = DOK_LEVELS.find((d) => d.dok === cell.dok)?.name;
+  return (
+    <Sheet open onOpenChange={(v) => !v && onClose()}>
+      <SheetContent side={phone ? "bottom" : "right"} data-side={phone ? "bottom" : "right"} className="dok-cell-panel">
+        <SheetHeader>
+          <SheetTitle>
+            {standard.code} · DOK {cell.dok} · Not Tested
+          </SheetTitle>
+          <SheetDescription>{standard.title}</SheetDescription>
+        </SheetHeader>
+        <div className="dok-cell-panel-body">
+          <p className="not-tested-why">
+            No questions on this test were at DOK {cell.dok}
+            {name ? " (" + name.toLowerCase() + ")" : ""} for {standard.code}, so there is no
+            score for this box. To see how the class does at this level, include a DOK {cell.dok}{" "}
+            question on this standard in a future test.
+          </p>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
