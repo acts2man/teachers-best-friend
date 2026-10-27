@@ -3,6 +3,7 @@ import {
   writingTeacherId,
   readDocument,
   deleteDocument,
+  uploadStillReferenced,
   guardOrigin,
   apiError,
   HttpError,
@@ -39,6 +40,10 @@ export async function DELETE(
     guardOrigin(request);
     const ownerId = await writingTeacherId();
     const { id } = await params;
+    // One row serves every identical file: never delete one something still
+    // uses (a test, a resource, a scan in progress), whatever the caller checked.
+    if (await uploadStillReferenced(ownerId, id))
+      throw new HttpError(409, "This file is still used elsewhere, so it was kept.");
     if (!(await deleteDocument(ownerId, id)))
       throw new HttpError(404, "Document not found.");
     return Response.json({ ok: true });

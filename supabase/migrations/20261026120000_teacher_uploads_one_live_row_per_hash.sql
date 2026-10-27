@@ -90,7 +90,7 @@ end
 $function$;
 
 -- create or replace (Postgres 14+; production is 17): applying this twice is
--- a no-op, and the migration tool refuses DROP.
+-- a no-op, and the migration tool accepts only statements that add or replace.
 create or replace trigger teacher_uploads_reuse_live_row
   before insert on public.teacher_uploads
   for each row execute function public.teacher_uploads_reuse_live_row();

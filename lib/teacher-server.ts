@@ -14,6 +14,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { removeTeacherFixtures } from "@/lib/regression/fixture-purge";
 import type { Assessment, Workspace } from "@/lib/teacher-types";
 import { withAssessmentDefaults } from "@/lib/workspace-safety";
+import { uploadsNoLongerUsed } from "@/lib/teacher-classes";
 
 type Statement = {
   bind: (...values: unknown[]) => Statement;
@@ -710,6 +711,28 @@ export async function findUploadByHash(
     mime: row.mime,
     pages: Number(row.page_count) || 1,
   };
+}
+
+/**
+ * Whether anything the teacher has still uses an upload: an assessment (its
+ * pages, answer key, students' work or an answer's crop), a class's resource,
+ * or a class scan in progress. One upload row now serves every identical file
+ * (migration 20261026120000), so deleting a file one place stops using can
+ * take it from another; DELETE /api/uploads/<id> refuses (409) while this is
+ * true, whatever the caller checked. Reads the saved workspace: every delete
+ * in the app happens after the save that stops using the file.
+ */
+export async function uploadStillReferenced(ownerId: string, id: string): Promise<boolean> {
+  const saved = await readWorkspace(ownerId);
+  if (saved && uploadsNoLongerUsed(saved.data, [id]).length === 0) return true;
+  if (!hasSupabaseConfig()) return false;
+  const { data, error } = await createServiceClient()
+    .from("class_scan_sessions")
+    .select("state")
+    .eq("teacher_id", ownerId);
+  if (error) throw error;
+  // Upload ids are UUIDs, so a mention anywhere in a session's pages is that file.
+  return (data ?? []).some((row) => JSON.stringify(row.state ?? null).includes(id));
 }
 
 export async function deleteDocument(ownerId: string, id: string) {
