@@ -65,25 +65,85 @@ export function describeFailure(error: unknown, fallback: string) {
  * "deleted when you confirm the grading" is a published commitment and a silent
  * failure quietly turns that into "deleted within 30 days".
  *
- * Resolves to the number that did not go, so a caller can tell the teacher the
- * truth. Deliberately never throws: a failed cleanup must not undo the save
- * that preceded it.
+ * Resolves to what did not go, so a caller can tell the teacher the truth:
+ *   - `failed`: the delete itself failed (the nightly purge still collects it);
+ *   - `keptInScan`: kept because a class scan in progress still uses it.
+ * A file the saved workspace still uses (another test or resource holds the
+ * identical file) was rightly kept and is not counted: it is that other
+ * item's page now, not this one's.
+ *
+ * One request per call, not per photo: the server checks what is in use once
+ * for the whole list (#187 review). A file kept only by a scan left behind by
+ * a deleted test is not left to linger: that scan is cleared and the file
+ * asked for once more. Deliberately never throws: a failed cleanup must not
+ * undo the save that preceded it.
  */
-export async function deleteUploads(ids: string[]): Promise<number> {
-  if (!ids.length) return 0;
-  const results = await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const r = await fetch("/api/uploads/" + encodeURIComponent(id), {
-          method: "DELETE",
-        });
-        // A page already gone is a page that is gone; one the server kept
-        // because something still uses it (409) was rightly kept.
-        return r.ok || r.status === 404 || r.status === 409;
-      } catch {
-        return false;
-      }
-    }),
+export type DeleteOutcome = { failed: number; keptInScan: number };
+
+type Kept = { id: string; by: "workspace" } | { id: string; by: "scan"; assessmentIds: string[]; leftover: boolean };
+type DeleteReply = { deleted: string[]; missing: string[]; failed: string[]; kept: Kept[] };
+
+/** The server's answer for `ids`; null when the request itself failed. */
+async function deleteBatch(ids: string[]): Promise<DeleteReply | null> {
+  try {
+    const r = await fetch("/api/uploads/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as DeleteReply;
+  } catch {
+    return null;
+  }
+}
+
+/** The server takes at most this many ids per request. */
+const DELETE_BATCH = 500;
+
+export async function deleteUploads(ids: string[]): Promise<DeleteOutcome> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return { failed: 0, keptInScan: 0 };
+  let failed = 0;
+  const inScan: Extract<Kept, { by: "scan" }>[] = [];
+  for (let i = 0; i < unique.length; i += DELETE_BATCH) {
+    const chunk = unique.slice(i, i + DELETE_BATCH);
+    const reply = await deleteBatch(chunk);
+    if (!reply) {
+      failed += chunk.length;
+      continue;
+    }
+    failed += reply.failed.length;
+    for (const k of reply.kept) if (k.by === "scan") inScan.push(k);
+  }
+  // Kept only by a scan whose test is gone: clear that scan, ask once more.
+  const leftover = inScan.filter((k) => k.leftover);
+  let keptInScan = inScan.length - leftover.length;
+  if (leftover.length) {
+    const sessions = [...new Set(leftover.flatMap((k) => k.assessmentIds))];
+    await Promise.all(
+      sessions.map((id) =>
+        fetch("/api/scans/session?assessmentId=" + encodeURIComponent(id), { method: "DELETE" }).catch(() => null),
+      ),
+    );
+    const retry = await deleteBatch(leftover.map((k) => k.id));
+    if (!retry) failed += leftover.length;
+    else {
+      failed += retry.failed.length;
+      keptInScan += retry.kept.filter((k) => k.by === "scan").length;
+    }
+  }
+  return { failed, keptInScan };
+}
+
+/** What to tell the teacher about pages a scan in progress kept. */
+export function keptInScanMessage(n: number): string {
+  return (
+    (n === 1 ? "1 scanned page was" : n + " scanned pages were") +
+    " kept because a class scan that isn't finished still uses " +
+    (n === 1 ? "it" : "them") +
+    ". Finish or start over that scan; " +
+    (n === 1 ? "it" : "they") +
+    "'ll be removed automatically."
   );
-  return results.filter((ok) => !ok).length;
 }

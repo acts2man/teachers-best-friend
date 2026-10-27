@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -511,13 +511,14 @@ export function AssessmentView() {
       setDeleting(false);
       setSelected(null);
       go("/assessments");
-      const kept = await deleteUploads(uploadIds);
+      const { failed: kept, keptInScan } = await deleteUploads(uploadIds);
       if (kept)
         toast.error(
           kept +
             (kept === 1 ? " scanned page" : " scanned pages") +
             " couldn't be deleted just now. They'll be removed automatically.",
         );
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     }
   }
   const filtered = assessments.filter(
@@ -2617,7 +2618,8 @@ function PassagePanel({
       // But one upload row can now be shared by identical files (#176): the
       // same PDF that made this test, read again as its passage, IS the
       // test's own file. Only what nothing else uses is deleted.
-      await deleteUploads(uploadsNoLongerUsed(w, ids));
+      const { keptInScan } = await deleteUploads(uploadsNoLongerUsed(w, ids));
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     } catch (e) {
       toast.error(describeFailure(e, "The passage couldn't be read."));
     } finally {

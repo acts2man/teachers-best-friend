@@ -27,7 +27,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -1297,7 +1297,7 @@ export function StudentResponseReview({
       // files (#176), so the same photo may be another student's, another
       // test's, or this test's own document.
       const forgotten = forgetUploads(confirmed, released);
-      const kept = await deleteUploads(
+      const { failed: kept, keptInScan } = await deleteUploads(
         uploadsNoLongerUsed(
           { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? forgotten : x)) },
           released,
@@ -1309,6 +1309,7 @@ export function StudentResponseReview({
             (kept === 1 ? " scanned page" : " scanned pages") +
             " couldn't be deleted just now. They'll be removed automatically — tell us if you need them gone sooner.",
         );
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     }
   }
 

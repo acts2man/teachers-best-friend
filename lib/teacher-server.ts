@@ -713,26 +713,60 @@ export async function findUploadByHash(
   };
 }
 
+/** Why an upload is still in use: the saved workspace holds it, or a class
+ * scan in progress mentions it. `leftover`: every scan that mentions it is
+ * for a test the workspace no longer has (deleted), so nothing can come back
+ * to that scan -- the caller may clear those sessions and ask again. */
+export type UploadUse =
+  | { by: "workspace" }
+  | { by: "scan"; assessmentIds: string[]; leftover: boolean };
+
 /**
- * Whether anything the teacher has still uses an upload: an assessment (its
+ * Which of `ids` anything the teacher has still uses: an assessment (its
  * pages, answer key, students' work or an answer's crop), a class's resource,
- * or a class scan in progress. One upload row now serves every identical file
- * (migration 20261026120000), so deleting a file one place stops using can
- * take it from another; DELETE /api/uploads/<id> refuses (409) while this is
- * true, whatever the caller checked. Reads the saved workspace: every delete
- * in the app happens after the save that stops using the file.
+ * or a class scan in progress that has not expired. One upload row now
+ * serves every identical file (migration 20261026120000), so deleting a file
+ * one place stops using can take it from another; DELETE /api/uploads
+ * refuses (409) while one is in use, whatever the caller checked. Reads the
+ * saved workspace once and the scan sessions once for the whole list (#187
+ * review: not once per photo). Every delete in the app happens after the save
+ * that stops using the file. An id not in the result is free to delete.
  */
-export async function uploadStillReferenced(ownerId: string, id: string): Promise<boolean> {
+export async function uploadsStillReferenced(ownerId: string, ids: string[]): Promise<Map<string, UploadUse>> {
+  const out = new Map<string, UploadUse>();
+  if (!ids.length) return out;
   const saved = await readWorkspace(ownerId);
-  if (saved && uploadsNoLongerUsed(saved.data, [id]).length === 0) return true;
-  if (!hasSupabaseConfig()) return false;
+  if (saved) {
+    const free = new Set(uploadsNoLongerUsed(saved.data, ids));
+    for (const id of ids) if (!free.has(id)) out.set(id, { by: "workspace" });
+  }
+  const rest = ids.filter((id) => !out.has(id));
+  if (!rest.length || !hasSupabaseConfig()) return out;
   const { data, error } = await createServiceClient()
     .from("class_scan_sessions")
-    .select("state")
-    .eq("teacher_id", ownerId);
+    .select("assessment_id, state")
+    .eq("teacher_id", ownerId)
+    // An expired session is gone as far as the app is concerned (the scan
+    // route ignores it and the nightly job deletes it): it keeps nothing.
+    .gt("expires_at", new Date().toISOString());
   if (error) throw error;
+  const tests = new Set(((saved?.data as Workspace | undefined)?.assessments ?? []).map((a) => a.id));
   // Upload ids are UUIDs, so a mention anywhere in a session's pages is that file.
-  return (data ?? []).some((row) => JSON.stringify(row.state ?? null).includes(id));
+  const sessions = (data ?? []).map((row) => ({
+    assessmentId: String(row.assessment_id),
+    text: JSON.stringify(row.state ?? null),
+  }));
+  for (const id of rest) {
+    const using = sessions.filter((x) => x.text.includes(id)).map((x) => x.assessmentId);
+    if (using.length)
+      out.set(id, { by: "scan", assessmentIds: using, leftover: !!saved && using.every((t) => !tests.has(t)) });
+  }
+  return out;
+}
+
+/** Whether one upload is still in use (see uploadsStillReferenced). */
+export async function uploadStillReferenced(ownerId: string, id: string): Promise<boolean> {
+  return (await uploadsStillReferenced(ownerId, [id])).has(id);
 }
 
 export async function deleteDocument(ownerId: string, id: string) {

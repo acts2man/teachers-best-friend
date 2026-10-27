@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { analyzeRequest } from "@/lib/analyze-client";
 import { uploadFile } from "@/lib/upload-client";
 import { uprightPage } from "@/lib/image-prep";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import {
   ArrowLeft,
   ArrowRight,
@@ -304,9 +304,10 @@ export function ScanView() {
       // The text is out of the photos now; they have nothing left to give --
       // unless the same file is a page of a test, this one included while it
       // is still being set up (one upload row per identical file, #176).
-      await deleteUploads(
+      const { keptInScan } = await deleteUploads(
         uploadsNoLongerUsed(w, ids, files.map((f) => f.id)),
-      ).catch(() => {});
+      );
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     } catch (e) {
       setError(describeFailure(e, "The passage couldn’t be read."));
     } finally {
@@ -1281,13 +1282,14 @@ export function ScanView() {
                           // nothing else uses it -- one upload row serves every
                           // identical file (#176), so the same PDF may be a
                           // saved test's, or listed here twice.
-                          const kept = await deleteUploads(
+                          const { failed: kept, keptInScan } = await deleteUploads(
                             uploadsNoLongerUsed(
                               w,
                               [f.id],
                               files.filter((x) => x !== f).map((x) => x.id),
                             ),
                           );
+                          if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
                           if (kept) toast.error("This document couldn’t be removed.");
                           else
                             setFiles((previous) =>
