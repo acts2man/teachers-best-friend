@@ -1661,11 +1661,29 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               budget={Math.max(0, MAX_PAGES - captured.length)}
               // Each student uploads when the teacher taps Next Student...
               onStudent={queueCameraStudent}
-              // ...so Finished hands over only the student still open.
-              onComplete={(groups) => {
+              // ...so Finished hands over only the student still open, and
+              // hears back per page: one the panel refuses (setup not ready,
+              // page limit) stays in the camera's saved copy, and the
+              // teacher is told how many.
+              onFinish={async (groups, onLanded) => {
                 setCameraOpen(false);
-                for (const g of groups) void queueCameraStudent(g);
+                const outcome = await Promise.all(
+                  groups.map((g, gi) => queueCameraStudent(g, (i) => onLanded(gi, i))),
+                );
+                const kept = outcome.flat().filter((o) => o === "refused").length;
+                if (kept)
+                  toast.warning(
+                    kept +
+                      (kept === 1 ? " page wasn't" : " pages weren't") +
+                      " added, so " +
+                      (kept === 1 ? "it is" : "they are") +
+                      " kept in the camera. Open the camera and tap Restore to add " +
+                      (kept === 1 ? "it." : "them."),
+                    { duration: 12000 },
+                  );
+                return outcome;
               }}
+              onComplete={() => setCameraOpen(false)}
               onCancel={() => setCameraOpen(false)}
               onFallback={() => {
                 setCameraOpen(false);

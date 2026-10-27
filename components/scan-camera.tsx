@@ -15,7 +15,7 @@ import {
   rgbaToGray,
   videoConstraints,
 } from "@/lib/camera";
-import { clearShots, deleteShot, loadShots, restorableShots, saveShot, type HandoffOutcome } from "@/lib/scan-store";
+import { clearShots, deleteShot, loadShots, restorableShots, saveShot, settleHandoff, type HandoffOutcome } from "@/lib/scan-store";
 
 /**
  * One captured page. `blob` is the full-size JPEG that is uploaded; `url` is an
@@ -192,6 +192,7 @@ export function ScanCamera({
   budget,
   onComplete,
   onStudent,
+  onFinish,
   onCancel,
   onFallback,
 }: {
@@ -207,6 +208,10 @@ export function ScanCamera({
    *  have landed; then they leave this device's restore store. Finished then
    *  returns only the pages not yet handed over. */
   onStudent?: (files: File[], onLanded: (index: number) => void) => Promise<HandoffOutcome[]>;
+  /** Class mode: Finished hands the pages not yet handed over to this
+   *  instead of onComplete, and hears back per page, as onStudent does -- so
+   *  a page the panel refuses stays in the saved copy instead of vanishing. */
+  onFinish?: (groups: File[][], onLanded: (group: number, index: number) => void) => Promise<HandoffOutcome[][]>;
   onCancel: () => void;
   onFallback: () => void;
 }) {
@@ -697,52 +702,71 @@ export function ScanCamera({
     void deleteShot(id).catch(() => {});
   }
 
+  /** A page's saved copy, with or without the "sent" mark. */
+  const stored = (shot: Shot, sent: boolean) =>
+    saveShot({ id: shot.id, assessmentId, group: shot.group, seq: shot.seq, blob: shot.blob, sent }).catch(() => {});
+
+  /** Hands pages to the panel and keeps each in exactly one place: its saved
+   * copy goes the moment it lands, and settleHandoff says what happens to the
+   * rest once the panel answers (failed: the panel's Retry has it; refused:
+   * back to the camera). `start` gets the per-page landing callback. */
+  function handOver(pages: Shot[], start: (onLanded: (index: number) => void) => Promise<HandoffOutcome[]>) {
+    const ids = pages.map((x) => x.id);
+    const sent = new Set(ids);
+    setShots((s) => s.map((x) => (sent.has(x.id) ? { ...x, sent: true } : x)));
+    // The mark is saved with the page, so a reload never offers it again.
+    for (const shot of pages) void stored(shot, true);
+    const landed = new Set<string>();
+    const apply = (outcome: HandoffOutcome[] | "rejected") => {
+      const { remove, giveBack } = settleHandoff(ids, outcome, landed);
+      for (const id of remove) void deleteShot(id).catch(() => {});
+      const back = new Set(giveBack);
+      setShots((s) => s.map((x) => (back.has(x.id) ? { ...x, sent: false } : x)));
+      for (const shot of pages) if (back.has(shot.id)) void stored(shot, false);
+    };
+    void start((i) => {
+      // Landed in its pile: only now does the saved copy go.
+      landed.add(ids[i]);
+      void deleteShot(ids[i]).catch(() => {});
+    }).then(apply, () => apply("rejected"));
+  }
+
   function nextStudent() {
     const current = shots.filter((x) => x.group === group && !x.sent);
     if (!current.length) return;
     if (onStudent) {
       // This student's pages go now; the teacher keeps scanning the next.
-      const ids = new Set(current.map((x) => x.id));
       const files = current.map(
         (shot, pi) => new File([shot.blob], `scan-${group + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
       );
-      setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: true } : x)));
-      // The mark is saved with the page, so a reload never offers it again.
-      const stored = (shot: Shot, sent: boolean) =>
-        saveShot({ id: shot.id, assessmentId, group: shot.group, seq: shot.seq, blob: shot.blob, sent }).catch(() => {});
-      for (const shot of current) void stored(shot, true);
-      void onStudent(files, (i) => {
-        // Landed in its pile: only now does the saved copy go.
-        void deleteShot(current[i].id).catch(() => {});
-      }).then(
-        (outcome) =>
-          outcome.forEach((o, i) => {
-            const shot = current[i];
-            // Refused (setup not ready, page limit): still the camera's. It
-            // comes back from Finished, and a reload offers it.
-            if (o === "refused") {
-              setShots((s) => s.map((x) => (x.id === shot.id ? { ...x, sent: false } : x)));
-              void stored(shot, false);
-            }
-            // Failed after its retries: it waits with Retry on the scan
-            // screen, so Finished does not send it again -- but the saved
-            // copy is un-marked, so a reload (which loses that Retry) still
-            // offers it.
-            if (o === "failed") void stored(shot, false);
-          }),
-        () => {
-          // The queue itself failed: nothing is known to have landed, so
-          // every page goes back to the camera.
-          setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: false } : x)));
-          for (const shot of current) void stored(shot, false);
-        },
-      );
+      handOver(current, (onLanded) => onStudent(files, onLanded));
     }
     setGroup((g) => g + 1);
   }
 
   function done() {
     setFinishing(true);
+    if (onFinish) {
+      // Class mode: the pages not yet handed over go now, per page as at Next
+      // student. Nothing is wiped up front: a page leaves the saved copy only
+      // when it lands (or waits with Retry), and one the panel refuses stays
+      // there for the next time the camera opens.
+      const byGroup = partitionByGroup(shots.filter((x) => !x.sent), group + 1);
+      const pages = byGroup.flat();
+      const files = byGroup.map((g, gi) =>
+        g.map((shot, pi) => new File([shot.blob], `scan-${gi + 1}-${pi + 1}.jpg`, { type: "image/jpeg" })),
+      );
+      // Where page k of the flat list sits in its group.
+      const at = byGroup.flatMap((g, gi) => g.map((_, pi) => [gi, pi] as const));
+      handOver(pages, (onLanded) =>
+        onFinish(files, (gi, pi) => onLanded(at.findIndex(([g, p]) => g === gi && p === pi))).then((outs) =>
+          at.map(([gi, pi]) => outs[gi]?.[pi] ?? "refused"),
+        ),
+      );
+      shots.forEach((s) => URL.revokeObjectURL(s.url));
+      stop();
+      return;
+    }
     const groups = partitionByGroup(shots.filter((x) => !x.sent), group + 1).map((g, gi) =>
       g.map(
         (shot, pi) =>

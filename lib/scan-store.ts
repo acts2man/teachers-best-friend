@@ -26,6 +26,31 @@ export type StoredShot = {
 /** What happened to one page handed over at "Next student". */
 export type HandoffOutcome = "landed" | "failed" | "refused";
 
+/**
+ * What the camera does with its saved copies once the panel has answered for
+ * the pages it handed over (Next student or Finished), so every page lives in
+ * exactly one place (#182 review, 27 Oct):
+ *   - landed: in its pile. (Its copy was deleted the moment it landed.)
+ *   - failed after its retries: it waits with Retry on the scan screen --
+ *     #171's retry, its one home -- so the saved copy goes.
+ *   - refused (setup not ready, page limit): still the camera's. The saved
+ *     copy is un-marked, so Finished or a reopened camera offers it again.
+ *   - the queue itself failed ("rejected"): nothing more is known, so every
+ *     page that had not landed goes back to the camera -- never one that had.
+ * Pure, so it is unit-testable.
+ */
+export function settleHandoff(
+  ids: string[],
+  outcome: HandoffOutcome[] | "rejected",
+  landed: ReadonlySet<string>,
+): { remove: string[]; giveBack: string[] } {
+  if (outcome === "rejected") return { remove: [], giveBack: ids.filter((id) => !landed.has(id)) };
+  return {
+    remove: ids.filter((_, i) => outcome[i] === "failed"),
+    giveBack: ids.filter((id, i) => outcome[i] === "refused" && !landed.has(id)),
+  };
+}
+
 /** The pages a reopened camera may offer back: not the ones handed over at
  * Next student, which are the scan panel's (landed, or being uploaded when
  * the tab closed). Pure, so it is unit-testable. */
