@@ -3,9 +3,11 @@
 // second's page failing every upload try -- still retrying when Finished is
 // pressed.
 //
-// Proven when that page waits with Retry on the scan screen and in exactly
-// that one place: not also in the camera's saved copy (IndexedDB), and not
-// offered again when the camera reopens.
+// #188 review: proven when that page waits with Retry on the scan screen, its
+// camera copy is kept in IndexedDB flagged "failed" (not deleted), grading
+// will not start while it waits, and after a reload it is back with Retry --
+// while the camera, reopened before or after the reload, never offers it too.
+// Then Retry (390) or "Leave it out" (412) clears it, saved copy included.
 // Only the network is stood in for (demo data, no AI spend).
 import { chromium } from "playwright";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -112,6 +114,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
       await sleep(250);
     }
   };
+  // The camera's saved copies for this test: [{ failed, pile }].
   const savedCopies = () =>
     page.evaluate(
       (id) =>
@@ -119,15 +122,30 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
           const open = indexedDB.open("tbf-scan-camera");
           open.onsuccess = () => {
             const db = open.result;
-            if (!db.objectStoreNames.contains("shots")) return res(0);
-            const req = db.transaction("shots").objectStore("shots").index("assessmentId").count(id);
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => res(-1);
+            if (!db.objectStoreNames.contains("shots")) return res([]);
+            const req = db.transaction("shots").objectStore("shots").index("assessmentId").getAll(id);
+            req.onsuccess = () => res(req.result.map((s) => ({ failed: !!s.failed, pile: s.failedAt?.pile ?? null })));
+            req.onerror = () => res(null);
           };
-          open.onerror = () => res(-1);
+          open.onerror = () => res(null);
         }),
       "ela-demo",
     );
+  const openCamera = async () => {
+    await page.getByRole("button", { name: /Scan (more )?student work/ }).first().click();
+    await page.waitForFunction(() => {
+      const b = document.querySelector("button.scan-camera-shutter");
+      return b && !b.disabled;
+    }, null, { timeout: 30000 });
+    await sleep(1500);
+  };
+  const restoreOffered = () => page.getByRole("button", { name: /^Restore \d+ pages?$/ }).count();
+  const closeCamera = async () => {
+    await page.getByRole("button", { name: "Close camera" }).click();
+    await page.locator("button.scan-camera-shutter").waitFor({ state: "detached", timeout: 10000 });
+  };
+  const gradeButton = () =>
+    page.locator("button").filter({ hasText: /^Grade/ }).first();
   try {
     await page.goto(`${BASE}/assessments?id=ela-demo&tab=responses`, { waitUntil: "networkidle", timeout: 30000 });
     await page.getByRole("button", { name: /Scan student work/ }).click();
@@ -157,17 +175,54 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
     }, null, { timeout: 30000 });
     await sleep(800);
     check((await retry.count()) === 1, `${tag}: the failed page waits with Retry on the scan screen (${await retry.count()})`);
-    const copies = await savedCopies();
-    check(copies === 0, `${tag}: and is not also in the camera's saved copy (${copies} saved)`);
-    // Reopening the camera offers nothing to restore: no second copy.
-    await page.getByRole("button", { name: /Scan (more )?student work/ }).first().click();
-    await page.waitForFunction(() => {
-      const b = document.querySelector("button.scan-camera-shutter");
-      return b && !b.disabled;
-    }, null, { timeout: 30000 });
+    let copies = await savedCopies();
+    check(
+      JSON.stringify(copies) === JSON.stringify([{ failed: true, pile: 1 }]),
+      `${tag}: its camera copy is kept, flagged failed, for student 2 (${JSON.stringify(copies)})`,
+    );
+    // Grading will not start while it waits.
+    await gradeButton().click();
     await sleep(1500);
-    const offered = await page.getByRole("button", { name: /^Restore \d+ pages?$/ }).count();
-    check(offered === 0, `${tag}: reopening the camera offers no duplicate of it`);
+    check(grading.length === 0, `${tag}: Grade does not start while a page is failed (${grading.length} grading calls)`);
+    // Reopening the camera offers nothing to restore: the panel holds it.
+    await openCamera();
+    check((await restoreOffered()) === 0, `${tag}: reopening the camera offers no duplicate of it`);
+    await closeCamera();
+
+    // Reload: the page is still there with Retry, grading still waits.
+    await page.reload({ waitUntil: "networkidle", timeout: 30000 });
+    await retry.first().waitFor({ timeout: 30000 });
+    check((await retry.count()) === 1, `${tag}: after a reload the failed page is back with Retry (${await retry.count()})`);
+    const listed = await page.locator(".failed-pages li").first().textContent();
+    check(/student 2/.test(listed || ""), `${tag}: in student 2's place ("${(listed || "").trim().slice(0, 60)}")`);
+    await gradeButton().click();
+    await sleep(1500);
+    check(grading.length === 0, `${tag}: after the reload Grade still waits on it (${grading.length} grading calls)`);
+    await openCamera();
+    check((await restoreOffered()) === 0, `${tag}: after the reload the camera does not offer it too`);
+    await closeCamera();
+
+    if (W === 390) {
+      // Retry, with uploads working again: it lands, and the copy goes.
+      await retry.first().click();
+      await retry.first().waitFor({ state: "detached", timeout: 30000 });
+    } else {
+      await page.getByRole("button", { name: "Leave it out" }).first().click();
+      await retry.first().waitFor({ state: "detached", timeout: 10000 });
+    }
+    await sleep(800);
+    copies = await savedCopies();
+    check(copies?.length === 0, `${tag}: after ${W === 390 ? "Retry" : "Leave it out"} no saved copy is left (${JSON.stringify(copies)})`);
+    await page.reload({ waitUntil: "networkidle", timeout: 30000 });
+    await sleep(2000);
+    check((await retry.count()) === 0, `${tag}: and a reload does not bring it back`);
+    await gradeButton().click();
+    for (let t = 0; t < 100 && !grading.length; t++) await sleep(100);
+    const piles = grading[0] || [];
+    check(
+      W === 390 ? piles.join(",") === "1,1,1" : piles.join(",") === "1,1",
+      `${tag}: grading starts with ${W === 390 ? "all three students" : "the page left out"} (${JSON.stringify(grading[0])})`,
+    );
     check(errors.length === 0, `${tag}: no page errors ${errors.join(" | ")}`);
   } catch (e) {
     fail.push(`${tag}: stopped -- ${String(e.message || e).split("\n")[0]}`);

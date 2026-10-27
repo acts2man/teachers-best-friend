@@ -44,6 +44,9 @@ export type FailedPage = {
   index: number;
   stack?: true;
   reason: string;
+  /** The camera's saved copy of this page (scan-store), when it came from the
+   * in-app camera: deleted when the Retry lands or the page is left out. */
+  shotId?: string;
 };
 
 /**

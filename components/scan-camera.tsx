@@ -193,6 +193,7 @@ export function ScanCamera({
   onComplete,
   onStudent,
   onFinish,
+  heldByPanel = [],
   onCancel,
   onFallback,
 }: {
@@ -207,11 +208,18 @@ export function ScanCamera({
    *  student", so they upload while scanning carries on. Resolves once they
    *  have landed; then they leave this device's restore store. Finished then
    *  returns only the pages not yet handed over. */
-  onStudent?: (files: File[], onLanded: (index: number) => void) => Promise<HandoffOutcome[]>;
+  onStudent?: (files: File[], onLanded: (index: number) => void, shotIds: string[]) => Promise<HandoffOutcome[]>;
   /** Class mode: Finished hands the pages not yet handed over to this
    *  instead of onComplete, and hears back per page, as onStudent does -- so
    *  a page the panel refuses stays in the saved copy instead of vanishing. */
-  onFinish?: (groups: File[][], onLanded: (group: number, index: number) => void) => Promise<HandoffOutcome[][]>;
+  onFinish?: (
+    groups: File[][],
+    onLanded: (group: number, index: number) => void,
+    shotIds: string[][],
+  ) => Promise<HandoffOutcome[][]>;
+  /** Pages the scan screen's Retry holds right now (their saved-copy ids):
+   *  never offered again here, so the two never both add one. */
+  heldByPanel?: string[];
   onCancel: () => void;
   onFallback: () => void;
 }) {
@@ -311,14 +319,19 @@ export function ScanCamera({
     streamRef.current = null;
   }, []);
 
+  // What the scan screen's Retry held when the camera opened.
+  const heldAtOpen = useRef(new Set(heldByPanel));
   // Offer to restore pages left behind by an interruption for this assessment.
   useEffect(() => {
     let live = true;
     loadShots(assessmentId)
       .then((all) => {
-        // Never the pages handed over at Next student: they are the scan
-        // panel's, and offering them again put them in twice.
-        const stored = restorableShots(all);
+        // Never a page handed over and landed or still uploading (it is the
+        // scan panel's), nor a failed one the panel's Retry holds: offering
+        // those put them in twice. (After a reload the scan screen lists the
+        // failed ones itself.) A failed one it does not hold is offered, so it
+        // is never lost.
+        const stored = restorableShots(all, heldAtOpen.current);
         if (!live || !stored.length) return;
         return Promise.all(
           stored.map(async (s) => ({
@@ -708,7 +721,7 @@ export function ScanCamera({
 
   /** Hands pages to the panel and keeps each in exactly one place: its saved
    * copy goes the moment it lands, and settleHandoff says what happens to the
-   * rest once the panel answers (failed: the panel's Retry has it; refused:
+   * rest once the panel answers (failed: kept, flagged by the panel, whose Retry holds it; refused:
    * back to the camera). `start` gets the per-page landing callback. */
   function handOver(pages: Shot[], start: (onLanded: (index: number) => void) => Promise<HandoffOutcome[]>) {
     const ids = pages.map((x) => x.id);
@@ -718,8 +731,9 @@ export function ScanCamera({
     for (const shot of pages) void stored(shot, true);
     const landed = new Set<string>();
     const apply = (outcome: HandoffOutcome[] | "rejected") => {
-      const { remove, giveBack } = settleHandoff(ids, outcome, landed);
-      for (const id of remove) void deleteShot(id).catch(() => {});
+      // A failed page keeps its saved copy: the scan screen flags it (it knows
+      // the page's student) and holds it with Retry -- after a reload too.
+      const { giveBack } = settleHandoff(ids, outcome, landed);
       const back = new Set(giveBack);
       setShots((s) => s.map((x) => (back.has(x.id) ? { ...x, sent: false } : x)));
       for (const shot of pages) if (back.has(shot.id)) void stored(shot, false);
@@ -739,7 +753,7 @@ export function ScanCamera({
       const files = current.map(
         (shot, pi) => new File([shot.blob], `scan-${group + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
       );
-      handOver(current, (onLanded) => onStudent(files, onLanded));
+      handOver(current, (onLanded) => onStudent(files, onLanded, current.map((x) => x.id)));
     }
     setGroup((g) => g + 1);
   }
@@ -749,8 +763,9 @@ export function ScanCamera({
     if (onFinish) {
       // Class mode: the pages not yet handed over go now, per page as at Next
       // student. Nothing is wiped up front: a page leaves the saved copy only
-      // when it lands (or waits with Retry), and one the panel refuses stays
-      // there for the next time the camera opens.
+      // when it lands (a failed one stays, flagged, while it waits with
+      // Retry), and one the panel refuses stays there for the next time the
+      // camera opens.
       const byGroup = partitionByGroup(shots.filter((x) => !x.sent), group + 1);
       const pages = byGroup.flat();
       const files = byGroup.map((g, gi) =>
@@ -759,7 +774,11 @@ export function ScanCamera({
       // Where page k of the flat list sits in its group.
       const at = byGroup.flatMap((g, gi) => g.map((_, pi) => [gi, pi] as const));
       handOver(pages, (onLanded) =>
-        onFinish(files, (gi, pi) => onLanded(at.findIndex(([g, p]) => g === gi && p === pi))).then((outs) =>
+        onFinish(
+          files,
+          (gi, pi) => onLanded(at.findIndex(([g, p]) => g === gi && p === pi)),
+          byGroup.map((g) => g.map((x) => x.id)),
+        ).then((outs) =>
           at.map(([gi, pi]) => outs[gi]?.[pi] ?? "refused"),
         ),
       );
@@ -798,6 +817,9 @@ export function ScanCamera({
 
   function restore() {
     if (!restorable) return;
+    // A restored failed page is the camera's again: no longer flagged, so the
+    // scan screen stops waiting on it; Finished sends it.
+    for (const s of restorable) void stored(s, false);
     setShots(restorable);
     setGroup(restorable.reduce((m, s) => Math.max(m, s.group), 0));
     seqRef.current = restorable.reduce((m, s) => Math.max(m, s.seq + 1), 0);

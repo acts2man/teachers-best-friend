@@ -21,6 +21,15 @@ export type StoredShot = {
    * landed page is deleted from this store). Saved, so a reload never offers
    * a page the panel already has (#182 review). */
   sent?: boolean;
+  /** Handed over and failed after its retries (#188 review): kept, so a
+   * reload never loses it. The scan screen's Retry holds it while the tab is
+   * open; after a reload the camera offers it, and the scan screen holds
+   * grading until it is restored or left out. */
+  failed?: boolean;
+  /** Where a failed page belongs, written by the scan screen when it fails:
+   * its student's pile, its place there and its label, so after a reload its
+   * Retry puts it back with the right student. */
+  failedAt?: { pile: number; index: number; label: string };
 };
 
 /** What happened to one page handed over at "Next student". */
@@ -31,8 +40,11 @@ export type HandoffOutcome = "landed" | "failed" | "refused";
  * the pages it handed over (Next student or Finished), so every page lives in
  * exactly one place (#182 review, 27 Oct):
  *   - landed: in its pile. (Its copy was deleted the moment it landed.)
- *   - failed after its retries: it waits with Retry on the scan screen --
- *     #171's retry, its one home -- so the saved copy goes.
+ *   - failed after its retries: it waits with Retry on the scan screen, and
+ *     its saved copy is kept, flagged "failed", so a reload never loses it.
+ *     The two never both add it: the camera does not offer a page the scan
+ *     screen's Retry holds, and a Retry that lands (or "Leave it out")
+ *     deletes the copy.
  *   - refused (setup not ready, page limit): still the camera's. The saved
  *     copy is un-marked, so Finished or a reopened camera offers it again.
  *   - the queue itself failed ("rejected"): nothing more is known, so every
@@ -43,19 +55,26 @@ export function settleHandoff(
   ids: string[],
   outcome: HandoffOutcome[] | "rejected",
   landed: ReadonlySet<string>,
-): { remove: string[]; giveBack: string[] } {
-  if (outcome === "rejected") return { remove: [], giveBack: ids.filter((id) => !landed.has(id)) };
+): { markFailed: string[]; giveBack: string[] } {
+  if (outcome === "rejected") return { markFailed: [], giveBack: ids.filter((id) => !landed.has(id)) };
   return {
-    remove: ids.filter((_, i) => outcome[i] === "failed"),
+    markFailed: ids.filter((_, i) => outcome[i] === "failed"),
     giveBack: ids.filter((id, i) => outcome[i] === "refused" && !landed.has(id)),
   };
 }
 
-/** The pages a reopened camera may offer back: not the ones handed over at
- * Next student, which are the scan panel's (landed, or being uploaded when
- * the tab closed). Pure, so it is unit-testable. */
-export function restorableShots(shots: StoredShot[]): StoredShot[] {
-  return orderStored(shots.filter((s) => !s.sent));
+/** The pages a reopened camera may offer back: the ones never handed over,
+ * and handed-over pages that failed -- never one that landed or was still
+ * uploading when the tab closed, and never one the scan screen's Retry holds
+ * right now (`held`, by page id). Pure, so it is unit-testable. */
+export function restorableShots(shots: StoredShot[], held: ReadonlySet<string> = new Set()): StoredShot[] {
+  return orderStored(shots.filter((s) => (!s.sent || s.failed) && !held.has(s.id)));
+}
+
+/** The failed pages kept in the camera that the scan screen's Retry does not
+ * hold -- after a reload, all of them. Grading waits on these too. */
+export function failedShots(shots: StoredShot[], held: ReadonlySet<string> = new Set()): StoredShot[] {
+  return orderStored(shots.filter((s) => s.failed && !held.has(s.id)));
 }
 
 const DB_NAME = "tbf-scan-camera";
@@ -142,6 +161,28 @@ export async function deleteShot(id: string): Promise<void> {
 }
 
 /** The unsaved pages held for an assessment, in capture order. [] on any failure. */
+/** Flags a handed-over page as failed after its retries, with where it
+ * belongs (the scan screen calls this; see StoredShot.failedAt). */
+export async function markShotFailed(id: string, at: { pile: number; index: number; label: string }): Promise<void> {
+  const db = await open();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, "readwrite");
+      const os = tx.objectStore(STORE);
+      const req = os.get(id);
+      req.onsuccess = () => {
+        if (req.result) os.put({ ...req.result, sent: true, failed: true, failedAt: at });
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 export async function loadShots(assessmentId: string): Promise<StoredShot[]> {
   const db = await open();
   if (!db) return [];
