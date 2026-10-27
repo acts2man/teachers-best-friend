@@ -1086,3 +1086,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 
 /* Typeset lesson math (lib/math-text.ts): MathML, drawn by the browser. */
 math.math-inline{font-size:1.1em;math-style:normal}
+/* The class super grid (components/class-super-grid.tsx): the test DOK grid's
+   layout, with a heading and its panel's counts. */
+.class-super-grid{margin-bottom:18px;padding:18px 20px}@media(max-width:767px){.class-super-grid{padding:14px 12px}}.super-grid-head h2{margin:0 0 4px;font-size:18px}.super-grid-empty{margin:0}
+.super-grid-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}.super-grid-counts div{border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0}.super-grid-counts dt{font-size:12px;color:#4f5a55}.super-grid-counts dd{margin:2px 0 0;font-size:20px;font-weight:700}
+.super-grid-standards li{border-left:4px solid var(--border);padding-left:8px}.super-grid-standards li.level-red{border-left-color:#e3877e}.super-grid-standards li.level-yellow{border-left-color:#e0c25a}.super-grid-standards li.level-blue{border-left-color:#7aa6dc}.super-grid-standards li.level-green{border-left-color:#7fbf84}

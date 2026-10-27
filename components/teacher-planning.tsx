@@ -72,6 +72,7 @@ import {
   printContent,
   printHtml,
 } from "./teacher-shared";
+import { ClassSuperGrid } from "./class-super-grid";
 import { schoolYearLabel, schoolYearOptions, teacherSchoolYear } from "@/lib/school-year";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
@@ -557,6 +558,9 @@ export function ReteachView() {
           )}
         </div>
       )}
+      {/* Ricky's menu (23 Oct 2026): Lesson Planning opens on the class super
+          grid, "the engine that powers the lesson plan". */}
+      <ClassSuperGrid w={w} classroom={classroom} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="page-tabs">
           <TabsTrigger value="build">
