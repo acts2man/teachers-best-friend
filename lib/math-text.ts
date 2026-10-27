@@ -15,6 +15,11 @@
  *     (10/27/2026 stays a date) or a web address;
  *   - anything else -- "and/or", "km/h", "(see above)" -- is left as typed.
  * Everything that is not one of those pieces stays plain text.
+ *
+ * Review of #186 (27 Oct): a bracket right after a letter is a function call
+ * (f(x), P(A), sin(x)), one operand, never a fraction's start; and short slash
+ * words are never stacked (notAFraction). Browsers that cannot lay out MathML
+ * get the text exactly as typed (lib/mathml-support.ts).
  */
 
 export type MathNode =
@@ -57,9 +62,27 @@ function group(s: string, i: number): Atom | null {
   return null;
 }
 
-/** A number, a lone letter, or a bracket group at `i`. */
+/** Function names a call may have beyond one letter. */
+const FUNCTIONS = new Set(["sin", "cos", "tan", "log", "ln", "exp"]);
+
+/** A function call at `i`: a lone letter (f, g, P) or a known function name,
+ * then a bracket group -- f(x), P(A), sin(x). One operand, brackets kept. */
+function call(s: string, i: number): Atom | null {
+  if (!isLetter(s[i]) || isLetter(s[i - 1])) return null;
+  let k = i;
+  while (isLetter(s[k])) k++;
+  const name = s.slice(i, k);
+  if (s[k] !== "(" || (name.length > 1 && !FUNCTIONS.has(name))) return null;
+  const args = group(s, k);
+  if (!args) return null;
+  return { node: { t: "mrow", c: [{ t: "mi", v: name }, args.node] }, inner: null, end: args.end };
+}
+
+/** A number, a lone letter, a function call or a bracket group at `i`. */
 function atom(s: string, i: number): Atom | null {
   if (s[i] === "(") return group(s, i);
+  const fn = call(s, i);
+  if (fn) return fn;
   if (isDigit(s[i])) {
     if (isLetter(s[i - 1])) return null;
     const m = /^[0-9]+(?:\.[0-9]+)?/.exec(s.slice(i))!;
@@ -90,6 +113,30 @@ function power(s: string, i: number): (Atom & { raised: boolean }) | null {
   return { ...base, raised: false };
 }
 
+/** Slash words that are not fractions, as written (case ignored). */
+const SLASH_WORDS = new Set(["n/a", "w/o", "y/n", "i/o", "a/b", "c/o", "b/w", "24/7", "9/11"]);
+/** Words that make the number pair after them a date ("due 3/4"). */
+const DATE_CUE = /(?:^|[\s(])(?:on|by|due|until|till|from|before|after|since|through|thru|date|dated|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?),?\s+$/i;
+
+/**
+ * Whether the slash at [from, to) is a word or a date, not a fraction:
+ * n/a, w/o, y/n, I/O, A/B, 24/7, 9/11; a grade range ("Grades 6/7"); or a
+ * month/day date -- said with a date word before it ("due 3/4", "on Friday
+ * 10/27") or written with a leading zero ("03/04"). A plain "3/4 cup" stays
+ * a fraction: without one of those clues it reads as one.
+ */
+function notAFraction(s: string, from: number, to: number): boolean {
+  const typed = s.slice(from, to);
+  if (SLASH_WORDS.has(typed.toLowerCase())) return true;
+  const date = /^(\d{1,2})\/(\d{1,2})$/.exec(typed);
+  if (!date) return false;
+  const before = s.slice(0, from);
+  if (/\bgrades?\s+$/i.test(before)) return true;
+  const [m, d] = [Number(date[1]), Number(date[2])];
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  return /^0\d/.test(date[1]) || /^0\d/.test(date[2]) || DATE_CUE.test(before);
+}
+
 /** The whitespace-delimited word around [from, to). */
 function wordAround(s: string, from: number, to: number) {
   let a = from;
@@ -103,7 +150,9 @@ function wordAround(s: string, from: number, to: number) {
 function piece(s: string, i: number): { node: MathNode; end: number } | null {
   // Not in the middle of a word or a number ("km/h", "2026/27").
   // ("3x^2" is 3 then x squared: a letter may follow a digit.)
-  if (isLetter(s[i - 1]) && s[i] !== "(") return null;
+  // A bracket right after a letter is that letter's function call -- f(x) --
+  // read from the letter, never a fraction starting at the bracket.
+  if (isLetter(s[i - 1])) return null;
   if (isDigit(s[i]) && (isDigit(s[i - 1]) || s[i - 1] === ".")) return null;
   if (s[i - 1] === "/" || s[i - 1] === "^") return null;
   const first = power(s, i);
@@ -115,7 +164,8 @@ function piece(s: string, i: number): { node: MathNode; end: number } | null {
       second &&
       s[second.end] !== "/" &&
       !isLetter(s[second.end]) &&
-      !/:\/\/|www\./i.test(wordAround(s, i, second.end))
+      !/:\/\/|www\./i.test(wordAround(s, i, second.end)) &&
+      !notAFraction(s, i, second.end)
     )
       return {
         node: {
@@ -191,8 +241,11 @@ export function nodeToMathML(n: MathNode): string {
 }
 
 /** Text as HTML for printing: plain text escaped, each piece as an inline
- * <math> element that keeps the typed form as its text alternative. */
-export function mathTextToHtml(text: string): string {
+ * <math> element that keeps the typed form as its text alternative. With
+ * `mathml: false` (a browser that cannot lay MathML out), the text exactly as
+ * typed, escaped. */
+export function mathTextToHtml(text: string, { mathml = true }: { mathml?: boolean } = {}): string {
+  if (!mathml) return escape(text);
   return mathSegments(text)
     .map((seg) =>
       seg.kind === "text"

@@ -1,6 +1,7 @@
 "use client";
 import { MathText } from "./math-text";
 import { mathTextToHtml } from "@/lib/math-text";
+import { supportsMathML } from "@/lib/mathml-support";
 import { readJson } from "@/lib/utils";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
@@ -389,7 +390,7 @@ export function ReteachView() {
         notes;
     // Typeset math in print and Save as PDF too (Ricky, 25 Oct): the text
     // is escaped and its powers and fractions become MathML.
-    printHtml((practiceOnly ? "Practice · " : "") + s.title, mathTextToHtml(material));
+    printHtml((practiceOnly ? "Practice · " : "") + s.title, mathTextToHtml(material, { mathml: supportsMathML() }));
   }
   async function saveLesson() {
     if (!s || !content || !group.length) return;
@@ -962,6 +963,7 @@ export function ReteachView() {
                                 content.exit
                                   .map((p, i) => i + 1 + ". " + p.q + "\n\n\n\n")
                                   .join("\n"),
+                              { mathml: supportsMathML() },
                             ),
                           )
                         }

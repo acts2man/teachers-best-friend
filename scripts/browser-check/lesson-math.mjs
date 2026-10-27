@@ -31,6 +31,7 @@ const LESSON = {
     { q: "Solve (x-2)^2 = 9.", a: "x = 5 or x = -1" },
     { q: "Simplify 2/(x-4) + 3/(x-4).", a: "5/(x-4)" },
     { q: "Evaluate 3x^2 when x = 2, then 1/2 of it.", a: "12, then 6" },
+    { q: "If f(x) = x + 6, find f(x)/2 at x = 4 (n/a if undefined), due 3/4.", a: "5" },
   ],
   exit: [{ q: "Solve (x+1)^2 = 16.", a: "x = 3 or x = -5" }],
 };
@@ -83,6 +84,12 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     check(!g.caret, `${tag}: practice shows no "^"`);
     check(g.sups >= 2 && g.fracs >= 3 && !g.bad.length, `${tag}: practice exponents raised (${g.sups}) and fractions stacked (${g.fracs})${g.bad.length ? " -- wrong: " + g.bad.join("; ") : ""}`);
     await practice.screenshot({ path: join(SHOTS, `practice-${tag}.png`) });
+    // The review's cases: f(x) is the numerator; n/a and the date stay as typed.
+    const fourth = practice.locator("article").nth(3);
+    const fracs = await fourth.locator("mfrac").evaluateAll((els) => els.map((e) => e.children[0].textContent + " | " + e.children[1].textContent));
+    check(JSON.stringify(fracs) === JSON.stringify(["f(x) | 2"]), `${tag}: f(x)/2 stacks with f(x) on top (${fracs.join("; ")})`);
+    const said = (await fourth.innerText()).replace(/\s+/g, " ");
+    check(/n\/a/.test(said) && /due 3\/4/.test(said), `${tag}: "n/a" and "due 3/4" stay as typed`);
 
     // Print: the document the print dialog gets.
     await page.getByRole("button", { name: /Print practice/ }).click();
@@ -112,6 +119,46 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     await page.screenshot({ path: join(SHOTS, `FAILED-${tag}.png`), fullPage: true });
   }
   await ctx.close();
+
+  // ---- A browser that cannot lay out MathML (Chrome < 109, old Android
+  // WebView, out-of-support Chromebooks): <mspace> measures 0 there, which
+  // is what the app checks. The text must show, and print, exactly as typed.
+  const old = await browser.newContext({ viewport: { width: W, height: H } });
+  await old.addInitScript(() => {
+    const real = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      return this.localName === "mspace" ? new DOMRect(0, 0, 0, 0) : real.call(this);
+    };
+  });
+  await old.route("**/api/workspace", (r) =>
+    r.request().method() === "GET"
+      ? r.fulfill(json({ workspace: w, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null }))
+      : r.fulfill(json({ revision: 8 })),
+  );
+  await old.route("**/api/quota", (r) => r.fulfill(json({ plan_id: "starter", quota: 150, used: 20, remaining: 130, can_scan: true })));
+  await old.route("**/api/events", (r) => r.fulfill({ status: 204, body: "" }));
+  await old.route("**/api/scans/session**", (r) => r.fulfill(json({ state: null, revision: 0 })));
+  await old.route("**/api/analyze", (r) => r.fulfill(json({ model: "mock", result: LESSON })));
+  const op = await old.newPage();
+  try {
+    await op.goto(`${BASE}/lessons?standard=4.NBT.B.5`, { waitUntil: "networkidle" });
+    await op.getByRole("button", { name: /Generate an AI lesson plan/ }).click();
+    await op.getByRole("tab", { name: /Targeted practice/ }).click();
+    const list = op.locator(".practice-list").first();
+    await list.waitFor({ timeout: 15000 });
+    await op.waitForTimeout(500);
+    const text = (await list.innerText()).replace(/\s+/g, " ");
+    check((await list.locator("math").count()) === 0 && text.includes("Solve (x-2)^2 = 9.") && text.includes("Simplify 2/(x-4) + 3/(x-4)."), `${tag} without MathML: the text shows exactly as typed`);
+    await op.getByRole("button", { name: /Print practice/ }).click();
+    const printed = await op.waitForFunction(() => {
+      const f = [...document.querySelectorAll("iframe")].find((x) => x.contentDocument?.querySelector(".body"));
+      return f ? f.contentDocument.querySelector(".body").innerHTML : null;
+    }, null, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
+    check(!!printed && !/<math/.test(printed) && printed.includes("Solve (x-2)^2 = 9."), `${tag} without MathML: printed exactly as typed`);
+  } catch (err) {
+    fail.push(`${tag} without MathML: stopped -- ${String(err.message || err).split("\n")[0]}`);
+  }
+  await old.close();
 }
 await browser.close();
 for (const m of pass) console.log("PASS", m);

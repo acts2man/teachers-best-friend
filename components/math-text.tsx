@@ -1,7 +1,10 @@
 "use client";
 
-import { createElement, Fragment, type ReactNode } from "react";
+import { createElement, Fragment, useSyncExternalStore, type ReactNode } from "react";
 import { mathSegments, type MathNode } from "@/lib/math-text";
+import { supportsMathML } from "@/lib/mathml-support";
+
+const noChange = () => () => {};
 
 /** One MathML node as React elements (built from parsed nodes, never from an
  * HTML string, so text written by the AI or the teacher cannot inject markup). */
@@ -25,6 +28,10 @@ function render(n: MathNode, key?: number): ReactNode {
  * exponent and a fraction stacks; every other character is shown as written.
  */
 export function MathText({ text }: { text: string }) {
+  // Exactly as typed until this browser is known to lay MathML out (and
+  // always where it cannot): never "(x−2)2" with the exponent run in.
+  const mathml = useSyncExternalStore(noChange, supportsMathML, () => false);
+  if (!mathml) return <>{text}</>;
   return (
     <>
       {mathSegments(text).map((seg, i) =>
