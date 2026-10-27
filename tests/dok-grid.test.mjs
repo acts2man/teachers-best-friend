@@ -93,7 +93,7 @@ test("Class analysis shows the grid in place of the DOK rows", () => {
   assert.match(src, /heading="Costa's levels across this assessment"\s+showDok=\{false\}/);
   assert.doesNotMatch(src, /heading="Depth of knowledge across this assessment"/);
   const grid = readFileSync("components/dok-grid.tsx", "utf8");
-  assert.match(grid, /No questions/);
+  assert.match(grid, /Not Tested/);
   assert.match(grid, /cell\.level\.advice/);
   assert.match(grid, /MASTERY_LEVELS\.map/);
 });
