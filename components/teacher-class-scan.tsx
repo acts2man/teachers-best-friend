@@ -41,7 +41,7 @@ import {
   type ScanProgress,
   type ScanSession,
 } from "@/lib/scan-session";
-import type { HandoffOutcome } from "@/lib/scan-store";
+import { deleteShot, failedShots, loadShots, markShotFailed, type HandoffOutcome } from "@/lib/scan-store";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
@@ -260,7 +260,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // Pages that still failed to upload after uploadFile's own retries. The rest
   // of the batch carries on; each of these waits here with a Retry button,
   // remembering which student's pile it belongs in and where. Not kept in the
-  // draft: a photo cannot be saved to the browser's storage.
+  // draft: a photo cannot be saved to the browser's storage. A page from the
+  // in-app camera also keeps the camera's saved copy, flagged failed, so a
+  // reload brings it back here (#188 review) and grading still waits on it.
   const [failedPages, setFailedPages] = useState<FailedPage[]>([]);
   const [status, setStatus] = useState("");
   // piles[i] is student i's pages, in the order they were scanned. There is
@@ -506,20 +508,66 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   /** A page that still failed after uploadFile's retries: it waits with a
    * Retry button, remembering its student's pile and its place in it. */
-  function pageFailed(file: File, pile: number, index: number, stack: boolean, error: unknown) {
+  function pageFailed(file: File, pile: number, index: number, stack: boolean, error: unknown, shotId?: string) {
+    const label = file.name || "Page";
+    if (shotId) void markShotFailed(shotId, { pile, index, label }).catch(() => {});
     setFailedPages((f) => [
       ...f,
       {
-        key: crypto.randomUUID(),
+        key: shotId ?? crypto.randomUUID(),
         file,
-        label: file.name || "Page",
+        label,
         pile,
         index,
         ...(stack ? { stack: true as const } : {}),
         reason: describeFailure(error, "It couldn't be uploaded."),
+        ...(shotId ? { shotId } : {}),
       },
     ]);
   }
+
+  /** A failed page is done with -- its Retry landed, or the teacher left it
+   * out: off the list, and its saved camera copy goes with it. */
+  function dropFailed(failed: FailedPage) {
+    setFailedPages((f) => f.filter((x) => x.key !== failed.key));
+    if (failed.shotId) void deleteShot(failed.shotId).catch(() => {});
+  }
+
+  /** Every failed page dropped at once (a fresh batch), saved copies too. */
+  function clearFailed() {
+    for (const f of failedPages) if (f.shotId) void deleteShot(f.shotId).catch(() => {});
+    setFailedPages([]);
+  }
+
+  // After a reload: camera pages that failed are still in the camera's saved
+  // copy, flagged. They come back here with Retry, in their student's pile,
+  // and grading waits on them -- the camera never offers a page held here.
+  useEffect(() => {
+    let live = true;
+    void loadShots(a.id)
+      .then((all) => {
+        if (!live) return;
+        setFailedPages((have) => {
+          const held = new Set(have.map((f) => f.shotId).filter((id): id is string => !!id));
+          const back = failedShots(all, held).map(
+            (shot): FailedPage => ({
+              key: shot.id,
+              file: new File([shot.blob], shot.failedAt?.label ?? "Page", { type: "image/jpeg" }),
+              label: shot.failedAt?.label ?? "Page",
+              pile: shot.failedAt?.pile ?? 0,
+              index: shot.failedAt?.index ?? 0,
+              reason: "It hadn't uploaded when the page was closed.",
+              shotId: shot.id,
+            }),
+          );
+          return back.length ? [...have, ...back] : have;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [a.id]);
 
   /** Try a failed page again; on success it goes back where it was. */
   async function retryPage(failed: FailedPage) {
@@ -530,7 +578,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       // recoverFirst: an earlier try may have stored it after all.
       const prepared = await preparePage(failed.file, { recoverFirst: true });
       setPiles((p) => placeRetriedPage(p, failed, { key: failed.key, label: failed.label, ...prepared }));
-      setFailedPages((f) => f.filter((x) => x.key !== failed.key));
+      dropFailed(failed);
     } catch (e) {
       toast.error(describeFailure(e, failed.label + " still couldn't be uploaded. Try again in a moment."));
     } finally {
@@ -682,11 +730,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * landed, failed (it waits with a Retry button, as any page that still
    * fails after uploadFile's retries does) or was refused (setup checks or
    * the page limit) -- the camera keeps its saved copy of all but the landed
-   * ones. */
-  function queueCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
+   * ones. `shotIds` are those saved copies' ids, so a failed page's copy is
+   * flagged and kept. */
+  function queueCameraStudent(
+    files: File[],
+    onLanded?: (index: number) => void,
+    shotIds?: string[],
+  ): Promise<HandoffOutcome[]> {
     setPendingUploads((n) => n + 1);
     const run = uploadQueue.current
-      .then(() => landCameraStudent(files, onLanded))
+      .then(() => landCameraStudent(files, onLanded, shotIds))
       .finally(() => setPendingUploads((n) => n - 1));
     uploadQueue.current = run.then(
       () => {},
@@ -695,7 +748,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     return run;
   }
 
-  async function landCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
+  async function landCameraStudent(
+    files: File[],
+    onLanded?: (index: number) => void,
+    shotIds?: string[],
+  ): Promise<HandoffOutcome[]> {
     const refused = files.map((): HandoffOutcome => "refused");
     if (!files.length || !ready()) return refused;
     const total = pilesNow.current.flat().length;
@@ -724,7 +781,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         try {
           prepared = await preparePage(raw);
         } catch (e) {
-          pageFailed(raw, pile, added, false, e);
+          pageFailed(raw, pile, added, false, e, shotIds?.[i]);
           outcome[i] = "failed";
           continue;
         }
@@ -789,7 +846,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }
 
   function reset() {
-    setFailedPages([]);
+    clearFailed();
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
     void releaseStack(pageUploadIds);
@@ -1329,7 +1386,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setStatus("Uploading " + files.length + " page" + (files.length === 1 ? "" : "s") + "…");
     try {
       const pages: Page[] = [];
-      setFailedPages([]);
+      clearFailed();
       let failures = 0;
       for (const raw of files) {
         let prepared;
@@ -1661,11 +1718,32 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               budget={Math.max(0, MAX_PAGES - captured.length)}
               // Each student uploads when the teacher taps Next Student...
               onStudent={queueCameraStudent}
-              // ...so Finished hands over only the student still open.
-              onComplete={(groups) => {
+              // Failed pages waiting here with Retry: the camera never offers
+              // them too.
+              heldByPanel={failedPages.flatMap((f) => (f.shotId ? [f.shotId] : []))}
+              // ...so Finished hands over only the student still open, and
+              // hears back per page: one the panel refuses (setup not ready,
+              // page limit) stays in the camera's saved copy, and the
+              // teacher is told how many.
+              onFinish={async (groups, onLanded, shotIds) => {
                 setCameraOpen(false);
-                for (const g of groups) void queueCameraStudent(g);
+                const outcome = await Promise.all(
+                  groups.map((g, gi) => queueCameraStudent(g, (i) => onLanded(gi, i), shotIds[gi])),
+                );
+                const kept = outcome.flat().filter((o) => o === "refused").length;
+                if (kept)
+                  toast.warning(
+                    kept +
+                      (kept === 1 ? " page wasn't" : " pages weren't") +
+                      " added, so " +
+                      (kept === 1 ? "it is" : "they are") +
+                      " kept in the camera. Open the camera and tap Restore to add " +
+                      (kept === 1 ? "it." : "them."),
+                    { duration: 12000 },
+                  );
+                return outcome;
               }}
+              onComplete={() => setCameraOpen(false)}
               onCancel={() => setCameraOpen(false)}
               onFallback={() => {
                 setCameraOpen(false);
@@ -1755,7 +1833,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                       <button
                         className="text-link"
                         disabled={busyScanning || busy}
-                        onClick={() => setFailedPages((all) => all.filter((x) => x.key !== f.key))}
+                        onClick={() => dropFailed(f)}
                       >
                         Leave it out
                       </button>
