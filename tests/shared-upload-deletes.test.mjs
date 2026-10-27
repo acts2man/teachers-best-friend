@@ -62,3 +62,99 @@ test("the migration replaces the trigger without DROP", () => {
   assert.doesNotMatch(sql, /^\s*drop\s/im);
   assert.match(sql, /create or replace trigger teacher_uploads_reuse_live_row/);
 });
+
+// ---- the last delete path, and a server that cannot be bypassed (27 Oct) ----
+
+test("an answer's crop counts as using its page", () => {
+  const w = ws([{ id: "t", uploadIds: [], studentUploadIds: {}, responses: [{ answerRegion: { uploadId: "page" } }] }]);
+  assert.deepEqual(uploadsNoLongerUsed(w, ["page"]), []);
+});
+
+test("the setup screen's remove-file X asks first, counting the files still listed", () => {
+  const scan = readFileSync("components/teacher-scan.tsx", "utf8");
+  assert.match(scan, /deleteUploads\(\s*uploadsNoLongerUsed\(\s*w,\s*\[f\.id\],\s*files\.filter\(\(x\) => x !== f\)\.map\(\(x\) => x\.id\),\s*\),\s*\)/);
+});
+
+test("no code sends DELETE /api/uploads/<id> itself: only deleteUploads does", async () => {
+  const { readdirSync, statSync } = await import("node:fs");
+  const files = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = dir + "/" + name;
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(name)) files.push(p);
+    }
+  };
+  for (const dir of ["components", "lib", "app", "hooks"]) {
+    try {
+      walk(dir);
+    } catch {}
+  }
+  const offenders = [];
+  for (const f of files) {
+    const src = readFileSync(f, "utf8");
+    // Any fetch whose URL names the uploads route and whose options say DELETE.
+    for (const m of src.matchAll(/fetch\(\s*([^,)]*)/g)) {
+      if (!/api\/uploads/.test(m[1])) continue;
+      const opts = src.slice(m.index, m.index + 300);
+      if (/method:\s*["']DELETE["']/.test(opts) && f !== "lib/connection.ts") offenders.push(f + ": " + m[0]);
+    }
+  }
+  assert.deepEqual(offenders, []);
+  // And deleteUploads itself is the one place, fetching per id.
+  assert.match(readFileSync("lib/connection.ts", "utf8"), /fetch\("\/api\/uploads\/" \+ encodeURIComponent\(id\), \{\s*method: "DELETE",/);
+});
+
+test("the server refuses (409) to delete a file something still uses", () => {
+  const route = readFileSync("app/api/uploads/[id]/route.ts", "utf8");
+  const del = route.slice(route.indexOf("export async function DELETE"));
+  assert.ok(del.indexOf("uploadStillReferenced(ownerId, id)") > 0 && del.indexOf("uploadStillReferenced(ownerId, id)") < del.indexOf("deleteDocument(ownerId, id)"), "checked before deleting");
+  assert.match(del, /throw new HttpError\(409,/);
+  const server = readFileSync("lib/teacher-server.ts", "utf8");
+  const fn = server.slice(server.indexOf("export async function uploadStillReferenced("), server.indexOf("export async function deleteDocument("));
+  assert.match(fn, /uploadsNoLongerUsed\(saved\.data, \[id\]\)\.length === 0/, "the workspace, by the same rule as the app");
+  assert.match(fn, /\.from\("class_scan_sessions"\)/, "and a class scan in progress");
+  // A kept file is not a failed delete.
+  assert.match(readFileSync("lib/connection.ts", "utf8"), /return r\.ok \|\| r\.status === 404 \|\| r\.status === 409;/);
+});
+
+test("the migration never says DROP, even in a comment", () => {
+  const sql = readFileSync("supabase/migrations/20261026120000_teacher_uploads_one_live_row_per_hash.sql", "utf8");
+  assert.doesNotMatch(sql, /drop/i);
+});
+
+test("DELETE /api/uploads/<id> answers 409 and deletes nothing while the file is in use", async () => {
+  const { build } = await import("esbuild");
+  const calls = [];
+  globalThis.__uploadStub = { referenced: true, calls };
+  const stub = `
+    export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+    const s = globalThis.__uploadStub;
+    export const guardOrigin = () => {};
+    export const owningTeacherId = async () => "t1";
+    export const writingTeacherId = async () => "t1";
+    export const readDocument = async () => null;
+    export const uploadStillReferenced = async (owner, id) => { s.calls.push(["check", owner, id]); return s.referenced; };
+    export const deleteDocument = async (owner, id) => { s.calls.push(["delete", owner, id]); return true; };
+    export const apiError = (e) => Response.json({ error: e.message }, { status: e.status ?? 500 });
+  `;
+  const r = await build({
+    entryPoints: ["app/api/uploads/[id]/route.ts"],
+    bundle: true, platform: "node", format: "cjs", write: false,
+    plugins: [{ name: "stub", setup(b) {
+      b.onResolve({ filter: /^@\/lib\/teacher-server$/ }, () => ({ path: "stub", namespace: "stub" }));
+      b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: stub, loader: "js" }));
+    } }],
+  });
+  const m = { exports: {} };
+  new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, (await import("node:module")).createRequire(import.meta.url));
+  const call = () => m.exports.DELETE(new Request("https://x/api/uploads/u1", { method: "DELETE" }), { params: Promise.resolve({ id: "u1" }) });
+  let res = await call();
+  assert.equal(res.status, 409);
+  assert.deepEqual(calls, [["check", "t1", "u1"]], "never reached deleteDocument");
+  globalThis.__uploadStub.referenced = false;
+  calls.length = 0;
+  res = await call();
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, [["check", "t1", "u1"], ["delete", "t1", "u1"]]);
+});

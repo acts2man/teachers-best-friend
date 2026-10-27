@@ -77,8 +77,9 @@ export async function deleteUploads(ids: string[]): Promise<number> {
         const r = await fetch("/api/uploads/" + encodeURIComponent(id), {
           method: "DELETE",
         });
-        // A page already gone is a page that is gone.
-        return r.ok || r.status === 404;
+        // A page already gone is a page that is gone; one the server kept
+        // because something still uses it (409) was rightly kept.
+        return r.ok || r.status === 404 || r.status === 409;
       } catch {
         return false;
       }

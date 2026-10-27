@@ -1277,15 +1277,22 @@ export function ScanView() {
                         aria-label={"Remove " + f.name + " from this upload"}
                         disabled={uploading || analyzing}
                         onClick={async () => {
-                          const r = await fetch("/api/uploads/" + f.id, {
-                            method: "DELETE",
-                          });
-                          if (r.ok)
-                            setFiles((previous) =>
-                              previous.filter((x) => x.id !== f.id),
-                            );
+                          // Off this upload; the file itself goes only if
+                          // nothing else uses it -- one upload row serves every
+                          // identical file (#176), so the same PDF may be a
+                          // saved test's, or listed here twice.
+                          const kept = await deleteUploads(
+                            uploadsNoLongerUsed(
+                              w,
+                              [f.id],
+                              files.filter((x) => x !== f).map((x) => x.id),
+                            ),
+                          );
+                          if (kept) toast.error("This document couldn’t be removed.");
                           else
-                            toast.error("This document couldn’t be removed.");
+                            setFiles((previous) =>
+                              previous.filter((x) => x !== f),
+                            );
                         }}
                       >
                         <X size={16} />
