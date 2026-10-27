@@ -24,6 +24,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTeacher } from "./teacher-context";
 import { Action, PageTitle, Pick, Pill, SectionTitle } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { uploadsNoLongerUsed } from "@/lib/teacher-classes";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
 import { safePdfText } from "@/lib/pdf-text";
@@ -300,8 +301,12 @@ export function ScanView() {
         return;
       }
       setPassage((prev) => (prev.trim() ? prev.trimEnd() + "\n\n" : "") + read);
-      // The text is out of the photos now; they have nothing left to give.
-      await deleteUploads(ids).catch(() => {});
+      // The text is out of the photos now; they have nothing left to give --
+      // unless the same file is a page of a test, this one included while it
+      // is still being set up (one upload row per identical file, #176).
+      await deleteUploads(
+        uploadsNoLongerUsed(w, ids, files.map((f) => f.id)),
+      ).catch(() => {});
     } catch (e) {
       setError(describeFailure(e, "The passage couldn’t be read."));
     } finally {

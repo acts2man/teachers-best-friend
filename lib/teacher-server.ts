@@ -682,18 +682,25 @@ export async function findUploadByHash(
 ): Promise<{ id: string; name: string; size: number; mime: string; pages: number } | null> {
   if (!hasSupabaseConfig()) return null;
   const supabase = await createClient();
-  const { data: row, error } = await supabase
-    .from("teacher_uploads")
-    .select("id, name, size, mime, page_count")
-    .eq("owner_id", ownerId)
-    .eq("content_sha256", sha256)
-    // Never a photo the 30-day purge has deleted: its row stays for the
-    // ledger, but the file is gone, so reusing it would hand the teacher a
-    // page with nothing behind it.
-    .is("purged_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const lookup = (skipSuperseded: boolean) => {
+    let q = supabase
+      .from("teacher_uploads")
+      .select("id, name, size, mime, page_count")
+      .eq("owner_id", ownerId)
+      .eq("content_sha256", sha256)
+      // Never a photo the 30-day purge has deleted: its row stays for the
+      // ledger, but the file is gone, so reusing it would hand the teacher a
+      // page with nothing behind it.
+      .is("purged_at", null);
+    // Nor an older duplicate marked superseded by the one-row-per-hash
+    // migration (20261026120000): the live row is the one to reuse.
+    if (skipSuperseded) q = q.is("superseded_by", null);
+    return q.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  };
+  let { data: row, error } = await lookup(true);
+  // Before that migration is applied the column does not exist (42703); every
+  // row is then live, so the lookup without it is the same answer.
+  if (error?.code === "42703") ({ data: row, error } = await lookup(false));
   if (error) throw error;
   if (!row) return null;
   return {

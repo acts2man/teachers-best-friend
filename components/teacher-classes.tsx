@@ -364,7 +364,7 @@ export function RosterScanner({
   onAdd: (names: string[]) => void;
   existingNames: string[];
 }) {
-  const { aiReady } = useTeacher();
+  const { w, aiReady } = useTeacher();
   const [working, setWorking] = useState(false),
     // Keyed by the row's own key rather than by index or by name: the review
     // list is rebuilt whenever the switch moves, so an index means a different
@@ -496,8 +496,10 @@ export function RosterScanner({
       // The roster itself is not kept once the names are read. "Deleted
       // immediately after names are read" is a published commitment, so a
       // failure here is said out loud rather than swallowed -- it is the one
-      // photograph in the app that carries a whole class list.
-      const kept = await deleteUploads(ids);
+      // photograph in the app that carries a whole class list. (Unless the
+      // identical file is a test's page -- one upload row per identical file,
+      // #176 -- in which case it is that test's, not a roster.)
+      const kept = await deleteUploads(uploadsNoLongerUsed(w, ids));
       if (kept)
         toast.error(
           "The roster photo couldn't be deleted just now. It will be removed automatically — tell us if you need it gone sooner.",

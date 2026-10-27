@@ -349,8 +349,14 @@ export function clearClassStudents(w: Workspace, classId: string) {
  * same bytes uploaded to two tests are ONE upload -- so deleting the first
  * test must not delete the page the second still shows.
  */
-export function uploadsNoLongerUsed(w: Workspace, ids: Iterable<string>): string[] {
-  const used = new Set<string>();
+export function uploadsNoLongerUsed(
+  w: Workspace,
+  ids: Iterable<string>,
+  /** Ids also in use that the workspace does not hold yet -- a test still
+   * being set up, whose pages are on screen but not saved. */
+  alsoInUse: Iterable<string> = [],
+): string[] {
+  const used = new Set<string>(alsoInUse);
   for (const a of w.assessments) {
     for (const id of a.uploadIds || []) used.add(id);
     for (const id of a.assignmentUploadIds || []) used.add(id);
