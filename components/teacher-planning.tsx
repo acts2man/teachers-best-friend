@@ -72,6 +72,7 @@ import {
   printContent,
   printHtml,
 } from "./teacher-shared";
+import { schoolYearLabel, schoolYearOptions, teacherSchoolYear } from "@/lib/school-year";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
   hasCuratedLesson,
@@ -2105,6 +2106,27 @@ export function SettingsView() {
               onCheckedChange={(v) =>
                 save({ ...w, settings: { ...w.settings, reduceMotion: v } })
               }
+            />
+          </div>
+          {/* The school year (lib/school-year.ts): the class super grid reads
+              this year's tests. Changing it hides and deletes nothing. */}
+          <div className="setting-toggle">
+            <div>
+              <strong>School year</strong>
+              <span>The year your class summaries cover. Changing it deletes nothing.</span>
+            </div>
+            <Pick
+              label="School year"
+              value={String(teacherSchoolYear(w))}
+              onChange={(v) =>
+                save(
+                  { ...w, settings: { ...w.settings, schoolYear: Number(v) } },
+                  "School year set to " + schoolYearLabel(Number(v)),
+                )
+              }
+              options={[...new Set([...schoolYearOptions(), teacherSchoolYear(w)])]
+                .sort()
+                .map((y) => ({ value: String(y), label: schoolYearLabel(y) }))}
             />
           </div>
         </section>

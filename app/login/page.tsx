@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { currentSchoolYear, schoolYearLabel, schoolYearOptions } from "@/lib/school-year";
 
 const ADMIN_HOME = "/admin";
 
@@ -29,6 +30,8 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Sign-up only: the school year the workspace starts in (lib/school-year.ts).
+  const [schoolYear, setSchoolYear] = useState(() => currentSchoolYear());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -86,6 +89,8 @@ export default function LoginPage() {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          // Read once, when the workspace is first made (GET /api/workspace).
+          data: { school_year: schoolYear },
         },
       });
       if (authError) throw authError;
@@ -202,6 +207,21 @@ export default function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
               />
             </label>
+            {!admin && mode === "signup" && (
+              <label>
+                School year
+                <select
+                  value={schoolYear}
+                  onChange={(event) => setSchoolYear(Number(event.target.value))}
+                >
+                  {schoolYearOptions().map((y) => (
+                    <option key={y} value={y}>
+                      {schoolYearLabel(y)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {error && <p className="auth-message error">{error}</p>}
             {message && <p className="auth-message success">{message}</p>}
             <button

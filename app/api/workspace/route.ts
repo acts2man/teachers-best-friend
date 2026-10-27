@@ -16,6 +16,8 @@ import {
 import { createDemoWorkspace } from "@/lib/teacher-data";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Workspace } from "@/lib/teacher-types";
+import { hasSupabaseConfig } from "@/lib/supabase/server";
+import { validSchoolYear } from "@/lib/school-year";
 
 // Optional text the relational facade can legitimately store as NULL. The
 // facade now coalesces these (see the workspace_json_defaults migration), but
@@ -85,15 +87,32 @@ const dataSchema = z.object({
     reduceMotion: z.boolean(),
     theme: z.string().max(40).optional(),
     lastGradingMode: z.enum(["percentage", "sbg"]).optional(),
+    // The year the school year starts (2026 = 2026–27; lib/school-year.ts).
+    schoolYear: z.number().int().min(2000).max(2100).optional(),
   }),
 });
+
+/** A new teacher's workspace: the demo, in the school year they chose at
+ * sign-up (stored on the account as school_year; lib/school-year.ts). */
+async function firstWorkspace(id: string): Promise<Workspace> {
+  const workspace = createDemoWorkspace();
+  if (!hasSupabaseConfig()) return workspace;
+  try {
+    const { data } = await supabaseAdmin().auth.admin.getUserById(id);
+    const year = validSchoolYear(data?.user?.user_metadata?.school_year);
+    if (year !== null) workspace.settings = { ...workspace.settings, schoolYear: year };
+  } catch {
+    // No year to read is the current year (teacherSchoolYear), not a failure.
+  }
+  return workspace;
+}
 
 export async function GET() {
   try {
     const identity = await resolveOwningTeacher();
     const id = identity.id;
     let saved = await readWorkspace(id);
-    if (!saved) saved = await initializeWorkspace(id, createDemoWorkspace());
+    if (!saved) saved = await initializeWorkspace(id, await firstWorkspace(id));
     if (!saved) throw new Error("The classroom could not be initialized.");
     let impersonating: { teacherEmail: string } | null = null;
     if (identity.impersonating) {

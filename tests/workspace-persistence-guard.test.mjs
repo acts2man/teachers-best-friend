@@ -51,6 +51,8 @@ const PERSISTED = {
     "pointsPossible", "studentOrder",
     // Grading mode (docs/design/grading-modes-and-dok-grid.md, G1).
     "gradingMode",
+    // The day it was given (20261027140000).
+    "dateGiven",
   ],
   // Custom standards (20261014130000): the columns, plus everything else in
   // the row's `meta` jsonb. Unlisted until then because half of it was lost.
