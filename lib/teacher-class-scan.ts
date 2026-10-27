@@ -89,6 +89,12 @@ export function planNameBatches(
  * sequential batches of twelve. */
 export const NAME_CONCURRENCY = 4;
 
+/** How many grading requests run at once. One after another, a 36-student
+ * set's ten batches took about 6 minutes on 21 Oct 2026 -- each is ~30 s of
+ * model time. Three at a time cuts that to about a third without asking the
+ * model provider for more than a few requests at once. */
+export const GRADE_CONCURRENCY = 3;
+
 /** How long to wait before each retry of a failed name read. */
 export const NAME_RETRY_DELAYS_MS = [1500, 4000];
 
@@ -1667,12 +1673,17 @@ export async function gradeInBatches(
   // one is re-asked once, then sent to Unsure. Absent: no parts check.
   partsOf?: Assessment,
   onShortParts?: (info: { batch: number; reasked: number; unsure: number }) => void,
+  // How many batches are in flight at once (GRADE_CONCURRENCY in the app).
+  // 1 is one after another, exactly as before.
+  concurrency = 1,
 ): Promise<GradedGroup[]> {
-  const graded: GradedGroup[] = [...already];
+  // Each batch's answers in its own slot, so what is banked and returned is in
+  // batch order however the requests finish: with three in flight, batch 2 can
+  // come back before batch 0, and the result must not depend on that.
+  const done: (GradedGroup[] | undefined)[] = batches.map(() => undefined);
+  const soFar = () => [...already, ...done.flatMap((g) => g ?? [])];
 
-  for (const [index, batch] of batches.entries()) {
-    if (index < startAt) continue;
-
+  async function gradeOne(batch: ScanBatch, index: number): Promise<GradedGroup[]> {
     // Keep the best answer seen for each of this batch's groups across attempts:
     // a retry that still comes up short never loses a fuller earlier answer.
     const best = new Map<number, GradedGroup>();
@@ -1711,11 +1722,32 @@ export async function gradeInBatches(
       if (shorts.length) onShortParts?.({ batch: index, reasked: shorts.length, unsure });
     }
 
-    for (const at of batch.groupIndexes) {
-      const g = best.get(at);
-      if (g) graded.push(g);
-    }
-    onBatch?.(graded, index + 1);
+    return batch.groupIndexes.map((at) => best.get(at)).filter((g): g is GradedGroup => !!g);
   }
-  return graded;
+
+  // A small pool: at most `concurrency` batches in flight, started in order.
+  // When one fails, nothing new starts, the ones already running finish and
+  // are banked (they are paid for), and then the first error is thrown -- as
+  // one batch failing stopped the run before.
+  let next = startAt;
+  let failure: { error: unknown } | null = null;
+  const worker = async () => {
+    while (!failure && next < batches.length) {
+      const index = next++;
+      try {
+        done[index] = await gradeOne(batches[index], index);
+      } catch (error) {
+        failure ??= { error };
+        return;
+      }
+      // The first batch not yet back: where a resume would carry on.
+      let resumeAt = startAt;
+      while (resumeAt < batches.length && done[resumeAt]) resumeAt++;
+      onBatch?.(soFar(), resumeAt);
+    }
+  };
+  const workers = Math.max(1, Math.min(concurrency, batches.length - startAt));
+  await Promise.all(Array.from({ length: workers }, worker));
+  if (failure) throw (failure as { error: unknown }).error;
+  return soFar();
 }

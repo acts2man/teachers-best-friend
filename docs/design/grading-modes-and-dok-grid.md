@@ -297,7 +297,7 @@ The result is a new pure function in `lib/teacher-class-analysis.ts`, `dokGrid(a
 
 ### 2.3 Cells with no questions, and other gaps
 
-- **No questions at that standard and DOK.** The cell is grey with "—" and "No questions". It is not clickable. This will be the most common cell: a 10-question test rarely covers 16 combinations. Columns stay fixed at 1–4 so the grid always reads the same way.
+- **No questions at that standard and DOK.** The cell is grey and says "Not Tested" (Ricky, 26 Oct 2026; it said "No questions" before). Tapping it opens a short panel explaining that no question on this test was at that DOK level for that standard. This will be the most common cell: a 10-question test rarely covers 16 combinations. Columns stay fixed at 1–4 so the grid always reads the same way.
 - **Questions but no graded answers yet.** The cell is grey with "Not graded yet". In practice the Class analysis tab only opens once every answer is decided (`ConfirmMatchesFirst` / `DecideFirst`, `teacher-assessments.tsx:1512-1531`), so this is rare.
 - **A question with no DOK.** The AI always sets 1–4 (`analyze-shared.ts:300`, checked at `:800`), but the column is nullable. Today `dokBreakdown` counts such a question as DOK 1, while the Standards report leaves it out. The grid will **leave it out** and say so under the grid: "1 question has no DOK -- set it in Assessment review". It will not guess.
 - **One question in a cell.** That score is one question's result. The question count is always shown, and a cell with one question is marked "1 question". Whether to also soften the recommendation there is Question B3.
@@ -391,7 +391,7 @@ At 390px a five-column table (standard plus four DOK columns) leaves about 65px 
 **DOK grid**
 
 - **B1.** On a phone, is "one small card per standard with four DOK boxes" OK, with the recommendation shown only when you tap a box?
-- **B2.** For empty boxes (no questions at that DOK), is a grey "No questions" right, or would you rather the empty DOK columns were hidden?
+- **B2.** For empty boxes (no questions at that DOK), is a grey "No questions" right, or would you rather the empty DOK columns were hidden? *Answered (Ricky, 26 Oct 2026): keep the columns; the box says "Not Tested" and tapping it explains why.*
 - **B3.** When a box has only one question behind it, should it still say "Reteach Recommended", or something softer like "Only 1 question -- check"?
 - **B4.** ELA has no list of error types yet, so ELA boxes can't show "common errors" the way math does. Would you like to give us an ELA list (like the five math ones)? Until then we would show the most common wrong answers.
 - **B5.** "Extension" on a DOK 2 box: should the lesson aim one level higher (DOK 3), or stay at DOK 2 and go deeper?

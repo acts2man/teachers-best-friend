@@ -230,8 +230,8 @@ export function classAnalysis(
           notGraded.push(student);
           continue;
         }
-        // The unrounded average; masteryLevel rounds it once (69.5 is
-        // Approaching, 69.4 is Beginning).
+        // The unrounded average; masteryLevel rounds it once (59.5 is
+        // Approaching, 59.4 is Beginning).
         const average =
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
           responses.length;

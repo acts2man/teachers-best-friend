@@ -737,7 +737,7 @@ export function buildPrompt(
     // reteach lesson this has always built.
     const aim =
       p.intent === "practice"
-        ? "This is targeted practice for students approaching the standard (70–79%): they have most of it, so briefly revisit the one step they most often miss, then give focused guided and independent practice on that step, and check with two targeted exit questions. Include five practice problems that build to the full standard and a correct answer key."
+        ? "This is targeted practice for students approaching the standard (60–79%): they have most of it, so briefly revisit the one step they most often miss, then give focused guided and independent practice on that step, and check with two targeted exit questions. Include five practice problems that build to the full standard and a correct answer key."
         : p.intent === "reinforcement"
           ? "This is optional reinforcement for students meeting the standard (80–89%): keep it short and low-stakes, consolidating the skill with a quick model, mixed practice that applies it in a slightly new context, and two exit questions. Include five practice problems at grade level and a correct answer key."
           : p.intent === "extension"

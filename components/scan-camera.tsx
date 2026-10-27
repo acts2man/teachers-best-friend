@@ -7,6 +7,8 @@ import {
   cameraSupported,
   coverCrop,
   coverMapPoint,
+  framingGuide,
+  type FramingGuide,
   describeCameraError,
   laplacianVariance,
   partitionByGroup,
@@ -82,6 +84,9 @@ type DetectedQuad = { quad: import("@/lib/edge-detect").Quad; w: number; h: numb
 const AUTO_KEY = "tbf.scan.autoSnap";
 const DETECT_W = 320; // downscaled working width for live detection
 const CAPTURE_CAP = 2000; // long-edge cap; matches uprightPage's downstream cap
+/** The framing guide's own detection floor: a page this small (of the frame)
+ * is not outlined, but is told to come closer. */
+const FAR_PAGE_MIN_AREA = 0.05;
 const DETECT_EVERY_MS = 120; // ~8 detections/sec keeps a mid-range phone smooth
 const SETTLE_MS = 700; // let the stream focus/settle before the first capture
 // On a borderline capture, grab a short burst and keep the sharpest frame -- the
@@ -223,6 +228,8 @@ export function ScanCamera({
   const [group, setGroup] = useState(0);
   const [auto, setAuto] = useState(() => readAuto());
   const [lowConfidence, setLowConfidence] = useState(false);
+  // "Move closer" / "Hold steady" from how much of the screen the page fills.
+  const [guide, setGuide] = useState<FramingGuide>(null);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(true);
   const [settled, setSettled] = useState(false);
@@ -501,10 +508,22 @@ export function ScanCamera({
       setLowConfidence(!!quad && !confident);
 
       octx.clearRect(0, 0, vw, vh);
-      if (quad) {
-        // Map each corner from the detection frame into the visible cover space,
-        // so the outline sits on the page exactly as it appears on screen.
-        const pts = quad.map((p) => coverMapPoint(p.x, p.y, dw, dh, vw, vh));
+      // Map each corner from the detection frame into the visible cover space,
+      // so the outline sits on the page exactly as it appears on screen -- and
+      // the framing guide measures the page against what the photo will hold.
+      const onScreen = quad ? quad.map((p) => coverMapPoint(p.x, p.y, dw, dh, vw, vh)) : null;
+      // A page too small for the detector's usual floor still deserves "Move
+      // closer": look again with a lower one, for the guide only -- no outline
+      // and no auto-snap for it, both of which stay exactly as they were.
+      const far = quad ? null : edge.findDocumentQuad(imgData, { minAreaFraction: FAR_PAGE_MIN_AREA });
+      const nextGuide = framingGuide(
+        onScreen ?? (far ? far.map((p) => coverMapPoint(p.x, p.y, dw, dh, vw, vh)) : null),
+        vw,
+        vh,
+      );
+      setGuide((g) => (g === nextGuide ? g : nextGuide));
+      if (quad && onScreen) {
+        const pts = onScreen;
         // Solid green on a confident page; dashed/soft when only a guess.
         octx.lineWidth = confident ? 2.5 : 2;
         octx.strokeStyle = confident ? "rgba(120,230,170,0.95)" : "rgba(245,205,110,0.9)";
@@ -739,11 +758,13 @@ export function ScanCamera({
       <canvas ref={detectCanvasRef} className="sr-only" aria-hidden="true" />
       {flash && <div className="scan-camera-flash" aria-hidden="true" />}
       <div className="scan-camera-top">
-        <span className="scan-camera-count">
-          {title ? title + " · " : ""}
+        {/* Ricky (26 Oct 2026): bold and prominent, naming the page the next
+            photo will be -- "Student 1, Page 1" before the first. */}
+        <span className="scan-camera-count" aria-live="polite">
+          {title && <small>{title}</small>}
           {mode === "class"
-            ? "Student " + (group + 1) + " · " + inCurrent + (inCurrent === 1 ? " page" : " pages")
-            : shots.length + (shots.length === 1 ? " page" : " pages")}
+            ? "Student " + (group + 1) + ", Page " + (inCurrent + 1)
+            : "Page " + (shots.length + 1)}
         </span>
         <div className="scan-camera-side" style={{ flex: "0 0 auto" }}>
           <button
@@ -794,7 +815,8 @@ export function ScanCamera({
           Too blurry — hold steady, a little farther from the page
         </div>
       )}
-      {!starting && settled && !tooBlurry && auto && lowConfidence && !atCap && (
+      {/* Not beside "Move closer": the two would contradict each other. */}
+      {!starting && settled && !tooBlurry && auto && lowConfidence && !atCap && guide !== "closer" && (
         <div className="scan-camera-hint" role="status">
           Hold steady or tap the shutter
         </div>
@@ -807,28 +829,76 @@ export function ScanCamera({
         </div>
       )}
       <div className="scan-camera-bottom">
-        {shots.length > 0 && (
-          <div className="scan-camera-thumbs" aria-label="Captured pages">
-            {shots.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                className="scan-camera-thumb"
-                aria-label={"Delete page " + (i + 1)}
-                onClick={() => removeShot(s.id)}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s.url} alt={"Captured page " + (i + 1)} />
-                <span className="scan-camera-thumb-x">
-                  <X size={12} />
-                </span>
-              </button>
-            ))}
+        {/* In the bottom column's flow, so it always sits above the thumbnails. */}
+        {!starting && settled && !atCap && !tooBlurry && guide && (
+          <div className={"scan-camera-guide " + guide} role="status">
+            {guide === "closer" ? "Move closer" : "Hold steady"}
           </div>
         )}
+        {shots.length > 0 && (
+          // Newest on the left, numbered in the order they were taken
+          // (Ricky, 26 Oct 2026), so the page just taken is always in view.
+          <div className="scan-camera-thumbs" aria-label="Captured pages, newest first">
+            {shots
+              .map((s, i) => ({ s, n: i + 1 }))
+              .reverse()
+              .map(({ s, n }) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className="scan-camera-thumb"
+                  aria-label={"Delete page " + n}
+                  onClick={() => removeShot(s.id)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={s.url} alt={"Captured page " + n} />
+                  <span className="scan-camera-thumb-n" aria-hidden="true">
+                    {n}
+                  </span>
+                  <span className="scan-camera-thumb-x">
+                    <X size={14} />
+                  </span>
+                </button>
+              ))}
+          </div>
+        )}
+        {/* Ricky (26 Oct 2026): Next student on the right, under the thumb
+            that taps it most; Finished on the left. A single scan has only
+            Done, which stays on the right. */}
         <div className="scan-camera-controls">
           <div className="scan-camera-side">
             {mode === "class" && (
+              <button
+                type="button"
+                className="scan-camera-btn primary"
+                disabled={finishing}
+                onClick={done}
+              >
+                {finishing ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Finished
+              </button>
+            )}
+          </div>
+          {/* The whole 96px circle takes the photo, on the finger going down:
+              a click needed the finger to lift without moving, and a tap that
+              slid a little on the glass did nothing. Keyboard Enter/Space
+              still arrive as a click with no pointer (detail 0). */}
+          <button
+            type="button"
+            className="scan-camera-shutter"
+            aria-label={atCap ? "Page limit reached — tap Finished to grade" : "Take a photo"}
+            disabled={starting || finishing || !settled || atCap}
+            onPointerDown={(e) => {
+              if (e.pointerType === "mouse" && e.button !== 0) return;
+              shoot();
+            }}
+            onClick={(e) => {
+              if (e.detail === 0) shoot();
+            }}
+          >
+            <span className="scan-camera-shutter-ring" aria-hidden="true" />
+          </button>
+          <div className="scan-camera-side">
+            {mode === "class" ? (
               <button
                 type="button"
                 className="scan-camera-btn"
@@ -837,25 +907,16 @@ export function ScanCamera({
               >
                 <UserPlus size={16} /> Next student
               </button>
+            ) : (
+              <button
+                type="button"
+                className="scan-camera-btn primary"
+                disabled={finishing}
+                onClick={done}
+              >
+                {finishing ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Done
+              </button>
             )}
-          </div>
-          <button
-            type="button"
-            className="scan-camera-shutter"
-            aria-label={atCap ? "Page limit reached — tap Finished to grade" : "Take a photo"}
-            disabled={starting || finishing || !settled || atCap}
-            onClick={shoot}
-          />
-          <div className="scan-camera-side">
-            <button
-              type="button"
-              className="scan-camera-btn primary"
-              disabled={finishing}
-              onClick={done}
-            >
-              {finishing ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{" "}
-              {mode === "class" ? "Finished" : "Done"}
-            </button>
           </div>
         </div>
       </div>

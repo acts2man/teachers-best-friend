@@ -816,7 +816,7 @@ export function DiagnosticsView() {
                 </div>
               )}
               <p className="method-note">
-                Priority combines the share of students at Beginning (69% or below), the number
+                Priority combines the share of students at Beginning (59% or below), the number
                 affected, and a prerequisite-impact weight. Use this planning
                 aid alongside your observations.
               </p>
@@ -1895,7 +1895,7 @@ export function StudentsView() {
                   </section>
                 ))}
                 <p className="method-note group-method-note">
-                  Shared-gap groups include students at Beginning (69% or below) on the same
+                  Shared-gap groups include students at Beginning (59% or below) on the same
                   standard. A whole-class suggestion appears when at least half
                   the class shares that gap.
                 </p>
