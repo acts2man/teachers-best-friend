@@ -73,13 +73,15 @@ export async function POST(request: Request) {
     // the browser. The client shows it so a teacher can see what a stack will
     // cost before committing to it; the charge is worked out from the stored
     // column regardless of what the client does with this number.
-    const { pageCount } = await saveDocument(ownerId, id, file, bytes);
+    // The id of the row actually kept: a new one, or the existing row for
+    // these exact bytes (saveDocument reuses it rather than adding a second).
+    const saved = await saveDocument(ownerId, id, file, bytes);
     return Response.json({
-      id,
+      id: saved.id,
       name: file.name,
       size: file.size,
       mime: file.type,
-      pages: pageCount,
+      pages: saved.pageCount,
     });
   } catch (error) {
     return apiError(error);

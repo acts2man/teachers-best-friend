@@ -49,14 +49,20 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
   - inserts a **`teacher_uploads`** row with `page_count` and `content_sha256`.
 - An insert trigger refuses a row with no hash
   (`supabase/migrations/20260923170000_a_scan_cannot_exist_uncharged.sql:158-178`).
-- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:680-703`). It does
-  **not** filter out purged rows; see gap G9.
+- Recovery after a lost reply: `findUploadByHash` (`lib/teacher-server.ts:680-703`). It skips
+  purged rows (26 Oct 2026; was gap G9).
 - **Retries** (20 Oct 2026: a 72-page class scan stopped twice on one storage 520):
   - `uploadFile` tries 3 times, waiting 0.6 s then 1.8 s, on a 5xx, a dropped connection or an
     unreadable reply only. A 4xx is never retried. Before each retry it looks the file up by
     hash (`GET /api/uploads?sha256=`), so a retry never makes a second row or a second charge.
   - `saveDocument` retries the storage write itself (`lib/storage-retry.ts`, 3 tries) on a 5xx
     or no answer. A retry's "already exists" is success: the path is this upload's own.
+  - **One live row per teacher per content hash** (`20261026120000`, **in the repo, not yet
+    applied to production**): a unique index over rows not purged and not superseded, and a
+    BEFORE INSERT trigger that reuses the existing row (renewing its retention) instead of
+    adding a second; `saveDocument` answers with the id kept. The 2 duplicate pairs already in
+    production are marked `superseded_by`, not deleted. Deleting a test, clearing or removing
+    a class keeps any upload another test still uses (`uploadsNoLongerUsed`). So do the passage read (test page and setup, the setup counting its unsaved pages), releasing reviewed photos, and the roster read: since one row serves every identical file, no delete of raw ids is left.
   - On the class scan a page that still fails no longer ends the batch: it waits in
     `failedPages` with Retry / Leave it out (`placeRetriedPage`, `lib/scan-session.ts`), and
     grading waits until none is left.
@@ -736,9 +742,9 @@ reading the code, as marked. None has a test in the suite, because each test wou
     standard by **code** only, so with one code in two frameworks the question's
     `standard_id` points at either row. Reports that group by `standard_id` could count it
     under the other framework; the app itself reads `standard_code`.
-- **G9. Upload recovery can return a purged file.** `findUploadByHash` ignores `purged_at`
-  (`lib/teacher-server.ts:617-640`), so the scan later fails with a 404. The purge also
-  handles only 200 rows per table per run, and each class-scan page creates two rows.
+- **G9. Upload recovery could return a purged file. FIXED 26 Oct 2026:** `findUploadByHash`
+  now skips rows with `purged_at` set. Still open: the purge handles only 200 rows per table
+  per run, and each class-scan page creates two rows.
 - **G10. The reuse cache key is looser than the read it caches.**
   - The page hashes are sorted and de-duplicated, so a reordered set gets the old order.
   - The passage is keyed by length only.

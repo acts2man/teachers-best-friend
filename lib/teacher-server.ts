@@ -547,7 +547,7 @@ export async function saveDocument(
         .from(DOCUMENT_BUCKET)
         .upload(objectPath, bytes, { contentType: file.type, upsert: false }),
     );
-    const { error: rowError } = await supabase.from("teacher_uploads").insert({
+    const { data: inserted, error: rowError } = await supabase.from("teacher_uploads").insert({
       id,
       owner_id: ownerId,
       name: file.name.slice(0, 180),
@@ -560,12 +560,28 @@ export async function saveDocument(
       page_count: pageCount,
       content_sha256: sha256,
       created_at: new Date().toISOString(),
-    });
+    }).select("id");
     if (rowError) {
       await supabase.storage.from(DOCUMENT_BUCKET).remove([objectPath]);
+      // One live row per owner + content (20261026120000): a retried POST,
+      // or the same bytes uploaded again, finds the row already there. Reuse
+      // it -- the copy just stored is removed above -- instead of failing.
+      if (rowError.code === "23505") {
+        const existing = await findUploadByHash(ownerId, sha256);
+        if (existing) return { id: existing.id, pageCount: existing.pages, sha256 };
+      }
       throw rowError;
     }
-    return { pageCount, sha256 };
+    // The database already had a live row for these exact bytes and reused it
+    // instead of inserting (trigger teacher_uploads_reuse_live_row): drop the
+    // copy just stored and answer with that row.
+    if (Array.isArray(inserted) && inserted.length === 0) {
+      await supabase.storage.from(DOCUMENT_BUCKET).remove([objectPath]);
+      const existing = await findUploadByHash(ownerId, sha256);
+      if (existing) return { id: existing.id, pageCount: existing.pages, sha256 };
+      throw new Error("The upload could not be saved. Please try again.");
+    }
+    return { id, pageCount, sha256 };
   }
 
   const bucket = await sitesBucket();
@@ -593,7 +609,7 @@ export async function saveDocument(
     await bucket.delete(objectPath);
     throw error;
   }
-  return { pageCount, sha256 };
+  return { id, pageCount, sha256 };
 }
 
 export async function readDocument(
@@ -666,14 +682,25 @@ export async function findUploadByHash(
 ): Promise<{ id: string; name: string; size: number; mime: string; pages: number } | null> {
   if (!hasSupabaseConfig()) return null;
   const supabase = await createClient();
-  const { data: row, error } = await supabase
-    .from("teacher_uploads")
-    .select("id, name, size, mime, page_count")
-    .eq("owner_id", ownerId)
-    .eq("content_sha256", sha256)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const lookup = (skipSuperseded: boolean) => {
+    let q = supabase
+      .from("teacher_uploads")
+      .select("id, name, size, mime, page_count")
+      .eq("owner_id", ownerId)
+      .eq("content_sha256", sha256)
+      // Never a photo the 30-day purge has deleted: its row stays for the
+      // ledger, but the file is gone, so reusing it would hand the teacher a
+      // page with nothing behind it.
+      .is("purged_at", null);
+    // Nor an older duplicate marked superseded by the one-row-per-hash
+    // migration (20261026120000): the live row is the one to reuse.
+    if (skipSuperseded) q = q.is("superseded_by", null);
+    return q.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  };
+  let { data: row, error } = await lookup(true);
+  // Before that migration is applied the column does not exist (42703); every
+  // row is then live, so the lookup without it is the same answer.
+  if (error?.code === "42703") ({ data: row, error } = await lookup(false));
   if (error) throw error;
   if (!row) return null;
   return {

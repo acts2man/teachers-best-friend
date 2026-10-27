@@ -152,6 +152,7 @@ import {
   classesFor,
   shareAssessmentWith,
   deleteAssessment,
+  uploadsNoLongerUsed,
 } from "@/lib/teacher-classes";
 import {
   AlertDialog,
@@ -2575,7 +2576,7 @@ function PassagePanel({
   assessment: Assessment;
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
 }) {
-  const { aiReady, busy } = useTeacher();
+  const { w, aiReady, busy } = useTeacher();
   const [reading, setReading] = useState(false);
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
@@ -2618,10 +2619,11 @@ function PassagePanel({
         "Passage read — it now goes with every student's grading",
       );
       setDraft(text);
-      // The photographs have given up everything they had; the text is what
-      // travels from here on.
       // The text is out of them; the photographs have nothing left to give.
-      await deleteUploads(ids);
+      // But one upload row can now be shared by identical files (#176): the
+      // same PDF that made this test, read again as its passage, IS the
+      // test's own file. Only what nothing else uses is deleted.
+      await deleteUploads(uploadsNoLongerUsed(w, ids));
     } catch (e) {
       toast.error(describeFailure(e, "The passage couldn't be read."));
     } finally {

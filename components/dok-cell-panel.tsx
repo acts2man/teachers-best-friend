@@ -59,7 +59,11 @@ export function DokCellPanel({
         "&intent=" +
         level.nextStep.intent +
         "&dok=" +
-        doks.join(","),
+        doks.join(",") +
+        // The errors the lesson aims at are this cell's -- what the panel
+        // shows -- whatever level the lesson is pitched at.
+        "&errorsFrom=" +
+        cell.dok,
     );
   return (
     <Sheet open onOpenChange={(v) => !v && onClose()}>

@@ -70,7 +70,7 @@ import {
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
 import { ConfirmRescan } from "./confirm-reread";
-import { compareByLastName } from "@/lib/teacher-classes";
+import { compareByLastName, uploadsNoLongerUsed } from "@/lib/teacher-classes";
 import { errorTypesFor } from "@/lib/error-types";
 import { safePdfText } from "@/lib/pdf-text";
 import type { Assessment, Question, Student, StudentResponse } from "@/lib/teacher-types";
@@ -1134,7 +1134,7 @@ export function StudentResponseReview({
   onEdit: (r: StudentResponse) => void;
   onSave: (next: Assessment, message: string) => Promise<boolean>;
 }) {
-  const { students, busy, aiReady, go } = useTeacher();
+  const { w, students, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState(params.get("student") || "");
   const [perStudentOpen, setPerStudentOpen] = useState(!!params.get("student"));
@@ -1249,7 +1249,16 @@ export function StudentResponseReview({
     // purge still collects, where the reverse would leave a live thumbnail
     // pointing at nothing.
     if (saved !== false) {
-      const kept = await deleteUploads(released);
+      // Only pages nothing else uses: one upload row is shared by identical
+      // files (#176), so the same photo may be another student's, another
+      // test's, or this test's own document.
+      const forgotten = forgetUploads(confirmed, released);
+      const kept = await deleteUploads(
+        uploadsNoLongerUsed(
+          { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? forgotten : x)) },
+          released,
+        ),
+      );
       if (kept)
         toast.error(
           kept +
