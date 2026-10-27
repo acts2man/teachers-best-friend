@@ -22,7 +22,7 @@ See [current product alignment](docs/current-version-alignment.md) for the sourc
 - Explicit answer-key confirmation before automatic grading; changes invalidate affected student results.
 - Uncertain, missing, and incorrect answer flags; teacher decisions replace stale evidence instead of duplicating it.
 - Individual, provisional or confirmed assignment reports, observed misconceptions, and contextual reteaching.
-- Four mastery levels -- Beginning 0–69% (reteach and support), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% (extension), defined once in `lib/mastery-levels.ts` -- and flexible groups based on shared standard gaps (Beginning), with whole-class suggestions when at least half the class shares a gap.
+- Four mastery levels -- Beginning 0–59% (reteach and support), Approaching 60–79%, Proficient 80–89%, Exceeding 90–100% (extension), defined once in `lib/mastery-levels.ts` -- and flexible groups based on shared standard gaps (Beginning), with whole-class suggestions when at least half the class shares a gap.
 - Seven prepared reteach lessons plus AI-generated lesson plans for any standard, all editable in place, with printable practice and exit tickets, saved teaching dates, and follow-up recording.
 - Multiple classes (one per period or group) under Classes, with roster photo scanning, an always-visible switcher, and assessments that can be shared across classes while each class keeps its own student work.
 - Every US state's standards framework in the dropdown. California Grade 4 Math and ELA are built in with official wording; other states and grades are retrieved with the AI service on request, saved to the teacher's library, and labeled for verification against the official source.
@@ -75,7 +75,7 @@ Netlify serverless functions are capped at ~26 seconds, so a long assessment sca
 
 California Grade 4 official wording is sourced from the [California Department of Education](https://www2.cde.ca.gov/cacs/). Full catalogs for other grades are not preloaded. Curriculum page mappings are teacher-entered. No district-content indexing, SIS integration, or separate photo deskew/shadow-removal pipeline is implied.
 
-An assignment report describes confirmed responses to that assignment. Existing learning histories use the arithmetic mean of the three latest dated observations; a level (Beginning 0–69%, Approaching 70–79%, Proficient 80–89%, Exceeding 90–100%) is named once there are three records, on the mean rounded to the nearest whole percent -- 69.5 shows 70% and is Approaching. An isolated score does not establish mastery or a diagnosis. Visual, hands-on, and auditory modes are flexible teaching approaches, not fixed learner types.
+An assignment report describes confirmed responses to that assignment. Existing learning histories use the arithmetic mean of the three latest dated observations; a level (Beginning 0–59%, Approaching 60–79%, Proficient 80–89%, Exceeding 90–100%) is named once there are three records, on the mean rounded to the nearest whole percent -- 59.5 shows 60% and is Approaching. An isolated score does not establish mastery or a diagnosis. Visual, hands-on, and auditory modes are flexible teaching approaches, not fixed learner types.
 
 ## Development and verification
 

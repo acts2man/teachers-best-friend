@@ -1,7 +1,7 @@
 // Ricky's four mastery levels, in a browser at 390x844 and 1366x768.
 //
 // Proven when: every screen that showed mastery uses the four levels and the
-// same cut-offs -- Beginning 0–69% red, Approaching 70–79% yellow, Proficient
+// same cut-offs -- Beginning 0–59% red, Approaching 60–79% yellow, Proficient
 // 80–89% blue, Exceeding 90–100% green -- with no "Mastered" or "Mastery is
 // 70%" left; every mastery percentage on screen is coloured by the level that
 // number is in; reteach is offered for Beginning and extension for
@@ -28,7 +28,7 @@ mkdirSync(SHOTS, { recursive: true });
 
 const LEVELS = [
   ["Beginning", 0, "level-red"],
-  ["Approaching", 70, "level-yellow"],
+  ["Approaching", 60, "level-yellow"],
   ["Proficient", 80, "level-blue"],
   ["Exceeding", 90, "level-green"],
 ];
@@ -77,7 +77,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".skill-gap-groups", { timeout: 15000 });
   let body = await page.locator("main").innerText();
   check(!OLD_WORDS.test(body), `${tag} class analysis: no old mastery wording`);
-  check(/Beginning 0–69% \(reteach\), Approaching 70–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
+  check(/Beginning 0–59% \(reteach\), Approaching 60–79% \(targeted practice\), Proficient 80–89% \(optional reinforcement\), Exceeding 90–100% \(extension\)/.test(body), `${tag} class analysis: the four levels are stated`);
   check(/(Beginning|Approaching|Proficient|Exceeding) · \d+–\d+% \(\d+\)/.test(body), `${tag} class analysis: students listed by level`);
   const pills = await page.$$eval(".skill-gap-groups .pill[class*='level-']:not(.level-advice)", (els) => els.map((e) => e.textContent.trim()));
   check(pills.length > 0 && pills.every((t) => /^(Beginning|Approaching|Proficient|Exceeding)$/.test(t)), `${tag} class analysis: each standard shows its level (${[...new Set(pills)].join(", ")})`);
@@ -151,7 +151,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   await page.waitForSelector(".heatmap-legend");
   const legend = await page.$$eval(".heatmap-legend span", (els) => els.map((e) => [e.textContent.trim(), e.className]));
   check(
-    JSON.stringify(legend) === JSON.stringify([["Beginning 0–69%", "level-red"], ["Approaching 70–79%", "level-yellow"], ["Proficient 80–89%", "level-blue"], ["Exceeding 90–100%", "level-green"]]),
+    JSON.stringify(legend) === JSON.stringify([["Beginning 0–59%", "level-red"], ["Approaching 60–79%", "level-yellow"], ["Proficient 80–89%", "level-blue"], ["Exceeding 90–100%", "level-green"]]),
     `${tag} heatmap: legend is the four levels (${legend.map((l) => l[0]).join(" | ")})`,
   );
   body = await page.locator("main").innerText();
