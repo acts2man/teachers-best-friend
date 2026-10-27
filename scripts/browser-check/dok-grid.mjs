@@ -34,7 +34,7 @@ w.classes = w.classes.map((c) => ({ ...c, demo: false }));
 const math = w.assessments.find((a) => a.id === "math-demo");
 math.questions[5].dok = 3; // a second DOK on 4.NBT.B.5
 math.questions[1].dok = null; // a question with no DOK
-const LEVEL = (p) => (p >= 90 ? ["green", "Extension Recommended"] : p >= 80 ? ["blue", "Ready to Move On"] : p >= 70 ? ["yellow", "Monitor"] : ["red", "Reteach Recommended"]);
+const LEVEL = (p) => (p >= 90 ? ["green", "Extension Recommended"] : p >= 80 ? ["blue", "Ready to Move On"] : p >= 60 ? ["yellow", "Monitor"] : ["red", "Reteach Recommended"]);
 
 // Every answer right: every scored cell is Exceeding, "Extension Recommended".
 const allRight = structuredClone(w);
@@ -113,7 +113,7 @@ for (const [W, H, data, label] of [
   check(empty.length > 0 && empty.every((c) => c.cls.includes("level-none") && /Not Tested|Not graded yet/.test(c.text)), `${tag}: ${empty.length} cells without a score are grey and say why`);
   const nbt = g.rows.find((r) => r.code === "4.NBT.B.5");
   check(!!nbt && !!nbt.cells[1].score && !!nbt.cells[2].score && /Not Tested/.test(nbt.cells[0].text), `${tag}: 4.NBT.B.5 has DOK 2 and DOK 3 scores and no DOK 1 questions`);
-  check(JSON.stringify(g.legend) === JSON.stringify(["Beginning 0–69%", "Approaching 70–79%", "Proficient 80–89%", "Exceeding 90–100%", "Not Tested"]), `${tag}: legend (${g.legend.join(" | ")})`);
+  check(JSON.stringify(g.legend) === JSON.stringify(["Beginning 0–59%", "Approaching 60–79%", "Proficient 80–89%", "Exceeding 90–100%", "Not Tested"]), `${tag}: legend (${g.legend.join(" | ")})`);
   check(/1 question has no DOK level and is not in the grid/.test(g.note), `${tag}: the no-DOK note (${g.note})`);
   check(!/Depth of knowledge across this assessment/.test(g.main) && /Costa's levels across this assessment/.test(g.main), `${tag}: the DOK rows are replaced; Costa's levels stay`);
   check(!g.sideScroll, `${tag}: no sideways scroll`);

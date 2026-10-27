@@ -25,8 +25,8 @@ test("the four levels: Beginning first, colours unchanged", () => {
   assert.deepEqual(
     levels.MASTERY_LEVELS.map((l) => [l.level, l.range, l.tone]),
     [
-      ["Beginning", "0–69%", "red"],
-      ["Approaching", "70–79%", "yellow"],
+      ["Beginning", "0–59%", "red"],
+      ["Approaching", "60–79%", "yellow"],
       ["Proficient", "80–89%", "blue"],
       ["Exceeding", "90–100%", "green"],
     ],
@@ -35,8 +35,9 @@ test("the four levels: Beginning first, colours unchanged", () => {
 
 test("boundaries on the rounded percentage, which is the one shown", () => {
   const at = (p) => [levels.masteryPercent(p), levels.masteryLevel(p).level];
-  assert.deepEqual(at(69.4), [69, "Beginning"]);
-  assert.deepEqual(at(69.5), [70, "Approaching"]);
+  // The Beginning line is 59.5 since 26 Oct 2026 (it was 69.5).
+  assert.deepEqual(at(59.4), [59, "Beginning"]);
+  assert.deepEqual(at(59.5), [60, "Approaching"]);
   assert.deepEqual(at(79.4), [79, "Approaching"]);
   assert.deepEqual(at(79.5), [80, "Proficient"]);
   assert.deepEqual(at(89.4), [89, "Proficient"]);

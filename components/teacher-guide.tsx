@@ -75,7 +75,7 @@ const steps = [
     points: [
       "Open a student to see mastery by standard, progress over time, and your notes.",
       "Switch to Mastery levels to see the class in four levels, or Shared skill gaps to see who needs the same standard.",
-      "Four levels: Beginning 0–69% (reteach and support), Approaching 70–79%, Proficient 80–89%, Exceeding 90–100% (extension), on the score rounded to the nearest whole percent, so 69.5% shows as 70% and is Approaching. A student's level on a standard uses the three latest observations and is named once there are three; until then the score is coloured by its range but marked “Building evidence”.",
+      "Four levels: Beginning 0–59% (reteach and support), Approaching 60–79%, Proficient 80–89%, Exceeding 90–100% (extension), on the score rounded to the nearest whole percent, so 59.5% shows as 60% and is Approaching. A student's level on a standard uses the three latest observations and is named once there are three; until then the score is coloured by its range but marked “Building evidence”.",
     ],
     actions: [{ label: "Open the roster", href: "/students" }],
   },
