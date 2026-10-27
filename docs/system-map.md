@@ -234,8 +234,11 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
    `20261013130000` (secondChoice), `20261014130000` (custom standards keyed per framework,
    their extras saved in `meta`; **in the repo, not yet applied to production**) and
    `20261020120000` (assessment `gradingMode`, only `'sbg'` stored; **in the repo, not yet
-   applied to production**) and `20261027130000` (class `gradingMode`, `'percentage'` or
-   `'sbg'`, existing classes backfilled; **in the repo, not yet applied to production**).
+   applied to production**), `20261027130000` (class `gradingMode`, `'percentage'` or
+   `'sbg'`, existing classes backfilled; **in the repo, not yet applied to production**) and
+   `20261027140000` (assessment `dateGiven`, a real `YYYY-MM-DD` day or nothing; **in the
+   repo, not yet applied to production**). The school year (`settings.schoolYear`) rides in
+   the settings blob below, which needs no patch.
    For each table it **upserts the rows it is sent and deletes
    every row it is not sent**:
 

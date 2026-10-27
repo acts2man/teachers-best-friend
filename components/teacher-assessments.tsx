@@ -137,6 +137,7 @@ import {
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
 import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
+import { dateGivenOf, dayOf, isDateString, localDateString } from "@/lib/school-year";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -815,6 +816,28 @@ export function AssessmentView() {
                 set up (Ricky, 20 Oct 2026). */}
             <strong className="grading-mode-shown">{gradingModeLabel(a)}</strong>
           </div>
+          {/* The day this test was given (lib/school-year.ts): set to the day
+              its class set was graded, editable here. The class super grid
+              splits the year by it. */}
+          <label className="date-given-row">
+            <span>Date given</span>
+            <input
+              type="date"
+              aria-label="Date given"
+              value={dateGivenOf(a)}
+              max={localDateString()}
+              disabled={busy}
+              onChange={(e) => {
+                const day = e.target.value;
+                if (!isDateString(day) || day === dateGivenOf(a)) return;
+                void save(
+                  { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? { ...x, dateGiven: day } : x)) },
+                  "Date given set to " + dayOf(day).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }),
+                );
+              }}
+            />
+            {!isDateString(a.dateGiven) && <small>Not recorded yet: this is the day the test was created.</small>}
+          </label>
           {w.classes.length > 1 && (
             <div className="linked-classes">
               <Users size={14} />
