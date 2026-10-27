@@ -59,6 +59,8 @@ import {
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
+import { ClassGradingModeField } from "./grading-mode-choice";
+import type { GradingMode } from "@/lib/grading-mode";
 import { BillingView } from "./teacher-billing";
 import {
   fetchQuota,
@@ -162,6 +164,8 @@ export default function TeacherApp({ view }: { view: string }) {
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("4");
   const [framework, setFramework] = useState("California");
+  // A new class's grading mode, chosen once (Ricky, 27 Oct 2026).
+  const [mode, setMode] = useState<GradingMode>("percentage");
   // Optimistic sidebar highlight. Records which view we were on when the link
   // was clicked, so the highlight expires by derivation the moment the new
   // page arrives -- no effect, and no window where the highlight outlives the
@@ -445,6 +449,7 @@ export default function TeacherApp({ view }: { view: string }) {
               grade: Number(grade),
               framework,
               demo: false,
+              gradingMode: mode,
             },
           ],
           activeClassId: id,
@@ -454,6 +459,7 @@ export default function TeacherApp({ view }: { view: string }) {
     ) {
       setCreateOpen(false);
       setName("");
+      setMode("percentage");
       router.push("/students");
     }
   }
@@ -741,6 +747,7 @@ export default function TeacherApp({ view }: { view: string }) {
             built in; other states and grades are retrieved with AI the first
             time you need them.
           </p>
+          <ClassGradingModeField value={mode} onChange={setMode} />
           <Action type="submit" disabled={busy || !name.trim()}>
             Create class
             <ArrowRight size={16} />

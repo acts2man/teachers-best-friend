@@ -41,8 +41,7 @@ import {
   parsePointsTotal,
 } from "@/lib/teacher-workflow";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
-import { GradingModeChoice } from "./grading-mode-choice";
-import { gradingModeLabel, gradingModeOf, lastGradingMode, type GradingMode } from "@/lib/grading-mode";
+import { classGradingMode, gradingModeLabel, gradingModeName, gradingModeOf, type GradingMode } from "@/lib/grading-mode";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
 import {
@@ -91,8 +90,6 @@ export function ScanView() {
   // What the whole assessment is worth (optional). Kept as a string for the
   // input; parsed to a number in makeAssessment.
   const [points, setPoints] = useState("");
-  // A new test starts in the mode the teacher used last (lib/grading-mode.ts).
-  const [gradingMode, setGradingMode] = useState<GradingMode>(() => lastGradingMode(w));
   const [uploading, setUploading] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [error, setError] = useState(""),
@@ -116,6 +113,13 @@ export function ScanView() {
   const editId =
     (mode === "assignment" && (params.get("assessment") || createdId)) || "";
   const editing = editId ? assessments.find((a) => a.id === editId) : undefined;
+  // A new test takes its class's mode (Ricky, 27 Oct 2026): no choice here.
+  // A test being edited keeps its own (lib/grading-mode.ts).
+  const gradingMode: GradingMode = editing ? gradingModeOf(editing) : classGradingMode(w, classroom);
+  // Other classes graded another way cannot share a new test (it has one mode).
+  const otherModeClasses = w.classes.filter(
+    (c) => c.id !== classroom.id && classGradingMode(w, c) !== gradingMode,
+  ).length;
   // Re-reading or re-saving a test that already has graded answers clears
   // them (makeAssessment starts responses afresh), so it asks first. Holds
   // which button the teacher pressed while the confirm step is open.
@@ -175,7 +179,6 @@ export function ScanView() {
     setFramework(editing.framework);
     setTargets(editing.targetStandards);
     setPoints(editing.pointsPossible ? String(editing.pointsPossible) : "");
-    setGradingMode(gradingModeOf(editing));
   }, [editing?.id]);
   function scopeChange(field: string, value: string) {
     setTargets([]);
@@ -382,8 +385,6 @@ export function ScanView() {
       await save(
         {
           ...w,
-          // The mode a new test was set up in is the one the next new test starts in.
-          settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -410,8 +411,6 @@ export function ScanView() {
       await save(
         {
           ...w,
-          // The mode a new test was set up in is the one the next new test starts in.
-          settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
           assessments: editing
             ? w.assessments.map((item) => (item.id === a.id ? a : item))
             : [a, ...w.assessments],
@@ -548,8 +547,6 @@ export function ScanView() {
           await save(
             {
               ...w,
-              // The mode a new test was set up in is the one the next new test starts in.
-              settings: editing ? w.settings : { ...w.settings, lastGradingMode: gradingMode },
               assessments: editing
                 ? w.assessments.map((item) => (item.id === a.id ? a : item))
                 : [a, ...w.assessments],
@@ -747,23 +744,21 @@ export function ScanView() {
                     />
                   </label>
                 </div>
-                {/* How the test is graded (lib/grading-mode.ts). Chosen here,
-                    once, when the test is created -- a new test starts in the
-                    mode the teacher used last -- and never changed after
-                    (Ricky, 20 Oct 2026): editing a test shows its mode. */}
+                {/* How the test is graded (lib/grading-mode.ts): the class's
+                    mode, chosen when the class was created (Ricky, 27 Oct
+                    2026) -- no choice here. Editing a test shows its own. */}
                 <div className="grading-mode-setup">
                   <strong>Grading</strong>
-                  {editing ? (
-                    <span className="grading-mode-shown">{gradingModeLabel(editing)}</span>
-                  ) : (
-                    <GradingModeChoice value={gradingMode} onChange={setGradingMode} />
-                  )}
+                  <span className="grading-mode-shown">
+                    {editing ? gradingModeLabel(editing) : gradingModeName(gradingMode)}
+                  </span>
                   <p className="field-help">
                     {editing
                       ? "Chosen when this test was created; it can't be changed."
-                      : gradingMode === "sbg"
-                        ? "Every question is out of 4 points. This can't be changed once the test is created."
-                        : "Choose now: this can't be changed once the test is created."}
+                      : "Every new test in " +
+                        classroom.name +
+                        " is graded this way, set when the class was created." +
+                        (gradingMode === "sbg" ? " Every question is out of 4 points." : "")}
                   </p>
                 </div>
                 {!editing && w.classes.length > 1 && (
@@ -778,7 +773,8 @@ export function ScanView() {
                       {classroom.name} (this class)
                     </label>
                     {w.classes
-                      .filter((c) => c.id !== classroom.id)
+                      // Only a class graded the same way: one test has one mode.
+                      .filter((c) => c.id !== classroom.id && classGradingMode(w, c) === gradingMode)
                       .map((c) => (
                         <label key={c.id}>
                           <Checkbox
@@ -797,6 +793,13 @@ export function ScanView() {
                           </span>
                         </label>
                       ))}
+                    {otherModeClasses > 0 && (
+                      <p className="field-help">
+                        {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"}{" "}
+                        graded {gradingMode === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
+                        {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

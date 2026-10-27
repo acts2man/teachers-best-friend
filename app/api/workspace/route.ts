@@ -37,6 +37,9 @@ const dataSchema = z.object({
         framework: z.string(),
         // A class that predates the demo-flag fix can omit this entirely.
         demo: z.boolean().nullish().transform((value) => Boolean(value)),
+        // How every new test in the class is graded (27 Oct 2026). Absent on
+        // a class made before then (lib/grading-mode.ts classGradingMode).
+        gradingMode: z.enum(["percentage", "sbg"]).optional(),
       }),
     )
     .min(1)

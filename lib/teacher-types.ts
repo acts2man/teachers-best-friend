@@ -194,6 +194,10 @@ export type Classroom = {
   grade: number;
   framework: string;
   demo: boolean;
+  /** How every new test in this class is graded (Ricky, 27 Oct 2026), chosen
+   * when the class is created. Absent on a class made before then: see
+   * classGradingMode (lib/grading-mode.ts). */
+  gradingMode?: "percentage" | "sbg";
 };
 export type Lesson = {
   id: string;
