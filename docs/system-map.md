@@ -62,7 +62,7 @@ The automated guards for section 2 live in `tests/invariants/` and run in `npm t
     BEFORE INSERT trigger that reuses the existing row (renewing its retention) instead of
     adding a second; `saveDocument` answers with the id kept. The 2 duplicate pairs already in
     production are marked `superseded_by`, not deleted. Deleting a test, clearing or removing
-    a class keeps any upload another test still uses (`uploadsNoLongerUsed`). So do the passage read (test page and setup, the setup counting its unsaved pages), releasing reviewed photos, and the roster read: since one row serves every identical file, no delete of raw ids is left.
+    a class keeps any upload another test still uses (`uploadsNoLongerUsed`). So do the passage read (test page and setup, the setup counting its unsaved pages), releasing reviewed photos, and the roster read, and the setup screen's remove-file X: since one row serves every identical file, no delete of raw ids is left. The server enforces it too: `DELETE /api/uploads/<id>` answers 409 while the saved workspace (an assessment's pages, answer key, students' work or an answer's crop; a resource) or a class scan in progress still names the file (`uploadStillReferenced`), and `deleteUploads` treats that 409 as rightly kept.
   - On the class scan a page that still fails no longer ends the batch: it waits in
     `failedPages` with Retry / Leave it out (`placeRetriedPage`, `lib/scan-session.ts`), and
     grading waits until none is left.

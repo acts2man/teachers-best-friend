@@ -363,6 +363,8 @@ export function uploadsNoLongerUsed(
     for (const id of a.answerKeyUploadIds || []) used.add(id);
     for (const pages of Object.values(a.studentUploadIds || {}))
       for (const id of pages || []) used.add(id);
+    // An answer's crop points at the page it was read from.
+    for (const r of a.responses || []) if (r.answerRegion?.uploadId) used.add(r.answerRegion.uploadId);
   }
   for (const r of w.resources || []) if (r.uploadId) used.add(r.uploadId);
   return [...new Set(ids)].filter((id) => !used.has(id));
