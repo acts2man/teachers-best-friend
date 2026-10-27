@@ -57,8 +57,8 @@ test("the test page shows the mode but has no switch; points are locked for Stan
   assert.match(src, /<strong className="grading-mode-shown">\{gradingModeLabel\(a\)\}<\/strong>/);
   assert.equal(gradingModeLabel({ gradingMode: "sbg" }), "Standards-Based (0–4)");
   assert.equal(gradingModeLabel({}), "Percentage");
-  // The note stays until 0–4 scoring ships.
-  assert.match(src, /Scoring out of 4 is coming next/);
+  // 0–4 scoring shipped (26 Oct 2026): the "coming next" note is gone.
+  assert.doesNotMatch(src, /coming next/);
   // Locked points: a read-only 4 instead of the editor, and no total to set.
   assert.match(src, /gradingModeOf\(a\) === "sbg" \? \(\s+\/\/ Locked at 4 on a Standards-Based test\.\s+<span className="locked-points"/);
   assert.match(src, /if \(gradingModeOf\(a\) === "sbg"\) \{\s+const renamed = editMeta\.title/);

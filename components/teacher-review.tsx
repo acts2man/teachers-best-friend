@@ -1,5 +1,6 @@
 "use client";
-import { levelClass } from "@/lib/mastery-levels";
+import { levelClass, masteryLevel4 } from "@/lib/mastery-levels";
+import { isSbg, matchOfScore4, SBG_SCORES, score4OfMatch, score4Text } from "@/lib/grading-mode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
@@ -63,6 +64,7 @@ import {
   reteachGroup,
   studentReport,
   studentReview,
+  standardAverage4,
   pointsText,
   withReteachGroup,
   confirmedGradesAtRisk,
@@ -70,7 +72,7 @@ import {
   type AnswerGroup,
 } from "@/lib/teacher-workflow";
 import { ConfirmRescan } from "./confirm-reread";
-import { compareByLastName } from "@/lib/teacher-classes";
+import { compareByLastName, uploadsNoLongerUsed } from "@/lib/teacher-classes";
 import { errorTypesFor } from "@/lib/error-types";
 import { safePdfText } from "@/lib/pdf-text";
 import type { Assessment, Question, Student, StudentResponse } from "@/lib/teacher-types";
@@ -595,15 +597,25 @@ function GradeByQuestion({
                 <div className="gbq-question" key={q.id}>
                   <div className="gbq-question-text">
                     <strong>
-                      Q{q.number} · {pointsText(questionPoints(a, q))} pt
-                      {questionPoints(a, q) === 1 ? "" : "s"}
+                      Q{q.number} ·{" "}
+                      {isSbg(a)
+                        ? "0–4"
+                        : pointsText(questionPoints(a, q)) + " pt" + (questionPoints(a, q) === 1 ? "" : "s")}
                     </strong>
                     <span className="cell-meta">{q.text}</span>
                   </div>
                   <div className="gbq-counts">
-                    <span className="gbq-count correct">{sum.correct} correct</span>
-                    <span className="gbq-count">{sum.noCredit} blank or no credit</span>
-                    {sum.partial > 0 && <span className="gbq-count">{sum.partial} part credit</span>}
+                    <span className="gbq-count correct">
+                      {sum.correct} {isSbg(a) ? "scored 4" : "correct"}
+                    </span>
+                    <span className="gbq-count">
+                      {sum.noCredit} {isSbg(a) ? "scored 0" : "blank or no credit"}
+                    </span>
+                    {sum.partial > 0 && (
+                      <span className="gbq-count">
+                        {sum.partial} {isSbg(a) ? "scored 1–3" : "part credit"}
+                      </span>
+                    )}
                     <span className={"gbq-count" + (sum.needReview ? " review" : "")}>
                       {sum.needReview} need review
                       {sum.unsure ? " (" + sum.unsure + " unsure)" : ""}
@@ -792,8 +804,9 @@ function AnswerGroupCard({
     .map(photoOf)
     .filter((p): p is NonNullable<ReturnType<typeof photoOf>> => !!p)
     .slice(0, 3);
-  const decidedLabel =
-    pointsText((Math.round(g.match) / 100) * worth) + " of " + pointsText(worth) + " points";
+  const decidedLabel = isSbg(a)
+    ? "Score " + score4OfMatch(g.match).score + (score4OfMatch(g.match).converted ? " (converted — check)" : "")
+    : pointsText((Math.round(g.match) / 100) * worth) + " of " + pointsText(worth) + " points";
   const fullCredit = g.verified && Math.round(g.match) >= 100;
   const together = g.unsure ? [] : responses;
 
@@ -913,6 +926,7 @@ function AnswerGroupCard({
       {open && !g.unsure && together.length > 0 && (
         <CreditForm
           worth={worth}
+          sbg={isSbg(a)}
           busy={busy}
           label={g.answer || (g.alone ? "read as blank" : "blank")}
           initial={g.verified ? (Math.round(g.match) / 100) * worth : null}
@@ -970,6 +984,7 @@ function AnswerGroupCard({
                     ))}
                   <CreditForm
                     worth={worth}
+                    sbg={isSbg(a)}
                     busy={busy}
                     label={r.answer || "blank"}
                     initial={r.verified ? (responseMatch(r) / 100) * worth : null}
@@ -1000,6 +1015,7 @@ function AnswerGroupCard({
  */
 function CreditForm({
   worth,
+  sbg = false,
   busy,
   label,
   initial,
@@ -1008,6 +1024,9 @@ function CreditForm({
   children,
 }: {
   worth: number;
+  /** Standards-Based: five buttons, 0 to 4, in place of "__ of N points"
+   * (every question is worth 4, so the score is the points). */
+  sbg?: boolean;
   busy: boolean;
   label: string;
   initial: number | null;
@@ -1017,6 +1036,29 @@ function CreditForm({
 }) {
   const [points, setPoints] = useState(initial && initial > 0 ? pointsText(initial) : "");
   const typed = Number(points);
+  if (sbg) {
+    // The score already given, if it is a whole 0–4 one.
+    const current = initial === null ? null : Number.isInteger(initial) ? initial : null;
+    return (
+      <div className="gbq-credit gbq-score4" role="group" aria-label={"Score for the answer " + label}>
+        <span className="cell-meta">Score for {who}:</span>
+        {SBG_SCORES.map((n) => (
+          <button
+            type="button"
+            key={n}
+            className={"review-credit-btn" + (current === n ? " is-current" : "")}
+            aria-pressed={current === n}
+            aria-label={"Score " + n + " for " + who}
+            disabled={busy}
+            onClick={() => onGive(n)}
+          >
+            {n}
+          </button>
+        ))}
+        {children}
+      </div>
+    );
+  }
   const valid = points.trim() !== "" && Number.isFinite(typed) && typed >= 0 && typed <= worth;
   return (
     <form
@@ -1134,7 +1176,7 @@ export function StudentResponseReview({
   onEdit: (r: StudentResponse) => void;
   onSave: (next: Assessment, message: string) => Promise<boolean>;
 }) {
-  const { students, busy, aiReady, go } = useTeacher();
+  const { w, students, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState(params.get("student") || "");
   const [perStudentOpen, setPerStudentOpen] = useState(!!params.get("student"));
@@ -1217,7 +1259,9 @@ export function StudentResponseReview({
       "Q" +
         (a.questions.find((q) => q.id === r.questionId)?.number ?? "") +
         " · " +
-        (CREDIT_LEVELS.find((l) => l.value === match)?.label ?? match + "%"),
+        (isSbg(a)
+          ? "Score " + score4OfMatch(match).score
+          : (CREDIT_LEVELS.find((l) => l.value === match)?.label ?? match + "%")),
     );
   }
   async function approveClear() {
@@ -1249,7 +1293,16 @@ export function StudentResponseReview({
     // purge still collects, where the reverse would leave a live thumbnail
     // pointing at nothing.
     if (saved !== false) {
-      const kept = await deleteUploads(released);
+      // Only pages nothing else uses: one upload row is shared by identical
+      // files (#176), so the same photo may be another student's, another
+      // test's, or this test's own document.
+      const forgotten = forgetUploads(confirmed, released);
+      const kept = await deleteUploads(
+        uploadsNoLongerUsed(
+          { ...w, assessments: w.assessments.map((x) => (x.id === a.id ? forgotten : x)) },
+          released,
+        ),
+      );
       if (kept)
         toast.error(
           kept +
@@ -1627,14 +1680,31 @@ export function StudentResponseReview({
             </div>
           </div>
           <div className="review-score">
-            <strong>
-              {summary.score === null ? "—" : summary.score + "%"}
-            </strong>
-            {summary.score !== null ? (
-              <span className="review-score-points">
-                {pointsText(summary.pointsEarned)} / {pointsText(summary.pointsPossible)} points
-              </span>
-            ) : null}
+            {isSbg(a) ? (
+              // Standards-Based: the average of the 0–4 scores, one decimal,
+              // with its 0–4 level.
+              <>
+                <strong>{summary.score4 === null ? "—" : score4Text(summary.score4)}</strong>
+                {summary.score4 !== null && (
+                  <span className="review-score-points">
+                    {/* No level while answers wait for the teacher: the
+                        average is from graded answers only (as in Percentage). */}
+                    out of 4 · {summary.complete ? masteryLevel4(summary.score4).level : "Provisional"}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <strong>
+                  {summary.score === null ? "—" : summary.score + "%"}
+                </strong>
+                {summary.score !== null ? (
+                  <span className="review-score-points">
+                    {pointsText(summary.pointsEarned)} / {pointsText(summary.pointsPossible)} points
+                  </span>
+                ) : null}
+              </>
+            )}
             <span>
               {summary.complete
                 ? "Confirmed assessment score"
@@ -1817,14 +1887,20 @@ export function StudentResponseReview({
               )}
               <footer>
                 <span>
-                  {responseMatch(r)}% answer match · {r.confidence}% reading
-                  confidence
+                  {isSbg(a)
+                    ? "Score " + score4OfMatch(responseMatch(r)).score + " of 4" +
+                      (score4OfMatch(responseMatch(r)).converted ? " (converted — check)" : "")
+                    : responseMatch(r) + "% answer match"}{" "}
+                  · {r.confidence}% reading confidence
                 </span>
                 {/* Credit right here -- no detour into a detail view before
                     confirming (Michael). Tapping a level verifies the answer at
                     that credit. */}
                 <div className="review-credit" role="group" aria-label="Give credit">
-                  {CREDIT_LEVELS.map((l) => (
+                  {(isSbg(a)
+                    ? SBG_SCORES.map((n) => ({ value: matchOfScore4(n), label: String(n) }))
+                    : CREDIT_LEVELS
+                  ).map((l) => (
                     <button
                       type="button"
                       key={l.value}
@@ -1940,6 +2016,9 @@ export function StudentResponseReview({
                 qs.some((q) => q.id === r.questionId),
               );
             const correct = rs.filter((r) => r.correct).length;
+            // Standards-Based: the standard's 0–4 average, one decimal, and
+            // its level on the 0–4 cuts.
+            const avg4 = isSbg(a) ? standardAverage4(a, rs, code) : null;
             const averageMatch = rs.length
               ? Math.round(
                   rs.reduce(
@@ -1953,10 +2032,17 @@ export function StudentResponseReview({
                 <div>
                   <strong>{code}</strong>
                   <span>
-                    {averageMatch === null
-                      ? "No reviewed match yet"
-                      : averageMatch + "% average answer match"}{" "}
-                    · {correct} of {rs.length} fully correct · {qs.length}{" "}
+                    {isSbg(a)
+                      ? avg4 === null
+                        ? "No reviewed score yet"
+                        : score4Text(avg4) +
+                          " average (0–4) · " +
+                          // Every answer on the standard confirmed, or no level yet.
+                          (rs.length < qs.length ? "Provisional" : masteryLevel4(avg4).level)
+                      : averageMatch === null
+                        ? "No reviewed match yet"
+                        : averageMatch + "% average answer match"}{" "}
+                    · {correct} of {rs.length} {isSbg(a) ? "scored 4" : "fully correct"} · {qs.length}{" "}
                     assigned
                   </span>
                 </div>

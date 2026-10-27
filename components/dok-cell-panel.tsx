@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Action } from "./teacher-shared";
+import { score4Text } from "@/lib/grading-mode";
 import {
   DOK_LEVELS,
   dokCellDetail,
@@ -59,7 +60,11 @@ export function DokCellPanel({
         "&intent=" +
         level.nextStep.intent +
         "&dok=" +
-        doks.join(","),
+        doks.join(",") +
+        // The errors the lesson aims at are this cell's -- what the panel
+        // shows -- whatever level the lesson is pitched at.
+        "&errorsFrom=" +
+        cell.dok,
     );
   return (
     <Sheet open onOpenChange={(v) => !v && onClose()}>
@@ -72,7 +77,7 @@ export function DokCellPanel({
         </SheetHeader>
         <div className="dok-cell-panel-body">
           <div className={"dok-cell-panel-score level-" + level.tone}>
-            <strong>{cell.percent}%</strong>
+            <strong>{cell.score4 !== null ? score4Text(cell.score4) + " out of 4" : cell.percent + "%"}</strong>
             <span>
               {level.level} · {level.advice}
             </span>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { MASTERY_LEVELS } from "@/lib/mastery-levels";
+import { MASTERY_LEVELS, SCORE4_RANGES } from "@/lib/mastery-levels";
+import { isSbg, score4Text } from "@/lib/grading-mode";
 import { DOK_LEVELS, type DokCell, type DokGridRow } from "@/lib/teacher-class-analysis";
 import type { Assessment, Standard, Student } from "@/lib/teacher-types";
 import { DokCellPanel, NotTestedPanel } from "./dok-cell-panel";
@@ -64,7 +65,8 @@ export function DokGrid({
       <div className="dok-grid-legend heatmap-legend">
         {MASTERY_LEVELS.map((l) => (
           <span key={l.level} className={"level-" + l.tone}>
-            {l.level} {l.range}
+            {/* Standards-Based: the 0–4 ranges, as the class card shows. */}
+            {l.level} {isSbg(assessment) ? SCORE4_RANGES[l.level] : l.range}
           </span>
         ))}
         <span className="level-none">Not Tested</span>
@@ -125,10 +127,12 @@ function Cell({ code, cell, onOpen }: { code: string; cell: DokCell; onOpen: () 
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
-      aria-label={`${code}, DOK ${cell.dok}: ${cell.percent}%, ${cell.level.level}, ${cell.level.advice}, ${qs}`}
+      aria-label={`${code}, DOK ${cell.dok}: ${cell.score4 !== null ? score4Text(cell.score4) + " out of 4" : cell.percent + "%"}, ${cell.level.level}, ${cell.level.advice}, ${qs}`}
     >
       <span className="dok-cell-dok">DOK {cell.dok}</span>
-      <strong>{cell.percent}%</strong>
+      {/* Standards-Based: the 0–4 score, one decimal, its level on the 0–4
+          cuts -- the same rule as the class card. */}
+      <strong>{cell.score4 !== null ? score4Text(cell.score4) : cell.percent + "%"}</strong>
       {/* A phone's cell is about 60px wide inside at 360px: "Recommended" is
           one word longer than that, so phones show the short form ("Reteach",
           "Extension"); the full recommendation is the cell's label. */}

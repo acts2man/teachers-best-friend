@@ -30,7 +30,8 @@ test("the short recommendations", () => {
 test("a cell carries both; a phone shows the short one, a computer the full one", () => {
   const grid = readFileSync("components/dok-grid.tsx", "utf8");
   assert.match(grid, /<span className="dok-cell-advice" title=\{cell\.level\.advice\}>\s+<span className="advice-full">\{cell\.level\.advice\}<\/span>\s+<span className="advice-short">\{shortAdvice\(cell\.level\.advice\)\}<\/span>/);
-  assert.match(grid, /aria-label=\{`\$\{code\}, DOK \$\{cell\.dok\}: \$\{cell\.percent\}%, \$\{cell\.level\.level\}, \$\{cell\.level\.advice\}/, "the spoken label keeps the full recommendation");
+  // The score is 0–4 on a Standards-Based test (#184), a percentage otherwise.
+  assert.match(grid, /aria-label=\{`\$\{code\}, DOK \$\{cell\.dok\}: \$\{cell\.score4 !== null \? score4Text\(cell\.score4\) \+ " out of 4" : cell\.percent \+ "%"\}, \$\{cell\.level\.level\}, \$\{cell\.level\.advice\}/, "the spoken label keeps the full recommendation");
   const css = readFileSync("app/globals.css", "utf8");
   assert.match(css, /\.dok-cell-advice \.advice-short\{display:none\}/);
   const phone = /@media\(max-width:699px\)\{\.dok-grid-head\{display:none\}[^\n]*/.exec(css)?.[0] ?? "";

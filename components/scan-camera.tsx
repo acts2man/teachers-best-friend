@@ -15,7 +15,7 @@ import {
   rgbaToGray,
   videoConstraints,
 } from "@/lib/camera";
-import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
+import { clearShots, deleteShot, loadShots, restorableShots, saveShot, type HandoffOutcome } from "@/lib/scan-store";
 
 /**
  * One captured page. `blob` is the full-size JPEG that is uploaded; `url` is an
@@ -28,7 +28,16 @@ import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
  * strip of 46px squares. A thumbnail blob is a few KB and decodes to almost
  * nothing, so page 60 costs what page 1 did.
  */
-type Shot = { id: string; url: string; blob: Blob; group: number; seq: number };
+type Shot = {
+  id: string;
+  url: string;
+  blob: Blob;
+  group: number;
+  seq: number;
+  /** Handed to onStudent at "Next student": uploading or uploaded, so no
+   * longer the camera's to delete or to return from Finished. */
+  sent?: boolean;
+};
 
 /** Width of the thumbnail kept for the strip at the bottom of the camera. */
 export const THUMB_W = 96;
@@ -182,6 +191,7 @@ export function ScanCamera({
   assessmentId,
   budget,
   onComplete,
+  onStudent,
   onCancel,
   onFallback,
 }: {
@@ -192,6 +202,11 @@ export function ScanCamera({
    *  Undefined means no cap (single-assessment scans). */
   budget?: number;
   onComplete: (groups: File[][]) => void;
+  /** Class mode: called with a student's pages when the teacher taps "Next
+   *  student", so they upload while scanning carries on. Resolves once they
+   *  have landed; then they leave this device's restore store. Finished then
+   *  returns only the pages not yet handed over. */
+  onStudent?: (files: File[], onLanded: (index: number) => void) => Promise<HandoffOutcome[]>;
   onCancel: () => void;
   onFallback: () => void;
 }) {
@@ -268,7 +283,11 @@ export function ScanCamera({
   // banner, so a teacher is told at the moment they hit the limit instead of
   // scanning on and being turned away when they finish. atCapRef keeps the
   // detection loop (which fires auto-snap) from reading a stale value.
-  const atCap = budget != null && shots.length >= budget;
+  // Counted against the budget as it was when the camera opened: pages handed
+  // over at Next student land in the panel while the camera is still open,
+  // and must not be counted twice.
+  const [budgetAtOpen] = useState(budget);
+  const atCap = budgetAtOpen != null && shots.length >= budgetAtOpen;
   const atCapRef = useRef(atCap);
   useEffect(() => {
     atCapRef.current = atCap;
@@ -291,7 +310,10 @@ export function ScanCamera({
   useEffect(() => {
     let live = true;
     loadShots(assessmentId)
-      .then((stored) => {
+      .then((all) => {
+        // Never the pages handed over at Next student: they are the scan
+        // panel's, and offering them again put them in twice.
+        const stored = restorableShots(all);
         if (!live || !stored.length) return;
         return Promise.all(
           stored.map(async (s) => ({
@@ -666,6 +688,7 @@ export function ScanCamera({
   }
 
   function removeShot(id: string) {
+    if (shotsRef.current.find((x) => x.id === id)?.sent) return;
     setShots((s) => {
       const hit = s.find((x) => x.id === id);
       if (hit) URL.revokeObjectURL(hit.url);
@@ -675,13 +698,52 @@ export function ScanCamera({
   }
 
   function nextStudent() {
-    if (!shots.some((x) => x.group === group)) return;
+    const current = shots.filter((x) => x.group === group && !x.sent);
+    if (!current.length) return;
+    if (onStudent) {
+      // This student's pages go now; the teacher keeps scanning the next.
+      const ids = new Set(current.map((x) => x.id));
+      const files = current.map(
+        (shot, pi) => new File([shot.blob], `scan-${group + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
+      );
+      setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: true } : x)));
+      // The mark is saved with the page, so a reload never offers it again.
+      const stored = (shot: Shot, sent: boolean) =>
+        saveShot({ id: shot.id, assessmentId, group: shot.group, seq: shot.seq, blob: shot.blob, sent }).catch(() => {});
+      for (const shot of current) void stored(shot, true);
+      void onStudent(files, (i) => {
+        // Landed in its pile: only now does the saved copy go.
+        void deleteShot(current[i].id).catch(() => {});
+      }).then(
+        (outcome) =>
+          outcome.forEach((o, i) => {
+            const shot = current[i];
+            // Refused (setup not ready, page limit): still the camera's. It
+            // comes back from Finished, and a reload offers it.
+            if (o === "refused") {
+              setShots((s) => s.map((x) => (x.id === shot.id ? { ...x, sent: false } : x)));
+              void stored(shot, false);
+            }
+            // Failed after its retries: it waits with Retry on the scan
+            // screen, so Finished does not send it again -- but the saved
+            // copy is un-marked, so a reload (which loses that Retry) still
+            // offers it.
+            if (o === "failed") void stored(shot, false);
+          }),
+        () => {
+          // The queue itself failed: nothing is known to have landed, so
+          // every page goes back to the camera.
+          setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: false } : x)));
+          for (const shot of current) void stored(shot, false);
+        },
+      );
+    }
     setGroup((g) => g + 1);
   }
 
   function done() {
     setFinishing(true);
-    const groups = partitionByGroup(shots, group + 1).map((g, gi) =>
+    const groups = partitionByGroup(shots.filter((x) => !x.sent), group + 1).map((g, gi) =>
       g.map(
         (shot, pi) =>
           new File([shot.blob], `scan-${gi + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
@@ -699,8 +761,10 @@ export function ScanCamera({
     handler();
   }
 
+  // Pages handed over at Next student are the panel's now: closing keeps them.
+  const unsent = shots.filter((x) => !x.sent).length;
   function requestClose() {
-    if (shots.length > 0) setConfirmDiscard(true);
+    if (unsent > 0) setConfirmDiscard(true);
     else leave(onCancel);
   }
   function discardAndClose() {
@@ -846,8 +910,9 @@ export function ScanCamera({
                 <button
                   key={s.id}
                   type="button"
-                  className="scan-camera-thumb"
-                  aria-label={"Delete page " + n}
+                  className={"scan-camera-thumb" + (s.sent ? " sent" : "")}
+                  aria-label={s.sent ? "Page " + n + ", uploading with its student" : "Delete page " + n}
+                  disabled={s.sent}
                   onClick={() => removeShot(s.id)}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -855,9 +920,11 @@ export function ScanCamera({
                   <span className="scan-camera-thumb-n" aria-hidden="true">
                     {n}
                   </span>
-                  <span className="scan-camera-thumb-x">
-                    <X size={14} />
-                  </span>
+                  {!s.sent && (
+                    <span className="scan-camera-thumb-x">
+                      <X size={14} />
+                    </span>
+                  )}
                 </button>
               ))}
           </div>
@@ -945,7 +1012,7 @@ export function ScanCamera({
       {confirmDiscard && (
         <div className="scan-camera-sheet" role="dialog" aria-modal="true" aria-label="Discard pages">
           <div className="scan-camera-sheet-card">
-            <h2>Discard {shots.length} page{shots.length === 1 ? "" : "s"}?</h2>
+            <h2>Discard {unsent} page{unsent === 1 ? "" : "s"}?</h2>
             <p>These scanned pages haven’t been saved to the assessment yet.</p>
             <div className="scan-camera-sheet-actions">
               <button

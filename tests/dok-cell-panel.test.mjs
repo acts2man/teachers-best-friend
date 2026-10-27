@@ -118,6 +118,6 @@ test("the grid opens the panel, the panel opens the lesson, the lesson sends the
   assert.match(panel, /"&intent=" \+\s+level\.nextStep\.intent \+\s+"&dok=" \+\s+doks\.join\(","\)/);
   assert.match(panel, /\{level\.nextStep\.label\} DOK \{target\}/);
   const planning = readFileSync("components/teacher-planning.tsx", "utf8");
-  assert.match(planning, /lessonFocus\(sourceAssessment, standard, dokLevels\)/);
+  assert.match(planning, /lessonFocus\(sourceAssessment, standard, dokLevels, errorsFrom\)/);
   assert.match(planning, /\.\.\.\(focus \? \{ dok: focus\.dok, errorTypes: focus\.errorTypes \} : \{\}\)/);
 });

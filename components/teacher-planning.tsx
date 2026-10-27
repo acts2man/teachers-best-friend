@@ -244,6 +244,12 @@ export function ReteachView() {
       .split(",")
       .map(Number)
       .filter((d) => Number.isInteger(d) && d >= 1 && d <= 4),
+    // The cell the lesson was planned from: its errors are the ones to address,
+    // even for an extension pitched a level up.
+    errorsFrom = (params.get("errorsFrom") || "")
+      .split(",")
+      .map(Number)
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 4),
     [modality, setModality] = useState("Visual"),
     [duration, setDuration] = useState("15"),
     [tab, setTab] = useState("build"),
@@ -266,7 +272,7 @@ export function ReteachView() {
     s = catalog.find((s) => s.code === standard);
   const focus =
     dokLevels.length && sourceAssessment && standard
-      ? lessonFocus(sourceAssessment, standard, dokLevels)
+      ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
       : null;
   useEffect(() => {
     const l = params.get("lesson"),

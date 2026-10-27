@@ -74,7 +74,7 @@ import {
   LevelPill,
   LevelStudents,
 } from "./teacher-shared";
-import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, rubricLevel } from "@/lib/mastery-levels";
+import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, masteryLevel4, rubricLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   dokGrid,
@@ -136,7 +136,7 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS } from "@/lib/grading-mode";
+import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
 import type { RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
@@ -152,6 +152,7 @@ import {
   classesFor,
   shareAssessmentWith,
   deleteAssessment,
+  uploadsNoLongerUsed,
 } from "@/lib/teacher-classes";
 import {
   AlertDialog,
@@ -813,12 +814,6 @@ export function AssessmentView() {
             {/* Shown, not switched: the mode is chosen once, when the test is
                 set up (Ricky, 20 Oct 2026). */}
             <strong className="grading-mode-shown">{gradingModeLabel(a)}</strong>
-            {gradingModeOf(a) === "sbg" && (
-              <small>
-                Scoring out of 4 is coming next. Until then this test still
-                shows percentages.
-              </small>
-            )}
           </div>
           {w.classes.length > 1 && (
             <div className="linked-classes">
@@ -2575,7 +2570,7 @@ function PassagePanel({
   assessment: Assessment;
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
 }) {
-  const { aiReady, busy } = useTeacher();
+  const { w, aiReady, busy } = useTeacher();
   const [reading, setReading] = useState(false);
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
@@ -2618,10 +2613,11 @@ function PassagePanel({
         "Passage read — it now goes with every student's grading",
       );
       setDraft(text);
-      // The photographs have given up everything they had; the text is what
-      // travels from here on.
       // The text is out of them; the photographs have nothing left to give.
-      await deleteUploads(ids);
+      // But one upload row can now be shared by identical files (#176): the
+      // same PDF that made this test, read again as its passage, IS the
+      // test's own file. Only what nothing else uses is deleted.
+      await deleteUploads(uploadsNoLongerUsed(w, ids));
     } catch (e) {
       toast.error(describeFailure(e, "The passage couldn't be read."));
     } finally {
@@ -2932,17 +2928,34 @@ function ClassAnalysisPanel({
               </Pill>
             </header>
             <h2>{row.standard.title}</h2>
-            <p>
-              {row.standard.code} ·{" "}
-              {row.averagePercent === null
-                ? "Not yet graded"
-                : "Class average " + row.averagePercent + "%"}{" "}
-              <LevelPill percent={row.averagePercent} />
-            </p>
-            {row.averagePercent !== null && (
-              <Meter value={row.averagePercent} tone={levelClass(row.averagePercent)} />
+            {row.average4 !== null ? (
+              // Standards-Based: the class's 0–4 average on this standard,
+              // one decimal, with its level on the 0–4 cuts.
+              <>
+                <p>
+                  {row.standard.code} · Class average {score4Text(row.average4)} out of 4{" "}
+                  <span className={"pill level-" + masteryLevel4(row.average4).tone}>
+                    {masteryLevel4(row.average4).level}
+                  </span>
+                </p>
+                <Meter value={(row.average4 / 4) * 100} tone={"level-" + masteryLevel4(row.average4).tone} />
+              </>
+            ) : (
+              <>
+                <p>
+                  {row.standard.code} ·{" "}
+                  {row.averagePercent === null
+                    ? "Not yet graded"
+                    : "Class average " + row.averagePercent + "%"}{" "}
+                  <LevelPill percent={row.averagePercent} />
+                </p>
+                {row.averagePercent !== null && (
+                  <Meter value={row.averagePercent} tone={levelClass(row.averagePercent)} />
+                )}
+              </>
             )}
             <LevelStudents
+              ranges={row.average4 !== null ? SCORE4_RANGES : undefined}
               byLevel={row.byLevel}
               onOpen={(member) =>
                 go("/students?id=" + member.id + "&standard=" + row.standard.code)
