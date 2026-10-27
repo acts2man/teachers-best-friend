@@ -117,7 +117,9 @@ const review = readFileSync("components/teacher-review.tsx", "utf8");
 test("credit buttons are on the card itself (no detail-view detour)", () => {
   assert.match(review, /function giveCredit\(/, "a give-credit-here handler exists");
   assert.match(review, /className="review-credit"/, "the credit controls render on the card");
-  assert.match(review, /CREDIT_LEVELS\.map/, "No credit / Half / Full are the options");
+  // No credit / Half / Full are the options; on a Standards-Based test the
+  // scores 0–4 are (26 Oct 2026).
+  assert.match(review, /\(isSbg\(a\)\s*\? SBG_SCORES\.map\(\(n\) => \(\{ value: matchOfScore4\(n\), label: String\(n\) \}\)\)\s*: CREDIT_LEVELS\s*\)\.map/, "No credit / Half / Full, or 0–4");
   assert.match(review, /applyGroupScore\(a, \[r\.id\]/, "it grades just this one answer");
 });
 

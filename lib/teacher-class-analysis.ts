@@ -1,4 +1,5 @@
 import { errorTypesFor } from "./error-types";
+import { average4, isSbg, score4Text } from "./grading-mode";
 import type {
   Assessment,
   RubricDimension,
@@ -17,7 +18,9 @@ import {
   MASTERY_LEVELS,
   MASTERY_LEVELS_NOTE,
   masteryLevel,
+  masteryLevel4,
   masteryPercent,
+  SCORE4_RANGES,
   rubricLevel,
   type MasteryLevel,
   type MasteryLevelInfo,
@@ -49,6 +52,10 @@ export type StandardMastery = {
   /** The class's average on this standard, rounded to the nearest whole
    * percent, or null. */
   averagePercent: number | null;
+  /** On a Standards-Based test, the class's average on this standard out of 4
+   * (unrounded; shown to one decimal), and every level above is on the 0–4
+   * cuts. Null on a percentage test, or when nobody is graded. */
+  average4: number | null;
   /** How to reteach the Beginning students; "No reteach needed" when none. */
   instruction: "Whole class" | "Small group" | "No reteach needed";
   /** The error types tagged on this standard's answers, most common first. */
@@ -201,6 +208,7 @@ export function classAnalysis(
   catalog: Standard[],
 ): StandardMastery[] {
   const questions = activeQuestions(a);
+  const sbg = isSbg(a);
   const codes = [...new Set(questions.map((q) => q.standard).filter(Boolean))];
   const rows: StandardMastery[] = codes
     .map((code) => catalog.find((s) => s.code === code))
@@ -209,6 +217,7 @@ export function classAnalysis(
       const qs = questions.filter((q) => q.standard === standard.code);
       const byLevel = emptyLevels();
       const averages: number[] = [];
+      const averages4: number[] = [];
       const notGraded: Student[] = [];
       for (const student of students) {
         const responses = qs.flatMap((q) => {
@@ -228,7 +237,13 @@ export function classAnalysis(
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
           responses.length;
         averages.push(average);
-        byLevel[masteryLevel(average).level].push(student);
+        // Standards-Based: the mean of each answer's 0–4 score (answerScore4,
+        // the one rule), on the 0–4 cuts.
+        if (sbg) {
+          const own = average4(responses.map(responseMatch))!;
+          averages4.push(own);
+          byLevel[masteryLevel4(own).level].push(student);
+        } else byLevel[masteryLevel(average).level].push(student);
       }
       const assessed = averages.length;
       const reteach = byLevel.Beginning;
@@ -242,6 +257,7 @@ export function classAnalysis(
         averagePercent: assessed
           ? masteryPercent(averages.reduce((a, b) => a + b, 0) / assessed)
           : null,
+        average4: sbg && assessed ? averages4.reduce((a, b) => a + b, 0) / assessed : null,
         errorTypes: tallyErrorTypes(
           a.responses.filter((r) => qIds.has(r.questionId)),
           students,
@@ -276,8 +292,13 @@ export type DokCell = {
    * the mean across students, rounded like every level-coloured number; null
    * when no answer in the cell is graded. */
   percent: number | null;
-  /** The level of that score, or null with it. */
+  /** The level of that score, or null with it. On a Standards-Based test,
+   * the level of `score4`, on the 0–4 cuts -- as the class card. */
   level: MasteryLevelInfo | null;
+  /** Standards-Based only: the class's 0–4 score in the cell, each student's
+   * mean answer score (answerScore4) then the mean across students; null on
+   * a percentage test or when nothing is graded. */
+  score4: number | null;
   /** The questions in the cell, for its panel (D2). */
   questionIds: string[];
 };
@@ -305,6 +326,7 @@ export function dokGrid(
   catalog: Standard[],
 ): { rows: DokGridRow[]; noDok: number } {
   const questions = activeQuestions(a);
+  const sbg = isSbg(a);
   const dokOf = (q: { dok?: number | null }) =>
     q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
   const rows = classAnalysis(a, students, catalog).map(({ standard }) => ({
@@ -313,23 +335,28 @@ export function dokGrid(
       const qs = questions.filter((q) => q.standard === standard.code && dokOf(q) === dok);
       const ids = new Set(qs.map((q) => q.id));
       const averages: number[] = [];
+      const averages4: number[] = [];
       for (const student of students) {
         const rs = a.responses.filter(
           (r) => r.studentId === student.id && r.verified && ids.has(r.questionId),
         );
-        if (rs.length)
+        if (rs.length) {
           averages.push(rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length);
+          averages4.push(average4(rs.map(responseMatch))!);
+        }
       }
       const average = averages.length
         ? averages.reduce((x, y) => x + y, 0) / averages.length
         : null;
+      const score4 = sbg && averages4.length ? averages4.reduce((x, y) => x + y, 0) / averages4.length : null;
       return {
         dok,
         questions: qs.length,
         questionIds: qs.map((q) => q.id),
         studentsGraded: averages.length,
         percent: average === null ? null : masteryPercent(average),
-        level: average === null ? null : masteryLevel(average),
+        level: score4 !== null ? masteryLevel4(score4) : average === null ? null : masteryLevel(average),
+        score4,
       };
     }),
   }));
@@ -440,12 +467,14 @@ export function classAnalysisReport(a: Assessment, analysis: StandardMastery[]) 
           row.standard.code + " — " + row.standard.title,
           row.averagePercent === null
             ? "Not yet graded for this class"
-            : "Class average " + row.averagePercent + "% (" + masteryLevel(row.averagePercent).level + ")",
+            : row.average4 !== null
+              ? "Class average " + score4Text(row.average4) + " out of 4 (" + masteryLevel4(row.average4).level + ")"
+              : "Class average " + row.averagePercent + "% (" + masteryLevel(row.averagePercent).level + ")",
           ...MASTERY_LEVELS.map(
             (l) =>
               l.level +
               " " +
-              l.range +
+              (row.average4 !== null ? SCORE4_RANGES[l.level] : l.range) +
               " (" +
               row.byLevel[l.level].length +
               "): " +
