@@ -6,8 +6,9 @@
 // Proven when, on Class analysis: the grid has one row per standard card and
 // four DOK cells per row; every scored cell is in the colour of its level
 // (the rounded score) and shows that level's recommendation; a cell with no
-// questions is grey and says "No questions"; the legend shows the four levels
-// and "No questions"; a question with no DOK is named in a note, not counted;
+// questions is grey and says "Not Tested", and tapping it opens a panel that
+// says no question on this test was at that DOK level; the legend shows the
+// four levels and "Not Tested"; a question with no DOK is named in a note, not counted;
 // the old one-line-per-DOK rows are gone and Costa's levels stay; and on a
 // phone each standard is a card with its four cells side by side in one row,
 // nothing clipped and nothing scrolling sideways.
@@ -109,10 +110,10 @@ for (const [W, H, data, label] of [
   });
   check(scored.length > 0 && wrong.length === 0, `${tag}: ${scored.length} scored cells, each in its level's colour with its recommendation${wrong.length ? " -- wrong: " + JSON.stringify(wrong) : ""}`);
   const empty = g.rows.flatMap((r) => r.cells.filter((c) => !c.score));
-  check(empty.length > 0 && empty.every((c) => c.cls.includes("level-none") && /No questions|Not graded yet/.test(c.text)), `${tag}: ${empty.length} cells without a score are grey and say why`);
+  check(empty.length > 0 && empty.every((c) => c.cls.includes("level-none") && /Not Tested|Not graded yet/.test(c.text)), `${tag}: ${empty.length} cells without a score are grey and say why`);
   const nbt = g.rows.find((r) => r.code === "4.NBT.B.5");
-  check(!!nbt && !!nbt.cells[1].score && !!nbt.cells[2].score && /No questions/.test(nbt.cells[0].text), `${tag}: 4.NBT.B.5 has DOK 2 and DOK 3 scores and no DOK 1 questions`);
-  check(JSON.stringify(g.legend) === JSON.stringify(["Beginning 0–59%", "Approaching 60–79%", "Proficient 80–89%", "Exceeding 90–100%", "No questions"]), `${tag}: legend (${g.legend.join(" | ")})`);
+  check(!!nbt && !!nbt.cells[1].score && !!nbt.cells[2].score && /Not Tested/.test(nbt.cells[0].text), `${tag}: 4.NBT.B.5 has DOK 2 and DOK 3 scores and no DOK 1 questions`);
+  check(JSON.stringify(g.legend) === JSON.stringify(["Beginning 0–59%", "Approaching 60–79%", "Proficient 80–89%", "Exceeding 90–100%", "Not Tested"]), `${tag}: legend (${g.legend.join(" | ")})`);
   check(/1 question has no DOK level and is not in the grid/.test(g.note), `${tag}: the no-DOK note (${g.note})`);
   check(!/Depth of knowledge across this assessment/.test(g.main) && /Costa's levels across this assessment/.test(g.main), `${tag}: the DOK rows are replaced; Costa's levels stay`);
   check(!g.sideScroll, `${tag}: no sideways scroll`);
@@ -146,6 +147,17 @@ for (const [W, H, data, label] of [
   if (label === "all-exceeding")
     check(scored.every((c) => c.advice === "Extension Recommended"), `${tag}: every scored cell is Exceeding`);
   await page.locator(".dok-grid-panel").screenshot({ path: join(SHOTS, `grid-${W}x${H}-${label}.png`) });
+  // Tapping a "Not Tested" box says why there is no score.
+  const notTested = page.locator(".dok-grid-row", { hasText: "4.NBT.B.5" }).locator(".dok-cell").first();
+  await notTested.click();
+  const why = await page
+    .locator(".dok-cell-panel")
+    .innerText({ timeout: 5000 })
+    .catch(() => "");
+  check(
+    /4\.NBT\.B\.5 · DOK 1 · Not Tested/.test(why) && /No questions on this test were at DOK 1/.test(why),
+    `${tag}: tapping a Not Tested box explains it (${why.replace(/\s+/g, " ").slice(0, 120)})`,
+  );
   await ctx.close();
 }
 await browser.close();

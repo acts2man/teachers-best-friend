@@ -18,6 +18,7 @@ import {
   MASTERY_LEVELS_NOTE,
   masteryLevel,
   masteryPercent,
+  rubricLevel,
   type MasteryLevel,
   type MasteryLevelInfo,
 } from "./mastery-levels";
@@ -124,6 +125,9 @@ export function studentErrorTypes(
 /** One rubric dimension's class picture for a writing assessment. */
 export type WritingDimensionSummary = {
   dimension: RubricDimension;
+  /** The class's level on this trait, from the mean score on the 0–4 cuts
+   * (rubricLevel), or null when nobody is scored. */
+  level: MasteryLevelInfo | null;
   /** Mean confirmed level as a percentage of the dimension's max, rounded
    * to the nearest whole percent, or null. */
   averagePercent: number | null;
@@ -163,13 +167,16 @@ export function writingClassAnalysis(
         continue;
       }
       levels.push(r.rubricScore);
-      byLevel[masteryLevel(responseMatch(r)).level].push(student);
+      // A rubric score is a 0–4 score: its level comes from the 0–4 cuts,
+      // not from the score as a percentage (2 of 4 is Approaching, not 50%).
+      byLevel[rubricLevel(r.rubricScore, max).level].push(student);
     }
     const averageLevel = levels.length
       ? levels.reduce((sum, n) => sum + n, 0) / levels.length
       : null;
     return {
       dimension,
+      level: averageLevel === null ? null : rubricLevel(averageLevel, max),
       averagePercent:
         averageLevel === null ? null : masteryPercent((averageLevel / max) * 100),
       averageLabel:
