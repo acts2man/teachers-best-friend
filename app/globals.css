@@ -891,6 +891,7 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .grade-done p{margin:2px 0 0;font-size:13px;color:#57635d}
 /* Error-type tagging in Grade by question, and its roll-up in Class analysis. */
 .grade-error-type{display:flex;flex-direction:column;gap:5px;margin-top:8px;max-width:300px;font-size:13px}
+.grade-error-other{min-height:40px;padding:8px 10px;border:1px solid var(--input);border-radius:8px;font:inherit;width:100%;box-sizing:border-box;background:var(--card)}
 .error-type-summary{margin:0 0 18px}
 .error-type-list{display:flex;flex-direction:column;gap:12px;margin-top:8px}
 .error-type-row{display:flex;flex-direction:column;gap:2px}

@@ -33,8 +33,11 @@ const math = w.assessments.find((a) => a.id === "math-demo");
 // Tag the wrong answers on 4.OA.A.3 (DOK 2): 5 sign errors, 2 wrong formulas.
 const oa = new Set(math.questions.filter((q) => q.standard === "4.OA.A.3").map((q) => q.id));
 const wrong = math.responses.filter((r) => oa.has(r.questionId) && r.verified && !r.correct);
-wrong.slice(0, 5).forEach((r) => (r.errorType = "Sign error"));
-wrong.slice(5, 7).forEach((r) => (r.errorType = "Wrong formula"));
+wrong.slice(0, 5).forEach((r) => (r.errorType = "Sign Error"));
+wrong.slice(5, 7).forEach((r) => (r.errorType = "Setup/Method Error"));
+// And one with the teacher's own label under "Other" (24 Oct list): shown in
+// the panel as typed, sent to the AI only as "Other".
+wrong[7].errorType = "Other: forgot to carry";
 const names = w.students.map((s) => s.name);
 
 const browser = await chromium.launch({ executablePath: CHROMIUM });
@@ -82,7 +85,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   const text = (await panel.innerText()).replace(/\s+/g, " ");
   check(/4\.OA\.A\.3 · DOK 2/.test(text) && /50%/.test(text) && /Beginning · Reteach Recommended/.test(text) && /3 questions \(Q4, Q5, Q8\)/.test(text), `${tag} panel: score, level, recommendation and questions (${text.slice(0, 140)})`);
   const errors = await panel.locator(".dok-cell-errors li strong").allInnerTexts();
-  check(JSON.stringify(errors) === JSON.stringify(["Sign error", "Wrong formula"]), `${tag} panel: common errors, most common first (${errors.join(", ")})`);
+  check(JSON.stringify(errors) === JSON.stringify(["Sign Error", "Setup/Method Error", "Other: forgot to carry"]), `${tag} panel: common errors, most common first (${errors.join(", ")})`);
   check(/5 answers/.test(text) && /2 answers/.test(text), `${tag} panel: with their counts`);
   const side = await panel.getAttribute("data-side");
   check(side === (phone ? "bottom" : "right"), `${tag} panel: a ${phone ? "bottom" : "side"} sheet (${side})`);
@@ -100,16 +103,17 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   const url = decodeURIComponent(page.url());
   check(/standard=4\.OA\.A\.3/.test(url) && /intent=reteach/.test(url) && /dok=2,3/.test(url) && /assessment=math-demo/.test(url), `${tag} lesson link carries standard, intent and dok (${url.split("?")[1]})`);
   const context = (await page.locator(".reteach-context").innerText()).replace(/\s+/g, " ");
-  check(/DOK 2, 3/.test(context) && /Aimed at: Sign error \(5\), Wrong formula \(2\)/.test(context), `${tag} lessons page: says the DOK levels and the errors it aims at (${context.slice(0, 160)})`);
+  check(/DOK 2, 3/.test(context) && /Aimed at: Sign Error \(5\), Setup\/Method Error \(2\), Other \(1\)/.test(context), `${tag} lessons page: says the DOK levels and the errors it aims at (${context.slice(0, 160)})`);
   await page.getByRole("button", { name: "Generate an AI lesson plan" }).click();
   await page.waitForFunction(() => !document.body.innerText.includes("Building your plan"), null, { timeout: 15000 }).catch(() => {});
   check(lessonRequest?.mode === "lesson" && JSON.stringify(lessonRequest.dok) === "[2,3]", `${tag} lesson request: dok [2, 3] (${JSON.stringify(lessonRequest?.dok)})`);
   check(
-    JSON.stringify(lessonRequest?.errorTypes) === JSON.stringify([{ name: "Sign error", count: 5 }, { name: "Wrong formula", count: 2 }]),
+    JSON.stringify(lessonRequest?.errorTypes) === JSON.stringify([{ name: "Sign Error", count: 5 }, { name: "Setup/Method Error", count: 2 }, { name: "Other", count: 1 }]),
     `${tag} lesson request: error-type names and counts (${JSON.stringify(lessonRequest?.errorTypes)})`,
   );
   const body = JSON.stringify(lessonRequest ?? {});
   check(!names.some((n) => body.includes(n)) && !wrong.some((r) => (r.finalAnswer || r.answer) && body.includes(JSON.stringify(r.finalAnswer || r.answer))), `${tag} lesson request: no student name, no student answer`);
+  check(!body.includes("forgot to carry"), `${tag} lesson request: the teacher's own Other label never in it`);
   await noSideScroll("lessons page");
   await ctx.close();
 }
