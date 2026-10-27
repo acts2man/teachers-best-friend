@@ -855,6 +855,8 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .scan-camera-thumb-x{position:absolute;top:3px;right:3px;display:flex;padding:3px;border-radius:999px;background:rgba(0,0,0,.62)}
 /* The framing guide: above the controls, where the eye already is. */
 .scan-camera-guide{align-self:center;max-width:min(88vw,360px);padding:9px 16px;border-radius:999px;font-size:16px;font-weight:800;text-align:center;color:#fff;background:rgba(0,0,0,.62)}.scan-camera-guide.steady{background:rgba(24,120,74,.88)}
+/* Handed over at Next student: uploading with its student, no longer deletable here. */
+.scan-camera-thumb.sent{opacity:.55;border-color:rgba(255,255,255,.3);cursor:default}.scan-camera-thumb.sent:disabled{opacity:.55}
 .scan-camera-controls{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .scan-camera-side{display:flex;align-items:center;gap:10px;flex:1}
 .scan-camera-side:last-child{justify-content:flex-end}

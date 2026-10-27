@@ -41,6 +41,7 @@ import {
   type ScanProgress,
   type ScanSession,
 } from "@/lib/scan-session";
+import type { HandoffOutcome } from "@/lib/scan-store";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
@@ -252,6 +253,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const online = useOnline();
   const [scanning, setScanning] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Camera students still queued or uploading in the background. Counted as
+  // busy: the Grade button waits for them, and nothing else adds pages
+  // meanwhile.
+  const [pendingUploads, setPendingUploads] = useState(0);
   // Pages that still failed to upload after uploadFile's own retries. The rest
   // of the batch carries on; each of these waits here with a Retry button,
   // remembering which student's pile it belongs in and where. Not kept in the
@@ -375,7 +380,10 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       [session, scanning, gradingAt, remoteGrading, device],
     ),
     apply: applyRemote,
-    paused: adding || scanning || saving,
+    // Also while the camera is open or a student is still uploading: the piles
+    // now change under the camera (background upload), and the other
+    // device's copy must not replace them mid-way.
+    paused: adding || scanning || saving || cameraOpen || pendingUploads > 0,
   });
   const gradingElsewhere =
     !!remoteGrading &&
@@ -445,7 +453,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   }, [a.id, piles, progress]);
 
   const captured = piles.flat();
-  const busyScanning = scanning || adding;
+  const busyScanning = scanning || adding || pendingUploads > 0;
   // Body uploads this teacher has already paid for in this session. Pages
   // added after a reservation are priced as new, which is what they are.
   const [paidIds, setPaidIds] = useState<Set<string>>(() => new Set());
@@ -646,6 +654,94 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       setAdding(false);
       setStatus("");
     }
+  }
+
+  // Background upload of camera students (Ricky, 26 Oct 2026). Each student's
+  // pages upload as soon as the teacher taps "Next Student", while they keep
+  // scanning; "Finished" then waits only for what is left. Not after each
+  // photo: until Next Student, the teacher can still delete a mistaken one.
+  // Students are queued, so they land in the order they were scanned, and
+  // each lands in its own pile: the first continues the pile open when the
+  // camera opened (as addCameraGroups does), each later one opens the next.
+  // The pile is tracked here rather than read from state, which a queued
+  // upload would read before the last student's pages had rendered; nothing
+  // else changes the piles meanwhile (the camera covers the panel, and the
+  // panel is busy until the queue is empty).
+  const uploadQueue = useRef<Promise<void>>(Promise.resolve());
+  const cameraPile = useRef<number | null>(null);
+  const pilesNow = useRef(piles);
+  useEffect(() => {
+    pilesNow.current = piles;
+  }, [piles]);
+  useEffect(() => {
+    if (cameraOpen) cameraPile.current = null;
+  }, [cameraOpen]);
+
+  /** Queues one camera student's pages for upload. `onLanded(i)` is called
+   * the moment page i is in its pile; the result says, per page, whether it
+   * landed, failed (it waits with a Retry button, as any page that still
+   * fails after uploadFile's retries does) or was refused (setup checks or
+   * the page limit) -- the camera keeps its saved copy of all but the landed
+   * ones. */
+  function queueCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
+    setPendingUploads((n) => n + 1);
+    const run = uploadQueue.current
+      .then(() => landCameraStudent(files, onLanded))
+      .finally(() => setPendingUploads((n) => n - 1));
+    uploadQueue.current = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  }
+
+  async function landCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
+    const refused = files.map((): HandoffOutcome => "refused");
+    if (!files.length || !ready()) return refused;
+    const total = pilesNow.current.flat().length;
+    if (total + files.length > MAX_PAGES) {
+      toast.error("Scan up to " + MAX_PAGES + " pages at a time, then grade and start another batch.");
+      return refused;
+    }
+    const outcome: HandoffOutcome[] = [];
+    setGroups(null);
+    setAdding(true);
+    try {
+      let pile: number;
+      let added: number;
+      if (cameraPile.current === null) {
+        pile = pilesNow.current.length - 1;
+        added = pilesNow.current[pile]?.length ?? 0;
+      } else {
+        pile = cameraPile.current + 1;
+        added = 0;
+        setPiles((p) => [...p, []]);
+      }
+      cameraPile.current = pile;
+      for (const [i, raw] of files.entries()) {
+        setStatus("Uploading scanned pages…");
+        let prepared;
+        try {
+          prepared = await preparePage(raw);
+        } catch (e) {
+          pageFailed(raw, pile, added, false, e);
+          outcome[i] = "failed";
+          continue;
+        }
+        added++;
+        setPiles((p) => {
+          const next = p.map((x) => [...x]);
+          next[pile].push({ key: crypto.randomUUID(), label: raw.name || "Page", ...prepared });
+          return next;
+        });
+        outcome[i] = "landed";
+        onLanded?.(i);
+      }
+    } finally {
+      setAdding(false);
+      setStatus("");
+    }
+    return outcome;
   }
 
   /** Undo the last page, or close an empty pile that was opened by mistake. */
@@ -1563,9 +1659,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               mode="class"
               assessmentId={a.id}
               budget={Math.max(0, MAX_PAGES - captured.length)}
+              // Each student uploads when the teacher taps Next Student...
+              onStudent={queueCameraStudent}
+              // ...so Finished hands over only the student still open.
               onComplete={(groups) => {
                 setCameraOpen(false);
-                if (groups.length) addCameraGroups(groups);
+                for (const g of groups) void queueCameraStudent(g);
               }}
               onCancel={() => setCameraOpen(false)}
               onFallback={() => {

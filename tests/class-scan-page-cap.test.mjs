@@ -21,7 +21,11 @@ test("the class scan hands the camera how many pages are left in the batch", () 
 
 test("the camera takes a budget and derives whether it is at the cap", () => {
   assert.match(camera, /budget\?: number/, "budget is an optional prop (no cap for single scans)");
-  assert.match(camera, /const atCap = budget != null && shots\.length >= budget;/);
+  // Against the budget as it was when the camera opened (26 Oct 2026): pages
+  // handed over at Next student land in the panel while the camera is open,
+  // so the live budget would count them twice.
+  assert.match(camera, /const \[budgetAtOpen\] = useState\(budget\);/);
+  assert.match(camera, /const atCap = budgetAtOpen != null && shots\.length >= budgetAtOpen;/);
 });
 
 test("at the cap the camera takes nothing more -- both shutter and auto-snap are blocked", () => {

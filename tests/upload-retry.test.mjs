@@ -177,7 +177,7 @@ test("a retried page goes back into its student's pile, at its place", () => {
 
 test("the scan keeps going past a failed page, and saveDocument retries storage", () => {
   const scan = readFileSync("components/teacher-class-scan.tsx", "utf8");
-  assert.equal((scan.match(/pageFailed\(raw, /g) || []).length, 3, "file picker, camera/photo roll, and whole stack");
+  assert.equal((scan.match(/pageFailed\(raw, /g) || []).length, 4, "file picker, photo roll, whole stack, and a camera student uploading in the background");
   assert.match(scan, /if \(failedPages\.length\) \{\s+toast\.error/);
   assert.match(scan, /onClick=\{\(\) => void retryPage\(f\)\}/);
   assert.match(scan, /preparePage\(failed\.file, \{ recoverFirst: true \}\)/);

@@ -39,10 +39,13 @@ test("with no IndexedDB, storage degrades gracefully and never throws", async ()
 const src = readFileSync("components/scan-camera.tsx", "utf8");
 
 test("closing with pages in hand asks first, with Keep scanning as default", () => {
-  assert.match(src, /function requestClose\(\)[\s\S]*shots\.length > 0[\s\S]*setConfirmDiscard\(true\)/,
+  // Pages already handed over at Next student (26 Oct 2026) are the panel's
+  // and are kept on close; the prompt is about the ones still only here.
+  assert.match(src, /const unsent = shots\.filter\(\(x\) => !x\.sent\)\.length;/);
+  assert.match(src, /function requestClose\(\)[\s\S]*unsent > 0[\s\S]*setConfirmDiscard\(true\)/,
     "close asks when pages exist");
   assert.match(src, /onClick=\{requestClose\}/, "the close button routes through the confirm");
-  assert.match(src, /Discard \{shots\.length\}/, "the prompt names the count");
+  assert.match(src, /Discard \{unsent\}/, "the prompt names the count");
   // Keep scanning is the emphasized/default action.
   assert.match(src, /className="scan-camera-btn primary"\s+autoFocus[\s\S]*Keep scanning/,
     "Keep scanning is the primary, focused button");
