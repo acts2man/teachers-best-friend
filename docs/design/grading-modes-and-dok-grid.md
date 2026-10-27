@@ -215,10 +215,12 @@ $patch$;
 - Grade by question's counts;
 - the class analysis cards and report text;
 - the gradebook CSV;
-- the Standard Tracker (the student page's progress on one standard), which reads each test in its own mode (Ricky, 20 Oct 2026).
+- the Standard Tracker (the student page's progress on one standard), which reads each test in its own mode (Ricky, 20 Oct 2026). Its headline reads 0–4 when every record it averages is Standards-Based; when they mix, it stays a percentage and says so on screen;
+- the DOK grid and its cell panel (27 Oct, #184 review), with the 0–4 levels, so a grid box and the class card agree.
+
+**One rule for a converted score** (#184 review): an answer's 0–4 score is its credit ÷ 25 rounded to a whole score (`answerScore4`); a credit given in Percentage that isn't a quarter (67) counts as the score it shows (3), marked "converted". Every average (student, standard, class card, DOK box, tracker) is the mean of those whole scores, and the gradebook prints them, with "(converted)" on the converted ones. A student with an answer still undecided reads "Provisional", with no level, as in Percentage.
 
 **Still percentages on a Standards-Based test**, so not in that build:
-- the DOK grid and its cell panel;
 - the class and student depth breakdowns (DOK / Costa);
 - the student report text;
 - writing tests.

@@ -1678,7 +1678,9 @@ export function StudentResponseReview({
                 <strong>{summary.score4 === null ? "—" : score4Text(summary.score4)}</strong>
                 {summary.score4 !== null && (
                   <span className="review-score-points">
-                    out of 4 · {masteryLevel4(summary.score4).level}
+                    {/* No level while answers wait for the teacher: the
+                        average is from graded answers only (as in Percentage). */}
+                    out of 4 · {summary.complete ? masteryLevel4(summary.score4).level : "Provisional"}
                   </span>
                 )}
               </>
@@ -2024,7 +2026,10 @@ export function StudentResponseReview({
                     {isSbg(a)
                       ? avg4 === null
                         ? "No reviewed score yet"
-                        : score4Text(avg4) + " average (0–4) · " + masteryLevel4(avg4).level
+                        : score4Text(avg4) +
+                          " average (0–4) · " +
+                          // Every answer on the standard confirmed, or no level yet.
+                          (rs.length < qs.length ? "Provisional" : masteryLevel4(avg4).level)
                       : averageMatch === null
                         ? "No reviewed match yet"
                         : averageMatch + "% average answer match"}{" "}

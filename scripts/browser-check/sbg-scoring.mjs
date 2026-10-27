@@ -108,6 +108,15 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     const text = (await card.innerText()).replace(/\s+/g, " ");
     check(/Class average \d\.\d out of 4/.test(text), `${tag}: class analysis reads out of 4 (${text.slice(0, 120)})`);
     check(/(0–1\.9|2\.0–2\.9|3\.0–3\.4|3\.5–4)/.test(text) && !/\d+–\d+%/.test(text), `${tag}: class analysis uses the 0–4 ranges`);
+    // The DOK grid agrees with the card: 0–4 scores, the 0–4 legend (#184 review).
+    const cells = await page.locator(".dok-cell strong").allInnerTexts();
+    check(cells.length > 0 && cells.every((c) => /^\d\.\d$/.test(c.trim())), `${tag}: DOK grid cells read 0–4 (${cells.slice(0, 6).join(", ")})`);
+    const legend = (await page.locator(".dok-grid-legend").innerText()).replace(/\s+/g, " ");
+    check(/Beginning 0–1\.9/.test(legend) && !/%/.test(legend), `${tag}: DOK grid legend uses the 0–4 ranges (${legend})`);
+    const cardScore = /Class average (\d\.\d) out of 4/.exec(text)?.[1];
+    const cardCode = /(\S+) · Class average/.exec(text)?.[1];
+    const gridCells = await page.locator(".dok-grid-row", { hasText: cardCode }).locator(".dok-cell strong").allInnerTexts();
+    check(!!cardScore && gridCells.length === 1 ? gridCells[0].trim() === cardScore : true, `${tag}: a standard with one DOK reads the same in the grid as on its card (${cardCode}: ${cardScore} / ${gridCells.join(",")})`);
 
     // ---- the Standard Tracker ----
     await page.goto(`${BASE}/students?id=s1&standard=${encodeURIComponent(code)}`, { waitUntil: "networkidle" });
@@ -116,7 +125,23 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     const items = (await list.innerText()).replace(/\s+/g, " ");
     check(/2\.0 \/ 4/.test(items), `${tag}: the tracker reads the Standards-Based test 0–4 (${items.slice(0, 160)})`);
     check(/\d+%/.test(items), `${tag}: and a percentage record as a percentage`);
+    // The headline averages both kinds, so it stays a percentage and says so.
+    const note = await page.locator(".tracker-mixed-note").innerText().catch(() => "");
+    check(/mix percentage and Standards-Based \(0–4\) tests/.test(note), `${tag}: the headline says why it is a percentage`);
     await page.locator(".trajectory-panel").screenshot({ path: join(SHOTS, `tracker-${tag}.png`) });
+    // ---- a student with an undecided answer: "Provisional", no level ----
+    // (Last: an undecided answer holds Class analysis back.) The server now
+    // has student s3's answer to the last question still undecided.
+    current = structuredClone(current);
+    const t = current.assessments.find((x) => x.id === a.id);
+    Object.assign(t.responses.find((r) => r.studentId === "s3" && r.questionId === t.questions.at(-1).id), { verified: false, match: undefined, correct: false });
+    const undecided = "s3";
+    if (undecided) {
+      await page.goto(`${BASE}/assessments?id=math-demo&tab=responses&student=${undecided}`, { waitUntil: "networkidle" });
+      const sub2 = (await page.locator(".review-score .review-score-points").innerText({ timeout: 10000 })).trim();
+      check(sub2 === "out of 4 · Provisional", `${tag}: a student with an undecided answer reads "${sub2}"`);
+    } else fail.push(`${tag}: no student left with an undecided answer`);
+
     check(errors.length === 0, `${tag}: no page errors ${errors.join(" | ")}`);
   } catch (e) {
     fail.push(`${tag}: stopped -- ${String(e.message || e).split("\n")[0]}`);

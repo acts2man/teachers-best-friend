@@ -76,12 +76,23 @@ export function matchOfScore4(score: number): number {
   return Math.max(0, Math.min(4, score)) * 25;
 }
 
-/** The average of some answers' credit, as a 0–4 score (unrounded), or null
- * when there are none. Every question on a Standards-Based test counts 4, so
- * this is the plain mean -- no points weighting. */
+/**
+ * One answer's 0–4 score: THE rule, used everywhere a Standards-Based score is
+ * shown or averaged (#184 review). A credit that is not a quarter -- given in
+ * Percentage, 67 = 2 of 3 points -- counts as the whole score it is shown as
+ * (3), so the answer's score, the student's average, the standard's average,
+ * the DOK grid, the class card and the gradebook all agree.
+ */
+export function answerScore4(match: number): number {
+  return score4OfMatch(match).score;
+}
+
+/** The average of some answers, as a 0–4 score (unrounded; shown to one
+ * decimal), or null when there are none: the mean of each answer's 0–4 score
+ * (answerScore4). Every question counts 4 -- no points weighting. */
 export function average4(matches: number[]): number | null {
   if (!matches.length) return null;
-  return matches.reduce((sum, m) => sum + Math.max(0, Math.min(100, m)), 0) / matches.length / 25;
+  return matches.reduce((sum, m) => sum + answerScore4(m), 0) / matches.length;
 }
 
 /** A 0–4 average as shown: one decimal, always ("3.0", not "3"). */

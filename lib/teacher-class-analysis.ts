@@ -1,5 +1,5 @@
 import { errorTypesFor } from "./error-types";
-import { isSbg, score4Text } from "./grading-mode";
+import { average4, isSbg, score4Text } from "./grading-mode";
 import type {
   Assessment,
   RubricDimension,
@@ -217,6 +217,7 @@ export function classAnalysis(
       const qs = questions.filter((q) => q.standard === standard.code);
       const byLevel = emptyLevels();
       const averages: number[] = [];
+      const averages4: number[] = [];
       const notGraded: Student[] = [];
       for (const student of students) {
         const responses = qs.flatMap((q) => {
@@ -236,8 +237,13 @@ export function classAnalysis(
           responses.reduce((sum, r) => sum + responseMatch(r), 0) /
           responses.length;
         averages.push(average);
-        // Standards-Based: the same average read as 0–4, on the 0–4 cuts.
-        byLevel[(sbg ? masteryLevel4(average / 25) : masteryLevel(average)).level].push(student);
+        // Standards-Based: the mean of each answer's 0–4 score (answerScore4,
+        // the one rule), on the 0–4 cuts.
+        if (sbg) {
+          const own = average4(responses.map(responseMatch))!;
+          averages4.push(own);
+          byLevel[masteryLevel4(own).level].push(student);
+        } else byLevel[masteryLevel(average).level].push(student);
       }
       const assessed = averages.length;
       const reteach = byLevel.Beginning;
@@ -251,7 +257,7 @@ export function classAnalysis(
         averagePercent: assessed
           ? masteryPercent(averages.reduce((a, b) => a + b, 0) / assessed)
           : null,
-        average4: sbg && assessed ? averages.reduce((a, b) => a + b, 0) / assessed / 25 : null,
+        average4: sbg && assessed ? averages4.reduce((a, b) => a + b, 0) / assessed : null,
         errorTypes: tallyErrorTypes(
           a.responses.filter((r) => qIds.has(r.questionId)),
           students,
@@ -286,8 +292,13 @@ export type DokCell = {
    * the mean across students, rounded like every level-coloured number; null
    * when no answer in the cell is graded. */
   percent: number | null;
-  /** The level of that score, or null with it. */
+  /** The level of that score, or null with it. On a Standards-Based test,
+   * the level of `score4`, on the 0–4 cuts -- as the class card. */
   level: MasteryLevelInfo | null;
+  /** Standards-Based only: the class's 0–4 score in the cell, each student's
+   * mean answer score (answerScore4) then the mean across students; null on
+   * a percentage test or when nothing is graded. */
+  score4: number | null;
   /** The questions in the cell, for its panel (D2). */
   questionIds: string[];
 };
@@ -315,6 +326,7 @@ export function dokGrid(
   catalog: Standard[],
 ): { rows: DokGridRow[]; noDok: number } {
   const questions = activeQuestions(a);
+  const sbg = isSbg(a);
   const dokOf = (q: { dok?: number | null }) =>
     q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
   const rows = classAnalysis(a, students, catalog).map(({ standard }) => ({
@@ -323,23 +335,28 @@ export function dokGrid(
       const qs = questions.filter((q) => q.standard === standard.code && dokOf(q) === dok);
       const ids = new Set(qs.map((q) => q.id));
       const averages: number[] = [];
+      const averages4: number[] = [];
       for (const student of students) {
         const rs = a.responses.filter(
           (r) => r.studentId === student.id && r.verified && ids.has(r.questionId),
         );
-        if (rs.length)
+        if (rs.length) {
           averages.push(rs.reduce((sum, r) => sum + responseMatch(r), 0) / rs.length);
+          averages4.push(average4(rs.map(responseMatch))!);
+        }
       }
       const average = averages.length
         ? averages.reduce((x, y) => x + y, 0) / averages.length
         : null;
+      const score4 = sbg && averages4.length ? averages4.reduce((x, y) => x + y, 0) / averages4.length : null;
       return {
         dok,
         questions: qs.length,
         questionIds: qs.map((q) => q.id),
         studentsGraded: averages.length,
         percent: average === null ? null : masteryPercent(average),
-        level: average === null ? null : masteryLevel(average),
+        level: score4 !== null ? masteryLevel4(score4) : average === null ? null : masteryLevel(average),
+        score4,
       };
     }),
   }));

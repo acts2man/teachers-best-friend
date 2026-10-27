@@ -98,10 +98,21 @@ test("the gradebook CSV: 0–4 per question, the average to one decimal and the 
   assert.deepEqual(unq(pct.split("\n")[0]).slice(0, 2), ["Student", "Q1 (1 pts)"]);
 });
 
+// Twenty questions on one standard (made-up), for averages a whole percent
+// cannot carry exactly.
+function test20(matches, mode = "sbg") {
+  const questions = matches.map((_, i) => q("q" + (i + 1), i + 1, "7.RP.1"));
+  return {
+    id: "t1", classId: "c1", title: "Unit test", subject: "Math", grade: "7", framework: "CCSS",
+    gradingMode: mode, questions, answerKeyVerified: true,
+    responses: matches.map((m, i) => resp("s", "q" + (i + 1), m)),
+  };
+}
+
 test("the Standard Tracker reads each test in its own mode, from the test's answers", () => {
-  // 7.RP.1 averages 3.45 (100, 72.5 -> 4, 2.9): "3.5", Exceeding. The stored
-  // whole percent (86) would read 3.44 -> "3.4", Proficient.
-  const a = test4({ s: [100, 72.5, 100, 100] });
+  // Nine 4s and eleven 3s average 3.45: "3.5", Exceeding. The stored whole
+  // percent (86.25 -> 86) would read 3.44 -> "3.4", Proficient.
+  const a = test20([...Array(9).fill(100), ...Array(11).fill(75)]);
   const e = { score: 86, standard: "7.RP.1", assessmentId: "t1" };
   const shown = W.evidenceShown({ assessments: [a] }, "s", e);
   assert.equal(shown.sbg, true);
@@ -118,8 +129,73 @@ test("the screens: 0–4 buttons to grade, 0–4 results shown, no 'coming next'
   assert.match(review, /\{SBG_SCORES\.map\(\(n\) => \(\s*<button/, "five score buttons for a group of answers");
   assert.match(review, /sbg=\{isSbg\(a\)\}/);
   assert.match(review, /score4Text\(summary\.score4\)/);
-  assert.match(review, /score4Text\(avg4\) \+ " average \(0–4\) · " \+ masteryLevel4\(avg4\)\.level/);
+  assert.match(review, /score4Text\(avg4\) \+\s*" average \(0–4\) · " \+/);
   const page = readFileSync("components/teacher-assessments.tsx", "utf8");
   assert.doesNotMatch(page, /coming next/);
   assert.match(page, /Class average \{score4Text\(row\.average4\)\} out of 4/);
+});
+
+// ---- #184 review (27 Oct 2026) ----
+
+test("one rule: a converted credit counts as the whole score it shows, everywhere", () => {
+  // Q1 4, Q2 67 (2 of 3 points in Percentage: shown 3, converted), Q3 3, Q4 2.
+  const a = test4({ s: [100, 67, 75, 50] });
+  const r = W.studentReview(a, "s");
+  assert.equal(G.answerScore4(67), 3);
+  assert.equal(r.score4, 3); // (4 + 3 + 3 + 2) / 4 -- not 2.92
+  assert.equal(W.standardAverage4(a, r.counted, "7.RP.1"), 3.5); // (4 + 3) / 2
+  const csv = W.gradebookCsv(a, [{ id: "s", name: "Student A" }]).split("\n")[1].split(",").map((f) => f.replace(/^"|"$/g, ""));
+  assert.deepEqual(csv.slice(1, 7), ["4", "3 (converted)", "3", "2", "3.0", "Proficient"]);
+  const students = [{ id: "s", name: "Student A" }];
+  const catalog = [{ code: "7.RP.1", title: "Ratios" }, { code: "7.RP.2", title: "Proportions" }];
+  const card = A.classAnalysis(a, students, catalog).find((x) => x.standard.code === "7.RP.1");
+  assert.equal(card.average4, 3.5);
+  assert.deepEqual(card.byLevel.Exceeding.map((s) => s.id), ["s"]);
+});
+
+test("the DOK grid on a Standards-Based test: 0–4 scores with the 0–4 levels, agreeing with the class card", () => {
+  const a = test4({ s1: [50, 50, 100, 100], s2: [100, 75, 100, 100] });
+  a.questions.forEach((x) => (x.dok = 1));
+  const students = [{ id: "s1", name: "Student A" }, { id: "s2", name: "Student B" }];
+  const catalog = [{ code: "7.RP.1", title: "Ratios" }, { code: "7.RP.2", title: "Proportions" }];
+  const grid = A.dokGrid(a, students, catalog);
+  const cell = grid.rows.find((r) => r.standard.code === "7.RP.1").cells[0];
+  const card = A.classAnalysis(a, students, catalog).find((x) => x.standard.code === "7.RP.1");
+  assert.equal(cell.score4, 2.75);
+  assert.equal(cell.score4, card.average4);
+  assert.equal(cell.level.level, "Approaching"); // 2.75 -> "2.8"; as a percent (69%) it was Beginning
+  // A percentage test's cells are unchanged.
+  const pct = A.dokGrid({ ...a, gradingMode: "percentage" }, students, catalog).rows.find((r) => r.standard.code === "7.RP.1").cells[0];
+  assert.equal(pct.score4, null);
+  assert.equal(pct.percent, 69);
+  const ui = readFileSync("components/dok-grid.tsx", "utf8");
+  assert.match(ui, /\{cell\.score4 !== null \? score4Text\(cell\.score4\) : cell\.percent \+ "%"\}/);
+  assert.match(ui, /isSbg\(assessment\) \? SCORE4_RANGES\[l\.level\] : l\.range/);
+});
+
+test("undecided answers: 'Provisional', never a level", () => {
+  const review = readFileSync("components/teacher-review.tsx", "utf8");
+  assert.match(review, /out of 4 · \{summary\.complete \? masteryLevel4\(summary\.score4\)\.level : "Provisional"\}/);
+  assert.match(review, /\(rs\.length < qs\.length \? "Provisional" : masteryLevel4\(avg4\)\.level\)/);
+  // A student with an undecided answer is not complete.
+  const a = test4({ s: [100, 0, 75, 50] });
+  a.responses[1].verified = false;
+  a.responses[1].match = undefined;
+  assert.equal(W.studentReview(a, "s").complete, false);
+});
+
+test("the tracker headline agrees with its rows: 0–4 when all are 0–4, and says so when mixed", () => {
+  const sbg = test20([...Array(9).fill(100), ...Array(11).fill(75)]);
+  const pct = { ...test20(Array(20).fill(50), "percentage"), id: "t2" };
+  const ev = (assessmentId, score, date) => ({ id: assessmentId + date, standard: "7.RP.1", score, date, source: "x", assessmentId });
+  const one = W.standardHeadline({ assessments: [sbg] }, { id: "s", evidence: [ev("t1", 86, "2026-10-01")] }, "7.RP.1");
+  assert.equal(one.kind, "sbg");
+  assert.equal(one.text, "3.5"); // the row reads "3.5 / 4"
+  assert.equal(one.level, "Building evidence");
+  const three = W.standardHeadline({ assessments: [sbg] }, { id: "s", evidence: ["2026-10-01", "2026-10-02", "2026-10-03"].map((d) => ev("t1", 86, d)) }, "7.RP.1");
+  assert.equal(three.level, "Exceeding");
+  const mixed = W.standardHeadline({ assessments: [sbg, pct] }, { id: "s", evidence: [ev("t1", 86, "2026-10-01"), ev("t2", 50, "2026-10-02")] }, "7.RP.1");
+  assert.deepEqual(mixed, { kind: "percent", percent: 68, mixed: true });
+  const ui = readFileSync("components/teacher-insights.tsx", "utf8");
+  assert.match(ui, /Shown as a percentage because these records mix percentage and\s+Standards-Based \(0–4\) tests\./);
 });

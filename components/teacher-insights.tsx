@@ -59,7 +59,7 @@ import {
   TextLink,
   downloadText,
 } from "./teacher-shared";
-import { defaultFocusFor, evidenceShown, progressOverTime } from "@/lib/teacher-workflow";
+import { defaultFocusFor, evidenceShown, progressOverTime, standardHeadline } from "@/lib/teacher-workflow";
 import { masteryLevel4 } from "@/lib/mastery-levels";
 import { allStandards, isBuiltInCatalog } from "@/lib/teacher-catalog";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
@@ -1420,21 +1420,50 @@ export function StudentsView() {
                 title="Progress over time"
                 description={catalog.find((s) => s.code === focus)?.title}
               />
-              <div className="trajectory-stat">
-                <strong>
-                  {mastery(student, focus) ?? "—"}
-                  <span>%</span>
-                </strong>
-                <Pill
-                  tone={
-                    isLevel(masteryStatus(student, focus))
-                      ? levelClass(mastery(student, focus))
-                      : "neutral"
-                  }
-                >
-                  {masteryStatus(student, focus)}
-                </Pill>
-              </div>
+              {(() => {
+                // The headline never contradicts the rows (#184 review): 0–4
+                // when every record it averages is from a Standards-Based
+                // test, a percentage otherwise -- and then it says so.
+                const head = standardHeadline(w, student, focus);
+                if (head.kind === "sbg")
+                  return (
+                    <div className="trajectory-stat">
+                      <strong>
+                        {head.text}
+                        <span> / 4</span>
+                      </strong>
+                      <Pill tone={head.level === "Building evidence" ? "neutral" : "level-" + masteryLevel4(head.score4).tone}>
+                        {head.level}
+                      </Pill>
+                    </div>
+                  );
+                return (
+                  <>
+                    <div className="trajectory-stat">
+                      <strong>
+                        {mastery(student, focus) ?? "—"}
+                        <span>%</span>
+                      </strong>
+                      <Pill
+                        tone={
+                          isLevel(masteryStatus(student, focus))
+                            ? levelClass(mastery(student, focus))
+                            : "neutral"
+                        }
+                      >
+                        {masteryStatus(student, focus)}
+                      </Pill>
+                    </div>
+                    {head.kind === "percent" && head.mixed && (
+                      <p className="cell-meta tracker-mixed-note">
+                        Shown as a percentage because these records mix percentage and
+                        Standards-Based (0–4) tests. A 0–4 score counts here as score × 25
+                        (2.0 = 50%), and the levels use the percentage cut-offs.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               {history.length ? (
                 <>
                   <div

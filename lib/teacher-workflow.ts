@@ -1,6 +1,6 @@
 import { average4, gradingModeOf, isSbg, SBG_QUESTION_POINTS, score4OfMatch, score4Text } from "./grading-mode";
 import { isSecondChoice, withoutStandardNote } from "./standard-match";
-import { masteryLevel4, masteryPercent } from "./mastery-levels";
+import { masteryLevel4, masteryPercent, type MasteryLevel as MasteryLevelName } from "./mastery-levels";
 import type {
   AnswerRegion,
   Assessment,
@@ -1457,6 +1457,43 @@ export function evidenceShown(
   return { sbg: true, score4, text: score4Text(score4) + " / 4" };
 }
 
+/**
+ * The Standard Tracker's headline for one student and standard, so it never
+ * contradicts the rows under it (#184 review). It averages the same latest
+ * three records the percentage headline always has (masteryRaw). When every
+ * one of them is from a Standards-Based test it reads 0–4 -- the mean of the
+ * rows' own 0–4 values -- with the 0–4 level. Otherwise it stays a percentage,
+ * and `mixed` says some of those records are 0–4 tests counted as score × 25,
+ * which the screen says out loud. A level needs three records, as before.
+ */
+export function standardHeadline(
+  w: Pick<Workspace, "assessments">,
+  student: Pick<Student, "id" | "evidence">,
+  code: string,
+):
+  | { kind: "none" }
+  | { kind: "sbg"; score4: number; text: string; level: MasteryLevelName | "Building evidence" }
+  | { kind: "percent"; percent: number; mixed: boolean } {
+  const all = student.evidence.filter((e) => e.standard === code);
+  const latest = [...all].sort((a, b) => a.date.localeCompare(b.date)).slice(-3);
+  if (!latest.length) return { kind: "none" };
+  const shown = latest.map((e) => evidenceShown(w, student.id, e));
+  if (shown.every((s) => s.sbg)) {
+    const score4 = shown.reduce((sum, s) => sum + (s.sbg ? s.score4 : 0), 0) / shown.length;
+    return {
+      kind: "sbg",
+      score4,
+      text: score4Text(score4),
+      level: all.length < 3 ? "Building evidence" : masteryLevel4(score4).level,
+    };
+  }
+  return {
+    kind: "percent",
+    percent: masteryPercent(latest.reduce((sum, e) => sum + e.score, 0) / latest.length),
+    mixed: shown.some((s) => s.sbg),
+  };
+}
+
 export function gradebookCsv(a: Assessment, students: Student[]) {
   if (isSbg(a)) return gradebookCsv4(a, students);
   const questions = activeQuestions(a);
@@ -1524,7 +1561,10 @@ function gradebookCsv4(a: Assessment, students: Student[]) {
       ...questions.map((q) => {
         const r = byQuestion.get(q.id);
         if (!r || !countsAsGraded(a, r)) return "";
-        return String(score4OfMatch(creditOf(r)).score);
+        // The same whole score the screen shows and the average is built
+        // from; a credit given in Percentage that is not a quarter says so.
+        const s = score4OfMatch(creditOf(r));
+        return s.converted ? s.score + " (converted)" : String(s.score);
       }),
       final ? score4Text(review.score4!) : incomplete ? "Incomplete" : "",
       final ? masteryLevel4(review.score4!).level : incomplete ? "Incomplete" : "",
