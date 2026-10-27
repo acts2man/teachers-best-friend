@@ -87,14 +87,14 @@ test("Michael's groups of one: the same final answer written three ways is one g
     r("r1", "s1", "q1", "5,753 + 2,250 + 3,160 = 11,163", { finalAnswer: "11163", suggestedErrorType: "" }),
     r("r2", "s2", "q1", "11,163", { finalAnswer: "11163" }),
     r("r3", "s3", "q1", "11,163 people", { finalAnswer: "11163" }),
-    r("r4", "s4", "q1", "11,036", { finalAnswer: "11036", suggestedErrorType: "Algebraic/Arithmetic error" }),
+    r("r4", "s4", "q1", "11,036", { finalAnswer: "11036", suggestedErrorType: "Algebraic/Procedural Error" }),
   ]);
   const groups = W.groupAnswers(a, "q1");
   assert.equal(groups.length, 2);
   const big = groups.find((g) => g.answer === "11163");
   assert.equal(big.studentIds.length, 3);
   assert.equal(big.written.length, 3, "the teacher still sees how each wrote it");
-  assert.equal(groups.find((g) => g.answer === "11036").suggestedErrorType, "Algebraic/Arithmetic error");
+  assert.equal(groups.find((g) => g.answer === "11036").suggestedErrorType, "Algebraic/Procedural Error");
 });
 
 test("answers graded before final answers existed still group by what was written", () => {
@@ -129,11 +129,11 @@ test("one decision grades the whole group and tags the error type", () => {
     r("r4", "s4", "q1", "11,036", { finalAnswer: "11036" }),
   ]);
   const g = W.groupAnswers(a, "q1")[0];
-  const next = W.applyGroupScore(a, g.responseIds, W.creditForPoints(a, a.questions[0], 3), "Sign error");
+  const next = W.applyGroupScore(a, g.responseIds, W.creditForPoints(a, a.questions[0], 3), "Sign Error");
   for (const x of next.responses) {
     assert.equal(x.match, 75);
     assert.equal(x.verified, true);
-    assert.equal(x.errorType, "Sign error");
+    assert.equal(x.errorType, "Sign Error");
   }
 });
 
@@ -152,7 +152,7 @@ test("the grading pass asks for the final answer, where it is, and an error-type
   assert.match(task, /11163/, "the normalization is shown by example");
   assert.match(task, /keep every negative sign/);
   assert.match(task, /region/);
-  assert.match(task, /Sign error/, "the subject's error types are offered");
+  assert.match(task, /Sign Error/, "the subject's error types are offered");
   assert.match(task, /never changes the verdict/);
   assert.match(task, /Do NOT assign partial credit/);
   assert.ok(!task.includes("Maria"), "no student name");
