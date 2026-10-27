@@ -1,4 +1,6 @@
 "use client";
+import { MathText } from "./math-text";
+import { mathTextToHtml } from "@/lib/math-text";
 import { readJson } from "@/lib/utils";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
@@ -67,6 +69,7 @@ import {
   Modal,
   TextLink,
   printContent,
+  printHtml,
 } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
@@ -378,7 +381,9 @@ export function ReteachView() {
           .join("\n\n") +
         "\n\nTEACHER NOTES\n" +
         notes;
-    printContent((practiceOnly ? "Practice · " : "") + s.title, material);
+    // Typeset math in print and Save as PDF too (Ricky, 25 Oct): the text
+    // is escaped and its powers and fractions become MathML.
+    printHtml((practiceOnly ? "Practice · " : "") + s.title, mathTextToHtml(material));
   }
   async function saveLesson() {
     if (!s || !content || !group.length) return;
@@ -860,7 +865,7 @@ export function ReteachView() {
                           ))}
                         </ol>
                         <div className="practice-prompt">
-                          {content.practice[0].q}
+                          <MathText text={content.practice[0].q} />
                         </div>
                       </div>
                     )}
@@ -906,11 +911,11 @@ export function ReteachView() {
                                 "Explain the thinking",
                               ][i] || "Practice"}
                             </Pill>
-                            <p>{p.q}</p>
+                            <p><MathText text={p.q} /></p>
                             {answerKeys && (
                               <div className="answer-key">
                                 <Check size={15} />
-                                {p.a}
+                                <MathText text={p.a} />
                               </div>
                             )}
                           </div>
@@ -931,10 +936,10 @@ export function ReteachView() {
                         <article key={i}>
                           <span>{i + 1}</span>
                           <div>
-                            <p>{p.q}</p>
+                            <p><MathText text={p.q} /></p>
                             <details className="answer-detail">
                               <summary>Teacher answer key</summary>
-                              <p>{p.a}</p>
+                              <p><MathText text={p.a} /></p>
                             </details>
                           </div>
                         </article>
@@ -944,12 +949,14 @@ export function ReteachView() {
                       <Action
                         variant="secondary"
                         onClick={() =>
-                          printContent(
+                          printHtml(
                             s.title + " · Exit ticket",
-                            "Name: __________________     Date: ______________\n\n" +
-                              content.exit
-                                .map((p, i) => i + 1 + ". " + p.q + "\n\n\n\n")
-                                .join("\n"),
+                            mathTextToHtml(
+                              "Name: __________________     Date: ______________\n\n" +
+                                content.exit
+                                  .map((p, i) => i + 1 + ". " + p.q + "\n\n\n\n")
+                                  .join("\n"),
+                            ),
                           )
                         }
                       >

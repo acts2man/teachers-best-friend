@@ -1080,3 +1080,6 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .grading-mode-choice{display:inline-flex;flex-wrap:wrap;gap:6px}.grading-mode-choice button{border:1px solid hsl(calc(137deg + var(--th)) calc(12% * var(--ts)) 82%);background:white;color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;font-weight:600}.grading-mode-choice button.selected{background:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 19.8%);border-color:transparent;color:#f7f7ef}
 .grading-mode-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0}.grading-mode-shown{display:inline-block;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600;background:hsl(calc(154deg + var(--th)) calc(25% * var(--ts)) 19.8%);color:#f7f7ef}.locked-points{display:inline-block;min-width:2.2em;font-weight:600;color:#4f5a55}.grading-mode-row>span{font-size:13px;font-weight:600}.grading-mode-row small{flex-basis:100%;color:#4f5a55;font-size:12.5px;line-height:1.45}
 .grading-mode-setup{display:flex;flex-direction:column;gap:8px;margin-top:16px}.grading-mode-setup strong{font-size:14px}
+
+/* Typeset lesson math (lib/math-text.ts): MathML, drawn by the browser. */
+math.math-inline{font-size:1.1em;math-style:normal}
