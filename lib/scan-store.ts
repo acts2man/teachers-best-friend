@@ -17,7 +17,21 @@ export type StoredShot = {
   group: number;
   seq: number;
   blob: Blob;
+  /** Handed to the scan panel at "Next student" and not yet landed there (a
+   * landed page is deleted from this store). Saved, so a reload never offers
+   * a page the panel already has (#182 review). */
+  sent?: boolean;
 };
+
+/** What happened to one page handed over at "Next student". */
+export type HandoffOutcome = "landed" | "failed" | "refused";
+
+/** The pages a reopened camera may offer back: not the ones handed over at
+ * Next student, which are the scan panel's (landed, or being uploaded when
+ * the tab closed). Pure, so it is unit-testable. */
+export function restorableShots(shots: StoredShot[]): StoredShot[] {
+  return orderStored(shots.filter((s) => !s.sent));
+}
 
 const DB_NAME = "tbf-scan-camera";
 const STORE = "shots";

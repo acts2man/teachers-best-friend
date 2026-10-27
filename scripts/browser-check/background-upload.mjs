@@ -39,6 +39,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
   const events = []; // { what, at }
   const mark = (what) => events.push({ what, at: Date.now() });
   let uploads = 0;
+  let uploadMs = 700;
   const grading = [];
   const ctx = await browser.newContext({ viewport: { width: W, height: H }, isMobile: true, hasTouch: true, permissions: ["camera"] });
   await ctx.route("**/api/workspace", (r) =>
@@ -53,7 +54,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
     mark("upload");
     // Slow enough that an upload is visibly still going while the next
     // student is photographed.
-    await sleep(700);
+    await sleep(uploadMs);
     return r.fulfill(json({ id: "upload-" + uploads, name: "page.jpg", size: 90000, mime: "image/jpeg", pages: 1 }));
   });
   await ctx.route("**/api/scans/reserve", (r) => r.fulfill(json({ charged: 5, alreadyPaid: 0, remaining: 400 })));
@@ -156,6 +157,31 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
     await page.getByRole("button", { name: /^Grade/ }).first().click();
     await page.getByRole("button", { name: /Confirm & save 3 students/ }).waitFor({ timeout: 30000 });
     check(JSON.stringify(grading.flat()) === JSON.stringify([2, 2, 1]), `${tag}: graded as three students of 2, 2 and 1 pages, in order (${JSON.stringify(grading)})`);
+    // ---- A reload while a handed-over student is still uploading (#182
+    // review): the camera's saved copy must never offer that student's pages
+    // again -- the panel has them -- only the pages not yet handed over.
+    await page.goto(`${BASE}/assessments?id=ela-demo&tab=responses`, { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: /Scan (more )?student work/ }).first().click();
+    await page.waitForFunction(() => {
+      const b = document.querySelector("button.scan-camera-shutter");
+      return b && !b.disabled;
+    }, null, { timeout: 30000 });
+    const restoreOffered = page.getByRole("button", { name: /^Start fresh$/ });
+    if (await restoreOffered.isVisible().catch(() => false)) await restoreOffered.click();
+    await shoot(2);
+    const atHandoff = uploads;
+    // Slow uploads, so the reload lands while page 2 is still in flight.
+    uploadMs = 3000;
+    await page.getByRole("button", { name: /Next student/ }).click();
+    // Page 1 landed (its two uploads answered), page 2 still uploading.
+    for (let t = 0; t < 100 && uploads < atHandoff + 3; t++) await sleep(100);
+    await sleep(500);
+    await shoot(1);
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByRole("button", { name: /Scan (more )?student work/ }).first().click();
+    const offer = page.getByRole("button", { name: /^Restore \d+ pages?$/ });
+    const offered = await offer.innerText({ timeout: 15000 }).catch(() => "no restore offered");
+    check(/^Restore 1 page$/.test(offered.trim()), `${tag}: after a reload, only the page never handed over is offered ("${offered.trim()}")`);
   } catch (e) {
     fail.push(`${tag}: stopped -- ${String(e.message || e).split("\n")[0]}`);
     await page.screenshot({ path: join(OUT, `background-upload-FAILED-${tag}.png`) });

@@ -41,6 +41,7 @@ import {
   type ScanProgress,
   type ScanSession,
 } from "@/lib/scan-session";
+import type { HandoffOutcome } from "@/lib/scan-store";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
@@ -676,25 +677,33 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (cameraOpen) cameraPile.current = null;
   }, [cameraOpen]);
 
-  /** Queues one camera student's pages for upload; resolves once they have
-   * landed in their pile (or waited with a Retry button, as any page that
-   * still fails after uploadFile's retries does). */
-  function queueCameraStudent(files: File[]): Promise<void> {
+  /** Queues one camera student's pages for upload. `onLanded(i)` is called
+   * the moment page i is in its pile; the result says, per page, whether it
+   * landed, failed (it waits with a Retry button, as any page that still
+   * fails after uploadFile's retries does) or was refused (setup checks or
+   * the page limit) -- the camera keeps its saved copy of all but the landed
+   * ones. */
+  function queueCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
     setPendingUploads((n) => n + 1);
     const run = uploadQueue.current
-      .then(() => landCameraStudent(files))
+      .then(() => landCameraStudent(files, onLanded))
       .finally(() => setPendingUploads((n) => n - 1));
-    uploadQueue.current = run.catch(() => {});
+    uploadQueue.current = run.then(
+      () => {},
+      () => {},
+    );
     return run;
   }
 
-  async function landCameraStudent(files: File[]) {
-    if (!files.length || !ready()) return;
+  async function landCameraStudent(files: File[], onLanded?: (index: number) => void): Promise<HandoffOutcome[]> {
+    const refused = files.map((): HandoffOutcome => "refused");
+    if (!files.length || !ready()) return refused;
     const total = pilesNow.current.flat().length;
     if (total + files.length > MAX_PAGES) {
       toast.error("Scan up to " + MAX_PAGES + " pages at a time, then grade and start another batch.");
-      return;
+      return refused;
     }
+    const outcome: HandoffOutcome[] = [];
     setGroups(null);
     setAdding(true);
     try {
@@ -709,13 +718,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         setPiles((p) => [...p, []]);
       }
       cameraPile.current = pile;
-      for (const raw of files) {
+      for (const [i, raw] of files.entries()) {
         setStatus("Uploading scanned pages…");
         let prepared;
         try {
           prepared = await preparePage(raw);
         } catch (e) {
           pageFailed(raw, pile, added, false, e);
+          outcome[i] = "failed";
           continue;
         }
         added++;
@@ -724,11 +734,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           next[pile].push({ key: crypto.randomUUID(), label: raw.name || "Page", ...prepared });
           return next;
         });
+        outcome[i] = "landed";
+        onLanded?.(i);
       }
     } finally {
       setAdding(false);
       setStatus("");
     }
+    return outcome;
   }
 
   /** Undo the last page, or close an empty pile that was opened by mistake. */

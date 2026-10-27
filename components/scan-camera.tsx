@@ -15,7 +15,7 @@ import {
   rgbaToGray,
   videoConstraints,
 } from "@/lib/camera";
-import { clearShots, deleteShot, loadShots, saveShot } from "@/lib/scan-store";
+import { clearShots, deleteShot, loadShots, restorableShots, saveShot, type HandoffOutcome } from "@/lib/scan-store";
 
 /**
  * One captured page. `blob` is the full-size JPEG that is uploaded; `url` is an
@@ -206,7 +206,7 @@ export function ScanCamera({
    *  student", so they upload while scanning carries on. Resolves once they
    *  have landed; then they leave this device's restore store. Finished then
    *  returns only the pages not yet handed over. */
-  onStudent?: (files: File[]) => Promise<void>;
+  onStudent?: (files: File[], onLanded: (index: number) => void) => Promise<HandoffOutcome[]>;
   onCancel: () => void;
   onFallback: () => void;
 }) {
@@ -310,7 +310,10 @@ export function ScanCamera({
   useEffect(() => {
     let live = true;
     loadShots(assessmentId)
-      .then((stored) => {
+      .then((all) => {
+        // Never the pages handed over at Next student: they are the scan
+        // panel's, and offering them again put them in twice.
+        const stored = restorableShots(all);
         if (!live || !stored.length) return;
         return Promise.all(
           stored.map(async (s) => ({
@@ -704,9 +707,36 @@ export function ScanCamera({
         (shot, pi) => new File([shot.blob], `scan-${group + 1}-${pi + 1}.jpg`, { type: "image/jpeg" }),
       );
       setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: true } : x)));
-      void onStudent(files).then(() => {
-        for (const id of ids) void deleteShot(id).catch(() => {});
-      });
+      // The mark is saved with the page, so a reload never offers it again.
+      const stored = (shot: Shot, sent: boolean) =>
+        saveShot({ id: shot.id, assessmentId, group: shot.group, seq: shot.seq, blob: shot.blob, sent }).catch(() => {});
+      for (const shot of current) void stored(shot, true);
+      void onStudent(files, (i) => {
+        // Landed in its pile: only now does the saved copy go.
+        void deleteShot(current[i].id).catch(() => {});
+      }).then(
+        (outcome) =>
+          outcome.forEach((o, i) => {
+            const shot = current[i];
+            // Refused (setup not ready, page limit): still the camera's. It
+            // comes back from Finished, and a reload offers it.
+            if (o === "refused") {
+              setShots((s) => s.map((x) => (x.id === shot.id ? { ...x, sent: false } : x)));
+              void stored(shot, false);
+            }
+            // Failed after its retries: it waits with Retry on the scan
+            // screen, so Finished does not send it again -- but the saved
+            // copy is un-marked, so a reload (which loses that Retry) still
+            // offers it.
+            if (o === "failed") void stored(shot, false);
+          }),
+        () => {
+          // The queue itself failed: nothing is known to have landed, so
+          // every page goes back to the camera.
+          setShots((s) => s.map((x) => (ids.has(x.id) ? { ...x, sent: false } : x)));
+          for (const shot of current) void stored(shot, false);
+        },
+      );
     }
     setGroup((g) => g + 1);
   }
