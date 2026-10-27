@@ -22,7 +22,7 @@ import {
   multipartRule,
 } from "@/lib/prompt-payload";
 import type { AnswerRegion, ElaArea, Standard, Subject, Workspace } from "@/lib/teacher-types";
-import { ALL_ERROR_TYPES, errorTypesFor } from "@/lib/error-types";
+import { ALL_ERROR_TYPES, suggestableErrorTypes } from "@/lib/error-types";
 
 export type Mode =
   | "assignment"
@@ -205,7 +205,7 @@ export const VERDICT_RULES =
   "Verdicts: \"match\" only when you are confident the student's final answer is the same value or meaning as the teacher's key -- judge by mathematical or textual equivalence (\"12 cm³\" and \"12 cubic cm\" match), and check every sign, exponent and digit, because a wrong answer marked correct is the worst mistake you can make here. \"blank\" ONLY when the answer area for that question has no writing or mark of any kind -- any number, word, working, scribble or crossed-out attempt means it is NOT blank; if you are not certain it is empty, it is not blank. \"unsure\" when you cannot read the answer, cannot find it, or are not confident whether it matches -- the teacher will look; never guess. \"other\" for an answer you can read that does not match the key. Do NOT assign partial credit and do NOT guess a score. Return a response for EVERY question; never leave one out. Never invent an answer.";
 
 export function gradingExtras(subject: Subject, elaArea?: ElaArea): string {
-  const types = errorTypesFor(subject, elaArea);
+  const types = suggestableErrorTypes(subject, elaArea);
   return (
     "For every response also give: finalAnswer, the student's final answer alone in short normalized form -- the final number, choice letter, value or expression, with working, restated question, units and words removed and digit-group commas dropped (\"5,753 + 2,250 + 3,160 = 11,163 people\" becomes \"11163\"; \"x = -4\" becomes \"-4\"; keep every negative sign and keep fractions as a/b), or empty when blank; and region, the approximate box around that question's answer area -- where the answer is written, or where it should be when blank or unsure: page is the position of the image it is on, and x, y, width, height are fractions of that image (all zero only if you cannot tell). " +
     (types.length
@@ -259,7 +259,7 @@ export function readGradedExtras(
   return {
     finalAnswer: (raw.finalAnswer ?? "").trim() || undefined,
     answerRegion,
-    suggestedErrorType: errorTypesFor(subject, elaArea).includes(errorType) ? errorType : undefined,
+    suggestedErrorType: suggestableErrorTypes(subject, elaArea).includes(errorType) ? errorType : undefined,
   };
 }
 

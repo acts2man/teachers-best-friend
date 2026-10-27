@@ -27,7 +27,7 @@ const graded = {
   ],
   responses: [
     { id: "r1", studentId: "s1", questionId: "q1", answer: "8", correct: true, match: 100, verified: true },
-    { id: "r2", studentId: "s1", questionId: "q2", answer: "3", correct: false, match: 67, verified: true, errorType: "Sign error" },
+    { id: "r2", studentId: "s1", questionId: "q2", answer: "3", correct: false, match: 67, verified: true, errorType: "Sign Error" },
   ],
 };
 const w = {

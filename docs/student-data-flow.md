@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live.
 
 ---
 
@@ -374,7 +374,7 @@ test's DOK grid also sends
 - `dok`: the Webb DOK level(s) to pitch it at, numbers 1–4; and
 - `errorTypes`: the error types the teacher tagged on that standard's answers
   at those levels, as **names from the fixed lists in `lib/error-types.ts` and
-  counts** ("Sign error", 5) -- worked out by `lessonFocus` in
+  counts** ("Sign Error", 5) -- worked out by `lessonFocus` in
   `lib/teacher-class-analysis.ts`.
 
 `buildPrompt` drops any name that is not on a list, so no free text can ride
@@ -387,6 +387,16 @@ student-data-privacy "What is sent").
 The grading prompt's error-type suggestion now also covers ELA (Michael's
 reading and writing lists, 20 Oct 2026): the request carries the list for the
 test's ELA area -- names only, as it already did for math.
+
+**Ricky's new Math list (24 Oct 2026, built, not yet live):** the Math list
+ends with "Other", where the teacher types their own label (stored on the
+answer as "Other: <label>"). That label is the teacher's free text, so it
+never reaches OpenAI: the grading prompt's suggestion list leaves "Other" out
+(`suggestableErrorTypes`), and `lessonFocus` counts every typed label as plain
+"Other" (`errorTypeForAi`) -- the request carries `{ name: "Other", count }`,
+a fixed-list name like the rest. `buildPrompt` still drops any name not on a
+list, so a typed label that slipped through would be dropped there too. The
+label is shown only to the teacher, in the grading screen and the panels.
 
 ## 5. Results back to the teacher
 

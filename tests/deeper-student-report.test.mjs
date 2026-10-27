@@ -87,8 +87,8 @@ const assessment = {
   ],
   responses: [
     resp("s1", "q1", 100, ""),
-    resp("s1", "q2", 50, "Sign error"),
-    resp("s1", "q3", 0, "Sign error"),
+    resp("s1", "q2", 50, "Sign Error"),
+    resp("s1", "q3", 0, "Sign Error"),
     resp("s1", "q4", 100, ""),
     resp("s2", "q1", 100, ""),
     resp("s2", "q2", 100, ""),
@@ -157,7 +157,7 @@ test("a single student's breakdown uses only their answers", () => {
 
 test("student error types are tallied most common first", () => {
   const rows = studentErrorTypes(assessment, "s1");
-  assert.deepEqual(rows, [{ errorType: "Sign error", count: 2 }]);
+  assert.deepEqual(rows, [{ errorType: "Sign Error", count: 2 }]);
   assert.deepEqual(studentErrorTypes(assessment, "s2"), []);
 });
 
@@ -181,7 +181,7 @@ test("the class report includes cognitive demand and common error types", () => 
   assert.match(report, /By Webb DOK/);
   assert.match(report, /By Costa's level/);
   assert.match(report, /MOST COMMON ERROR TYPES/);
-  assert.match(report, /Sign error \(2\)/);
+  assert.match(report, /Sign Error \(2\)/);
 });
 
 test("the student report includes cognitive demand and error types", () => {
@@ -190,7 +190,7 @@ test("the student report includes cognitive demand and error types", () => {
   assert.match(report, /COGNITIVE DEMAND/);
   assert.match(report, /By Webb DOK/);
   assert.match(report, /MOST COMMON ERROR TYPES/);
-  assert.match(report, /Sign error \(2\)/);
+  assert.match(report, /Sign Error \(2\)/);
 });
 
 // ---------------------------------------------------------------
