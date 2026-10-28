@@ -63,13 +63,17 @@ no pipeline that would collect student work for that purpose.
   example "Sign Error: 5"). Only those counts, from a fixed list of error types — never a
   student's name or anything a student wrote. A label you type yourself under "Other" is
   sent only as "Other", never in your words.
+- When you plan a pre-teach lesson from your class super grid: the standard cluster (for
+  example "7.RP"), the depth-of-knowledge level, up to three of the cluster's weakest
+  standard codes, and how many answers across your class's tests showed each common error
+  type. Again only codes and counts — never a student's name or anything a student wrote.
 
 **Not sent:**
 - Student names. When the app analyzes student responses, it transmits an internal
   identifier — a random string meaningless outside our system.
 - Your students' history, mastery records, or notes you have written about them. (A
-  lesson plan may carry the class's count of each common error type on one standard, as
-  above — a total for the class, never a record of any one student.)
+  lesson plan may carry the class's count of each common error type on one standard or
+  one cluster, as above — a total for the class, never a record of any one student.)
 - Anything about other students, other classes, or other teachers.
 
 There is one honest exception. If a student wrote their name on the worksheet, that
