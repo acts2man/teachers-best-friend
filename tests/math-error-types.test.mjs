@@ -92,7 +92,7 @@ test("what reaches the AI is 'Other' with a count -- never the teacher's words",
 test("the grading screen's pickers both take a typed Other label", () => {
   const review = readFileSync("components/teacher-review.tsx", "utf8");
   assert.equal((review.match(/<ErrorTypePick /g) ?? []).length, 2);
-  assert.match(review, /<ErrorTypePick types=\{types\} value=\{g\.errorType\} onChange=\{onTag\} disabled=\{busy\} \/>/);
+  assert.match(review, /<ErrorTypePick types=\{types\} value=\{tagged\} onChange=\{onTag\} disabled=\{busy\} \/>/);
   assert.match(review, /<ErrorTypePick types=\{types\} value=\{errorType\} onChange=\{setErrorType\} live \/>/);
   assert.match(review, /const suggested = g\.suggestedErrorType && types\.includes\(g\.suggestedErrorType\) \? g\.suggestedErrorType : "";/, "an old suggestion is not offered");
   assert.match(review, /maxLength=\{OTHER_LABEL_MAX\}/);
