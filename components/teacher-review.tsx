@@ -73,6 +73,7 @@ import {
 } from "@/lib/teacher-workflow";
 import { ConfirmRescan } from "./confirm-reread";
 import { compareByLastName, uploadsNoLongerUsed } from "@/lib/teacher-classes";
+import { withDateGiven } from "@/lib/school-year";
 import {
   OTHER_ERROR_TYPE,
   OTHER_LABEL_MAX,
@@ -1458,7 +1459,9 @@ export function StudentResponseReview({
           studentId: selected,
         });
         await onSave(
-          {
+          // Given the day its work is graded, like a class set, unless the
+          // teacher set a day (review of #192).
+          withDateGiven({
             ...withFiles,
             // Layered over what the student already had, like the scan
             // screens: confirmed grades stay unless the teacher chose to
@@ -1472,7 +1475,7 @@ export function StudentResponseReview({
                 replaceConfirmed === true,
               ),
             ],
-          },
+          }),
           "Student work is ready to review",
         );
         setFilter("flagged");
@@ -1504,7 +1507,7 @@ export function StudentResponseReview({
       }));
       await onSave(
         captured.length
-          ? {
+          ? withDateGiven({
               ...withFiles,
               responses: [
                 ...a.responses.filter(
@@ -1512,7 +1515,7 @@ export function StudentResponseReview({
                 ),
                 ...captured,
               ],
-            }
+            })
           : withFiles,
         captured.length
           ? captured.length + " answers read from the PDF"

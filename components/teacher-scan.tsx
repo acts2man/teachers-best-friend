@@ -41,6 +41,7 @@ import {
   parsePointsTotal,
 } from "@/lib/teacher-workflow";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
+import { isDateString } from "@/lib/school-year";
 import { classGradingMode, gradingModeLabel, gradingModeName, gradingModeOf, type GradingMode } from "@/lib/grading-mode";
 import type { Assessment, ElaArea, Question, Subject } from "@/lib/teacher-types";
 import { elaAreaLabel, offeredElaAreas } from "@/lib/ela";
@@ -363,6 +364,8 @@ export function ScanView() {
       // Decimals are kept (2.5 stays 2.5); blank or unusable is no total.
       pointsPossible: parsePointsTotal(points) ?? undefined,
       ...(gradingMode === "sbg" ? { gradingMode: "sbg" as const } : {}),
+      // Re-saving the setup keeps the day the test was given (review of #192).
+      ...(editing && isDateString(editing.dateGiven) ? { dateGiven: editing.dateGiven } : {}),
       ...(editing
         ? { classIds: editing.classIds }
         : linked.length

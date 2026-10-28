@@ -7,7 +7,7 @@ import { classroomColors } from "./teacher-data";
 import { ensureDistinctNames, isNameSuffix } from "./teacher-classes";
 import { expectedParts, partsRead } from "./answer-parts";
 import { sameReading } from "./math-answer";
-import { isDateString, localDateString } from "./school-year";
+import { localDateString, withDateGiven } from "./school-year";
 
 /** One question's graded response as read off a scanned page, before it is
  * attached to a resolved student. Mirrors the "responses" AI mode's shape: the
@@ -1290,12 +1290,12 @@ export function applyScannedGroups(
     studentUploadIds: { ...a.studentUploadIds, ...studentUploadIds },
     responses,
     ...(studentOrder.length ? { studentOrder } : {}),
-    // Given the day its class set is graded, unless the teacher set a day.
-    ...(touchedIds.size && !isDateString(a.dateGiven) ? { dateGiven: today } : {}),
   };
+  // Given the day its class set is graded, unless the teacher set a day.
+  const dated = touchedIds.size ? withDateGiven(assessment, today) : assessment;
   return {
     students: [...students, ...newStudents],
-    assessment,
+    assessment: dated,
     newStudents,
     studentCount: touchedIds.size,
   };
