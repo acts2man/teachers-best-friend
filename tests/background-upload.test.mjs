@@ -128,8 +128,10 @@ test("the panel brings failed pages back after a reload, so grading still waits 
   const i = panel.indexOf("// After a reload: camera pages");
   const effect = panel.slice(i, panel.indexOf("}, [a.id]);", i));
   assert.match(effect, /loadShots\(a\.id\)/);
-  assert.match(effect, /failedShots\(all, held\)/, "not one already listed");
-  assert.match(effect, /pile: shot\.failedAt\?\.pile \?\? 0,/, "back in its student's pile");
+  // Failed, or still uploading when the tab closed (review of #188).
+  assert.match(effect, /pagesToPickUp\(all, held\)/, "not one already listed");
+  assert.match(effect, /const place = shot\.failedAt \?\? shot\.placeAt;/);
+  assert.match(effect, /pile: place\?\.pile \?\? -1,/, "back in its student's pile, or a new one");
   assert.match(effect, /shotId: shot\.id,/);
   // Grading refuses while any page is failed.
   assert.match(panel, /if \(failedPages\.length\) \{/);
