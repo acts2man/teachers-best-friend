@@ -119,7 +119,7 @@ export function useScanSession({
             revision.current = remote.revision;
             const theirs = parseSession(remote.state);
             agreed.current = theirs ? sessionFingerprint(theirs) : null;
-            state = theirs ? mergeSessions(theirs, state) : state;
+            state = theirs ? mergeSessions(theirs, state, device) : state;
             applyRef.current(state);
             continue;
           }
@@ -137,7 +137,7 @@ export function useScanSession({
         saving.current = false;
       }
     },
-    [assessmentId],
+    [assessmentId, device],
   );
 
   const pull = useCallback(async () => {
@@ -176,7 +176,7 @@ export function useScanSession({
         !!mine && sessionFingerprint(mine) !== (agreed.current ?? sessionFingerprint(theirs));
       if (mine && mineChanged && (first || agreed.current)) {
         // Both sides moved: keep everything from both, then save that.
-        const merged = mergeSessions(theirs, mine);
+        const merged = mergeSessions(theirs, mine, device);
         agreed.current = sessionFingerprint(theirs);
         applyRef.current(merged);
         await put(merged);
@@ -188,7 +188,7 @@ export function useScanSession({
     } catch {
       // Offline: carry on with what this device has.
     }
-  }, [url, put, assessmentId]);
+  }, [url, put, assessmentId, device]);
 
   // First load, then whenever the tab comes back or the network returns, then
   // on a self-scheduling timer: a few seconds while a scan is being worked (so a

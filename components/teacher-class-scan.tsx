@@ -32,16 +32,18 @@ import {
   groupLayout,
   pagesWithoutRow,
   inFlightMatches,
+  failedElsewhere,
   isEmptySession,
   parseProgress,
   planResume,
+  pileForNewStudent,
   placeRetriedPage,
   type FailedPage,
   type ScanPage,
   type ScanProgress,
   type ScanSession,
 } from "@/lib/scan-session";
-import { deleteShot, failedShots, loadShots, markShotFailed, type HandoffOutcome } from "@/lib/scan-store";
+import { deleteShot, loadShots, markShotFailed, markShotPlace, pagesToPickUp, type HandoffOutcome } from "@/lib/scan-store";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
 import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
@@ -322,6 +324,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // saves. `gradingAt` is this device's own note, refreshed while it grades.
   const [device] = useState(deviceId);
   const [remoteGrading, setRemoteGrading] = useState<ScanSession["grading"]>(null);
+  // Pages that did not upload on the teacher's other devices (review of
+  // #188): grading waits on them as on this device's own.
+  const [remoteFailed, setRemoteFailed] = useState<Record<string, number>>({});
   const [gradingAt, setGradingAt] = useState(0);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -352,15 +357,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       discarded: [...discarded].sort(),
       pageUploadIds: groups ? pageUploadIds : [],
       grading: null,
+      // Every other device's count as last seen, and this device's own.
+      failed: { ...remoteFailed, [device]: failedPages.length },
     };
     if (isEmptySession(s)) return null;
     return s;
-  }, [piles, progress, groups, discarded, pageUploadIds]);
+  }, [piles, progress, groups, discarded, pageUploadIds, remoteFailed, device, failedPages.length]);
+  const otherFailed = failedElsewhere({ failed: remoteFailed }, device);
   /** Shows what the other device saved. `null` means it saved the class or
    * started over, so this device clears too -- without releasing the pages,
    * which the other device already settled. */
   function applyRemote(next: ScanSession | null) {
     setRemoteGrading(next?.grading ?? null);
+    setRemoteFailed(Object.fromEntries(Object.entries(next?.failed ?? {}).filter(([d]) => d !== device)));
     setEdited(next ? next.piles : EMPTY);
     setProgress(next?.progress ?? null);
     setGroups(next?.groups ?? null);
@@ -539,35 +548,54 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     setFailedPages([]);
   }
 
-  // After a reload: camera pages that failed are still in the camera's saved
-  // copy, flagged. They come back here with Retry, in their student's pile,
-  // and grading waits on them -- the camera never offers a page held here.
+  // After a reload: camera pages handed over and not landed are still in the
+  // camera's saved copy. They come back here, in their student's pile, and
+  // grading waits on them -- the camera never offers a page held here. One
+  // that failed after its retries waits with Retry; one that was still
+  // uploading when the tab closed (review of #188) is tried again at once,
+  // checking the server first (recoverFirst) and the piles for the same file.
+  const retryRef = useRef<(f: FailedPage) => Promise<void>>(async () => {});
   useEffect(() => {
     let live = true;
     void loadShots(a.id)
-      .then((all) => {
+      .then(async (all) => {
         if (!live) return;
-        setFailedPages((have) => {
-          const held = new Set(have.map((f) => f.shotId).filter((id): id is string => !!id));
-          const back = failedShots(all, held).map(
-            (shot): FailedPage => ({
-              key: shot.id,
-              file: new File([shot.blob], shot.failedAt?.label ?? "Page", { type: "image/jpeg" }),
-              label: shot.failedAt?.label ?? "Page",
-              pile: shot.failedAt?.pile ?? 0,
-              index: shot.failedAt?.index ?? 0,
-              reason: "It hadn't uploaded when the page was closed.",
-              shotId: shot.id,
-            }),
-          );
-          return back.length ? [...have, ...back] : have;
+        const held = new Set(failedNow.current.map((f) => f.shotId).filter((id): id is string => !!id));
+        const back = pagesToPickUp(all, held).map((shot): FailedPage & { uploading: boolean } => {
+          const place = shot.failedAt ?? shot.placeAt;
+          const label = place?.label ?? "Page";
+          return {
+            key: shot.id,
+            file: new File([shot.blob], label, { type: "image/jpeg" }),
+            label,
+            pile: place?.pile ?? -1,
+            index: place?.index ?? 0,
+            ...(place ? {} : { cameraGroup: shot.group }),
+            reason: shot.failed
+              ? "It didn't upload after three tries."
+              : "It was still uploading when the page was closed.",
+            shotId: shot.id,
+            uploading: !shot.failed,
+          };
         });
+        if (!back.length) return;
+        setFailedPages((have) => [...have, ...back.map(({ uploading: _u, ...f }) => (void _u, f))]);
+        for (const f of back) {
+          if (!f.uploading || !live) continue;
+          // Let the last retry's "done" render first: retryPage waits while busy.
+          await new Promise((r) => setTimeout(r, 50));
+          await retryRef.current(f);
+        }
       })
       .catch(() => {});
     return () => {
       live = false;
     };
   }, [a.id]);
+
+  // A camera student that had no pile when the tab reloaded, and the pile its
+  // first page was given: its other pages join that one student.
+  const newStudentPiles = useRef(new Map<number, number>());
 
   /** Try a failed page again; on success it goes back where it was. */
   async function retryPage(failed: FailedPage) {
@@ -577,7 +605,36 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     try {
       // recoverFirst: an earlier try may have stored it after all.
       const prepared = await preparePage(failed.file, { recoverFirst: true });
-      setPiles((p) => placeRetriedPage(p, failed, { key: failed.key, label: failed.label, ...prepared }));
+      // The same file is in a pile already (it landed just before the tab
+      // closed, on this device or the other): placing it again would give
+      // that student the page twice. One upload row per identical file
+      // (#176), so the same file is the same body id.
+      if (pilesNow.current.some((pile) => pile.some((p) => p.bodyId === prepared.bodyId))) {
+        dropFailed(failed);
+        return;
+      }
+      let place: FailedPage = failed;
+      if (failed.pile < 0) {
+        const group = failed.cameraGroup ?? -1;
+        let pile = newStudentPiles.current.get(group);
+        let piles = pilesNow.current;
+        if (pile === undefined || pile >= piles.length) {
+          ({ piles, pile } = pileForNewStudent(piles));
+          newStudentPiles.current.set(group, pile);
+          pilesNow.current = piles;
+        }
+        place = { ...failed, pile, index: piles[pile]?.length ?? 0 };
+        // The student's other waiting pages now know their pile, after a
+        // reload too.
+        for (const other of failedNow.current)
+          if (other.cameraGroup === group && other.pile < 0 && other.shotId)
+            void markShotPlace(other.shotId, { pile, index: 0, label: other.label }).catch(() => {});
+      }
+      const page = { key: failed.key, label: failed.label, ...prepared };
+      setPiles((p) => {
+        const base = place.pile >= p.length ? pileForNewStudent(p).piles : p;
+        return placeRetriedPage(base, place, page);
+      });
       dropFailed(failed);
     } catch (e) {
       toast.error(describeFailure(e, failed.label + " still couldn't be uploaded. Try again in a moment."));
@@ -586,6 +643,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       setStatus("");
     }
   }
+
+  retryRef.current = retryPage;
+  const failedNow = useRef(failedPages);
+  useEffect(() => {
+    failedNow.current = failedPages;
+  }, [failedPages]);
 
   function canAccept(count: number) {
     if (captured.length + count <= MAX_PAGES) return true;
@@ -775,6 +838,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         setPiles((p) => [...p, []]);
       }
       cameraPile.current = pile;
+      // Where each page is going, saved with its copy as its upload starts:
+      // a page still uploading when the tab reloads is retried into it.
+      shotIds?.forEach(
+        (id, i) => id && void markShotPlace(id, { pile, index: added + i, label: files[i].name || "Page" }).catch(() => {}),
+      );
       for (const [i, raw] of files.entries()) {
         setStatus("Uploading scanned pages…");
         let prepared;
@@ -1306,6 +1374,15 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       );
       return;
     }
+    // ...and on the teacher's other device: a page that failed on the phone
+    // is a student's work the computer would grade without (review of #188).
+    if (otherFailed) {
+      toast.error(
+        (otherFailed === 1 ? "1 page didn't" : otherFailed + " pages didn't") +
+          " upload on your other device. Retry or leave out each one there before grading.",
+      );
+      return;
+    }
     // A stack uploaded whole is one pile on screen, but that pile is not a
     // student: the names split it. Grading it as declared piles put every
     // page under one student (G3).
@@ -1820,7 +1897,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                     <li key={f.key}>
                       <span>
                         {f.label}
-                        {!f.stack && <> · student {f.pile + 1}</>}
+                        {!f.stack && (f.pile < 0 ? <> · a new student</> : <> · student {f.pile + 1}</>)}
                       </span>
                       <Action
                         variant="secondary small"
@@ -1841,6 +1918,17 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   ))}
                 </ul>
               </div>
+            </div>
+          )}
+          {otherFailed > 0 && (
+            <div className="review-notice failed-pages-elsewhere" data-tone="warn" role="status">
+              <AlertCircle size={18} />
+              <p>
+                {(otherFailed === 1
+                  ? "1 page didn't upload on your other device. Retry it there, or leave it out there,"
+                  : otherFailed + " pages didn't upload on your other device. Retry each one there, or leave it out there,") +
+                  " before grading."}
+              </p>
             </div>
           )}
           {captured.length > 0 && !groups && (
