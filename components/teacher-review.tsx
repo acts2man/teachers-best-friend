@@ -73,7 +73,14 @@ import {
 } from "@/lib/teacher-workflow";
 import { ConfirmRescan } from "./confirm-reread";
 import { compareByLastName, uploadsNoLongerUsed } from "@/lib/teacher-classes";
-import { errorTypesFor } from "@/lib/error-types";
+import {
+  OTHER_ERROR_TYPE,
+  OTHER_LABEL_MAX,
+  errorTypesFor,
+  isOtherErrorType,
+  otherErrorLabel,
+  otherErrorText,
+} from "@/lib/error-types";
 import { safePdfText } from "@/lib/pdf-text";
 import type { Assessment, Question, Student, StudentResponse } from "@/lib/teacher-types";
 import {
@@ -781,7 +788,10 @@ function AnswerGroupCard({
 }) {
   const worth = questionPoints(a, q);
   const types = errorTypesFor(a.subject, a.elaArea);
-  const [errorType, setErrorType] = useState(g.errorType || g.suggestedErrorType);
+  // A suggestion is only offered when it is on today's list (a draft saved
+  // before the list changed may still carry an old one).
+  const suggested = g.suggestedErrorType && types.includes(g.suggestedErrorType) ? g.suggestedErrorType : "";
+  const [errorType, setErrorType] = useState(g.errorType || suggested);
   const [viewing, setViewing] = useState<string | null>(null);
   const closeViewing = useCallback(() => setViewing(null), [setViewing]);
   const blank = !g.unsure && !g.answer.trim();
@@ -900,27 +910,17 @@ function AnswerGroupCard({
       {!open && g.verified && !fullCredit && types.length > 0 && (
         <label className="grade-error-type">
           <span className="cell-meta">Common error</span>
-          <Pick
-            label="Common error"
-            value={g.errorType}
-            onChange={onTag}
-            options={[{ value: "", label: "No error type" }, ...types]}
-          />
+          <ErrorTypePick types={types} value={g.errorType} onChange={onTag} disabled={busy} />
         </label>
       )}
       {open && types.length > 0 && (
         <label className="grade-error-type">
           <span className="cell-meta">
-            {g.suggestedErrorType && errorType === g.suggestedErrorType
+            {suggested && errorType === suggested
               ? "Common error — suggested by the AI, change it if it's wrong"
               : "Common error"}
           </span>
-          <Pick
-            label="Common error"
-            value={errorType}
-            onChange={setErrorType}
-            options={[{ value: "", label: "No error type" }, ...types]}
-          />
+          <ErrorTypePick types={types} value={errorType} onChange={setErrorType} live />
         </label>
       )}
       {open && !g.unsure && together.length > 0 && (
@@ -1095,6 +1095,71 @@ function CreditForm({
       </Action>
       {children}
     </form>
+  );
+}
+
+/**
+ * The common-error picker: the subject's list, and for "Other" a box where
+ * the teacher types their own label (stored as "Other: <label>", never sent
+ * to the AI -- lib/error-types.ts). `live`: every keystroke is the value (a
+ * form that saves later); otherwise the typed label is saved when the box is
+ * left or Enter is pressed, so one tag is one save.
+ */
+function ErrorTypePick({
+  types,
+  value,
+  onChange,
+  live = false,
+  disabled = false,
+}: {
+  types: string[];
+  value: string;
+  onChange: (errorType: string) => void;
+  live?: boolean;
+  disabled?: boolean;
+}) {
+  const other = isOtherErrorType(value);
+  const [typed, setTyped] = useState(otherErrorText(value));
+  const commit = () => {
+    const next = otherErrorLabel(typed);
+    if (next !== value) onChange(next);
+  };
+  return (
+    <>
+      <Pick
+        label="Common error"
+        value={other ? OTHER_ERROR_TYPE : value}
+        onChange={(v) => {
+          if (v === OTHER_ERROR_TYPE) onChange(otherErrorLabel(typed));
+          else onChange(v);
+        }}
+        options={[
+          { value: "", label: "No error type" },
+          ...types.map((t) => (t === OTHER_ERROR_TYPE ? { value: t, label: "Other (type your own)" } : t)),
+        ]}
+      />
+      {other && (
+        <input
+          className="grade-error-other"
+          aria-label="Your own error label"
+          placeholder="Name the mistake"
+          maxLength={OTHER_LABEL_MAX}
+          value={typed}
+          disabled={disabled}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            if (live) onChange(otherErrorLabel(e.target.value));
+          }}
+          onBlur={() => !live && commit()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !live) {
+              e.preventDefault();
+              commit();
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 

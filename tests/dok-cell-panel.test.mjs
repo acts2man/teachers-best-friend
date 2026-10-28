@@ -39,7 +39,7 @@ test("Michael's ELA lists, by area; Language has none yet", () => {
     "Sentence Construction", "Grammar / Usage", "Punctuation / Capitalization", "Spelling / Word Form",
   ]);
   assert.deepEqual(errorTypesFor("ELA", "language"), []);
-  assert.equal(ALL_ERROR_TYPES.length, 5 + 8 + 8);
+  assert.equal(ALL_ERROR_TYPES.length, 8 + 8 + 8);
 });
 
 test("an extension aims one DOK level up; DOK 4 stays at 4; every other step stays", () => {
@@ -58,11 +58,11 @@ const math = {
   targetStandards: [], answerKeyVerified: true, uploadIds: [],
   questions: [q("q1", "A.1", 2), q("q2", "A.1", 2), q("q3", "A.1", 3)],
   responses: [
-    r("s1", "q1", 0, { errorType: "Sign error", finalAnswer: "-12" }),
-    r("s2", "q1", 0, { errorType: "Sign error", finalAnswer: "-12" }),
-    r("s3", "q2", 0, { errorType: "Wrong formula", finalAnswer: "7" }),
+    r("s1", "q1", 0, { errorType: "Sign Error", finalAnswer: "-12" }),
+    r("s2", "q1", 0, { errorType: "Sign Error", finalAnswer: "-12" }),
+    r("s3", "q2", 0, { errorType: "Setup/Method Error", finalAnswer: "7" }),
     r("s4", "q2", 0, { errorType: "Not on any list", finalAnswer: "7" }),
-    r("s4", "q1", 0, { errorType: "Sign error", verified: false }), // not confirmed: not counted
+    r("s4", "q1", 0, { errorType: "Sign Error", verified: false }), // not confirmed: not counted
     r("s1", "q3", 100),
   ],
 };
@@ -72,20 +72,20 @@ test("the panel's common errors: tagged types from the list, most common first; 
   const d2 = row.cells[1];
   assert.deepEqual(d2.questionIds, ["q1", "q2"]);
   const detail = dokCellDetail(math, students, d2.questionIds);
-  assert.deepEqual(detail.errorTypes.map((t) => [t.errorType, t.count]), [["Sign error", 2], ["Wrong formula", 1]]);
+  assert.deepEqual(detail.errorTypes.map((t) => [t.errorType, t.count]), [["Sign Error", 2], ["Setup/Method Error", 1]]);
   assert.deepEqual(detail.errorTypes[0].students.map((s) => s.id), ["s1", "s2"]);
   const untagged = { ...math, responses: math.responses.map((x) => ({ ...x, errorType: "" })) };
   assert.deepEqual(dokCellDetail(untagged, students, d2.questionIds).wrongAnswers, [{ answer: "-12", count: 2 }, { answer: "7", count: 2 }]);
 });
 
 test("ELA reading tags read Michael's list", () => {
-  const ela = { ...math, subject: "ELA", elaArea: "reading", responses: [r("s1", "q1", 0, { errorType: "Supporting Evidence" }), r("s2", "q1", 0, { errorType: "Sign error" })] };
+  const ela = { ...math, subject: "ELA", elaArea: "reading", responses: [r("s1", "q1", 0, { errorType: "Supporting Evidence" }), r("s2", "q1", 0, { errorType: "Sign Error" })] };
   assert.deepEqual(dokCellDetail(ela, students, ["q1"]).errorTypes.map((t) => t.errorType), ["Supporting Evidence"], "a math type is not on the reading list");
 });
 
 test("what a lesson from the grid sends: DOK levels and fixed-list error names with counts, nothing else", () => {
   const focus = lessonFocus(math, "A.1", [3, 2, 2, 9]);
-  assert.deepEqual(focus, { dok: [2, 3], errorTypes: [{ name: "Sign error", count: 2 }, { name: "Wrong formula", count: 1 }] });
+  assert.deepEqual(focus, { dok: [2, 3], errorTypes: [{ name: "Sign Error", count: 2 }, { name: "Setup/Method Error", count: 1 }] });
   assert.equal(JSON.stringify(focus).includes("Student"), false, "no student in it");
   assert.equal(JSON.stringify(focus).includes("-12"), false, "no answer in it");
 });
@@ -98,15 +98,15 @@ const lesson = (extra) =>
 test("the lesson prompt is pitched at the DOK level and aimed at the errors; a name not on a list never gets in", () => {
   const plain = lesson({ intent: "reteach" });
   assert.doesNotMatch(plain, /Depth of Knowledge|most common mistakes/, "no DOK, no errors: the prompt is as before");
-  const one = lesson({ intent: "reteach", dok: [2], errorTypes: [{ name: "Sign error", count: 2 }, { name: "Wrong formula", count: 1 }] });
+  const one = lesson({ intent: "reteach", dok: [2], errorTypes: [{ name: "Sign Error", count: 2 }, { name: "Setup/Method Error", count: 1 }] });
   assert.match(one, /DOK 1 is recall and reproduction/);
   assert.match(one, /exit questions at DOK 2\./);
-  assert.match(one, /The most common mistakes on this standard at that depth were: Sign error \(2 answers\), Wrong formula \(1 answer\)\./);
+  assert.match(one, /The most common mistakes on this standard at that depth were: Sign Error \(2 answers\), Setup\/Method Error \(1 answer\)\./);
   const two = lesson({ intent: "extension", dok: [3, 4] });
   assert.match(two, /across DOK 3, 4, easiest first/);
-  const sneaky = lesson({ dok: [2], errorTypes: [{ name: "Maria Lopez wrote 7", count: 3 }, { name: "Sign error", count: 1 }] });
+  const sneaky = lesson({ dok: [2], errorTypes: [{ name: "Maria Lopez wrote 7", count: 3 }, { name: "Sign Error", count: 1 }] });
   assert.doesNotMatch(sneaky, /Maria|wrote 7/);
-  assert.match(sneaky, /Sign error \(1 answer\)/);
+  assert.match(sneaky, /Sign Error \(1 answer\)/);
 });
 
 test("the grid opens the panel, the panel opens the lesson, the lesson sends the focus", () => {

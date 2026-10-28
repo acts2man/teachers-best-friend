@@ -65,8 +65,11 @@ test("the test page shows the mode but has no switch; points are locked for Stan
   assert.match(src, /gradingModeOf\(a\) === "sbg" \? \(\s+<p className="field-help">\s+Standards-Based: every question is worth/);
 });
 
-test("setup is the only place to choose: editing a test shows its mode", () => {
+// Since 27 Oct 2026 the class has the mode (tests/class-grading-mode.test.mjs):
+// test setup shows it, and editing a test shows the test's own.
+test("test setup never asks: a new test shows its class's mode, an edited one its own", () => {
   const src = readFileSync("components/teacher-scan.tsx", "utf8");
-  assert.match(src, /\{editing \? \(\s+<span className="grading-mode-shown">\{gradingModeLabel\(editing\)\}<\/span>\s+\) : \(\s+<GradingModeChoice/);
+  assert.match(src, /\{editing \? gradingModeLabel\(editing\) : gradingModeName\(gradingMode\)\}/);
+  assert.doesNotMatch(src, /<GradingModeChoice/);
   assert.match(src, /mode === "assignment" && gradingMode !== "sbg" && \(\s+<label className="block-label">\s+Points possible/, "no points total for a Standards-Based test");
 });

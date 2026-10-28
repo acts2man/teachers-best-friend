@@ -60,8 +60,9 @@ no pipeline that would collect student work for that purpose.
 - The expected answer, when you have provided an answer key
 - When you build a lesson plan from a test's depth-of-knowledge grid: the standard, the
   depth-of-knowledge level, and how many answers showed each common error type (for
-  example "Sign error: 5"). Only those counts, from a fixed list of error types — never a
-  student's name or anything a student wrote.
+  example "Sign Error: 5"). Only those counts, from a fixed list of error types — never a
+  student's name or anything a student wrote. A label you type yourself under "Other" is
+  sent only as "Other", never in your words.
 
 **Not sent:**
 - Student names. When the app analyzes student responses, it transmits an internal

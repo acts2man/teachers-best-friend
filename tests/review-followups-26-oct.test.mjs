@@ -81,11 +81,11 @@ test("c: an extension pitched at DOK 3 aims at the DOK 2 cell's errors", () => {
   const r = (id, qid, errorType) => ({ id, studentId: "s" + id, questionId: qid, correct: false, match: 0, verified: true, errorType });
   const t = {
     id: "t", subject: "Math", questions: [q("q1", 2), q("q2", 3)],
-    responses: [r("1", "q1", "Sign error"), r("2", "q1", "Sign error"), r("3", "q2", "Wrong formula")],
+    responses: [r("1", "q1", "Sign Error"), r("2", "q1", "Sign Error"), r("3", "q2", "Setup/Method Error")],
   };
-  assert.deepEqual(lessonFocus(t, "A.1", [3], [2]), { dok: [3], errorTypes: [{ name: "Sign error", count: 2 }] });
-  assert.deepEqual(lessonFocus(t, "A.1", [2, 3], [2]).errorTypes, [{ name: "Sign error", count: 2 }], "an extra level ticked: still the cell's errors");
-  assert.deepEqual(lessonFocus(t, "A.1", [3]).errorTypes, [{ name: "Wrong formula", count: 1 }], "no cell given: the lesson's own levels, as before");
+  assert.deepEqual(lessonFocus(t, "A.1", [3], [2]), { dok: [3], errorTypes: [{ name: "Sign Error", count: 2 }] });
+  assert.deepEqual(lessonFocus(t, "A.1", [2, 3], [2]).errorTypes, [{ name: "Sign Error", count: 2 }], "an extra level ticked: still the cell's errors");
+  assert.deepEqual(lessonFocus(t, "A.1", [3]).errorTypes, [{ name: "Setup/Method Error", count: 1 }], "no cell given: the lesson's own levels, as before");
   const panel = readFileSync("components/dok-cell-panel.tsx", "utf8");
   assert.match(panel, /"&errorsFrom=" \+\s+cell\.dok/);
   const planning = readFileSync("components/teacher-planning.tsx", "utf8");

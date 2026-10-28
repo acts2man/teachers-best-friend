@@ -1,4 +1,4 @@
-import { errorTypesFor } from "./error-types";
+import { errorTypeForAi, errorTypesFor, onErrorList } from "./error-types";
 import { average4, isSbg, score4Text } from "./grading-mode";
 import type {
   Assessment,
@@ -377,9 +377,10 @@ export function dokCellDetail(
   questionIds: string[],
 ): { errorTypes: ErrorTypeTally[]; wrongAnswers: { answer: string; count: number }[] } {
   const ids = new Set(questionIds);
-  const listed = new Set(errorTypesFor(a.subject, a.elaArea));
+  const listed = errorTypesFor(a.subject, a.elaArea);
   const answers = a.responses.filter((r) => r.verified && ids.has(r.questionId));
-  const errorTypes = tallyErrorTypes(answers, students).filter((t) => listed.has(t.errorType));
+  // A typed "Other" label is the teacher's own, shown here as they wrote it.
+  const errorTypes = tallyErrorTypes(answers, students).filter((t) => onErrorList(listed, t.errorType));
   const wrong = new Map<string, { answer: string; count: number }>();
   for (const r of answers) {
     if (responseMatch(r) >= 100) continue;
@@ -426,17 +427,24 @@ export function lessonFocus(
     [...new Set(list.filter((d) => Number.isInteger(d) && d >= 1 && d <= 4))].sort();
   const dok = valid(doks);
   const from = errorsFrom && valid(errorsFrom).length ? valid(errorsFrom) : dok;
-  const listed = new Set(errorTypesFor(a.subject, a.elaArea));
+  const listed = errorTypesFor(a.subject, a.elaArea);
   const ids = activeQuestions(a)
     .filter((q) => q.standard === standard && from.includes(q.dok))
     .map((q) => q.id);
-  const errorTypes = tallyErrorTypes(
+  // Every typed "Other" label counts as "Other": the teacher's words stay here.
+  const counts = new Map<string, number>();
+  for (const t of tallyErrorTypes(
     a.responses.filter((r) => r.verified && ids.includes(r.questionId)),
     [],
-  )
-    .filter((t) => listed.has(t.errorType))
-    .slice(0, 10)
-    .map((t) => ({ name: t.errorType, count: t.count }));
+  )) {
+    if (!onErrorList(listed, t.errorType)) continue;
+    const name = errorTypeForAi(t.errorType);
+    counts.set(name, (counts.get(name) ?? 0) + t.count);
+  }
+  const errorTypes = [...counts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+    .slice(0, 10);
   return { dok, errorTypes };
 }
 

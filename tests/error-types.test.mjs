@@ -47,9 +47,10 @@ function resp(id, questionId, answer, extra = {}) {
 }
 
 test("the error type lists live in one place: Ricky's math types, Michael's ELA reading and writing types", () => {
+  // Ricky's list of 24 Oct 2026, in his order.
   assert.deepEqual(errorTypesFor("Math"), [
-    "Algebraic/Arithmetic error", "Sign error", "Conceptual/Setup error",
-    "Wrong formula", "Graph/Table interpretation error",
+    "Conceptual Gap", "Setup/Method Error", "Algebraic/Procedural Error", "Sign Error",
+    "Graphing Error", "Data Interpretation Error", "Reasoning/Justification Error", "Other",
   ]);
   // Michael's lists (Slack, 20 Oct 2026); an ELA test with no area is reading.
   assert.equal(errorTypesFor("ELA", "reading").length, 8);
@@ -61,40 +62,40 @@ test("the error type lists live in one place: Ricky's math types, Michael's ELA 
 
 test("setGroupErrorType tags every response in the group without touching the score", () => {
   const a = assessment([resp("1", "q1", "10"), resp("2", "q1", "10")]);
-  const after = setGroupErrorType(a, ["1", "2"], "Sign error");
-  assert.ok(after.responses.every((r) => r.errorType === "Sign error"));
+  const after = setGroupErrorType(a, ["1", "2"], "Sign Error");
+  assert.ok(after.responses.every((r) => r.errorType === "Sign Error"));
   assert.ok(after.responses.every((r) => r.match === 50 && r.verified === true), "score untouched");
   // Changeable: pick another, then clear it.
-  const changed = setGroupErrorType(after, ["1", "2"], "Wrong formula");
-  assert.ok(changed.responses.every((r) => r.errorType === "Wrong formula"));
+  const changed = setGroupErrorType(after, ["1", "2"], "Setup/Method Error");
+  assert.ok(changed.responses.every((r) => r.errorType === "Setup/Method Error"));
   const cleared = setGroupErrorType(changed, ["1", "2"], "");
   assert.ok(cleared.responses.every((r) => r.errorType === ""));
 });
 
 test("groupAnswers surfaces the group's shared error type", () => {
   const a = assessment([
-    resp("1", "q1", "10", { errorType: "Sign error" }),
-    resp("2", "q1", "10", { errorType: "Sign error" }),
+    resp("1", "q1", "10", { errorType: "Sign Error" }),
+    resp("2", "q1", "10", { errorType: "Sign Error" }),
   ]);
   const g = groupAnswers(a, "q1")[0];
-  assert.equal(g.errorType, "Sign error");
+  assert.equal(g.errorType, "Sign Error");
 });
 
 test("full credit carries no error type; a re-score below full keeps the tag", () => {
-  const a = assessment([resp("1", "q1", "10", { errorType: "Sign error" })]);
+  const a = assessment([resp("1", "q1", "10", { errorType: "Sign Error" })]);
   // Re-score to Half without passing a tag -> the existing tag survives.
   const half = applyGroupScore(a, ["1"], 50);
-  assert.equal(half.responses[0].errorType, "Sign error");
+  assert.equal(half.responses[0].errorType, "Sign Error");
   // Score to full credit -> the tag is dropped, because full credit is no error.
   const full = applyGroupScore(a, ["1"], 100);
   assert.equal(full.responses[0].errorType, "");
   // applyGroupScore can also set the tag as it scores.
-  const tagged = applyGroupScore(a, ["1"], 0, "Conceptual/Setup error");
-  assert.equal(tagged.responses[0].errorType, "Conceptual/Setup error");
+  const tagged = applyGroupScore(a, ["1"], 0, "Conceptual Gap");
+  assert.equal(tagged.responses[0].errorType, "Conceptual Gap");
 });
 
 test("changing the answer key clears a now-stale error type along with the grade", () => {
-  const a = assessment([resp("1", "q1", "10", { errorType: "Sign error" })]);
+  const a = assessment([resp("1", "q1", "10", { errorType: "Sign Error" })]);
   const after = applyAnswerKey(a, { q1: "different key" });
   assert.equal(after.responses[0].verified, false);
   assert.equal(after.responses[0].errorType, "");
@@ -107,16 +108,16 @@ test("Class view rolls error types up per assessment, most common first, with st
     { id: "s-3", name: "Cy", classId: "c", color: "#000", evidence: [], notes: "" },
   ];
   const a = assessment([
-    resp("1", "q1", "10", { errorType: "Sign error" }),
-    resp("2", "q1", "10", { errorType: "Sign error" }),
-    resp("3", "q1", "9", { errorType: "Wrong formula" }),
+    resp("1", "q1", "10", { errorType: "Sign Error" }),
+    resp("2", "q1", "10", { errorType: "Sign Error" }),
+    resp("3", "q1", "9", { errorType: "Setup/Method Error" }),
   ]);
   const tally = assessmentErrorTypes(a, students);
   assert.equal(tally.length, 2);
-  assert.equal(tally[0].errorType, "Sign error");
+  assert.equal(tally[0].errorType, "Sign Error");
   assert.equal(tally[0].count, 2);
   assert.deepEqual(tally[0].students.map((s) => s.name), ["Ana", "Ben"]);
-  assert.equal(tally[1].errorType, "Wrong formula");
+  assert.equal(tally[1].errorType, "Setup/Method Error");
 });
 
 test("per-standard breakdown attaches error types to the right standard", () => {
@@ -124,14 +125,14 @@ test("per-standard breakdown attaches error types to the right standard", () => 
     { id: "s-1", name: "Ana", classId: "c", color: "#000", evidence: [], notes: "" },
   ];
   const a = assessment(
-    [resp("1", "q1", "10", { errorType: "Sign error" })],
+    [resp("1", "q1", "10", { errorType: "Sign Error" })],
     [q("q1", "4.NBT.5")],
   );
   const rows = classAnalysis(a, students, [STANDARD]);
   const row = rows.find((r) => r.standard.code === "4.NBT.5");
   assert.ok(row);
   assert.equal(row.errorTypes.length, 1);
-  assert.equal(row.errorTypes[0].errorType, "Sign error");
+  assert.equal(row.errorTypes[0].errorType, "Sign Error");
   assert.deepEqual(row.errorTypes[0].students.map((s) => s.name), ["Ana"]);
 });
 
