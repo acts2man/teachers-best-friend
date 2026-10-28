@@ -101,6 +101,14 @@ async function deleteBatch(ids: string[]): Promise<DeleteReply | null> {
 /** The server takes at most this many ids per request. */
 const DELETE_BATCH = 500;
 
+/** Clears a test's class scan in progress on the account (DELETE
+ * /api/scans/session). Never throws: a scan left behind expires on its own. */
+export async function clearClassScanSession(assessmentId: string): Promise<void> {
+  await fetch("/api/scans/session?assessmentId=" + encodeURIComponent(assessmentId), { method: "DELETE" }).catch(
+    () => null,
+  );
+}
+
 export async function deleteUploads(ids: string[]): Promise<DeleteOutcome> {
   const unique = [...new Set(ids)];
   if (!unique.length) return { failed: 0, keptInScan: 0 };
@@ -121,11 +129,7 @@ export async function deleteUploads(ids: string[]): Promise<DeleteOutcome> {
   let keptInScan = inScan.length - leftover.length;
   if (leftover.length) {
     const sessions = [...new Set(leftover.flatMap((k) => k.assessmentIds))];
-    await Promise.all(
-      sessions.map((id) =>
-        fetch("/api/scans/session?assessmentId=" + encodeURIComponent(id), { method: "DELETE" }).catch(() => null),
-      ),
-    );
+    await Promise.all(sessions.map(clearClassScanSession));
     const retry = await deleteBatch(leftover.map((k) => k.id));
     if (!retry) failed += leftover.length;
     else {

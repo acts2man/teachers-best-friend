@@ -715,8 +715,13 @@ export async function findUploadByHash(
 
 /** Why an upload is still in use: the saved workspace holds it, or a class
  * scan in progress mentions it. `leftover`: every scan that mentions it is
- * for a test the workspace no longer has (deleted), so nothing can come back
- * to that scan -- the caller may clear those sessions and ask again. */
+ * for a test the DATABASE holds as archived (deleted), so nothing can come
+ * back to that scan -- the caller may clear those sessions and ask again.
+ * Never a test merely missing from the saved workspace: that is also a new
+ * test not saved yet, or one another device has not saved (review of #189).
+ * (sync_workspace deletes a removed test's row outright, so today no test is
+ * archived and this is never true: a scan keeping a file is reported to the
+ * teacher, and a deleted test's own scan is cleared when it is deleted.) */
 export type UploadUse =
   | { by: "workspace" }
   | { by: "scan"; assessmentIds: string[]; leftover: boolean };
@@ -750,17 +755,27 @@ export async function uploadsStillReferenced(ownerId: string, ids: string[]): Pr
     // route ignores it and the nightly job deletes it): it keeps nothing.
     .gt("expires_at", new Date().toISOString());
   if (error) throw error;
-  const tests = new Set(((saved?.data as Workspace | undefined)?.assessments ?? []).map((a) => a.id));
   // Upload ids are UUIDs, so a mention anywhere in a session's pages is that file.
   const sessions = (data ?? []).map((row) => ({
     assessmentId: String(row.assessment_id),
     text: JSON.stringify(row.state ?? null),
   }));
+  const using = new Map<string, string[]>();
   for (const id of rest) {
-    const using = sessions.filter((x) => x.text.includes(id)).map((x) => x.assessmentId);
-    if (using.length)
-      out.set(id, { by: "scan", assessmentIds: using, leftover: !!saved && using.every((t) => !tests.has(t)) });
+    const by = sessions.filter((x) => x.text.includes(id)).map((x) => x.assessmentId);
+    if (by.length) using.set(id, by);
   }
+  if (!using.size) return out;
+  // Which of those scans' tests the database holds as archived: one read.
+  const { data: rows, error: testsError } = await createServiceClient()
+    .from("assessments")
+    .select("legacy_id, archived_at")
+    .eq("teacher_id", ownerId)
+    .in("legacy_id", [...new Set([...using.values()].flat())]);
+  if (testsError) throw testsError;
+  const archived = new Set((rows ?? []).filter((r) => r.archived_at).map((r) => String(r.legacy_id)));
+  for (const [id, by] of using)
+    out.set(id, { by: "scan", assessmentIds: by, leftover: by.every((t) => archived.has(t)) });
   return out;
 }
 

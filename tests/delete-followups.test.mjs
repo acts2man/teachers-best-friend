@@ -38,6 +38,7 @@ function fakeClient(tables, workspace, log) {
       select() { return q; },
       eq(col, v) { filters.push((r) => r[col] === v); return q; },
       gt(col, v) { filters.push((r) => r[col] > v); return q; },
+      in(col, vs) { filters.push((r) => vs.includes(r[col])); return q; },
       maybeSingle() { return q.then((r) => ({ data: r.data[0] ?? null, error: null })); },
       then(resolve, reject) {
         log.push("read " + table);
@@ -82,8 +83,12 @@ test("(b)(c) one workspace read and one scan read for the whole list; an expired
     teacher_workspaces: [{ owner_id: "t1", revision: 3 }],
     class_scan_sessions: [
       session("live-test", [U(2)], day), // a scan in progress on a test that exists
-      session("deleted-test", [U(3)], day), // left behind: its test is gone
+      session("deleted-test", [U(3)], day), // left behind: its test is archived
       session("live-test-2", [U(4)], -day), // expired yesterday
+    ],
+    assessments: [
+      { teacher_id: "t1", legacy_id: "live-test", archived_at: null },
+      { teacher_id: "t1", legacy_id: "deleted-test", archived_at: "2026-10-20T00:00:00Z" },
     ],
   };
   const { uploadsStillReferenced } = server(tables, workspace, log);
@@ -95,6 +100,53 @@ test("(b)(c) one workspace read and one scan read for the whole list; an expired
   }, "the expired scan's photo and the unused one are free");
   assert.equal(log.filter((l) => l === "rpc get_workspace_json").length, 1, "one workspace read: " + log.join(", "));
   assert.equal(log.filter((l) => l === "read class_scan_sessions").length, 1, "one scan read");
+  assert.equal(log.filter((l) => l === "read assessments").length, 1, "one read of the scans' tests");
+});
+
+// Review of #189 (28 Oct): "left behind" only when the database holds the
+// test as archived -- never when it is merely missing from the saved
+// workspace, which is also a new test not saved yet, or another device's.
+test("an identical file in deleted test A and in unsaved new test B's scan: nothing is cleared, the file is kept", async () => {
+  const log = [];
+  const tables = {
+    teacher_workspaces: [{ owner_id: "t1", revision: 3 }],
+    // Test B is being scanned and not saved yet: a session, no row. Test A was
+    // deleted: sync_workspace removed its row, and the saved workspace has
+    // neither. The same photo (one upload row per identical file, #176).
+    class_scan_sessions: [session("test-b-unsaved", [U(6)], day)],
+    assessments: [],
+  };
+  const { uploadsStillReferenced } = server(tables, { ...workspace, assessments: [] }, log);
+  const uses = await uploadsStillReferenced("t1", [U(6)]);
+  assert.deepEqual(uses.get(U(6)), { by: "scan", assessmentIds: ["test-b-unsaved"], leftover: false },
+    "missing from the workspace is not left behind");
+  // And the client, given that answer, clears nothing and tells the teacher.
+  const sent = fakeFetch([{ deleted: [], missing: [], failed: [], kept: [{ id: U(6), ...uses.get(U(6)) }] }]);
+  assert.deepEqual(await deleteUploads([U(6)]), { failed: 0, keptInScan: 1 });
+  assert.deepEqual(sent.map(([m]) => m), ["POST"], "no session DELETE, no retry");
+});
+
+test("a scan whose test is archived in the database is left behind; one whose test row is live is not", async () => {
+  const tables = {
+    teacher_workspaces: [{ owner_id: "t1", revision: 3 }],
+    class_scan_sessions: [session("a", [U(7)], day), session("b", [U(7)], day), session("c", [U(8)], day)],
+    assessments: [
+      { teacher_id: "t1", legacy_id: "a", archived_at: "2026-10-20T00:00:00Z" },
+      { teacher_id: "t1", legacy_id: "b", archived_at: null },
+      { teacher_id: "t1", legacy_id: "c", archived_at: "2026-10-20T00:00:00Z" },
+      { teacher_id: "other", legacy_id: "b", archived_at: "2026-10-20T00:00:00Z" }, // another teacher's
+    ],
+  };
+  const uses = await server(tables, { ...workspace, assessments: [] }, []).uploadsStillReferenced("t1", [U(7), U(8)]);
+  assert.equal(uses.get(U(7)).leftover, false, "kept by a live scan too");
+  assert.equal(uses.get(U(8)).leftover, true);
+});
+
+test("deleting a test clears that test's own scan, before its photos are deleted", () => {
+  const src = readFileSync("components/teacher-assessments.tsx", "utf8");
+  const fn = src.slice(src.indexOf("async function removeAssessment("), src.indexOf("const filtered = assessments.filter("));
+  assert.ok(fn.indexOf("await clearClassScanSession(a.id);") > 0);
+  assert.ok(fn.indexOf("await clearClassScanSession(a.id);") < fn.indexOf("await deleteUploads(uploadIds)"));
 });
 
 test("(c) the batch route checks once, deletes only what is free, and says why the rest was kept", async () => {
