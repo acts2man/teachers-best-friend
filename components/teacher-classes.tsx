@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { ScanCamera } from "./scan-camera";
 import { ClassGradingModeField } from "./grading-mode-choice";
 import { classGradingMode, gradingModeName, type GradingMode } from "@/lib/grading-mode";
@@ -156,13 +156,14 @@ export function ClassesView() {
       // Not a page a test still in use keeps: a shared assessment stays with
       // its other classes (and, since 20261026120000, the same bytes are one
       // upload) -- it used to lose its pages here.
-      const kept = await deleteUploads(uploadsNoLongerUsed(next, uploads));
+      const { failed: kept, keptInScan } = await deleteUploads(uploadsNoLongerUsed(next, uploads));
       if (kept)
         toast.error(
           kept +
             (kept === 1 ? " page" : " pages") +
             " from that class couldn't be deleted just now. They'll be removed automatically.",
         );
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     }
   }
 
@@ -510,7 +511,8 @@ export function RosterScanner({
       // photograph in the app that carries a whole class list. (Unless the
       // identical file is a test's page -- one upload row per identical file,
       // #176 -- in which case it is that test's, not a roster.)
-      const kept = await deleteUploads(uploadsNoLongerUsed(w, ids));
+      const { failed: kept, keptInScan } = await deleteUploads(uploadsNoLongerUsed(w, ids));
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
       if (kept)
         toast.error(
           "The roster photo couldn't be deleted just now. It will be removed automatically — tell us if you need it gone sooner.",
