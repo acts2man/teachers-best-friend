@@ -78,6 +78,7 @@ import {
   OTHER_LABEL_MAX,
   errorTypesFor,
   isOtherErrorType,
+  shownErrorType,
   otherErrorLabel,
   otherErrorText,
 } from "@/lib/error-types";
@@ -791,7 +792,9 @@ function AnswerGroupCard({
   // A suggestion is only offered when it is on today's list (a draft saved
   // before the list changed may still carry an old one).
   const suggested = g.suggestedErrorType && types.includes(g.suggestedErrorType) ? g.suggestedErrorType : "";
-  const [errorType, setErrorType] = useState(g.errorType || suggested);
+  // A tag off the current list (an old tab wrote it back) is not shown.
+  const tagged = shownErrorType(a, g.errorType);
+  const [errorType, setErrorType] = useState(tagged || suggested);
   const [viewing, setViewing] = useState<string | null>(null);
   const closeViewing = useCallback(() => setViewing(null), [setViewing]);
   const blank = !g.unsure && !g.answer.trim();
@@ -890,7 +893,7 @@ function AnswerGroupCard({
       {!open && g.verified && (
         <span className="grade-decided">
           <Check size={14} /> Graded · {decidedLabel}
-          {g.errorType ? " · " + g.errorType : ""}
+          {tagged ? " · " + tagged : ""}
           <button type="button" className="grade-change" disabled={busy} onClick={onReopen}>
             Change
           </button>
@@ -910,7 +913,7 @@ function AnswerGroupCard({
       {!open && g.verified && !fullCredit && types.length > 0 && (
         <label className="grade-error-type">
           <span className="cell-meta">Common error</span>
-          <ErrorTypePick types={types} value={g.errorType} onChange={onTag} disabled={busy} />
+          <ErrorTypePick types={types} value={tagged} onChange={onTag} disabled={busy} />
         </label>
       )}
       {open && types.length > 0 && (
@@ -1179,7 +1182,7 @@ function StudentDepthBreakdown({
   const costa = costaBreakdown(a.questions, reviewed);
   const errors = new Map<string, number>();
   for (const r of reviewed) {
-    const t = (r.errorType || "").trim();
+    const t = shownErrorType(a, r.errorType);
     if (t) errors.set(t, (errors.get(t) || 0) + 1);
   }
   const errorRows = [...errors.entries()].sort(

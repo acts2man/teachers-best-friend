@@ -101,6 +101,20 @@ export function onErrorList(types: readonly string[], errorType: string): boolea
   return types.includes(OTHER_ERROR_TYPE) && isOtherErrorType(errorType);
 }
 
+/**
+ * A tag as the app shows it (review of #190): the tag when it is on the
+ * test's current list -- a typed "Other: x" shown as its label -- else "".
+ * Off-list tags (the old Math five, written back by a tab open from before
+ * the list changed) are hidden on every screen and report and never counted.
+ */
+export function shownErrorType(
+  a: { subject: Subject; elaArea?: ElaArea },
+  errorType: string | undefined | null,
+): string {
+  const tag = (errorType ?? "").trim();
+  return tag && onErrorList(errorTypesFor(a.subject, a.elaArea), tag) ? tag : "";
+}
+
 /** The types the grading AI may suggest: the list without "Other" -- a
  * suggestion with no label would only make the teacher type one. */
 export function suggestableErrorTypes(subject: Subject, elaArea?: ElaArea): string[] {
