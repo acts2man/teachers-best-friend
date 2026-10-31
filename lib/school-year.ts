@@ -59,6 +59,13 @@ export function isDateString(value: unknown): value is string {
   return day.getFullYear() === y && day.getMonth() === m - 1 && day.getDate() === d;
 }
 
+/** A test with its date given set to `today` -- the day its work is graded
+ * -- unless it has one already (the class set and one student at a time
+ * alike). */
+export function withDateGiven<T extends Pick<Assessment, "dateGiven">>(a: T, today: string = localDateString()): T {
+  return isDateString(a.dateGiven) ? a : { ...a, dateGiven: today };
+}
+
 /** A "YYYY-MM-DD" day as a local Date (midnight). */
 export function dayOf(value: string): Date {
   const [y, m, d] = value.split("-").map(Number);

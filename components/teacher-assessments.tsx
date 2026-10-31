@@ -136,9 +136,9 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
+import { classGradingMode, gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
 import { dateGivenOf, dayOf, isDateString, localDateString } from "@/lib/school-year";
-import type { RubricDimension } from "@/lib/teacher-types";
+import type { Classroom, RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
   questionAlignment,
@@ -527,6 +527,11 @@ export function AssessmentView() {
       if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     }
   }
+  // The share dialog (review of #191): a class graded the same way as this
+  // test, or one it is already in.
+  const sharesWith = (c: Classroom) =>
+    !!a && (c.id === a.classId || (a.classIds || []).includes(c.id) || classGradingMode(w, c) === gradingModeOf(a));
+  const otherModeClasses = w.classes.filter((c) => !sharesWith(c)).length;
   const filtered = assessments.filter(
     (x) =>
       (subject === "All subjects" || x.subject === subject) &&
@@ -1830,7 +1835,10 @@ export function AssessmentView() {
         {linking && a && (
           <div className="form-stack">
             <div className="link-classes">
-              {w.classes.map((c) => (
+              {/* One test has one mode (review of #191): only classes graded
+                  the same way are offered -- plus any it is already in, so
+                  it can still be taken out of them. */}
+              {w.classes.filter((c) => sharesWith(c)).map((c) => (
                 <label key={c.id} className={c.id === a.classId ? "locked" : ""}>
                   <Checkbox
                     checked={c.id === a.classId || linking.includes(c.id)}
@@ -1861,6 +1869,13 @@ export function AssessmentView() {
                   )}
                 </label>
               ))}
+              {otherModeClasses > 0 && (
+                <p className="field-help">
+                  {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"} graded{" "}
+                  {gradingModeOf(a) === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
+                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                </p>
+              )}
             </div>
             <Action
               disabled={busy}

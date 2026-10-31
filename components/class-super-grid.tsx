@@ -37,6 +37,7 @@ export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Clas
           {grid.tests} test{grid.tests === 1 ? "" : "s"}, by standard cluster and depth of knowledge ·{" "}
           {gradingModeName(grid.mode)}
         </p>
+        <p className="cell-meta">Counts students now on this class&rsquo;s roster.</p>
       </div>
       {!grid.rows.length ? (
         <p className="cell-meta super-grid-empty">
