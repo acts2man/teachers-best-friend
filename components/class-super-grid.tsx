@@ -6,7 +6,10 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { gradingModeName, score4Text } from "@/lib/grading-mode";
 import { MASTERY_LEVELS, SCORE4_RANGES } from "@/lib/mastery-levels";
 import { schoolYearLabel } from "@/lib/school-year";
-import { classSuperGrid, type Score, type SuperGridCell, type SuperGridRow } from "@/lib/super-grid";
+import { BookOpen } from "lucide-react";
+import { classSuperGrid, preteachFocus, type PreteachFocus, type Score, type SuperGridCell, type SuperGridRow } from "@/lib/super-grid";
+import { Action } from "./teacher-shared";
+import { useTeacher } from "./teacher-context";
 import { DOK_LEVELS } from "@/lib/teacher-class-analysis";
 import type { Classroom, Workspace } from "@/lib/teacher-types";
 import { shortAdvice } from "./dok-grid";
@@ -21,11 +24,14 @@ import { shortAdvice } from "./dok-grid";
  *
  * A cell opens its panel: the score, how many questions were asked (in the
  * last 30 days and before, by each test's date given), the weakest standards
- * in it and the common errors. No AI call -- the pre-teach button is a later
- * step.
+ * in it and the common errors -- and "Plan a pre-teach lesson" (design step
+ * 5), which opens the lesson builder for the cell's weakest standard. Only the
+ * cluster, the DOK, the weakest standard codes and the error-type counts go to
+ * the AI (lib/super-grid.ts preteachFocus; docs/student-data-flow.md 4).
  */
 export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Classroom }) {
   const grid = classSuperGrid(w, classroom);
+  const { go } = useTeacher();
   const [opened, setOpened] = useState<{ row: SuperGridRow; cell: SuperGridCell } | null>(null);
   const sbg = grid.mode === "sbg";
   return (
@@ -87,7 +93,28 @@ export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Clas
         </p>
       )}
       {opened && (
-        <SuperGridCellPanel row={opened.row} cell={opened.cell} sbg={sbg} onClose={() => setOpened(null)} />
+        <SuperGridCellPanel
+          row={opened.row}
+          cell={opened.cell}
+          sbg={sbg}
+          preteach={preteachFocus(grid, opened.row.cluster.key, opened.cell.dok)}
+          onPreteach={(f) => {
+            setOpened(null);
+            go(
+              "/lessons?standard=" +
+                encodeURIComponent(f.standard.code) +
+                "&grade=" +
+                f.standard.grade +
+                "&framework=" +
+                encodeURIComponent(f.standard.framework) +
+                "&intent=preteach&cluster=" +
+                encodeURIComponent(f.cluster) +
+                "&dok=" +
+                f.dok,
+            );
+          }}
+          onClose={() => setOpened(null)}
+        />
       )}
     </section>
   );
@@ -139,11 +166,15 @@ function SuperGridCellPanel({
   row,
   cell,
   sbg,
+  preteach,
+  onPreteach,
   onClose,
 }: {
   row: SuperGridRow;
   cell: SuperGridCell;
   sbg: boolean;
+  preteach: PreteachFocus | null;
+  onPreteach: (f: PreteachFocus) => void;
   onClose: () => void;
 }) {
   const phone = useIsMobile();
@@ -236,6 +267,21 @@ function SuperGridCellPanel({
                   <p className="cell-meta">No error types tagged on these answers yet.</p>
                 )}
               </section>
+              {preteach && (
+                <section>
+                  <h3>Before the next unit</h3>
+                  <Action onClick={() => onPreteach(preteach)}>
+                    <BookOpen size={16} />
+                    Plan a pre-teach lesson
+                  </Action>
+                  <p className="cell-meta">
+                    For {[preteach.standard.code, ...preteach.also].join(", ")} at DOK {preteach.dok}
+                    {preteach.errorTypes.length > 0 && ", aimed at the common errors above"}. Only the cluster, the
+                    DOK level, these standard codes and the error-type counts are sent to the AI — never a
+                    student&rsquo;s name or answer.
+                  </p>
+                </section>
+              )}
               {sbg && <p className="cell-meta">This class is graded Standards-Based, so the grid reads 0–4.</p>}
             </>
           )}

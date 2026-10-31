@@ -73,6 +73,7 @@ import {
   printHtml,
 } from "./teacher-shared";
 import { ClassSuperGrid } from "./class-super-grid";
+import { classSuperGrid, preteachFocus } from "@/lib/super-grid";
 import { schoolYearLabel, schoolYearOptions, teacherSchoolYear } from "@/lib/school-year";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
@@ -273,6 +274,14 @@ export function ReteachView() {
     .filter((id) => students.some((student) => student.id === id));
   const plans = w.lessons.filter((l) => l.classId === classroom.id),
     s = catalog.find((s) => s.code === standard);
+  // A pre-teach lesson from the class super grid (?intent=preteach&cluster=
+  // &dok=): worked out again here from the class's own grid -- the cluster,
+  // the DOK, the cell's weakest standard codes and its error-type names with
+  // counts. Nothing else is sent (docs/student-data-flow.md section 4).
+  const preteach =
+    params.get("intent") === "preteach" && params.get("cluster") && dokLevels.length === 1
+      ? preteachFocus(classSuperGrid(w, classroom), params.get("cluster")!, dokLevels[0])
+      : null;
   const focus =
     dokLevels.length && sourceAssessment && standard
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
@@ -440,8 +449,18 @@ export function ReteachView() {
         text: notes,
         framework: contextFramework,
         grade: contextGrade,
-        intent: lessonIntent,
-        ...(focus ? { dok: focus.dok, errorTypes: focus.errorTypes } : {}),
+        ...(preteach
+          ? {
+              intent: "preteach" as const,
+              cluster: preteach.cluster,
+              alsoStandards: preteach.also,
+              dok: [preteach.dok],
+              errorTypes: preteach.errorTypes,
+            }
+          : {
+              intent: lessonIntent,
+              ...(focus ? { dok: focus.dok, errorTypes: focus.errorTypes } : {}),
+            }),
       });
       setCustom(d.result);
       setEdited(false);
@@ -516,6 +535,26 @@ export function ReteachView() {
           Saved lesson plans<Pill>{plans.length}</Pill>
         </Action>
       </PageTitle>
+      {preteach && (
+        <div className="reteach-context preteach-context">
+          <BookOpen size={21} />
+          <div>
+            <strong>Pre-teach · {preteach.label} · DOK {preteach.dok}</strong>
+            <p>
+              From the class super grid: weakest on {[preteach.standard.code, ...preteach.also].join(", ")}
+            </p>
+            {preteach.errorTypes.length > 0 && (
+              <p className="lesson-focus-errors">
+                Aimed at: {preteach.errorTypes.map((e) => e.name + " (" + e.count + ")").join(", ")}
+              </p>
+            )}
+            <p className="cell-meta">
+              Only these standard codes, the DOK level and the error-type counts are sent to the AI — never a
+              student&rsquo;s name or answer.
+            </p>
+          </div>
+        </div>
+      )}
       {(sourceAssessment || group.length > 1) && (
         <div className="reteach-context">
           <BookOpen size={21} />
@@ -564,7 +603,7 @@ export function ReteachView() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="page-tabs">
           <TabsTrigger value="build">
-            {lessonIntent === "reteach" ? "Build a reteach lesson" : intentStep.label}
+            {preteach ? "Build a pre-teach lesson" : lessonIntent === "reteach" ? "Build a reteach lesson" : intentStep.label}
           </TabsTrigger>
           <TabsTrigger value="plan">
             Saved lesson plans <span>{plans.length}</span>

@@ -23,6 +23,7 @@ import {
 } from "@/lib/prompt-payload";
 import type { AnswerRegion, ElaArea, Standard, Subject, Workspace } from "@/lib/teacher-types";
 import { ALL_ERROR_TYPES, suggestableErrorTypes } from "@/lib/error-types";
+import { clusterLabel, clusterOf } from "@/lib/super-grid";
 
 export type Mode =
   | "assignment"
@@ -167,7 +168,13 @@ export const analyzeInput = z.object({
   duration: z.number().optional(),
   /** What a generated lesson is for (lib/mastery-levels.ts LessonIntent):
    * each mastery level's next step. Absent is a reteach lesson. */
-  intent: z.enum(["reteach", "practice", "reinforcement", "extension"]).optional(),
+  intent: z.enum(["reteach", "practice", "reinforcement", "extension", "preteach"]).optional(),
+  /** A pre-teach lesson from the class super grid (design step 5): the
+   * cluster's key ("7.RP"), turned back into a label from the server's own
+   * catalog, and up to three more of the cluster's weakest standards, as
+   * codes -- each dropped unless the catalog has it. No free text. */
+  cluster: z.string().max(60).optional(),
+  alsoStandards: z.array(z.string().max(60)).max(3).optional(),
   /** A lesson planned from a test's DOK grid (D2): the Webb DOK level(s) to
    * pitch it at, and the common error types on that standard at those levels
    * -- fixed-list names and counts only (lib/teacher-class-analysis.ts
@@ -735,8 +742,22 @@ export function buildPrompt(
     // Each mastery level's next step (lib/mastery-levels.ts): the same lesson
     // shape, aimed at what the students at that level need. No intent is the
     // reteach lesson this has always built.
+    // A pre-teach lesson (class super grid, design step 5): the cluster's
+    // label and its other weak standards, from the catalog -- never from the
+    // request's text.
+    const cluster = p.cluster && clusterOf(s.code, s).key === p.cluster ? clusterLabel(clusterOf(s.code, s)) : "";
+    const also = (p.alsoStandards ?? [])
+      .map((code) => allStandards(w).find((x) => x.code === code && x.framework === s.framework && x.grade === s.grade))
+      .filter((x): x is Standard => !!x && x.code !== s.code)
+      .map((x) => x.code + " (" + x.title + ")");
     const aim =
-      p.intent === "practice"
+      p.intent === "preteach"
+        ? "This is a pre-teach lesson, taught before the next unit -- not a reteach of a past test. Earlier tests showed this class weakest" +
+          (cluster ? " in the " + cluster + " cluster" : "") +
+          " on this standard" +
+          (also.length ? " and on " + also.join(", ") : "") +
+          ". Build the prerequisite understanding, vocabulary and representations students will need so the upcoming work lands: a short launch that surfaces what they already know, a model, guided practice and two exit questions. Include five practice problems that build towards the standard and a correct answer key."
+        : p.intent === "practice"
         ? "This is targeted practice for students approaching the standard (60–79%): they have most of it, so briefly revisit the one step they most often miss, then give focused guided and independent practice on that step, and check with two targeted exit questions. Include five practice problems that build to the full standard and a correct answer key."
         : p.intent === "reinforcement"
           ? "This is optional reinforcement for students meeting the standard (80–89%): keep it short and low-stakes, consolidating the skill with a quick model, mixed practice that applies it in a slightly new context, and two exit questions. Include five practice problems at grade level and a correct answer key."
@@ -757,7 +778,7 @@ export function buildPrompt(
             ", easiest first, and say which DOK level each practice problem is.")
       : "";
     const mistakes = errors.length
-      ? " The most common mistakes on this standard" +
+      ? (p.intent === "preteach" ? " The most common mistakes in this cluster" : " The most common mistakes on this standard") +
         (doks.length ? " at that depth" : "") +
         " were: " +
         errors.map((e) => e.name + " (" + e.count + " answer" + (e.count === 1 ? "" : "s") + ")").join(", ") +
