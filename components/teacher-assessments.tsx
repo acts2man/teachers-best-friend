@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
-import { describeFailure, deleteUploads } from "@/lib/connection";
+import { clearClassScanSession, describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -136,9 +136,9 @@ import {
   writingClassAnalysis,
   type WritingDimensionSummary,
 } from "@/lib/teacher-class-analysis";
-import { gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
+import { classGradingMode, gradingModeLabel, gradingModeOf, SBG_QUESTION_POINTS, score4Text } from "@/lib/grading-mode";
 import { dateGivenOf, dayOf, isDateString, localDateString } from "@/lib/school-year";
-import type { RubricDimension } from "@/lib/teacher-types";
+import type { Classroom, RubricDimension } from "@/lib/teacher-types";
 import {
   alignment,
   questionAlignment,
@@ -512,15 +512,26 @@ export function AssessmentView() {
       setDeleting(false);
       setSelected(null);
       go("/assessments");
-      const kept = await deleteUploads(uploadIds);
+      // Its own scan in progress goes with it: a scan of a deleted test can
+      // never be saved, and left behind it would keep the test's photos
+      // (review of #189). Only this test's: another test's scan may share a
+      // file and is never touched.
+      await clearClassScanSession(a.id);
+      const { failed: kept, keptInScan } = await deleteUploads(uploadIds);
       if (kept)
         toast.error(
           kept +
             (kept === 1 ? " scanned page" : " scanned pages") +
             " couldn't be deleted just now. They'll be removed automatically.",
         );
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     }
   }
+  // The share dialog (review of #191): a class graded the same way as this
+  // test, or one it is already in.
+  const sharesWith = (c: Classroom) =>
+    !!a && (c.id === a.classId || (a.classIds || []).includes(c.id) || classGradingMode(w, c) === gradingModeOf(a));
+  const otherModeClasses = w.classes.filter((c) => !sharesWith(c)).length;
   const filtered = assessments.filter(
     (x) =>
       (subject === "All subjects" || x.subject === subject) &&
@@ -1824,7 +1835,10 @@ export function AssessmentView() {
         {linking && a && (
           <div className="form-stack">
             <div className="link-classes">
-              {w.classes.map((c) => (
+              {/* One test has one mode (review of #191): only classes graded
+                  the same way are offered -- plus any it is already in, so
+                  it can still be taken out of them. */}
+              {w.classes.filter((c) => sharesWith(c)).map((c) => (
                 <label key={c.id} className={c.id === a.classId ? "locked" : ""}>
                   <Checkbox
                     checked={c.id === a.classId || linking.includes(c.id)}
@@ -1855,6 +1869,13 @@ export function AssessmentView() {
                   )}
                 </label>
               ))}
+              {otherModeClasses > 0 && (
+                <p className="field-help">
+                  {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"} graded{" "}
+                  {gradingModeOf(a) === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
+                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                </p>
+              )}
             </div>
             <Action
               disabled={busy}
@@ -2640,7 +2661,8 @@ function PassagePanel({
       // But one upload row can now be shared by identical files (#176): the
       // same PDF that made this test, read again as its passage, IS the
       // test's own file. Only what nothing else uses is deleted.
-      await deleteUploads(uploadsNoLongerUsed(w, ids));
+      const { keptInScan } = await deleteUploads(uploadsNoLongerUsed(w, ids));
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
     } catch (e) {
       toast.error(describeFailure(e, "The passage couldn't be read."));
     } finally {

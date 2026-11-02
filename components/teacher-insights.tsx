@@ -40,7 +40,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { deleteUploads } from "@/lib/connection";
+import { deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
   Action,
@@ -1664,7 +1664,8 @@ export function StudentsView() {
                       )
                     ) {
                       setClearing(false);
-                      const kept = await deleteUploads(cleared.uploadIds);
+                      const { failed: kept, keptInScan } = await deleteUploads(cleared.uploadIds);
+                      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
                       if (kept)
                         toast.error(
                           kept +

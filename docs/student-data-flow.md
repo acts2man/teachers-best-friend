@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live.
 
 ---
 
@@ -397,6 +397,32 @@ never reaches OpenAI: the grading prompt's suggestion list leaves "Other" out
 a fixed-list name like the rest. `buildPrompt` still drops any name not on a
 list, so a typed label that slipped through would be dropped there too. The
 label is shown only to the teacher, in the grading screen and the panels.
+
+**Pre-teach lessons from the class super grid (28 Oct 2026, built, not yet
+live; design step 5 of docs/design/super-grids.md):** "Plan a pre-teach
+lesson" in a super-grid cell's panel opens the lesson builder for the cell's
+weakest standard. The request is a `lesson` request with `intent: "preteach"`
+and carries, besides what every lesson request carries (the standard's
+catalog entry, grade, framework, duration, modality, the teacher's notes):
+
+- `cluster`: the cluster's key ("7.RP"). The server turns it back into a
+  label from its own catalog (`clusterOf`/`clusterLabel` on the standard) and
+  drops it if it does not match -- so no text from the request reaches the
+  prompt through it;
+- `alsoStandards`: the cell's next weakest standard codes -- two at most, so
+  three in all with the lesson's own standard (the schema caps it at three), each
+  dropped unless the catalog has it for that grade and framework (the prompt
+  gets the catalog's code and title);
+- `dok`: the cell's DOK level, a number 1–4;
+- `errorTypes`: the error types tagged on the cell's answers across the class's
+  tests this school year, as fixed-list names and counts -- a typed "Other: x"
+  only as "Other" (`preteachFocus` in `lib/super-grid.ts`); `buildPrompt`
+  still drops any name not on a list.
+
+It never carries a student name, id, answer, wrong-answer text, score or
+roster: the counts are a class-level aggregate over one cluster at one DOK.
+The published pages say so (how-we-use-ai "What is sent", privacy §8,
+student-data-privacy "What is sent").
 
 ## 5. Results back to the teacher
 

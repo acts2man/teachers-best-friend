@@ -1,5 +1,6 @@
 import { average4, gradingModeOf, isSbg, SBG_QUESTION_POINTS, score4OfMatch, score4Text } from "./grading-mode";
 import { isSecondChoice, withoutStandardNote } from "./standard-match";
+import { shownErrorType } from "./error-types";
 import { masteryLevel4, masteryPercent, type MasteryLevel as MasteryLevelName } from "./mastery-levels";
 import type {
   AnswerRegion,
@@ -875,11 +876,12 @@ function studentCognitiveSection(a: Assessment, reviewed: StudentResponse[]): st
   return out;
 }
 
-/** The error types tagged on one student's reviewed answers, most common first. */
-function studentErrorSection(reviewed: StudentResponse[]): string {
+/** The error types tagged on one student's reviewed answers, most common
+ * first -- only tags on the test's current list (shownErrorType). */
+function studentErrorSection(a: Assessment, reviewed: StudentResponse[]): string {
   const counts = new Map<string, number>();
   for (const r of reviewed) {
-    const errorType = (r.errorType || "").trim();
+    const errorType = shownErrorType(a, r.errorType);
     if (!errorType) continue;
     counts.set(errorType, (counts.get(errorType) || 0) + 1);
   }
@@ -942,7 +944,7 @@ export function studentReport(a: Assessment, student: Student) {
       })
       .join("\n") +
     studentCognitiveSection(a, summary.reviewed) +
-    studentErrorSection(summary.reviewed) +
+    studentErrorSection(a, summary.reviewed) +
     "\n\nQUESTION REVIEW\n" +
     summary.questions
       .map((q) => {

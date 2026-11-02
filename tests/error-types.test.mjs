@@ -139,7 +139,7 @@ test("per-standard breakdown attaches error types to the right standard", () => 
 test("untagged answers produce no error-type rows", () => {
   const students = [{ id: "s-1", name: "Ana", classId: "c", color: "#000", evidence: [], notes: "" }];
   const a = assessment([resp("1", "q1", "10")]);
-  assert.deepEqual(tallyErrorTypes(a.responses, students), []);
+  assert.deepEqual(tallyErrorTypes(a.responses, students, errorTypesFor("Math")), []);
   assert.deepEqual(assessmentErrorTypes(a, students), []);
 });
 
@@ -151,7 +151,8 @@ test("Grade by question offers an error-type picker for a decided, below-full gr
   // incorrect group must allow a common error to be chosen").
   assert.match(ui, /!fullCredit && types\.length > 0/, "only below full credit");
   assert.match(ui, /setGroupErrorType\(a, group\.responseIds, errorType\)/, "tags the whole group");
-  assert.match(ui, /value=\{g\.errorType\}/, "reflects the current tag");
+  assert.match(ui, /value=\{tagged\}/, "reflects the current tag (when it is on the list)");
+  assert.match(ui, /const tagged = shownErrorType\(a, g\.errorType\);/);
 });
 
 test("Class analysis renders the error-type roll-up, assessment-wide and per standard", () => {

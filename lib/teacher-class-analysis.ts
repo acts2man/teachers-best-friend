@@ -1,4 +1,4 @@
-import { errorTypeForAi, errorTypesFor, onErrorList } from "./error-types";
+import { errorTypeForAi, errorTypesFor, onErrorList, shownErrorType } from "./error-types";
 import { average4, isSbg, score4Text } from "./grading-mode";
 import type {
   Assessment,
@@ -64,18 +64,22 @@ export type StandardMastery = {
 
 /**
  * Tallies the error types a teacher tagged across a set of responses, with the
- * students who made each. Untagged answers are ignored. Ordered most common
- * first so the class view leads with what most needs addressing.
+ * students who made each. Untagged answers are ignored, and so is any tag not
+ * on `listed` -- the test's current list (review of #190: an old tab must not
+ * bring the replaced Math tags back on screen); a typed "Other: x" counts as
+ * its own label. Ordered most common first so the class view leads with what
+ * most needs addressing.
  */
 export function tallyErrorTypes(
   responses: StudentResponse[],
   students: Student[],
+  listed: readonly string[],
 ): ErrorTypeTally[] {
   const byId = new Map(students.map((s) => [s.id, s]));
   const byType = new Map<string, { students: Map<string, Student>; count: number }>();
   for (const r of responses) {
     const errorType = (r.errorType || "").trim();
-    if (!errorType) continue;
+    if (!errorType || !onErrorList(listed, errorType)) continue;
     const entry = byType.get(errorType) || { students: new Map(), count: 0 };
     entry.count += 1;
     const student = byId.get(r.studentId);
@@ -104,6 +108,7 @@ export function assessmentErrorTypes(
   return tallyErrorTypes(
     a.responses.filter((r) => active.has(r.questionId)),
     students,
+    errorTypesFor(a.subject, a.elaArea),
   );
 }
 
@@ -120,7 +125,7 @@ export function studentErrorTypes(
   const counts = new Map<string, number>();
   for (const r of a.responses) {
     if (r.studentId !== studentId || !active.has(r.questionId)) continue;
-    const errorType = (r.errorType || "").trim();
+    const errorType = shownErrorType(a, r.errorType);
     if (!errorType) continue;
     counts.set(errorType, (counts.get(errorType) || 0) + 1);
   }
@@ -261,6 +266,7 @@ export function classAnalysis(
         errorTypes: tallyErrorTypes(
           a.responses.filter((r) => qIds.has(r.questionId)),
           students,
+          errorTypesFor(a.subject, a.elaArea),
         ),
         instruction: (!reteach.length
           ? "No reteach needed"
@@ -380,7 +386,7 @@ export function dokCellDetail(
   const listed = errorTypesFor(a.subject, a.elaArea);
   const answers = a.responses.filter((r) => r.verified && ids.has(r.questionId));
   // A typed "Other" label is the teacher's own, shown here as they wrote it.
-  const errorTypes = tallyErrorTypes(answers, students).filter((t) => onErrorList(listed, t.errorType));
+  const errorTypes = tallyErrorTypes(answers, students, listed);
   const wrong = new Map<string, { answer: string; count: number }>();
   for (const r of answers) {
     if (responseMatch(r) >= 100) continue;
@@ -436,8 +442,8 @@ export function lessonFocus(
   for (const t of tallyErrorTypes(
     a.responses.filter((r) => r.verified && ids.includes(r.questionId)),
     [],
+    listed,
   )) {
-    if (!onErrorList(listed, t.errorType)) continue;
     const name = errorTypeForAi(t.errorType);
     counts.set(name, (counts.get(name) ?? 0) + t.count);
   }

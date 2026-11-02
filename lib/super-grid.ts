@@ -17,7 +17,7 @@
  * questions, the AI's unchecked second choice and unconfirmed answers never
  * do; a question with no DOK is left out and counted.
  */
-import { errorTypesFor } from "./error-types";
+import { ALL_ERROR_TYPES, errorTypeForAi, errorTypesFor } from "./error-types";
 import { average4, classGradingMode, type GradingMode } from "./grading-mode";
 import { masteryLevel, masteryLevel4, masteryPercent, type MasteryLevelInfo } from "./mastery-levels";
 import { daysSinceGiven, givenInSchoolYear, teacherSchoolYear } from "./school-year";
@@ -108,7 +108,7 @@ export type SuperGridCell = Score & {
   /** Tests those questions came from. */
   tests: number;
   /** The cluster's standards in this cell, weakest first. */
-  standards: (Score & { code: string; title: string; questions: number })[];
+  standards: (Score & { code: string; title: string; questions: number; grade: number; framework: string })[];
   /** The error types tagged on the cell's answers, from each test's fixed
    * list (a typed "Other" label as the teacher wrote it), most common first. */
   errorTypes: { name: string; count: number }[];
@@ -231,6 +231,9 @@ export function classSuperGrid(
               return {
                 code,
                 title: of[0].title,
+                // The test's, so a lesson finds the standard in its catalog.
+                grade: of[0].a.grade,
+                framework: of[0].a.framework,
                 questions: of.length,
                 ...score(of.flatMap((i) => i.answers.map((x) => x.match)), mode),
               };
@@ -243,4 +246,48 @@ export function classSuperGrid(
       }),
     }));
   return { rows, mode, schoolYear, tests: tests.length, noDok };
+}
+
+/**
+ * What a pre-teach lesson planned from a super-grid cell sends to the AI
+ * (design step 5; docs/student-data-flow.md section 4): the cluster (its key,
+ * which the server turns back into a label from its own catalog), the DOK
+ * level, the cell's weakest standards (codes, at most three, weakest first),
+ * and its error types as fixed-list names with counts -- a typed "Other: x"
+ * only as "Other". No student, no answer, no free text. Null when the cell
+ * is not there or has no graded standard. Pure.
+ */
+export type PreteachFocus = {
+  cluster: string;
+  label: string;
+  dok: 1 | 2 | 3 | 4;
+  /** The lesson's standard: the weakest graded one. */
+  standard: { code: string; grade: number; framework: string };
+  /** The next weakest, codes only. */
+  also: string[];
+  errorTypes: { name: string; count: number }[];
+};
+
+export function preteachFocus(grid: SuperGrid, clusterKey: string, dok: number): PreteachFocus | null {
+  const row = grid.rows.find((r) => r.cluster.key === clusterKey);
+  const cell = row?.cells.find((c) => c.dok === dok);
+  if (!row || !cell) return null;
+  const graded = cell.standards.filter((s) => s.level);
+  if (!graded.length) return null;
+  const counts = new Map<string, number>();
+  for (const e of cell.errorTypes) {
+    const name = errorTypeForAi(e.name);
+    if (ALL_ERROR_TYPES.includes(name)) counts.set(name, (counts.get(name) ?? 0) + e.count);
+  }
+  return {
+    cluster: row.cluster.key,
+    label: row.label,
+    dok: cell.dok,
+    standard: { code: graded[0].code, grade: graded[0].grade, framework: graded[0].framework },
+    also: graded.slice(1, 3).map((s) => s.code),
+    errorTypes: [...counts]
+      .map(([name, count]) => ({ name, count }))
+      .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+      .slice(0, 10),
+  };
 }

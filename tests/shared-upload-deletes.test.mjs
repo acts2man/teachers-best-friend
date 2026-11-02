@@ -101,8 +101,9 @@ test("no code sends DELETE /api/uploads/<id> itself: only deleteUploads does", a
     }
   }
   assert.deepEqual(offenders, []);
-  // And deleteUploads itself is the one place, fetching per id.
-  assert.match(readFileSync("lib/connection.ts", "utf8"), /fetch\("\/api\/uploads\/" \+ encodeURIComponent\(id\), \{\s*method: "DELETE",/);
+  // And deleteUploads itself is the one place: one batch request per call
+  // (#187 review), not one per photo.
+  assert.match(readFileSync("lib/connection.ts", "utf8"), /fetch\("\/api\/uploads\/delete", \{\s*method: "POST",/);
 });
 
 test("the server refuses (409) to delete a file something still uses", () => {
@@ -111,11 +112,12 @@ test("the server refuses (409) to delete a file something still uses", () => {
   assert.ok(del.indexOf("uploadStillReferenced(ownerId, id)") > 0 && del.indexOf("uploadStillReferenced(ownerId, id)") < del.indexOf("deleteDocument(ownerId, id)"), "checked before deleting");
   assert.match(del, /throw new HttpError\(409,/);
   const server = readFileSync("lib/teacher-server.ts", "utf8");
-  const fn = server.slice(server.indexOf("export async function uploadStillReferenced("), server.indexOf("export async function deleteDocument("));
-  assert.match(fn, /uploadsNoLongerUsed\(saved\.data, \[id\]\)\.length === 0/, "the workspace, by the same rule as the app");
+  const fn = server.slice(server.indexOf("export async function uploadsStillReferenced("), server.indexOf("export async function deleteDocument("));
+  assert.match(fn, /uploadsNoLongerUsed\(saved\.data, ids\)/, "the workspace, by the same rule as the app");
   assert.match(fn, /\.from\("class_scan_sessions"\)/, "and a class scan in progress");
-  // A kept file is not a failed delete.
-  assert.match(readFileSync("lib/connection.ts", "utf8"), /return r\.ok \|\| r\.status === 404 \|\| r\.status === 409;/);
+  assert.match(fn, /return \(await uploadsStillReferenced\(ownerId, \[id\]\)\)\.has\(id\);/, "the one-file check is the same check");
+  // A kept file is not a failed delete: only reply.failed (or no reply) counts.
+  assert.match(readFileSync("lib/connection.ts", "utf8"), /failed \+= reply\.failed\.length;/);
 });
 
 test("the migration never says DROP, even in a comment", () => {
