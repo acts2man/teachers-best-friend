@@ -26,12 +26,23 @@ import { useTeacher } from "./teacher-context";
 import { ScanCamera } from "./scan-camera";
 import { PhotoImport } from "./photo-import";
 import { ImageViewer } from "./image-viewer";
-import { deviceId, useScanSession } from "./use-scan-session";
+import { deviceId, tabId, useScanSession } from "./use-scan-session";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   GRADING_STALE_MS,
   groupLayout,
   pagesWithoutRow,
   inFlightMatches,
+  dismissFailed,
   failedElsewhere,
   isEmptySession,
   parseProgress,
@@ -323,10 +334,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   // device neither grades the same stack again nor erases the note when it
   // saves. `gradingAt` is this device's own note, refreshed while it grades.
   const [device] = useState(deviceId);
+  // This tab's failed-page count is kept under its own key, so two tabs on
+  // one device never overwrite each other's (review of #194).
+  const [failedKey] = useState(() => device + "/" + tabId());
+  const [dismissing, setDismissing] = useState(false);
   const [remoteGrading, setRemoteGrading] = useState<ScanSession["grading"]>(null);
   // Pages that did not upload on the teacher's other devices (review of
   // #188): grading waits on them as on this device's own.
   const [remoteFailed, setRemoteFailed] = useState<Record<string, number>>({});
+  // Other devices' pages the teacher left out from here, at those counts.
+  const [dismissed, setDismissed] = useState<Record<string, number>>({});
   const [gradingAt, setGradingAt] = useState(0);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -358,18 +375,20 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       pageUploadIds: groups ? pageUploadIds : [],
       grading: null,
       // Every other device's count as last seen, and this device's own.
-      failed: { ...remoteFailed, [device]: failedPages.length },
+      failed: { ...remoteFailed, [failedKey]: failedPages.length },
+      dismissed,
     };
     if (isEmptySession(s)) return null;
     return s;
-  }, [piles, progress, groups, discarded, pageUploadIds, remoteFailed, device, failedPages.length]);
-  const otherFailed = failedElsewhere({ failed: remoteFailed }, device);
+  }, [piles, progress, groups, discarded, pageUploadIds, remoteFailed, dismissed, failedKey, failedPages.length]);
+  const otherFailed = failedElsewhere({ failed: remoteFailed, dismissed }, failedKey);
   /** Shows what the other device saved. `null` means it saved the class or
    * started over, so this device clears too -- without releasing the pages,
    * which the other device already settled. */
   function applyRemote(next: ScanSession | null) {
     setRemoteGrading(next?.grading ?? null);
-    setRemoteFailed(Object.fromEntries(Object.entries(next?.failed ?? {}).filter(([d]) => d !== device)));
+    setRemoteFailed(Object.fromEntries(Object.entries(next?.failed ?? {}).filter(([d]) => d !== failedKey)));
+    setDismissed(next?.dismissed ?? {});
     setEdited(next ? next.piles : EMPTY);
     setProgress(next?.progress ?? null);
     setGroups(next?.groups ?? null);
@@ -380,6 +399,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const sync = useScanSession({
     assessmentId: a.id,
     device,
+    failedKey,
     session: useMemo(
       () =>
         session && {
@@ -915,6 +935,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   function reset() {
     clearFailed();
+    // Starting over clears the other devices' counts too (review of #194).
+    setRemoteFailed({});
+    setDismissed({});
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
     void releaseStack(pageUploadIds);
@@ -1923,14 +1946,40 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           {otherFailed > 0 && (
             <div className="review-notice failed-pages-elsewhere" data-tone="warn" role="status">
               <AlertCircle size={18} />
-              <p>
-                {(otherFailed === 1
-                  ? "1 page didn't upload on your other device. Retry it there, or leave it out there,"
-                  : otherFailed + " pages didn't upload on your other device. Retry each one there, or leave it out there,") +
-                  " before grading."}
-              </p>
+              <div>
+                <p>
+                  {(otherFailed === 1
+                    ? "1 page didn't upload on your other device. Retry it there, or leave it out there,"
+                    : otherFailed + " pages didn't upload on your other device. Retry each one there, or leave it out there,") +
+                    " before grading."}
+                </p>
+                {/* A device never opened again must not block grading for
+                    ever (review of #194): leave its pages out from here. */}
+                <button className="text-link" disabled={busyScanning || busy} onClick={() => setDismissing(true)}>
+                  Leave {otherFailed === 1 ? "it" : "them"} out
+                </button>
+              </div>
             </div>
           )}
+          <AlertDialog open={dismissing} onOpenChange={setDismissing}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {otherFailed === 1 ? "1 page" : otherFailed + " pages"} failed on another device — leave{" "}
+                  {otherFailed === 1 ? "it" : "them"} out?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Grading here goes ahead without {otherFailed === 1 ? "it" : "them"}. The photo
+                  {otherFailed === 1 ? " stays" : "s stay"} on that device; if it sends{" "}
+                  {otherFailed === 1 ? "it" : "them"} again, you&apos;ll be asked again.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep waiting</AlertDialogCancel>
+                <AlertDialogAction onClick={() => setDismissed(dismissFailed({ failed: remoteFailed, dismissed }, failedKey))}>Leave {otherFailed === 1 ? "it" : "them"} out</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {captured.length > 0 && !groups && (
             <Action
               className="guided-primary"

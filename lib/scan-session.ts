@@ -201,6 +201,14 @@ export type ScanSession = {
    * count. Absent (or no entry) is none.
    */
   failed?: Record<string, number>;
+  /**
+   * Counts another device's pages were left out at (review of #194): a
+   * device never opened again must not block grading for ever, so the
+   * teacher can leave its pages out from here. Kept by key, at the count
+   * left out: that device blocks again only if it reports MORE failed pages
+   * than that. A merge keeps the larger; a key with no count is dropped.
+   */
+  dismissed?: Record<string, number>;
 };
 
 /** How often a grading device refreshes its "I am grading this" note. The
@@ -293,9 +301,11 @@ export function parseSession(raw: unknown): ScanSession | null {
       ? { device: r.grading.device, at: r.grading.at }
       : null;
   const failed = cleanFailed(r.failed);
+  const dismissed = failed ? cleanFailed(r.dismissed) : undefined;
   const session: ScanSession = {
     v: 1,
     ...(failed ? { failed } : {}),
+    ...(dismissed ? { dismissed } : {}),
     piles: piles.length ? piles : [[]],
     progress,
     groups: groups && groups.length ? groups : null,
@@ -319,9 +329,55 @@ function cleanFailed(raw: unknown): Record<string, number> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Pages that did not upload on devices other than this one. */
-export function failedElsewhere(s: Pick<ScanSession, "failed"> | null, device: string): number {
-  return Object.entries(s?.failed ?? {}).reduce((sum, [d, n]) => (d === device ? sum : sum + n), 0);
+/** A value as stable text: object keys sorted, so the same state read back
+ * from jsonb (which reorders keys) compares equal. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";
+  if (v && typeof v === "object")
+    return (
+      "{" +
+      Object.keys(v as Record<string, unknown>)
+        .sort()
+        .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+        .map((k) => JSON.stringify(k) + ":" + canonical((v as Record<string, unknown>)[k]))
+        .join(",") +
+      "}"
+    );
+  return JSON.stringify(v ?? null);
+}
+
+/**
+ * Whether a save changes nothing but the failed-page counts (review of #194):
+ * such a save must not push the scan's expiry back, or a count nobody can
+ * settle (a phone never opened again) would keep the scan alive -- and the
+ * computer blocked -- for ever. Pure.
+ */
+export function onlyFailedChanged(before: unknown, after: unknown): boolean {
+  const strip = (s: unknown) => {
+    if (!s || typeof s !== "object") return s;
+    const { failed: _f, ...rest } = s as Record<string, unknown>;
+    void _f;
+    return rest;
+  };
+  return canonical(strip(before)) === canonical(strip(after));
+}
+
+/** Pages that did not upload on devices (and tabs) other than this one --
+ * not counting a device whose pages were left out at that count or more. */
+export function failedElsewhere(s: Pick<ScanSession, "failed" | "dismissed"> | null, device: string): number {
+  const left = s?.dismissed ?? {};
+  return Object.entries(s?.failed ?? {}).reduce(
+    (sum, [d, n]) => (d === device || n <= (left[d] ?? 0) ? sum : sum + n),
+    0,
+  );
+}
+
+/** The other devices' counts, recorded as left out (the teacher's "Leave
+ * them out" on this device). */
+export function dismissFailed(s: Pick<ScanSession, "failed" | "dismissed">, device: string): Record<string, number> {
+  const out = { ...(s.dismissed ?? {}) };
+  for (const [d, n] of Object.entries(s.failed ?? {})) if (d !== device) out[d] = Math.max(out[d] ?? 0, n);
+  return out;
 }
 
 /** Nothing scanned, nothing graded, nothing to match, nothing waiting to
@@ -399,9 +455,15 @@ export function mergeSessions(server: ScanSession, local: ScanSession, device?: 
     if (!device) failedMap[d] = Math.max(failedMap[d] ?? 0, n);
   if (device) failedMap[device] = local.failed?.[device] ?? 0;
   const failed = cleanFailed(failedMap);
+  // A leave-out made on either side holds; only for devices with a count.
+  const dismissedMap: Record<string, number> = {};
+  for (const [d, n] of [...Object.entries(server.dismissed ?? {}), ...Object.entries(local.dismissed ?? {})])
+    if (failed?.[d]) dismissedMap[d] = Math.max(dismissedMap[d] ?? 0, n);
+  const dismissed = cleanFailed(dismissedMap);
   return {
     v: 1,
     ...(failed ? { failed } : {}),
+    ...(dismissed ? { dismissed } : {}),
     piles: piles.length ? piles : [[]],
     progress: groups ? null : progress,
     groups,

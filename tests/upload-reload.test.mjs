@@ -84,12 +84,12 @@ test("(b) merging keeps the other device's count and this device's own", () => {
   // On the phone, after leaving its page out: 0 is the phone's own.
   assert.equal(S.mergeSessions(server, mine, "phone").failed?.phone, undefined);
   const hook = readFileSync("components/use-scan-session.ts", "utf8");
-  assert.equal((hook.match(/mergeSessions\(theirs, (state|mine), device\)/g) ?? []).length, 2, "both merges pass the device");
+  assert.equal((hook.match(/mergeSessions\(theirs, (state|mine), failedKey \?\? device\)/g) ?? []).length, 2, "both merges pass this tab's key");
 });
 
 test("(b) grading refuses while another device has a failed page", () => {
-  assert.match(panel, /failed: \{ \.\.\.remoteFailed, \[device\]: failedPages\.length \},/, "this device's count is saved");
-  assert.match(panel, /setRemoteFailed\(Object\.fromEntries\(Object\.entries\(next\?\.failed \?\? \{\}\)\.filter\(\(\[d\]\) => d !== device\)\)\);/);
+  assert.match(panel, /failed: \{ \.\.\.remoteFailed, \[failedKey\]: failedPages\.length \},/, "this tab's count is saved");
+  assert.match(panel, /setRemoteFailed\(Object\.fromEntries\(Object\.entries\(next\?\.failed \?\? \{\}\)\.filter\(\(\[d\]\) => d !== failedKey\)\)\);/);
   const grade = panel.slice(panel.indexOf("if (failedPages.length) {"));
   assert.match(grade, /if \(otherFailed\) \{\s*toast\.error\(/);
   assert.match(grade, /" upload on your other device\. Retry or leave out each one there before grading\."/);

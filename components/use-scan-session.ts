@@ -12,6 +12,22 @@ import {
 const SAVE_DELAY_MS = 800;
 
 /** This browser's id, so a device can tell its own grading lock from another's. */
+/** This tab's id, kept across its reloads (sessionStorage) and different in
+ * every other tab: the failed-page count is kept per tab, so two tabs on one
+ * device never overwrite each other's (review of #194). */
+export function tabId(): string {
+  try {
+    const key = "tbf.tab";
+    const found = sessionStorage.getItem(key);
+    if (found) return found;
+    const made = crypto.randomUUID();
+    sessionStorage.setItem(key, made);
+    return made;
+  } catch {
+    return "tab-" + Math.random().toString(36).slice(2);
+  }
+}
+
 export function deviceId(): string {
   try {
     const key = "tbf.device";
@@ -70,6 +86,7 @@ function wasSynced(assessmentId: string) {
 export function useScanSession({
   assessmentId,
   device,
+  failedKey,
   session,
   apply,
   paused,
@@ -77,6 +94,9 @@ export function useScanSession({
   assessmentId: string;
   /** This browser's id, so it can release only its own grading note. */
   device: string;
+  /** The key this tab's failed-page count is kept under (device + tab):
+   * merges keep this one as this tab knows it. Defaults to the device. */
+  failedKey?: string;
   session: ScanSession | null;
   apply: (next: ScanSession | null) => void;
   paused: boolean;
@@ -119,7 +139,7 @@ export function useScanSession({
             revision.current = remote.revision;
             const theirs = parseSession(remote.state);
             agreed.current = theirs ? sessionFingerprint(theirs) : null;
-            state = theirs ? mergeSessions(theirs, state, device) : state;
+            state = theirs ? mergeSessions(theirs, state, failedKey ?? device) : state;
             applyRef.current(state);
             continue;
           }
@@ -137,7 +157,7 @@ export function useScanSession({
         saving.current = false;
       }
     },
-    [assessmentId, device],
+    [assessmentId, device, failedKey],
   );
 
   const pull = useCallback(async () => {
@@ -176,7 +196,7 @@ export function useScanSession({
         !!mine && sessionFingerprint(mine) !== (agreed.current ?? sessionFingerprint(theirs));
       if (mine && mineChanged && (first || agreed.current)) {
         // Both sides moved: keep everything from both, then save that.
-        const merged = mergeSessions(theirs, mine, device);
+        const merged = mergeSessions(theirs, mine, failedKey ?? device);
         agreed.current = sessionFingerprint(theirs);
         applyRef.current(merged);
         await put(merged);
@@ -188,7 +208,7 @@ export function useScanSession({
     } catch {
       // Offline: carry on with what this device has.
     }
-  }, [url, put, assessmentId, device]);
+  }, [url, put, assessmentId, device, failedKey]);
 
   // First load, then whenever the tab comes back or the network returns, then
   // on a self-scheduling timer: a few seconds while a scan is being worked (so a

@@ -6,7 +6,10 @@
 //   dup          the same, when the other device already put that very file
 //                in the pile: it is not placed twice;
 //   otherFailed  a failed page on the other device (saved with the scan
-//                session) blocks grading here until that device settles it.
+//                session) blocks grading here until that device settles it;
+//   dismiss      or until the teacher leaves it out from here, after a
+//                confirm -- and the same stale count saved again does not
+//                bring the block back (review of #194).
 // Only the network is stood in for (demo data, no AI spend).
 import { chromium } from "playwright";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -121,6 +124,34 @@ async function run(W, H, mode) {
   const gradeButton = () => page.locator("button").filter({ hasText: /^Grade/ }).first();
   try {
     await page.goto(`${BASE}/assessments?id=ela-demo&tab=responses`, { waitUntil: "networkidle", timeout: 30000 });
+    if (mode === "dismiss") {
+      // The phone has a failed page and is never opened again: the computer
+      // leaves it out (review of #194).
+      remote.state = { v: 1, piles: [[{ key: "k1", label: "p", bodyId: "upload-x", stripId: null, pages: 1 }], []], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, failed: { "the-phone": 1 } };
+      remote.revision = 3;
+      await page.reload({ waitUntil: "networkidle" });
+      const notice = page.locator(".failed-pages-elsewhere");
+      await notice.waitFor({ timeout: 20000 });
+      await notice.getByRole("button", { name: "Leave it out" }).click();
+      const dialog = page.getByRole("alertdialog");
+      await dialog.waitFor({ timeout: 5000 });
+      const title = (await dialog.locator("h2").innerText()).replace(/\s+/g, " ").trim();
+      check(title === "1 page failed on another device — leave it out?", `${tag}: it asks first ("${title}")`);
+      await dialog.getByRole("button", { name: "Leave it out" }).click();
+      await page.waitForFunction(() => !document.querySelector(".failed-pages-elsewhere"), null, { timeout: 10000 });
+      await sleep(1500);
+      check(JSON.stringify(remote.state?.dismissed) === JSON.stringify({ "the-phone": 1 }), `${tag}: the leave-out is saved with the scan (${JSON.stringify(remote.state?.dismissed)})`);
+      // The phone saving its same stale count again does not bring the block back.
+      remote.state = { ...remote.state, failed: { ...remote.state.failed, "the-phone": 1 } };
+      remote.revision++;
+      await sleep(6000);
+      check((await page.locator(".failed-pages-elsewhere").count()) === 0, `${tag}: the stale count saved again does not block`);
+      await gradeButton().click();
+      for (let t = 0; t < 100 && !grading.length; t++) await sleep(100);
+      check(grading.length === 1, `${tag}: grading starts without the phone's page`);
+      check(errors.length === 0, `${tag}: no page errors ${errors.join(" | ")}`);
+      return;
+    }
     if (mode === "otherFailed") {
       // The phone has a failed page; this is the computer.
       remote.state = { v: 1, piles: [[{ key: "k1", label: "p", bodyId: "upload-x", stripId: null, pages: 1 }], []], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, failed: { "the-phone": 1 } };
@@ -128,7 +159,7 @@ async function run(W, H, mode) {
       await page.reload({ waitUntil: "networkidle" });
       const notice = page.locator(".failed-pages-elsewhere");
       await notice.waitFor({ timeout: 20000 });
-      const said = (await notice.innerText()).replace(/\s+/g, " ");
+      const said = (await notice.locator("p").innerText()).replace(/\s+/g, " ").trim();
       check(said === "1 page didn't upload on your other device. Retry it there, or leave it out there, before grading.", `${tag}: the other device's failed page is shown here ("${said}")`);
       await gradeButton().click();
       await sleep(1500);
@@ -182,7 +213,7 @@ async function run(W, H, mode) {
   await ctx.close();
 }
 
-for (const [W, H] of [[390, 844], [1366, 768]]) for (const mode of ["reload", "dup", "otherFailed"]) await run(W, H, mode);
+for (const [W, H] of [[390, 844], [1366, 768]]) for (const mode of ["reload", "dup", "otherFailed", "dismiss"]) await run(W, H, mode);
 await browser.close();
 for (const m of pass) console.log("PASS", m);
 for (const m of fail) console.log("FAIL", m);
