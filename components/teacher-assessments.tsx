@@ -205,6 +205,20 @@ export function AssessmentView() {
     setSelected(params.get("id"));
     setTab(params.get("tab") || "questions");
   }, [params]);
+  // Picked from the Assessment library: "skip straight to upload student
+  // work" (Ricky, 27 Oct 2026), so the class-set upload is brought into view
+  // -- on a phone it sits below the test's summary.
+  const fromLibrary = params.get("from") === "library";
+  useEffect(() => {
+    if (!fromLibrary || !selected) return;
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const el = document.querySelector(".student-review-space");
+      if (el || ++tries > 40) window.clearInterval(id);
+      el?.scrollIntoView({ block: "start" });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [fromLibrary, selected]);
   const a = assessments.find((x) => x.id === selected);
   // Questions on standards outside the assessment's list (Michael, 19 Oct):
   // said apart, no longer counted as 0 in the alignment.
@@ -815,7 +829,11 @@ export function AssessmentView() {
             <div>
               <span>Student work</span>
               <strong>
-                {new Set(a.responses.map((r) => r.studentId)).size} added
+                {/* This class's students only: a test used in more than one
+                    class (the share dialog, the Assessment library) holds
+                    every class's work, and Class B was told "24 added" for
+                    the first class's 24. */}
+                {new Set(a.responses.filter((r) => students.some((s) => s.id === r.studentId)).map((r) => r.studentId)).size} added
               </strong>
             </div>
           </div>

@@ -24,7 +24,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTeacher } from "./teacher-context";
 import { Action, PageTitle, Pick, Pill, SectionTitle } from "./teacher-shared";
 import { catalogFor } from "@/lib/teacher-catalog";
-import { uploadsNoLongerUsed } from "@/lib/teacher-classes";
+import { assessmentInClass, uploadsNoLongerUsed } from "@/lib/teacher-classes";
+import { inLibrary, libraryClassesFor } from "@/lib/assessment-library";
 import { gradeForSubject, gradeLabel, gradeOptions } from "@/lib/grade-labels";
 import { makeManualQuestions, reconcileEvidence } from "@/lib/teacher-data";
 import { safePdfText } from "@/lib/pdf-text";
@@ -55,6 +56,10 @@ type Uploaded = { id: string; name: string; size: number; mime: string };
 export function ScanView() {
   const { w, classroom, assessments, students, save, busy, aiReady, quota, go } =
     useTeacher();
+  // Library tests this class could use but does not yet (lib/assessment-library.ts).
+  const libraryCount = w.assessments.filter(
+    (a) => inLibrary(a) && !assessmentInClass(a, classroom.id) && libraryClassesFor(w, a).some((c) => c.id === classroom.id),
+  ).length;
   const params = useSearchParams();
   const mode = params.get("mode") === "responses" ? "responses" : "assignment";
   // The server refuses a scan past the plan's limit with a 402, which used to
@@ -679,6 +684,17 @@ export function ScanView() {
         }
       />
       <div className="focused-scan">
+        {mode === "assignment" && !editing && libraryCount > 0 && (
+          // The library (Ricky, 27 Oct 2026): a test already set up in another
+          // class needs no second upload -- pick it and go to student work.
+          <p className="field-help library-hint">
+            Giving a test you already set up?{" "}
+            <button type="button" className="text-link inline" onClick={() => go("/library")}>
+              Pick it from your Assessment library
+            </button>{" "}
+            and go straight to uploading student work.
+          </p>
+        )}
         {mode === "assignment" && (
           <div className="scan-progress" aria-label="Assessment setup">
             <button
