@@ -104,6 +104,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
       check((await page.getByRole("dialog", { name: "Blurry photo" }).count()) === 0, `${tag}: a sharp photo asks nothing`);
       check((await thumbs(page)) === 1, `${tag}: and is added at once`);
       check((await tip.count()) === 0, `${tag}: the tip goes once a photo is taken`);
+      check(sent.length === 0, `${tag}: a sharp photo is checked without sending anything (${sent.join(", ")})`);
       check(errors.length === 0, `${tag}: sharp -- no page errors ${errors.join(" | ")}`);
     } catch (e) {
       fail.push(`${tag} sharp: stopped -- ${String(e.message || e).split("\n")[0]}`);
