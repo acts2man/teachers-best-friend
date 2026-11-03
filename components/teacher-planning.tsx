@@ -278,10 +278,14 @@ export function ReteachView() {
   // &dok=): worked out again here from the class's own grid -- the cluster,
   // the DOK, the cell's weakest standard codes and its error-type names with
   // counts. Nothing else is sent (docs/student-data-flow.md section 4).
-  const preteach =
+  const preteachAt =
     params.get("intent") === "preteach" && params.get("cluster") && dokLevels.length === 1
       ? preteachFocus(classSuperGrid(w, classroom), params.get("cluster")!, dokLevels[0])
       : null;
+  // Only while the Focus skill is still the cell's weakest standard (review
+  // of #197): pick another and the extra codes, error counts and banner go --
+  // it is then an ordinary lesson for the skill chosen.
+  const preteach = preteachAt && standard === preteachAt.standard.code ? preteachAt : null;
   const focus =
     dokLevels.length && sourceAssessment && standard
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
@@ -404,7 +408,9 @@ export function ReteachView() {
     printHtml((practiceOnly ? "Practice · " : "") + s.title, mathTextToHtml(material, { mathml: supportsMathML() }));
   }
   async function saveLesson() {
-    if (!s || !content || !group.length) return;
+    // No student or group is a plan for the whole class (Ricky: lesson plans
+    // must save with nobody selected).
+    if (!s || !content) return;
     const lesson: Lesson = {
       id: savedId || crypto.randomUUID(),
       classId: classroom.id,
@@ -710,7 +716,7 @@ export function ReteachView() {
                         ? group[0].name
                         : group.length
                           ? group.length + " students in saved plan"
-                          : "Choose the student this plan will support"}
+                          : "The whole class (or choose students)"}
                     </span>
                   </div>
                   <label>
@@ -723,7 +729,7 @@ export function ReteachView() {
                   </label>
                   <Action
                     onClick={saveLesson}
-                    disabled={busy || !date || !group.length}
+                    disabled={busy || !date}
                   >
                     <Plus size={16} />
                     {savedId ? "Update saved plan" : "Save to lesson plans"}
@@ -1067,7 +1073,7 @@ export function ReteachView() {
                     <Action
                       variant="secondary"
                       onClick={saveLesson}
-                      disabled={busy || aiBusy || !date || !group.length}
+                      disabled={busy || aiBusy || !date}
                     >
                       <Plus size={16} />
                       {savedId ? "Update saved plan" : "Save to lesson plans"}
@@ -1078,11 +1084,6 @@ export function ReteachView() {
                   <p className="field-help">
                     Generating a plan needs the AI connection under Settings.
                     The lesson above can be edited and saved now.
-                  </p>
-                )}
-                {!group.length && (
-                  <p className="field-help">
-                    Choose the student or group this plan is for before saving.
                   </p>
                 )}
               </div>
@@ -1127,7 +1128,9 @@ export function ReteachView() {
                     <h2>{l.title}</h2>
                     <p>
                       {l.standard} · {l.duration} minutes · {l.modality} ·{" "}
-                      {l.studentIds.length} students
+                      {l.studentIds.length
+                        ? l.studentIds.length + (l.studentIds.length === 1 ? " student" : " students")
+                        : "Whole class"}
                     </p>
                     {l.notes && <p className="saved-note">{l.notes}</p>}
                   </div>
