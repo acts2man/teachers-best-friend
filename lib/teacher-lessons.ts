@@ -1,4 +1,4 @@
-import type {Standard,Lesson,Resource} from "./teacher-types";
+import type {Standard,Lesson,Resource,LessonFlow,TeachingApproach} from "./teacher-types";
 import {gardenPassage} from "./teacher-data";
 export type LessonContent=NonNullable<Lesson["custom"]>;
 export function hasCuratedLesson(s:Standard){return ["4.OA.A.3","4.NBT.B.5","4.NBT.A.2","4.NBT.B.4","RI.4.2","RL.4.1","RI.4.4"].includes(s.code)}
@@ -20,3 +20,125 @@ export function resourceCatalog():Resource[]{return [
 {id:"r6",title:"A fresh start with place value",category:"Intervention",standard:"4.NBT.A.2",content:"Start with two-digit numbers. Build 42 and 24 using tens and ones. Compare the tens before comparing the ones. Move to 402 and 420. Ask: What does the zero tell us?\nCheck: Compare 3,042 and 3,402.\nTeacher key: 3,042 < 3,402 because 0 hundreds < 4 hundreds."},
 {id:"r7",title:"One problem. Two ways.",category:"Enrichment",standard:"4.OA.A.3",content:"Design two different multi-step stories with the same answer, 48. Use multiplication and subtraction in one story, and addition and division in the other. Write equations, solve them, and explain why both answers are reasonable.\nTeacher examples: 5 × 12 − 12 = 48; (72 + 24) ÷ 2 = 48."}
 ];}
+
+/** The three teaching approaches, in the order the builder shows them. */
+export const TEACHING_APPROACHES = ["Visual", "Kinesthetic", "Auditory"] as const satisfies readonly TeachingApproach[];
+export const approachLabel = (a: string) => (a === "Kinesthetic" ? "Hands-on" : a);
+
+/** The lesson flow in one approach: its own version, or -- a lesson from
+ * before versions, or a version that did not come back -- the lesson's one
+ * flow. */
+export function flowFor(content: LessonContent, approach: string): LessonFlow {
+  return content.flows?.[approach as TeachingApproach] ?? { materials: content.materials, phases: content.phases };
+}
+
+/** Whether a lesson has its own version of the flow for an approach. */
+export function hasFlow(content: LessonContent, approach: string): boolean {
+  return !!content.flows?.[approach as TeachingApproach];
+}
+
+/** The lesson with one approach's flow replaced (editing that version). A
+ * lesson without versions keeps its one flow in materials/phases. */
+export function withFlow(content: LessonContent, approach: string, flow: LessonFlow): LessonContent {
+  if (!content.flows) return { ...content, ...flow };
+  return { ...content, flows: { ...content.flows, [approach]: flow } };
+}
+
+/**
+ * One generate's three answers put together (Ricky, 27 Oct 2026): the full
+ * lesson written in `base` (its flow, plus the one set of practice, exit
+ * ticket, game and task) and the other approaches' flows. A flow that did not
+ * come back (null) is left out; the builder says so.
+ */
+export function assembleLesson(
+  full: LessonContent,
+  base: TeachingApproach,
+  others: [TeachingApproach, LessonFlow | null][],
+): LessonContent {
+  const flows: Partial<Record<TeachingApproach, LessonFlow>> = {
+    [base]: { materials: full.materials, phases: full.phases },
+  };
+  for (const [approach, flow] of others) if (flow) flows[approach] = flow;
+  return { ...full, flows };
+}
+
+/** A section's questions, then its answer key: what the teacher prints. */
+function questionsThenKey(title: string, items: { q: string; a: string }[]): string {
+  return (
+    title.toUpperCase() +
+    "\n" +
+    items.map((q, i) => i + 1 + ". " + q.q).join("\n\n") +
+    "\n\nANSWER KEY · " +
+    title.toUpperCase() +
+    "\n" +
+    items.map((q, i) => i + 1 + ". " + q.a).join("\n")
+  );
+}
+
+/**
+ * The whole lesson as printed: the flow in the approach on screen, then the
+ * targeted practice and its answer key, the exit ticket and its answer key,
+ * Game-Based Learning and the Performance Task -- Ricky's order (27 Oct). Pure.
+ */
+export function lessonPrintText(
+  content: LessonContent,
+  o: { code: string; duration: string; approach: string; adaptation: string; notes: string; phaseTime: (i: number) => string },
+): string {
+  const flow = flowFor(content, o.approach);
+  const g = content.game;
+  const t = content.performanceTask;
+  return (
+    o.code +
+    " · " +
+    o.duration +
+    " minutes · " +
+    approachLabel(o.approach) +
+    "\n\nGOAL\n" +
+    content.objective +
+    "\n\nMATERIALS\n" +
+    flow.materials.join(", ") +
+    "\n\n" +
+    flow.phases.map((p, i) => o.phaseTime(i) + " MIN · " + p.name.toUpperCase() + "\n" + p.text).join("\n\n") +
+    "\n\n" +
+    approachLabel(o.approach).toUpperCase() +
+    " APPROACH\n" +
+    o.adaptation +
+    "\n\n" +
+    questionsThenKey("Targeted practice", content.practice) +
+    "\n\n" +
+    questionsThenKey("Exit ticket", content.exit) +
+    (g
+      ? "\n\nGAME-BASED LEARNING · " +
+        g.title +
+        "\n" +
+        (g.materials.length ? "Materials: " + g.materials.join(", ") + "\n" : "") +
+        g.steps.map((s, i) => i + 1 + ". " + s).join("\n") +
+        "\nHow it practises the standard: " +
+        g.connection
+      : "") +
+    (t
+      ? "\n\nPERFORMANCE TASK · " +
+        t.title +
+        " · " +
+        t.minutes +
+        " minutes · " +
+        t.groupSize +
+        "\n" +
+        t.scenario +
+        "\n" +
+        t.steps.map((s, i) => i + 1 + ". " + s).join("\n") +
+        "\nSuccess looks like:\n" +
+        t.success.map((s) => "- " + s).join("\n")
+      : "") +
+    "\n\nTEACHER NOTES\n" +
+    o.notes
+  );
+}
+
+/** Targeted practice alone, as printed: the questions, then -- with the key
+ * switched on -- the answer key after them. */
+export function practicePrintText(content: LessonContent, withKey: boolean): string {
+  return withKey
+    ? questionsThenKey("Targeted practice", content.practice)
+    : content.practice.map((q, i) => i + 1 + ". " + q.q).join("\n\n");
+}
