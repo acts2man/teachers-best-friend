@@ -61,7 +61,6 @@ test("one generate: the full lesson in the chosen approach and the flow in the o
   assert.match(planning, /flowFor\(content, modality\)\.phases\.map/, "the flow on screen follows the approach tabs");
 });
 
-const std = { code: "7.RP.1", title: "Unit rates", subject: "Math", grade: 7, framework: "California" };
 const w = { assessments: [], students: [], classes: [], lessons: [], customStandards: [], sharedStandards: [] };
 const prompt = (extra) =>
   buildPrompt({ mode: "lesson", standard: "7.RP.1", grade: 7, framework: "California", text: "", duration: 15, modality: "Visual", ...extra }, w, [], true);
