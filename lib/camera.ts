@@ -267,3 +267,68 @@ export function framingGuide(
   const fill = polygonArea(onScreen) / (viewW * viewH);
   return fill >= minFill ? "steady" : "closer";
 }
+
+/**
+ * How much sharper a frame is than itself re-blurred (a 1-2-1 binomial at the
+ * score size), as a percentage, in its weaker direction -- a no-reference
+ * blur measure (after Crete-Roffet et al.). The frame's own content cancels
+ * out, so a sparse page and a page full of writing are judged alike, where
+ * the Laplacian's absolute value is not: a sharp frame loses a lot when
+ * re-blurred (55-65 on the tuning images), a blurry one hardly anything.
+ */
+export function reblurRatio(gray: ArrayLike<number>, w: number, h: number): number {
+  if (w < 5 || h < 5) return 0;
+  const b = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      b[i] =
+        (4 * gray[i] +
+          2 * (gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w]) +
+          gray[i - w - 1] +
+          gray[i - w + 1] +
+          gray[i + w - 1] +
+          gray[i + w + 1]) /
+        16;
+    }
+  const energy = (img: ArrayLike<number>, step: number) => {
+    let q = 0;
+    let n = 0;
+    for (let y = 2; y < h - 2; y++)
+      for (let x = 2; x < w - 2; x++) {
+        const i = y * w + x;
+        const d = img[i] - img[i - step];
+        q += d * d;
+        n++;
+      }
+    return n ? q / n : 0;
+  };
+  const ratio = (step: number) => {
+    const a = energy(gray, step);
+    return a > 1e-6 ? (a - energy(b, step)) / a : 0;
+  };
+  return Math.round(100 * Math.min(ratio(1), ratio(w)));
+}
+
+/**
+ * When a capture counts as too blurry to add without asking (Ricky, 29 Oct
+ * 2026: "catch when the photo is blurry and ask to retake or keep"). Tuned
+ * with scripts/tune-blur-threshold.mjs on the camera browser check's page
+ * images, blurred by known amounts and scored at the camera's 320-px size:
+ *
+ *   - Laplacian variance under 150: every page out of focus at sigma >= 3 px
+ *     (107-114), the far page at sigma >= 2 (91). The old 55 caught only
+ *     sigma >= 4.
+ *   - re-blur ratio under 25%: the sparse pages at sigma >= 2 (20-21), which
+ *     still score 422 and 91 on the Laplacian.
+ *   - kept: every page at sigma <= 1.5 (Laplacian 215+, ratio 27+).
+ *
+ * Shake up to 20 px still passes on these images: their straight lines keep
+ * the edges along the shake. The "i" panel shows both scores, to check it on
+ * a real phone.
+ */
+export const BLUR_LAPLACIAN_MIN = 150;
+export const BLUR_REBLUR_MIN = 25;
+export function isBlurry(s: { laplacian: number; reblur: number }): boolean {
+  return s.laplacian < BLUR_LAPLACIAN_MIN || s.reblur < BLUR_REBLUR_MIN;
+}

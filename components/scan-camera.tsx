@@ -11,6 +11,10 @@ import {
   type FramingGuide,
   describeCameraError,
   laplacianVariance,
+  reblurRatio,
+  isBlurry,
+  BLUR_LAPLACIAN_MIN,
+  BLUR_REBLUR_MIN,
   partitionByGroup,
   rgbaToGray,
   videoConstraints,
@@ -105,11 +109,12 @@ const SETTLE_MS = 700; // let the stream focus/settle before the first capture
 const BURST_FRAMES = 3;
 const BURST_GAP_MS = 60; // ~120ms total across 3 frames, only when borderline
 const SCORE_W = 320; // downscale width for the sharpness score (matches DETECT_W)
-// Below this Laplacian-variance score a frame is treated as too blurry to add.
-// Absolute value depends on the downscale, so it is deliberately conservative
-// (lean toward keeping) and NEEDS tuning on a real phone -- the "i" panel shows
-// the live and last-capture scores so we can calibrate from Ricky's numbers.
-const BLUR_THRESHOLD = 55;
+// Below this Laplacian-variance score a live frame is borderline (a burst is
+// taken) and a capture is checked for blur -- lib/camera.ts isBlurry, tuned
+// with scripts/tune-blur-threshold.mjs (2 Nov 2026; was 55, untuned).
+const BLUR_THRESHOLD = BLUR_LAPLACIAN_MIN;
+/** Set once the first-open tip has been shown on this device. */
+const CAMERA_TIP_KEY = "tbf.camera.tip-seen";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -250,6 +255,23 @@ export function ScanCamera({
   // sharpest frame of the last capture burst.
   const liveScoreRef = useRef(0);
   const lastScoreRef = useRef<number | null>(null);
+  const lastReblurRef = useRef<number | null>(null);
+  // A one-line tip the first time this device opens the camera (Ricky, 29 Oct
+  // 2026: sitting makes the photo awkward to line up).
+  const [tip, setTip] = useState(() => {
+    try {
+      return localStorage.getItem(CAMERA_TIP_KEY) !== "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAMERA_TIP_KEY, "1");
+    } catch {
+      /* private mode: the tip may show again next time, which is harmless */
+    }
+  }, []);
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [shots, setShots] = useState<Shot[]>([]);
@@ -267,7 +289,7 @@ export function ScanCamera({
   const [restorable, setRestorable] = useState<Shot[] | null>(null);
   // A manual capture that came back too blurry: held so the teacher can keep it
   // anyway or try again. (Auto-snap just skips a blurry frame silently.)
-  const [blurryShot, setBlurryShot] = useState<{ canvas: HTMLCanvasElement; score: number } | null>(
+  const [blurryShot, setBlurryShot] = useState<{ canvas: HTMLCanvasElement; score: number; reblur: number } | null>(
     null,
   );
   const [tooBlurry, setTooBlurry] = useState(false);
@@ -356,7 +378,7 @@ export function ScanCamera({
   // shows, and keep the sharpest one -- the first frame after a tap/auto-snap is
   // often mid-refocus and blurriest. Returns the best canvas and its sharpness
   // score, or null if the video isn't ready.
-  async function captureBurst(): Promise<{ canvas: HTMLCanvasElement; score: number } | null> {
+  async function captureBurst(): Promise<{ canvas: HTMLCanvasElement; score: number; reblur: number } | null> {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return null;
     const fw = video.videoWidth;
@@ -386,6 +408,7 @@ export function ScanCamera({
     let best: HTMLCanvasElement | null = null;
     let spare: HTMLCanvasElement | null = null;
     let bestScore = -Infinity;
+    let bestGray: ArrayLike<number> | null = null;
     // Already-sharp live frame -> a single frame, no burst wait; borderline -> a
     // short burst and keep the sharpest.
     const frames = burstFrames(liveScoreRef.current, BLUR_THRESHOLD, BURST_FRAMES);
@@ -398,12 +421,15 @@ export function ScanCamera({
       if (!cctx) break;
       cctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
       let score = 0;
+      let gray: ArrayLike<number> | null = null;
       if (sctx) {
         sctx.drawImage(cap, 0, 0, sw, sh);
-        score = laplacianVariance(rgbaToGray(sctx.getImageData(0, 0, sw, sh).data), sw, sh);
+        gray = rgbaToGray(sctx.getImageData(0, 0, sw, sh).data);
+        score = laplacianVariance(gray, sw, sh);
       }
       if (score > bestScore) {
         bestScore = score;
+        bestGray = gray;
         spare = best;
         best = cap;
       } else {
@@ -413,7 +439,9 @@ export function ScanCamera({
     }
     release(spare);
     release(scorer);
-    return best ? { canvas: best, score: bestScore } : null;
+    // The chosen frame's second score, the one its content cannot fool.
+    const reblur = bestGray ? reblurRatio(bestGray, sw, sh) : 100;
+    return best ? { canvas: best, score: bestScore, reblur } : null;
   }
 
   // Buffer a captured canvas as a page (JPEG blob -> state + IndexedDB).
@@ -464,7 +492,9 @@ export function ScanCamera({
       const res = await captureBurst();
       if (!res) return;
       lastScoreRef.current = res.score;
-      if (res.score < BLUR_THRESHOLD) {
+      lastReblurRef.current = res.reblur;
+      // Checked right after the capture, on the phone: no upload, no AI.
+      if (isBlurry({ laplacian: res.score, reblur: res.reblur })) {
         lastCaptureRef.current = { w: res.canvas.width, h: res.canvas.height };
         if (autoRef.current) flashBlurryHint();
         else setBlurryShot(res);
@@ -682,7 +712,11 @@ export function ScanCamera({
       "live sharpness: " + liveScoreRef.current.toFixed(0) + " (blur < " + BLUR_THRESHOLD + ")",
       "last capture: " + (cap ? cap.w + " x " + cap.h : "—"),
       "last capture score: " +
-        (lastScoreRef.current == null ? "—" : lastScoreRef.current.toFixed(0)),
+        (lastScoreRef.current == null ? "—" : lastScoreRef.current.toFixed(0)) +
+        " (blur < " + BLUR_LAPLACIAN_MIN + ")",
+      "last capture re-blur: " +
+        (lastReblurRef.current == null ? "—" : lastReblurRef.current + "%") +
+        " (blur < " + BLUR_REBLUR_MIN + "%)",
     ];
     return lines.join("\n");
   }
@@ -920,6 +954,14 @@ export function ScanCamera({
           Focusing…
         </div>
       )}
+      {tip && !starting && shots.length === 0 && (
+        <div className="scan-camera-tip" role="note">
+          <span>Best results: stand and hold the phone over the page.</span>
+          <button type="button" aria-label="Dismiss tip" onClick={() => setTip(false)}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {!starting && settled && tooBlurry && (
         <div className="scan-camera-hint" role="status">
           Too blurry — hold steady, a little farther from the page
@@ -1081,17 +1123,17 @@ export function ScanCamera({
         <div className="scan-camera-sheet" role="dialog" aria-modal="true" aria-label="Blurry photo">
           <div className="scan-camera-sheet-card">
             <Camera size={26} />
-            <h2>Too blurry</h2>
+            <h2>This photo looks blurry</h2>
             <p>
-              Hold steady and move back a little from the page, then try again. You can keep this
-              one if you want.
+              A blurry page can be graded wrong. Hold the phone steady over the page and retake it,
+              or keep this one if you can read it.
             </p>
             <div className="scan-camera-sheet-actions">
               <button type="button" className="scan-camera-btn primary" autoFocus onClick={discardBlurryShot}>
-                Try again
+                Retake
               </button>
               <button type="button" className="scan-camera-btn" onClick={keepBlurryShot}>
-                Keep anyway
+                Keep
               </button>
             </div>
           </div>
