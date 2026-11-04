@@ -365,6 +365,9 @@ const classScanSchema = obj({
   groups: arr(
     obj({
       group: { type: "integer", minimum: 0 },
+      // The name written on the group's pages, only to check the pages were
+      // read as grouped (lib/answer-mixups.ts). Empty when none is written.
+      nameSeen: str,
       responses: arr(classScanResponseItem),
     }),
   ),
@@ -543,7 +546,7 @@ export function buildPrompt(
     if (!p.pageGroups.length)
       throw new HttpError(400, "Add scanned pages first.");
     task =
-      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. A page may show the student's name near the top; ignore it. Do not infer who any page belongs to and never report or reproduce any name: identity is handled outside this request and is not your concern. The pages have already been grouped by student for you; each group is one student's work. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict. " +
+      "You are given scanned pages of student work for one assessment, in order. The image at position N is page N. A page may show the student's name near the top. Do not use it to decide who a page belongs to: the pages have already been grouped by student for you, and each group is one student's work. For each group, give in nameSeen the name written on that group's pages exactly as written, or an empty string if none is written; it is used only to check that the pages were read as grouped. Never put a name anywhere else in your answer. Grade each group independently, exactly as you would a single student's work: return one response per non-excluded question using only the provided question IDs. For each question, transcribe exactly what the student wrote as the answer, then give one verdict. " +
       VERDICT_RULES +
       " Do not diagnose misconceptions. Report each group by its number below, not by page. Groups, as page positions: " +
       JSON.stringify(p.pageGroups.map((pages, group) => ({ group, pages }))) +
@@ -952,6 +955,7 @@ export function finalizeAnalysis(
           .array(
             z.object({
               group: z.number().int(),
+              nameSeen: z.string().optional(),
               responses: z.array(
                 z.object({
                   questionId: z.string(),
@@ -984,6 +988,9 @@ export function finalizeAnalysis(
       .map((g) => ({
         group: g.group,
         pageIndexes: p.pageGroups[g.group],
+        // A short line of the name as read, for the app's own check. Never
+        // matched to the roster here: that happens only in the app.
+        nameSeen: (g.nameSeen ?? "").replace(/\s+/g, " ").trim().slice(0, 80),
         responses: g.responses
           .filter((r) => validQuestionIds.has(r.questionId))
           .map((r) => {

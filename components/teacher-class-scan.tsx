@@ -1581,6 +1581,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         name: g.name,
         pageUploadIds: g.pageUploadIds,
         responses: g.responses,
+        detectedName: g.detectedName,
+        nameSeen: g.nameSeen,
       })),
       { replaceConfirmed: replaceConfirmed === true },
     );

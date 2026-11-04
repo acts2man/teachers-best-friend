@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live.
 
 ---
 
@@ -158,7 +158,7 @@ This is the hop districts ask about, so it is the most specific.
 |---|---|
 | What is transmitted | The uploaded work, grade level, subject, the relevant standards, question IDs, and -- where the teacher has uploaded one -- the transcribed text of the shared reading passage |
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
-| Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; it is told to ignore it and never report it |
+| Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; since 4 Nov 2026 it says the name it reads on each student's group of pages in one field (`nameSeen`), used only to check the pages were read as grouped, and it is told to put a name nowhere else |
 | Encrypted | Yes, TLS |
 | Stored there | Per the OpenAI API data policy for API traffic |
 | Retained | Per that policy; not used to build a profile for us |
@@ -168,7 +168,8 @@ This is the hop districts ask about, so it is the most specific.
 
 Endpoint: `https://api.openai.com/v1/responses`.
 
-The grading prompt instructs the model not to reproduce student names, and the
+The grading prompts instruct the model not to reproduce student names -- with one
+exception, the class-set grading request's `nameSeen` field (below) -- and the
 application sends a question ID rather than a student identity. The honest limit,
 stated in the published pages too: the image itself is a photograph of a child's work
 and may carry a name the student wrote on the page. We minimise identifiers, we do not
@@ -228,9 +229,24 @@ What each request carries now:
   carries no identity; the change only means a name can no longer be read onto another
   child's pages. Same images, same prompt, more and smaller requests.
 - **`class_scan`** — the **whole page**, nothing cut off (`splitForClassScan`). The image
-  may show the student's name. The prompt tells the model to ignore any name, not to infer
-  who a page belongs to and never to report or reproduce a name. Grouping is still settled
-  by the app and sent as group numbers.
+  may show the student's name. The prompt tells the model not to use a name to decide who
+  a page belongs to. Grouping is still settled by the app and sent as group numbers.
+- *4 Nov 2026, `nameSeen` (Michael's "Story Organizer" set, scan 9df4a4a3):* one
+  seven-page request returned the answers on page 6 for the student of page 5 and the
+  other way round. The **response** now carries, per group, the name the model reads on
+  that group's pages (`nameSeen`, at most 80 characters, empty when none is written); the
+  prompt says it is used only to check the pages were read as grouped and that a name
+  goes nowhere else. **The request gains nothing**: same images, no roster, no name as
+  text. The app compares `nameSeen` with the student the teacher confirmed for the pile
+  and the name the `name_strip` pass read, in `pagesMayBelongElsewhere()`
+  (`lib/answer-mixups.ts`); when it fits neither, the answers are marked `checkPages` and
+  Grade by question says "Answers may belong to another page — check". Nothing is moved
+  for the teacher. `nameSeen` is held only where grading results already are --
+  `scans.result` (the delivery buffer, section 2) and the scan in progress
+  (`class_scan_sessions`) -- and is not saved to the workspace; only the yes/no mark is.
+  It is the same kind of value the `name_strip` pass already returns (a name as written,
+  matched only in the app). Grading requests also hold at most 3 pages now
+  (`GRADE_PAGES_PER_BATCH`, was up to 12): more, smaller requests, same content.
 - *12 Oct 2026 (PR 2), multi-part questions:* the worksheet read now also says how many
   separate answers each question asks for (`Question.answerParts`, stored in
   `assessment_questions.answer_parts`). A question with more than one is sent to grading

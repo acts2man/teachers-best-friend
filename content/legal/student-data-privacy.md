@@ -106,7 +106,8 @@ Where a student has written their name on a worksheet, that name may appear in t
 photograph. We mitigate this in four ways: we never transmit a class roster or student
 list to our AI provider; when a single student's responses are analyzed, only internal
 identifiers are transmitted, never a name; images are deleted automatically (Section 5);
-and our AI instructions direct the model not to reproduce names it encounters on a page.
+and our AI instructions direct the model not to reproduce names it encounters on a page,
+with the one check described below.
 
 **How whole-class scanning handles this.** When a teacher scans a whole stack of pages in
 one pass, the name the student wrote on each page is what sorts the pages back to the
@@ -116,8 +117,10 @@ to a student record happens only within our system, and neither request is given
 class list. No name is ever sent as text.
 
 **The limit, stated plainly.** Because the whole page is graded, a name the student wrote
-on the page is in the image the grading request sees. The model is instructed to ignore it
-and never to reproduce it, but we do not claim the graded image carries no name. (An
+on the page is in the image the grading request sees. The model is instructed not to use it
+to decide whose work a page is, and to report it only in one place, so that our system can
+check the answers were not credited to the wrong paper; we do not claim the graded image
+carries no name. (An
 earlier version cut a band off the top of each page before grading; it also cut off
 questions near the top of a photographed page.) A district that requires zero name
 transmission can direct teachers to the single-student upload path, which sends no name

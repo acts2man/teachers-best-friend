@@ -97,16 +97,18 @@ the page. We cannot prevent this, and we do not claim uploads are anonymous. We 
 it in four ways: we never send your class roster or any student list to the AI provider;
 we never send a student's name as text alongside their work; images are deleted
 automatically on the schedule in Section 5; and our AI instructions direct the model not
-to reproduce names it encounters.
+to reproduce names it encounters, with the one check described below.
 
 How whole-class scanning handles this. When a teacher scans a whole stack of pages at
 once, the name the student wrote on each page is how the pages are sorted back to the
 right student. One request reads the top part of each page to find that name, and is
 shown no questions and no answer key. A separate request grades the whole page. Because
 the whole page is graded, a name the student wrote on it is in the image that request
-sees; the model is instructed to ignore it and never to reproduce it. Matching a name to
-a student happens only inside our system, and neither request is ever given your class
-list. Earlier versions cut the name off the top of the page before grading; that also cut
+sees. The model is not told who anyone is and is instructed not to use the name to decide
+whose work a page is; it reports the name it sees on each student's pages in one place,
+only so our system can check the answers were not credited to the wrong paper, and is
+instructed not to reproduce it anywhere else. Matching a name to a student happens only
+inside our system, and neither request is ever given your class list. Earlier versions cut the name off the top of the page before grading; that also cut
 off questions near the top of a photographed page, so the whole page is now graded.
 
 ### 3.3 Collected automatically

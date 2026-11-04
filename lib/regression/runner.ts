@@ -61,6 +61,7 @@ import {
   mergeNameReads,
   planNameBatches,
   planScanBatches,
+  gradePagesPerBatch,
   resolveScannedGroups,
   retryBatch,
   shortGroups,
@@ -304,13 +305,16 @@ export async function planCase(svc: Svc, c: RegressionCase): Promise<RunState> {
     .eq("teacher_id", c.teacherId)
     .eq("assessment_legacy_id", c.assessmentLegacyId);
   const bytes = new Map((sizes ?? []).map((r) => [r.source_upload_id as string, Number(r.size_bytes) || undefined]));
+  const questionCount = activeQuestions(asAssessment(e.assessment)).length;
+  const pageBytes = pages.map((id) => bytes.get(id));
   const batches = planScanBatches(
     groups,
     pages,
-    activeQuestions(asAssessment(e.assessment)).length,
+    questionCount,
     undefined,
-    undefined,
-    pages.map((id) => bytes.get(id)),
+    // The app's grading batch size, so a replay grades as the app does.
+    gradePagesPerBatch(groups, pages, questionCount, pageBytes),
+    pageBytes,
   );
   return { stage, batches, cursor: 0, attempt: 0, attemptBatch: null, best: [], graded: [], job: null };
 }
