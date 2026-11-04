@@ -8,6 +8,7 @@ import {
 } from "@/lib/teacher-server";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { onlyFailedChanged } from "@/lib/scan-session";
 
 /**
  * A class scan in progress, kept on the teacher's account so the phone and the
@@ -56,7 +57,7 @@ async function current(teacher: string, assessmentId: string) {
   // Expired rows are treated as gone; the next write replaces them and the
   // nightly purge deletes any nobody comes back for.
   if (new Date(data.expires_at as string).getTime() < Date.now()) return null;
-  return { state: data.state as unknown, revision: data.revision as number };
+  return { state: data.state as unknown, revision: data.revision as number, expiresAt: data.expires_at as string };
 }
 
 export async function GET(request: Request) {
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
     // A read, so a "view as" session may see it, like the rest of the workspace.
     const teacher = await owningTeacherId();
     const row = await current(teacher, assessmentParam(request));
-    return Response.json(row ?? { state: null, revision: 0 }, { headers: NO_STORE });
+    return Response.json(row ? { state: row.state, revision: row.revision } : { state: null, revision: 0 }, { headers: NO_STORE });
   } catch (error) {
     return apiError(error);
   }
@@ -108,7 +109,11 @@ export async function PUT(request: Request) {
     }
 
     if (existing.revision !== baseRevision)
-      return Response.json(existing, { status: 409, headers: NO_STORE });
+      return Response.json({ state: existing.state, revision: existing.revision }, { status: 409, headers: NO_STORE });
+    // A save that changes only the failed-page counts keeps the scan's expiry
+    // (review of #194): a count from a device never opened again must not
+    // keep the scan -- and the block on grading -- alive for ever.
+    const keepExpiry = onlyFailedChanged(existing.state, state);
 
     // Conditional on the revision still being the one this device saw: if the
     // other device saved in between, nothing is updated and it is a conflict.
@@ -118,7 +123,7 @@ export async function PUT(request: Request) {
         state,
         revision: baseRevision + 1,
         updated_at: new Date().toISOString(),
-        expires_at: expires,
+        expires_at: keepExpiry ? existing.expiresAt : expires,
       })
       .eq("teacher_id", teacher)
       .eq("assessment_id", assessmentId)
@@ -127,7 +132,7 @@ export async function PUT(request: Request) {
     if (error) throw new HttpError(500, "Couldn’t save the scan in progress.", error.message);
     if (!data?.length) {
       const now = await current(teacher, assessmentId);
-      return Response.json(now ?? { state: null, revision: 0 }, { status: 409, headers: NO_STORE });
+      return Response.json(now ? { state: now.state, revision: now.revision } : { state: null, revision: 0 }, { status: 409, headers: NO_STORE });
     }
     return Response.json({ revision: data[0].revision }, { headers: NO_STORE });
   } catch (error) {

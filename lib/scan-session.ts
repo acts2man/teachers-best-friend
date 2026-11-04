@@ -47,13 +47,18 @@ export type FailedPage = {
   /** The camera's saved copy of this page (scan-store), when it came from the
    * in-app camera: deleted when the Retry lands or the page is left out. */
   shotId?: string;
+  /** A camera page whose student had not started uploading when the tab
+   * reloaded: no pile yet (`pile` is -1). Its camera student number, so the
+   * pages of one student share the one new pile they are given. */
+  cameraGroup?: number;
 };
 
 /**
  * Puts a page that uploaded on a retry back where it was: into its student's
  * pile, at its place among that pile's pages. If that pile is gone (the scan
  * was reorganised meanwhile) it joins the last pile. A page from a whole stack
- * is marked as one.
+ * is marked as one. (A page with no pile yet is given one first:
+ * pileForNewStudent.)
  */
 export function placeRetriedPage(
   piles: ScanPage[][],
@@ -65,6 +70,17 @@ export function placeRetriedPage(
   const placed = failed.stack ? { ...page, stack: true as const } : page;
   next[target].splice(Math.min(Math.max(0, failed.index), next[target].length), 0, placed);
   return next;
+}
+
+/**
+ * The pile a camera student with no pile yet goes into (review of #188): the
+ * open pile at the end when it is still empty, else a new one after it.
+ * Returns the piles (with the new one) and its index. Pure.
+ */
+export function pileForNewStudent(piles: ScanPage[][]): { piles: ScanPage[][]; pile: number } {
+  const last = piles[piles.length - 1];
+  if (last && !last.length) return { piles, pile: piles.length - 1 };
+  return { piles: [...piles, []], pile: piles.length };
 }
 
 /** How far grading got: batches done, the next to send, one still running. */
@@ -178,6 +194,21 @@ export type ScanSession = {
    * pages to the model twice.
    */
   grading: { device: string; at: number } | null;
+  /**
+   * Pages each device holds that did not upload (review of #188), by device
+   * id: a page failed on the phone blocks grading on the computer too, until
+   * the phone retries it or leaves it out. Each device writes only its own
+   * count. Absent (or no entry) is none.
+   */
+  failed?: Record<string, number>;
+  /**
+   * Counts another device's pages were left out at (review of #194): a
+   * device never opened again must not block grading for ever, so the
+   * teacher can leave its pages out from here. Kept by key, at the count
+   * left out: that device blocks again only if it reports MORE failed pages
+   * than that. A merge keeps the larger; a key with no count is dropped.
+   */
+  dismissed?: Record<string, number>;
 };
 
 /** How often a grading device refreshes its "I am grading this" note. The
@@ -269,8 +300,12 @@ export function parseSession(raw: unknown): ScanSession | null {
     r.grading && typeof r.grading.device === "string" && typeof r.grading.at === "number"
       ? { device: r.grading.device, at: r.grading.at }
       : null;
+  const failed = cleanFailed(r.failed);
+  const dismissed = failed ? cleanFailed(r.dismissed) : undefined;
   const session: ScanSession = {
     v: 1,
+    ...(failed ? { failed } : {}),
+    ...(dismissed ? { dismissed } : {}),
     piles: piles.length ? piles : [[]],
     progress,
     groups: groups && groups.length ? groups : null,
@@ -285,9 +320,70 @@ export function parseSession(raw: unknown): ScanSession | null {
   return isEmptySession(session) ? null : session;
 }
 
-/** Nothing scanned, nothing graded, nothing to match. */
+/** The failed-page counts, with only real devices and real counts kept. */
+function cleanFailed(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, number> = {};
+  for (const [device, n] of Object.entries(raw as Record<string, unknown>))
+    if (device && device.length <= 200 && Number.isInteger(n) && (n as number) > 0) out[device] = n as number;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** A value as stable text: object keys sorted, so the same state read back
+ * from jsonb (which reorders keys) compares equal. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";
+  if (v && typeof v === "object")
+    return (
+      "{" +
+      Object.keys(v as Record<string, unknown>)
+        .sort()
+        .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+        .map((k) => JSON.stringify(k) + ":" + canonical((v as Record<string, unknown>)[k]))
+        .join(",") +
+      "}"
+    );
+  return JSON.stringify(v ?? null);
+}
+
+/**
+ * Whether a save changes nothing but the failed-page counts (review of #194):
+ * such a save must not push the scan's expiry back, or a count nobody can
+ * settle (a phone never opened again) would keep the scan alive -- and the
+ * computer blocked -- for ever. Pure.
+ */
+export function onlyFailedChanged(before: unknown, after: unknown): boolean {
+  const strip = (s: unknown) => {
+    if (!s || typeof s !== "object") return s;
+    const { failed: _f, ...rest } = s as Record<string, unknown>;
+    void _f;
+    return rest;
+  };
+  return canonical(strip(before)) === canonical(strip(after));
+}
+
+/** Pages that did not upload on devices (and tabs) other than this one --
+ * not counting a device whose pages were left out at that count or more. */
+export function failedElsewhere(s: Pick<ScanSession, "failed" | "dismissed"> | null, device: string): number {
+  const left = s?.dismissed ?? {};
+  return Object.entries(s?.failed ?? {}).reduce(
+    (sum, [d, n]) => (d === device || n <= (left[d] ?? 0) ? sum : sum + n),
+    0,
+  );
+}
+
+/** The other devices' counts, recorded as left out (the teacher's "Leave
+ * them out" on this device). */
+export function dismissFailed(s: Pick<ScanSession, "failed" | "dismissed">, device: string): Record<string, number> {
+  const out = { ...(s.dismissed ?? {}) };
+  for (const [d, n] of Object.entries(s.failed ?? {})) if (d !== device) out[d] = Math.max(out[d] ?? 0, n);
+  return out;
+}
+
+/** Nothing scanned, nothing graded, nothing to match, nothing waiting to
+ * upload on any device. */
 export function isEmptySession(s: ScanSession): boolean {
-  return !s.piles.some((p) => p.length) && !s.progress && !s.groups;
+  return !s.piles.some((p) => p.length) && !s.progress && !s.groups && !cleanFailed(s.failed);
 }
 
 /** Where the teacher is: still scanning, grading, or matching names. */
@@ -318,7 +414,7 @@ export function gradingElsewhere(s: ScanSession | null, device: string, now: num
  * groups to whichever side has them (the server's if both do: it is the
  * version the other device has been editing).
  */
-export function mergeSessions(server: ScanSession, local: ScanSession): ScanSession {
+export function mergeSessions(server: ScanSession, local: ScanSession, device?: string): ScanSession {
   const piles = server.piles.map((p) => [...p]);
   const onServer = new Set(piles.flat().map((p) => p.bodyId));
   for (const pile of local.piles) {
@@ -351,8 +447,23 @@ export function mergeSessions(server: ScanSession, local: ScanSession): ScanSess
           ? local.progress
           : server.progress;
   const groups = server.groups ?? local.groups;
+  // Failed pages: every other device's count as the server has it, and this
+  // device's own as this device knows it (it is the only one that writes it).
+  // Without a device, the larger of the two for each.
+  const failedMap: Record<string, number> = { ...(server.failed ?? {}) };
+  for (const [d, n] of Object.entries(local.failed ?? {}))
+    if (!device) failedMap[d] = Math.max(failedMap[d] ?? 0, n);
+  if (device) failedMap[device] = local.failed?.[device] ?? 0;
+  const failed = cleanFailed(failedMap);
+  // A leave-out made on either side holds; only for devices with a count.
+  const dismissedMap: Record<string, number> = {};
+  for (const [d, n] of [...Object.entries(server.dismissed ?? {}), ...Object.entries(local.dismissed ?? {})])
+    if (failed?.[d]) dismissedMap[d] = Math.max(dismissedMap[d] ?? 0, n);
+  const dismissed = cleanFailed(dismissedMap);
   return {
     v: 1,
+    ...(failed ? { failed } : {}),
+    ...(dismissed ? { dismissed } : {}),
     piles: piles.length ? piles : [[]],
     progress: groups ? null : progress,
     groups,
