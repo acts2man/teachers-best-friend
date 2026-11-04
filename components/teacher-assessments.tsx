@@ -1873,7 +1873,8 @@ export function AssessmentView() {
                 <p className="field-help">
                   {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"} graded{" "}
                   {gradingModeOf(a) === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
-                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test. To use it in{" "}
+                  {gradingModeOf(a) === "sbg" ? "a Percentage" : "a Standards-Based"} class, upload it again as a new test.
                 </p>
               )}
             </div>
