@@ -312,23 +312,38 @@ export function reblurRatio(gray: ArrayLike<number>, w: number, h: number): numb
 
 /**
  * When a capture counts as too blurry to add without asking (Ricky, 29 Oct
- * 2026: "catch when the photo is blurry and ask to retake or keep"). Tuned
- * with scripts/tune-blur-threshold.mjs on the camera browser check's page
- * images, blurred by known amounts and scored at the camera's 320-px size:
+ * 2026: "catch when the photo is blurry and ask to retake or keep"). BOTH
+ * measures must say so (review of #200): either one alone is fooled -- the
+ * Laplacian by a page with little on it, the re-blur ratio by a phone's
+ * sensor noise, which looks sharp to it -- and a sharp page must never be
+ * questioned.
  *
- *   - Laplacian variance under 150: every page out of focus at sigma >= 3 px
- *     (107-114), the far page at sigma >= 2 (91). The old 55 caught only
- *     sigma >= 4.
- *   - re-blur ratio under 25%: the sparse pages at sigma >= 2 (20-21), which
- *     still score 422 and 91 on the Laplacian.
- *   - kept: every page at sigma <= 1.5 (Laplacian 215+, ratio 27+).
+ * Tuned with scripts/tune-blur-realistic.mjs (5 Nov 2026): six kinds of page
+ * -- light pencil on white, a grey photocopied worksheet, dense pen, a sparse
+ * far page, and the first tuning's two -- out of focus by 0-4 px, with no,
+ * good-light and poor-light sensor noise, a little vignetting, saved as JPEG
+ * (quality 82) and scored at the camera's 320-px size:
  *
- * Shake up to 20 px still passes on these images: their straight lines keep
- * the edges along the shake. The "i" panel shows both scores, to check it on
- * a real phone.
+ *   - flagged: 72 of 108 pages out of focus at sigma >= 3 px, and 6 of 54 at
+ *     sigma 2 -- the misses are the noisiest photos, where the noise hides
+ *     the blur from both measures;
+ *   - never flagged: all 162 at sigma <= 1.5, with room to spare (still none
+ *     at 15% more Laplacian and 3 points more re-blur).
+ *
+ * Shake (motion blur) is not caught reliably by either measure. The "i"
+ * panel shows both scores, to check it on a real phone.
  */
-export const BLUR_LAPLACIAN_MIN = 150;
-export const BLUR_REBLUR_MIN = 25;
+export const BLUR_LAPLACIAN_MIN = 145;
+export const BLUR_REBLUR_MIN = 30;
 export function isBlurry(s: { laplacian: number; reblur: number }): boolean {
-  return s.laplacian < BLUR_LAPLACIAN_MIN || s.reblur < BLUR_REBLUR_MIN;
+  return s.laplacian < BLUR_LAPLACIAN_MIN && s.reblur < BLUR_REBLUR_MIN;
 }
+
+/**
+ * Auto-capture's own cutoff: how sharp the live view must be for the camera
+ * to take the picture by itself, on the live frame's Laplacian. Kept apart
+ * from the Retake/Keep check (review of #200): it was 55 before that check
+ * existed, and it decides when to snap, not whether to question a photo --
+ * tying the two together moved auto-capture without anyone choosing to.
+ */
+export const AUTO_CAPTURE_MIN_SHARPNESS = 55;

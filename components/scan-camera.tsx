@@ -14,6 +14,7 @@ import {
   reblurRatio,
   isBlurry,
   BLUR_LAPLACIAN_MIN,
+  AUTO_CAPTURE_MIN_SHARPNESS,
   BLUR_REBLUR_MIN,
   partitionByGroup,
   rgbaToGray,
@@ -110,9 +111,10 @@ const BURST_FRAMES = 3;
 const BURST_GAP_MS = 60; // ~120ms total across 3 frames, only when borderline
 const SCORE_W = 320; // downscale width for the sharpness score (matches DETECT_W)
 // Below this Laplacian-variance score a live frame is borderline (a burst is
-// taken) and a capture is checked for blur -- lib/camera.ts isBlurry, tuned
-// with scripts/tune-blur-threshold.mjs (2 Nov 2026; was 55, untuned).
-const BLUR_THRESHOLD = BLUR_LAPLACIAN_MIN;
+// taken) and auto-capture waits. It is auto-capture's own cutoff (55, as it
+// always was), kept apart from the Retake/Keep check on a finished photo --
+// lib/camera.ts isBlurry, both measures required (review of #200).
+const BLUR_THRESHOLD = AUTO_CAPTURE_MIN_SHARPNESS;
 /** Set once the first-open tip has been shown on this device. */
 const CAMERA_TIP_KEY = "tbf.camera.tip-seen";
 
@@ -709,14 +711,14 @@ export function ScanCamera({
       "track facingMode: " + (s.facingMode ?? "—"),
       "track focusMode: " + ((s as { focusMode?: unknown }).focusMode ?? "—"),
       "settled: " + settledRef.current,
-      "live sharpness: " + liveScoreRef.current.toFixed(0) + " (blur < " + BLUR_THRESHOLD + ")",
+      "live sharpness: " + liveScoreRef.current.toFixed(0) + " (auto-capture at " + BLUR_THRESHOLD + "+)",
       "last capture: " + (cap ? cap.w + " x " + cap.h : "—"),
       "last capture score: " +
         (lastScoreRef.current == null ? "—" : lastScoreRef.current.toFixed(0)) +
-        " (blur < " + BLUR_LAPLACIAN_MIN + ")",
+        " (blurry if < " + BLUR_LAPLACIAN_MIN + " and re-blur < " + BLUR_REBLUR_MIN + "%)",
       "last capture re-blur: " +
         (lastReblurRef.current == null ? "—" : lastReblurRef.current + "%") +
-        " (blur < " + BLUR_REBLUR_MIN + "%)",
+        " (both must agree)",
     ];
     return lines.join("\n");
   }
