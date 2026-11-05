@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-03 for three lesson versions per generate and "Add question", against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live.
 
 ---
 
@@ -384,6 +384,12 @@ lesson is opened for named students, with the text of any misconception noted on
 their verified wrong answers -- whatever the teacher typed there, which could
 include a name. That is unchanged by this entry and is the one free-text path.
 
+*5 Nov 2026 (review of #199):* each of a Generate's three requests also carries
+`lessonRun`, a random id that ties them together for billing (one credit per
+Generate; a failed one is refunded, `lib/lesson-billing.ts`). It is stored with
+the scan's params on our side and is **not** part of the prompt: nothing new
+reaches the AI provider.
+
 **Added by the DOK grid's cell panel (D2):** a lesson planned from a cell of a
 test's DOK grid also sends
 
@@ -439,6 +445,21 @@ It never carries a student name, id, answer, wrong-answer text, score or
 roster: the counts are a class-level aggregate over one cluster at one DOK.
 The published pages say so (how-we-use-ai "What is sent", privacy §8,
 student-data-privacy "What is sent").
+
+**Three versions per generate, and "Add question" (Ricky, 27 Oct 2026, built,
+not yet live):** one generate now sends three `lesson` requests side by side
+-- the full lesson (`lessonPart: "full"`) in the chosen teaching approach, and
+the lesson flow alone (`lessonPart: "flow"`) in the other two. Each carries
+exactly what a lesson request already carried (the standard's catalog entry,
+grade, framework, duration, the approach, the focus, the teacher's notes);
+nothing new about students. "Add question" sends one more `lesson` request
+(`lessonPart: "question"`, `section`) with the same, plus `existing`: the
+text of that section's questions in the lesson on screen -- lesson text the
+AI wrote and the teacher may have edited, so a new question does not repeat
+them (at most 20, each at most 600 characters). That is teacher-reviewed
+lesson content, like the notes, not student work; it never holds a student's
+answer or name unless the teacher typed one into a question. The
+how-we-use-ai page says so.
 
 ## 5. Results back to the teacher
 

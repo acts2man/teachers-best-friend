@@ -249,7 +249,8 @@ test("(a) a scan in progress on a test that exists is never cleared", async () =
 
 test("every caller tells the teacher about pages a scan kept", () => {
   const files = {
-    "components/teacher-assessments.tsx": 2,
+    // Delete, re-read, and "Remove from this class" (review of #202).
+    "components/teacher-assessments.tsx": 3,
     "components/teacher-classes.tsx": 2,
     "components/teacher-insights.tsx": 1,
     "components/teacher-review.tsx": 1,

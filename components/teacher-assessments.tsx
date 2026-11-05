@@ -54,6 +54,8 @@ import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { clearClassScanSession, describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
+import { logAppEvent } from "@/lib/app-events-client";
+import { draftFromTraits, readFailureNotice, rubricReadNotice, uploadFailureNotice, type ReadTrait } from "@/lib/rubric-read";
 import {
   Collapsible,
   Action,
@@ -154,6 +156,7 @@ import {
   classesFor,
   shareAssessmentWith,
   deleteAssessment,
+  removeFromClass,
   uploadsNoLongerUsed,
 } from "@/lib/teacher-classes";
 import {
@@ -174,7 +177,7 @@ import type {
 } from "@/lib/teacher-types";
 
 export function AssessmentView() {
-  const { w, assessments, students, save, busy, aiReady, go } = useTeacher();
+  const { w, classroom, assessments, students, save, busy, aiReady, go } = useTeacher();
   const params = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null),
     [query, setQuery] = useState(""),
@@ -198,6 +201,8 @@ export function AssessmentView() {
       null,
     ),
     [deleting, setDeleting] = useState(false),
+    // "Remove from this class", on a test more than one class uses.
+    [leaving, setLeaving] = useState(false),
     // "Read document again" on a test that already has graded answers waits
     // here for the teacher to say the grades may go (see ConfirmReread).
     [confirmingReread, setConfirmingReread] = useState(false);
@@ -206,7 +211,26 @@ export function AssessmentView() {
     setSelected(params.get("id"));
     setTab(params.get("tab") || "questions");
   }, [params]);
+  // Picked from the Assessment library: "skip straight to upload student
+  // work" (Ricky, 27 Oct 2026), so the class-set upload is brought into view
+  // -- on a phone it sits below the test's summary.
+  const fromLibrary = params.get("from") === "library";
+  useEffect(() => {
+    if (!fromLibrary || !selected) return;
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const el = document.querySelector(".student-review-space");
+      if (el || ++tries > 40) window.clearInterval(id);
+      el?.scrollIntoView({ block: "start" });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [fromLibrary, selected]);
   const a = assessments.find((x) => x.id === selected);
+  // The classes this test is used in (shared, or from the Assessment library).
+  const usedBy = a ? classesFor(w, a) : [];
+  const otherNames = usedBy.filter((c) => c.id !== classroom.id).map((c) => c.name).join(", ");
+  const inClass = new Set(students.map((s) => s.id));
+  const ownAnswers = a ? a.responses.filter((r) => inClass.has(r.studentId)).length : 0;
   // Questions on standards outside the assessment's list (Michael, 19 Oct):
   // said apart, no longer counted as 0 in the alignment.
   const offList = a ? offListQuestions(a) : { n: 0, m: 0 };
@@ -506,6 +530,21 @@ export function AssessmentView() {
   }
   // Delete the assessment and everything derived from it, then remove its
   // uploaded pages from storage. See deleteAssessment for exactly what goes.
+  /** "Remove from this class" (review of #202): the other classes keep it. */
+  async function removeHere() {
+    if (!a) return;
+    const out = removeFromClass(w, a.id, classroom.id);
+    if (!out) return;
+    if (await save(out.workspace, "“" + a.title + "” removed from " + classroom.name)) {
+      setLeaving(false);
+      setSelected(null);
+      go("/assessments");
+      const { failed: kept, keptInScan } = await deleteUploads(out.uploadIds);
+      if (kept)
+        toast.error(kept + (kept === 1 ? " scanned page" : " scanned pages") + " couldn't be deleted just now. They'll be removed automatically.");
+      if (keptInScan) toast.warning(keptInScanMessage(keptInScan));
+    }
+  }
   async function removeAssessment() {
     if (!a) return;
     const { workspace, uploadIds } = deleteAssessment(w, a.id);
@@ -682,17 +721,51 @@ export function AssessmentView() {
               Export report
             </Action>
             <Action
-              onClick={() => setTab("responses")}
+              onClick={() => {
+                setTab("responses");
+                // On a phone the tabs sit below the test's summary, so the
+                // switch happened off screen and the tap looked like nothing
+                // (Michael, 4 Nov 2026, Android): bring the step into view.
+                requestAnimationFrame(() =>
+                  document.querySelector(".assessment-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                );
+              }}
               disabled={!preparationGaps(a).ready}
             >
               <Plus size={16} />
               Add student work
             </Action>
+            {usedBy.length > 1 && (
+              <Action variant="secondary" onClick={() => setLeaving(true)}>
+                <Users size={16} />
+                Remove from this class
+              </Action>
+            )}
             <Action variant="secondary" onClick={() => setDeleting(true)}>
               <Trash2 size={16} />
               Delete
             </Action>
           </PageTitle>
+          <AlertDialog open={leaving} onOpenChange={(v) => !v && setLeaving(false)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove “{a.title}” from {classroom.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {classroom.name}’s answers to this test
+                  {ownAnswers ? " (" + ownAnswers + (ownAnswers === 1 ? " answer" : " answers") + ")" : ""}, their scanned
+                  pages and what the test added to their reports are removed. {otherNames} keep
+                  {usedBy.length - 1 === 1 ? "s" : ""} the test and all of
+                  {usedBy.length - 1 === 1 ? " its" : " their"} students’ work.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>Keep it in {classroom.name}</AlertDialogCancel>
+                <AlertDialogAction className="action danger" disabled={busy} onClick={removeHere}>
+                  Remove from {classroom.name}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Modal
             open={!!editMeta}
             onClose={() => setEditMeta(null)}
@@ -767,6 +840,12 @@ export function AssessmentView() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete “{a.title}”?</AlertDialogTitle>
+                {usedBy.length > 1 && (
+                  <p className="delete-shared-warning" role="alert">
+                    Used by {usedBy.length} classes ({usedBy.map((c) => c.name).join(", ")}) — deleting it deletes
+                    every class’s student work. To take it out of {classroom.name} only, use Remove from this class.
+                  </p>
+                )}
                 <AlertDialogDescription>
                   This permanently deletes the assessment, its questions, every
                   student’s answers and the evidence those answers produced, and
@@ -816,7 +895,11 @@ export function AssessmentView() {
             <div>
               <span>Student work</span>
               <strong>
-                {new Set(a.responses.map((r) => r.studentId)).size} added
+                {/* This class's students only: a test used in more than one
+                    class (the share dialog, the Assessment library) holds
+                    every class's work, and Class B was told "24 added" for
+                    the first class's 24. */}
+                {new Set(a.responses.filter((r) => students.some((s) => s.id === r.studentId)).map((r) => r.studentId)).size} added
               </strong>
             </div>
           </div>
@@ -1617,6 +1700,12 @@ export function AssessmentView() {
               measures.
             </SheetDescription>
           </SheetHeader>
+          {edit && usedBy.length > 1 && (
+            <p className="review-notice shared-edit-warning" data-tone="warn" role="note">
+              This test is used by {usedBy.length} classes ({usedBy.map((c) => c.name).join(", ")}). A change here
+              changes the question for all of them, and every class’s answers to it are graded against it.
+            </p>
+          )}
           {edit && (
             <div className="sheet-scroll form-stack">
               {edit.passage && (
@@ -2133,47 +2222,61 @@ function WritingRubricPanel({
     const incoming = Array.from(list).slice(0, 4);
     setReading(true);
     setNotice("");
+    // Traits read earlier and not saved yet: a later failure must say they are
+    // still there rather than read as if nothing was read (Michael, 3 Nov).
+    const unsaved = dirty ? draft.length : 0;
     try {
       const ids: string[] = [];
+      const refused: string[] = [];
       for (const raw of incoming) {
-        const file = await uprightPage(raw);
-        const d = await uploadFile(file);
-        ids.push(d.id);
+        try {
+          const file = await uprightPage(raw);
+          const d = await uploadFile(file);
+          ids.push(d.id);
+        } catch (e) {
+          // That file, by name, in the server's own words -- and the others
+          // still go. A photo is never reported as "This PDF".
+          const reason = describeFailure(e, "it couldn’t be uploaded.");
+          refused.push(uploadFailureNotice(raw.name || "Your file", reason));
+          logAppEvent("api_failure", {
+            message: reason,
+            assessmentId: a.id,
+            detail: { endpoint: "/api/uploads", method: "POST", mode: "rubric", image: raw.type.startsWith("image/"), pdf: raw.type === "application/pdf" },
+          });
+        }
       }
-      const d = await analyzeRequest({
-        mode: "rubric",
-        uploadIds: ids,
-        grade: a.grade,
-        subject: a.subject,
-        framework: a.framework,
-      });
-      const traits = (d.result.traits ?? []) as {
-        name: string;
-        max: number;
-        descriptor: string;
-        standard: string;
-      }[];
+      if (!ids.length) {
+        setNotice(readFailureNotice(refused.join(" "), unsaved));
+        return;
+      }
+      let d: { result: Record<string, unknown> };
+      try {
+        d = await analyzeRequest({
+          mode: "rubric",
+          uploadIds: ids,
+          grade: a.grade,
+          subject: a.subject,
+          framework: a.framework,
+        });
+      } catch (e) {
+        const reason = describeFailure(e, "Your rubric couldn’t be read.");
+        logAppEvent("ai_failure", { message: reason, assessmentId: a.id, detail: { mode: "rubric", kind: "error" } });
+        setNotice(readFailureNotice([...refused, reason].join(" "), unsaved));
+        return;
+      }
+      const traits = ((d.result.traits ?? []) as ReadTrait[]).filter((t) => t && typeof t.name === "string");
       if (!traits.length) {
         setNotice(
-          "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand.",
+          readFailureNotice(
+            [...refused, "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand."].join(" "),
+            unsaved,
+          ),
         );
         return;
       }
-      setDraft(
-        traits.map((t) => ({
-          id: crypto.randomUUID(),
-          name: t.name,
-          max: t.max,
-          descriptor: t.descriptor,
-          standard: t.standard,
-        })),
-      );
-      setNotice(
-        traits.length +
-          " traits read from your rubric. Check each one and its standard, then Save rubric.",
-      );
-    } catch (e) {
-      setNotice(describeFailure(e, "Your rubric couldn’t be read."));
+      // Traits with no standard are kept, blank, for the teacher to set.
+      setDraft(draftFromTraits(traits, () => crypto.randomUUID()));
+      setNotice([...refused, rubricReadNotice(traits)].join(" "));
     } finally {
       setReading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -2278,12 +2381,13 @@ function WritingRubricPanel({
             <label>
               Standard
               <input
-                className="class-scan-name-input"
+                className={"class-scan-name-input" + (d.standard ? "" : " needs-standard")}
                 value={d.standard}
-                placeholder="e.g. W.5.2"
+                placeholder="Set a standard, e.g. W.5.2"
                 aria-label={d.name + " standard"}
                 onChange={(e) => set(d.id, { standard: e.target.value.trim() })}
               />
+              {!d.standard && <span className="field-help">No standard yet: set one, or leave it blank (it is still scored).</span>}
             </label>
           </div>
         </div>
@@ -2332,20 +2436,28 @@ function WritingReview({
   const risk = confirmedGradesAtRisk(a, selected ? [selected] : []);
   const [askReplace, setAskReplace] = useState(false);
   const replaceConfirmed = useRef(false);
-  function chooseWriting() {
+  // Where the new writing comes from: the file picker, or the app's own
+  // camera (Michael, 4 Nov 2026: on Android the picker opened the phone's
+  // camera, not the app's with its framing guide and blur check).
+  const source = useRef<"files" | "camera">("files");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const open = (from: "files" | "camera") =>
+    from === "camera" ? setCameraOpen(true) : input.current?.click();
+  function chooseWriting(from: "files" | "camera" = "files") {
+    source.current = from;
     if (risk.answers > 0) setAskReplace(true);
     else {
       replaceConfirmed.current = false;
-      input.current?.click();
+      open(from);
     }
   }
   function pickFiles(replace: boolean) {
     setAskReplace(false);
     replaceConfirmed.current = replace;
-    input.current?.click();
+    open(source.current);
   }
 
-  async function gradeEssay(list: FileList | null) {
+  async function gradeEssay(list: FileList | File[] | null) {
     if (!list || !selected) return;
     const incoming = Array.from(list);
     if (incoming.length > 12) {
@@ -2455,18 +2567,46 @@ function WritingReview({
         </label>
         {student && (
           <div className="review-heading-actions">
+            {/* Named types, not image/*: on Android "image/*" lets the browser
+                go straight to the phone's camera, and the app camera is the
+                button beside this one. */}
             <input
               ref={input}
               type="file"
-              accept="image/*,application/pdf"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
               multiple
               hidden
+              aria-label={"Upload writing for " + (student?.name ?? "this student")}
               onChange={(e) => gradeEssay(e.target.files)}
             />
-            <Action disabled={uploading || busy} onClick={chooseWriting}>
+            <Action disabled={uploading || busy} onClick={() => chooseWriting("camera")}>
+              <Camera size={16} />
+              {hasScores ? "Retake writing" : "Take a photo"}
+            </Action>
+            <Action variant="secondary" disabled={uploading || busy} onClick={() => chooseWriting("files")}>
               {uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}
               {hasScores ? "Replace writing" : "Add writing"}
             </Action>
+            {cameraOpen && student && (
+              <ScanCamera
+                mode="single"
+                title={student.name}
+                assessmentId={a.id}
+                onComplete={(groups) => {
+                  setCameraOpen(false);
+                  const files = groups.flat();
+                  if (files.length) void gradeEssay(files);
+                }}
+                onCancel={() => setCameraOpen(false)}
+                // A browser that will not give the page the camera: the file
+                // picker, as every other "take a photo" button does
+                // (tests/in-app-camera.test.mjs) -- never the phone's camera.
+                onFallback={() => {
+                  setCameraOpen(false);
+                  input.current?.click();
+                }}
+              />
+            )}
             <ConfirmRescan
               risk={risk}
               open={askReplace}
@@ -2874,7 +3014,14 @@ function ClassAnalysisPanel({
   catalog: import("@/lib/teacher-types").Standard[];
   go: (url: string) => void;
 }) {
-  const graded = a.responses.some((r) => r.verified);
+  // This class's students' answers only. A test used by more than one class
+  // (shared, or picked from the Assessment library) holds every class's work;
+  // the other class's graded answers used to make this one's analysis look
+  // started, and its ungraded ones to say "still being graded" here (review
+  // of #202).
+  const mine = new Set(students.map((s) => s.id));
+  const own = a.responses.filter((r) => mine.has(r.studentId));
+  const graded = own.some((r) => r.verified);
   if (!graded)
     return (
       <EmptyState
@@ -2896,7 +3043,7 @@ function ClassAnalysisPanel({
   // teacher. They are not counted as zero anywhere; this just says the class
   // picture is still being graded so a partial is not read as final.
   const activeIds = new Set(activeQuestions(a).map((q) => q.id));
-  const stillGrading = a.responses.filter(
+  const stillGrading = own.filter(
     (r) => activeIds.has(r.questionId) && !r.verified,
   ).length;
   const fileName =
@@ -2975,7 +3122,7 @@ function ClassAnalysisPanel({
       <Collapsible className="analysis-section" title="Costa's levels" summary="Gathering, processing, applying">
         <CognitiveBreakdown
           questions={a.questions}
-          responses={a.responses}
+          responses={own}
           heading="Costa's levels across this assessment"
           showDok={false}
         />
