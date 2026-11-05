@@ -114,7 +114,13 @@ export type SuperGridCell = Score & {
   errorTypes: { name: string; count: number }[];
 };
 
-export type SuperGridRow = { cluster: Cluster; label: string; cells: SuperGridCell[] };
+export type SuperGridRow = {
+  cluster: Cluster;
+  label: string;
+  cells: SuperGridCell[];
+  /** Every answer in the row, all DOKs pooled: the cluster's own average. */
+  overall: Score;
+};
 
 export type SuperGrid = {
   rows: SuperGridRow[];
@@ -238,6 +244,7 @@ function superGrid(
     .map(({ cluster, items }): SuperGridRow => ({
       cluster,
       label: clusterLabel(cluster),
+      overall: score(items.flatMap((i) => i.answers.map((x) => x.match)), mode),
       cells: DOKS.map((dok): SuperGridCell => {
         const here = items.filter((i) => i.dok === dok);
         const answers = here.flatMap((i) => i.answers);
