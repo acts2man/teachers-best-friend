@@ -1,7 +1,7 @@
 "use client";
 import { MASTERY_LEVELS, levelClass, masteryLevelOf, type MasteryLevel } from "@/lib/mastery-levels";
-import type {ReactNode} from "react";
-import {ArrowUpRight,ArrowRight,Lightbulb,FileText} from "lucide-react";
+import {useState,type ReactNode} from "react";
+import {ArrowUpRight,ArrowRight,Lightbulb,FileText,ChevronDown} from "lucide-react";
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from "@/components/ui/select";
 import {Progress} from "@/components/ui/progress";
 import {Empty,EmptyHeader,EmptyTitle,EmptyDescription,EmptyMedia} from "@/components/ui/empty";
@@ -24,7 +24,32 @@ export function MasteryScore({value,title}:{value:number|null;title?:string}){co
 export function LevelPill({percent}:{percent:number|null}){const l=masteryLevelOf(percent);return l?<span className={"pill "+levelClass(percent)}>{l.level}</span>:null}
 /** Students grouped by mastery level, Beginning first: the four-level list
  * the class analysis, the writing panel and the reports share. */
-export function LevelStudents({byLevel,onOpen,ranges}:{byLevel:Record<MasteryLevel,Student[]>;onOpen:(s:Student)=>void;ranges?:Record<MasteryLevel,string>}){return <>{MASTERY_LEVELS.filter(l=>byLevel[l.level].length).map(l=><div className="level-students" key={l.level}><span className={"cell-meta level-label level-"+l.tone}>{l.level} · {ranges?ranges[l.level]:l.range} ({byLevel[l.level].length})</span><div className="group-members">{byLevel[l.level].map(m=><button key={m.id} onClick={()=>onOpen(m)}><Avatar student={m} size="small"/><span>{m.name}</span></button>)}</div></div>)}</>}
+/** Students grouped by mastery level, Beginning first: the four-level list
+ * the class analysis, the writing panel and the reports share. `collapsible`
+ * (the class analysis, Ricky 19 and 29 Oct 2026: "it is daunting to scroll
+ * through all the students"): each level is a drop-down, open by default,
+ * that says how many students it holds when closed. */
+export function LevelStudents({byLevel,onOpen,ranges,collapsible=false}:{byLevel:Record<MasteryLevel,Student[]>;onOpen:(s:Student)=>void;ranges?:Record<MasteryLevel,string>;collapsible?:boolean}){
+  return <>{MASTERY_LEVELS.filter(l=>byLevel[l.level].length).map(l=>{
+    const label=<span className={"cell-meta level-label level-"+l.tone}>{l.level} · {ranges?ranges[l.level]:l.range} ({byLevel[l.level].length})</span>;
+    const members=<div className="group-members">{byLevel[l.level].map(m=><button key={m.id} onClick={()=>onOpen(m)}><Avatar student={m} size="small"/><span>{m.name}</span></button>)}</div>;
+    return collapsible
+      ?<Collapsible key={l.level} className="level-students" title={label} summary={byLevel[l.level].length+(byLevel[l.level].length===1?" student":" students")}>{members}</Collapsible>
+      :<div className="level-students" key={l.level}>{label}{members}</div>;
+  })}</>;
+}
+/**
+ * A section that folds (Ricky, 19 and 29 Oct 2026): open by default; closed,
+ * it keeps its title and shows `summary`, one short line of what is inside.
+ * A native <details>, so it opens from the keyboard and with a screen reader.
+ */
+export function Collapsible({title,summary,children,className="",defaultOpen=true}:{title:ReactNode;summary:ReactNode;children:ReactNode;className?:string;defaultOpen?:boolean}){
+  const [open,setOpen]=useState(defaultOpen);
+  return <details className={"collapsible "+className} open={open} onToggle={e=>setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+    <summary><ChevronDown size={16} className="collapsible-chevron" aria-hidden="true"/><span className="collapsible-title">{title}</span>{!open&&<span className="collapsible-summary cell-meta">{summary}</span>}</summary>
+    {children}
+  </details>;
+}
 export function EmptyState({title,description,children}:{title:string;description:string;children?:ReactNode}){return <Empty className="empty-state"><EmptyHeader><EmptyMedia variant="icon"><FileText/></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{children}</Empty>}
 export function Modal({open,onClose,title,description,children,wide=false}:{open:boolean;onClose:()=>void;title:string;description?:string;children:ReactNode;wide?:boolean}){return <Dialog open={open} onOpenChange={v=>!v&&onClose()}><DialogContent className={"teacher-modal "+(wide?"wide":"")}><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description||"Review the details below."}</DialogDescription></DialogHeader>{children}</DialogContent></Dialog>}
 export function Ring({value,label,small=false}:{value:number;label:string;small?:boolean}){const r=small?43:66,c=2*Math.PI*r;return <div className={"ring-chart "+(small?"small":"")} role="img" aria-label={label+": "+value+" percent"}><svg viewBox={small?"0 0 108 108":"0 0 168 168"}><circle cx={small?54:84} cy={small?54:84} r={r} className="ring-track"/><circle cx={small?54:84} cy={small?54:84} r={r} className="ring-value" strokeDasharray={c} strokeDashoffset={c*(1-value/100)}/></svg><div><strong>{value}<small>%</small></strong><span>{label}</span></div></div>}

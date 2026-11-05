@@ -801,7 +801,8 @@ export function ScanView() {
                       <p className="field-help">
                         {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"}{" "}
                         graded {gradingMode === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
-                        {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                        {otherModeClasses === 1 ? "it can't" : "they can't"} share this test. To use it in{" "}
+                        {gradingMode === "sbg" ? "a Percentage" : "a Standards-Based"} class, upload it again there as a new test.
                       </p>
                     )}
                   </div>

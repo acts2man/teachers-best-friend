@@ -30,6 +30,11 @@ export type StoredShot = {
    * its student's pile, its place there and its label, so after a reload its
    * Retry puts it back with the right student. */
   failedAt?: { pile: number; index: number; label: string };
+  /** Where a page is going, written by the scan screen the moment it starts
+   * uploading it (review of #188): a page still uploading when the tab
+   * reloads is retried into that place. Absent on a page whose student was
+   * still waiting in the upload queue -- it gets a pile of its own. */
+  placeAt?: { pile: number; index: number; label: string };
 };
 
 /** What happened to one page handed over at "Next student". */
@@ -75,6 +80,17 @@ export function restorableShots(shots: StoredShot[], held: ReadonlySet<string> =
  * hold -- after a reload, all of them. Grading waits on these too. */
 export function failedShots(shots: StoredShot[], held: ReadonlySet<string> = new Set()): StoredShot[] {
   return orderStored(shots.filter((s) => s.failed && !held.has(s.id)));
+}
+
+/**
+ * The pages the scan screen picks back up when it opens (review of #188):
+ * every page handed over and not landed -- failed after its retries, or
+ * still uploading when the tab reloaded (sent, not failed: a landed page's
+ * copy is deleted the moment it lands, so a sent copy that is still here
+ * never landed in a pile this tab kept). Not one the scan screen holds.
+ */
+export function pagesToPickUp(shots: StoredShot[], held: ReadonlySet<string> = new Set()): StoredShot[] {
+  return orderStored(shots.filter((s) => s.sent && !held.has(s.id)));
 }
 
 const DB_NAME = "tbf-scan-camera";
@@ -164,6 +180,15 @@ export async function deleteShot(id: string): Promise<void> {
 /** Flags a handed-over page as failed after its retries, with where it
  * belongs (the scan screen calls this; see StoredShot.failedAt). */
 export async function markShotFailed(id: string, at: { pile: number; index: number; label: string }): Promise<void> {
+  return patchShot(id, { sent: true, failed: true, failedAt: at });
+}
+
+/** Records where a page is going as its upload starts (StoredShot.placeAt). */
+export async function markShotPlace(id: string, at: { pile: number; index: number; label: string }): Promise<void> {
+  return patchShot(id, { placeAt: at });
+}
+
+async function patchShot(id: string, patch: Partial<StoredShot>): Promise<void> {
   const db = await open();
   if (!db) return;
   await new Promise<void>((resolve) => {
@@ -172,7 +197,7 @@ export async function markShotFailed(id: string, at: { pile: number; index: numb
       const os = tx.objectStore(STORE);
       const req = os.get(id);
       req.onsuccess = () => {
-        if (req.result) os.put({ ...req.result, sent: true, failed: true, failedAt: at });
+        if (req.result) os.put({ ...req.result, ...patch });
       };
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
