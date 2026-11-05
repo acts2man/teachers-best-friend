@@ -46,3 +46,41 @@ export function incompleteMessage(mode: AnalyzeParams["mode"]): string {
 export const OUT_OF_CREDITS_FOR_LESSON =
   "Generating a lesson uses 1 credit, and you have none left this period, so it wasn’t written. Nothing was charged. You can add more on Plan and billing.";
 
+
+/** Whether a Generate can be paid for: one credit left, and the plan lets it scan. */
+export function hasCreditForLesson(q: { remaining: number; canScan: boolean }): boolean {
+  return q.canScan && q.remaining >= 1;
+}
+
+/**
+ * Runs one Generate: the full lesson first, and the two other versions
+ * (free) only once the full one has been ACCEPTED -- charged and started, as
+ * the server's scan id says, or finished. Refused (402: no credits, or any
+ * other refusal), the free ones never start (review of #199). Results come
+ * back in order, full first, as Promise.allSettled would give them.
+ */
+export async function startGenerate<T>(
+  full: (onAccepted: () => void) => Promise<T>,
+  flows: (() => Promise<T>)[],
+): Promise<PromiseSettledResult<T>[]> {
+  let accept!: () => void;
+  let refuse!: () => void;
+  const accepted = new Promise<boolean>((res) => {
+    accept = () => res(true);
+    refuse = () => res(false);
+  });
+  const first = full(() => accept()).then(
+    (v) => {
+      accept();
+      return v;
+    },
+    (e) => {
+      refuse();
+      throw e;
+    },
+  );
+  const rest = flows.map((f) =>
+    accepted.then((ok) => (ok ? f() : Promise.reject(new Error("Not started: the lesson itself was refused.")))),
+  );
+  return Promise.allSettled([first, ...rest]);
+}

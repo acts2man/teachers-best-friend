@@ -7,24 +7,37 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compare, timeRange, stillOrphaned, manifestToken, loggedButGone } from "../scripts/admin/orphan-photos-lib.mjs";
+import { compare, timeRange, stillOrphaned, manifestToken, loggedButGone, LOST_WINDOW, MIN_AGE_MS } from "../scripts/admin/orphan-photos-lib.mjs";
+
+// No fixed dates (review of #206): every time is either a fixed point of the
+// script's own (the 12 Oct restore window, LOST_WINDOW) moved by an offset,
+// or "now" moved by an offset. The suite passes with the clock moved a year
+// either way (npm run test:clock).
+const H = 60 * 60 * 1000;
+const D = 24 * H;
+const iso = (ms) => new Date(ms).toISOString();
+const FROM = Date.parse(LOST_WINDOW.from);
+const TO = Date.parse(LOST_WINDOW.to);
+const inWindow = (h) => iso(FROM + h * H); // h hours into the lost window
+const afterWindow = (h) => iso(TO + h * H);
+const beforeWindow = (h) => iso(FROM - h * H);
 
 const T1 = "aaaaaaaa-1111-1111-1111-111111111111";
 const T2 = "bbbbbbbb-2222-2222-2222-222222222222";
 
 test("orphans, missing files and purged-but-present are told apart, counted by teacher and time range", () => {
   const objects = [
-    { path: `${T1}/u1.jpg`, size: 100, createdAt: "2026-10-12T03:00:00Z" },
-    { path: `${T1}/u2.jpg`, size: 200, createdAt: "2026-10-12T15:00:00Z" }, // lost window, no row
-    { path: `${T2}/u3.jpg`, size: 300, createdAt: "2026-10-13T02:00:00Z" }, // after, no row
-    { path: `${T2}/u4.jpg`, size: 400, createdAt: "2026-09-01T00:00:00Z" }, // purged row, file still here
+    { path: `${T1}/u1.jpg`, size: 100, createdAt: beforeWindow(10) },
+    { path: `${T1}/u2.jpg`, size: 200, createdAt: inWindow(2) }, // lost window, no row
+    { path: `${T2}/u3.jpg`, size: 300, createdAt: afterWindow(1.5) }, // after, no row
+    { path: `${T2}/u4.jpg`, size: 400, createdAt: beforeWindow(41 * 24) }, // purged row, file still here
   ];
   const rows = [
     { object_path: `${T1}/u1.jpg`, purged_at: null },
-    { object_path: `${T2}/u4.jpg`, purged_at: "2026-10-01T09:00:00Z" },
+    { object_path: `${T2}/u4.jpg`, purged_at: beforeWindow(11 * 24) },
     { object_path: `${T2}/gone.jpg`, purged_at: null },
   ];
-  const r = compare(objects, rows, undefined, { now: Date.parse("2026-10-14T00:00:00Z") });
+  const r = compare(objects, rows, undefined, { now: TO + D });
   assert.deepEqual(r.orphans.map((o) => o.path), [`${T1}/u2.jpg`, `${T2}/u3.jpg`]);
   assert.deepEqual(r.missing, [`${T2}/gone.jpg`]);
   assert.deepEqual(r.purgedButPresent, [`${T2}/u4.jpg`]);
@@ -32,7 +45,9 @@ test("orphans, missing files and purged-but-present are told apart, counted by t
     "aaaaaaaa | lost window (12 Oct 05:54-17:36 PT)": { files: 1, bytes: 200 },
     "bbbbbbbb | after the restore": { files: 1, bytes: 300 },
   });
-  assert.equal(timeRange("2026-10-12T12:53:59Z"), "before the backup point");
+  assert.equal(timeRange(iso(FROM - 1000)), "before the backup point");
+  assert.equal(timeRange(iso(FROM)), "lost window (12 Oct 05:54-17:36 PT)");
+  assert.equal(timeRange(iso(TO)), "after the restore");
   assert.equal(timeRange(null), "unknown");
 });
 
@@ -44,18 +59,18 @@ test("the delete set is re-checked: a path that has a row by now is kept", async
 });
 
 test("a file under an hour old, or the dashboard's folder marker, is never an orphan", () => {
-  const now = Date.parse("2026-10-13T12:00:00Z");
+  const now = Date.now();
   const r = compare([
-    { path: `${T1}/fresh.jpg`, createdAt: "2026-10-13T11:30:00Z" },
-    { path: `${T1}/.emptyFolderPlaceholder`, createdAt: "2026-10-01T00:00:00Z" },
-    { path: `${T1}/old.jpg`, createdAt: "2026-10-13T10:00:00Z" },
+    { path: `${T1}/fresh.jpg`, createdAt: iso(now - MIN_AGE_MS / 2) },
+    { path: `${T1}/.emptyFolderPlaceholder`, createdAt: iso(now - 12 * D) },
+    { path: `${T1}/old.jpg`, createdAt: iso(now - 2 * MIN_AGE_MS) },
   ], [], undefined, { now });
   assert.deepEqual(r.orphans.map((o) => o.path), [`${T1}/old.jpg`]);
 });
 
 test("uploads the request log saw that nothing lists or records are counted by teacher and window", () => {
   const { gone, counts } = loggedButGone(
-    [{ path: `${T1}/a`, createdAt: "2026-10-12T18:00:00Z" }, { path: `${T1}/b`, createdAt: "2026-10-12T18:01:00Z" }, { path: `${T2}/c`, createdAt: "2026-10-12T17:52:00Z" }, { path: `${T2}/listed`, createdAt: "2026-10-12T17:53:00Z" }],
+    [{ path: `${T1}/a`, createdAt: inWindow(5) }, { path: `${T1}/b`, createdAt: inWindow(5.02) }, { path: `${T2}/c`, createdAt: inWindow(4.9) }, { path: `${T2}/listed`, createdAt: inWindow(4.92) }],
     [{ path: `${T2}/listed` }],
     [],
   );
@@ -130,14 +145,16 @@ async function withServer(state, fn) {
   }
 }
 
-const OLD = "2026-10-11T00:00:00Z";
+// The CLI judges against the real clock: these files are old enough to judge
+// (a file under MIN_AGE_MS old is an upload in flight), whatever today is.
+const OLD = iso(Date.now() - 30 * D);
 
 test("report and dry run change nothing; delete removes exactly the reviewed set, only with its token", async () => {
   const state = {
     files: [
       { path: `${T1}/keep.jpg`, size: 10, createdAt: OLD },
-      { path: `${T1}/orphan.jpg`, size: 20, createdAt: "2026-10-12T15:00:00Z" },
-      { path: `${T2}/orphan2.jpg`, size: 30, createdAt: "2026-10-13T01:00:00Z" },
+      { path: `${T1}/orphan.jpg`, size: 20, createdAt: iso(Date.now() - 20 * D) },
+      { path: `${T2}/orphan2.jpg`, size: 30, createdAt: iso(Date.now() - 19 * D) },
       { path: `${T2}/a1/deep.jpg`, size: 40, createdAt: OLD }, // two levels down, legacy row
       { path: `${T2}/.emptyFolderPlaceholder`, size: 0, createdAt: OLD },
     ],
@@ -203,7 +220,7 @@ test("safety: no manifest inside the repository, none when most of the bucket lo
     assert.match(inside.out, /Refusing to write the manifest inside the repository/);
     const dir = mkdtempSync(join(tmpdir(), "orphans-"));
     const log = join(dir, "lost.tsv");
-    writeFileSync(log, `uploaded_utc\tbucket_path\n2026-10-12T18:24:28.054Z\t${T1}/lost-1\n2026-10-12T17:52:29.985Z\t/storage/v1/object/teacher-documents/${T2}/lost-2\n`);
+    writeFileSync(log, `uploaded_utc\tbucket_path\n${inWindow(5.5)}\t${T1}/lost-1\n${inWindow(4.97)}\t/storage/v1/object/teacher-documents/${T2}/lost-2\n`);
     const most = await cli(port, ["report", "--out", join(dir, "m.json"), "--logged", log]);
     assert.equal(most.code, 5, most.out);
     assert.match(most.out, /Refusing to write a manifest: 1 of 1/);

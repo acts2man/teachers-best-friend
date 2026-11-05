@@ -171,8 +171,10 @@ test("a too-blurry frame is not added silently: retake / keep (manual) or skip (
   assert.match(src, />\s*Retake\s*</, "retake affordance");
   assert.match(src, />\s*Keep\s*</, "keep affordance");
   assert.match(src, /Too blurry/, "a too-blurry message");
-  // Auto: skipped with a hint, so it never buffers a blurry page on its own.
-  assert.match(src, /if \(autoRef\.current\) flashBlurryHint\(\)/, "a blurry auto-snap is skipped");
+  // Auto-snap: skipped with a hint, so it never buffers a blurry page on its
+  // own. Who took it decides, not the mode: a shutter press in auto mode is
+  // the teacher's and gets Retake / Keep (review of #200).
+  assert.match(src, /if \(by === "auto"\) \{\s*flashBlurryHint\(\);/, "a blurry auto-snap is skipped");
 });
 
 test("the diagnostic panel reports the live and last-capture sharpness scores", () => {

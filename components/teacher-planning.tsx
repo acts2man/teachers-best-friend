@@ -8,7 +8,7 @@ import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
 import { AnalyzeError, analyzeRequest } from "@/lib/analyze-client";
-import { OUT_OF_CREDITS_FOR_LESSON } from "@/lib/lesson-billing";
+import { OUT_OF_CREDITS_FOR_LESSON, hasCreditForLesson, startGenerate } from "@/lib/lesson-billing";
 import { refundLesson } from "@/lib/lesson-refund-client";
 import { toast } from "sonner";
 import {
@@ -238,7 +238,7 @@ async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number }
 }
 
 export function ReteachView() {
-  const { w, classroom, students, save, busy, aiReady, go } = useTeacher();
+  const { w, classroom, students, save, busy, aiReady, go, quota } = useTeacher();
   const params = useSearchParams(),
     savedPlan = w.lessons.find((l) => l.id === params.get("lesson")),
     sourceAssessment = w.assessments.find(
@@ -476,11 +476,18 @@ export function ReteachView() {
       // the full lesson is charged, the other two versions are not, and all
       // three carry this id so a failure can be refunded on the server's word.
       const lessonRun = crypto.randomUUID();
+      // No credits left: nothing is started, not even the two free versions
+      // (review of #199) -- they would only be spent on a lesson that cannot
+      // be written.
+      if (quota && !hasCreditForLesson(quota)) {
+        toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
+        return;
+      }
       const { value: [full, ...flows], ms } = await timed(() =>
-        Promise.allSettled([
-          analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }),
-          ...others.map((o) => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
-        ]),
+        startGenerate(
+          (onAccepted) => analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }, { onScanId: onAccepted }),
+          others.map((o) => () => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
+        ),
       );
       // Out of credits: nothing was charged and nothing is shown; say why.
       if (full.status === "rejected" && full.reason instanceof AnalyzeError && full.reason.reason === 402) {
@@ -495,8 +502,10 @@ export function ReteachView() {
           return [o, r.status === "fulfilled" ? (r.value.result as LessonFlow) : null];
         }),
       );
-      // Anything missing: the Generate's credit goes back (server-checked).
-      const refunded = outcome.missing.length ? await refundLesson(lessonRun) : null;
+      // A version missing while the full lesson came back: its credit goes
+      // back (server-checked). The full lesson failing released its own credit
+      // already -- nothing to ask for (review of #199).
+      const refunded = outcome.missing.length && !outcome.fullMissing ? await refundLesson(lessonRun) : null;
       const message = generateMessage(outcome, refunded);
       if (!outcome.lesson) {
         toast.error(message + (full.status === "rejected" ? " (" + describeFailure(full.reason, "") + ")" : ""), { duration: 12000 });
