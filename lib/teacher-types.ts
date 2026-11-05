@@ -129,6 +129,12 @@ export type StudentResponse = {
    * bar included -- touches it (#126 round 3; Ricky's question 8). Absent
    * means grouped as usual. */
   gradedAlone?: boolean;
+  /** Grading may have put another paper's answers here (lib/answer-mixups.ts):
+   * the name the grading pass read on this student's pages fits neither the
+   * student nor the name read off the pile. Grade by question says "Answers
+   * may belong to another page — check" until the teacher moves the answers
+   * or says they are right. Absent means nothing to check. */
+  checkPages?: boolean;
 };
 export type AnswerRegion = {
   uploadId: string;

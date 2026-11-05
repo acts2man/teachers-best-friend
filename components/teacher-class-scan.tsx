@@ -27,6 +27,7 @@ import { ScanCamera } from "./scan-camera";
 import { PhotoImport } from "./photo-import";
 import { ImageViewer } from "./image-viewer";
 import { deviceId, tabId, useScanSession } from "./use-scan-session";
+import { withSeenFits } from "@/lib/answer-mixups";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1125,7 +1126,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               const id = inFlight;
               inFlight = null;
               try {
-                return (await resumeScan(id)).result;
+                return withSeenFits((await resumeScan(id)).result, students);
               } catch {
                 // Gone or never finished; fall through and send it again.
               }
@@ -1158,7 +1159,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
                   }
                 : undefined,
             );
-            return d.result;
+            // The names read on the piles become, at once, which students they
+            // could be; the names themselves are never kept (review of #203).
+            return withSeenFits(d.result, students);
           },
           // Banked after each batch, so an interruption never re-grades one.
           (soFar, nextBatch) => {
@@ -1584,6 +1587,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
         name: g.name,
         pageUploadIds: g.pageUploadIds,
         responses: g.responses,
+        detectedName: g.detectedName,
+        seenFits: g.seenFits,
       })),
       { replaceConfirmed: replaceConfirmed === true },
     );
@@ -1644,19 +1649,22 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       const graded = await gradeInBatches(
         batches,
         async (batch, index) =>
-          (
-            await analyzeRequest({
-              mode: "class_scan",
-              uploadIds: batch.uploadIds,
-              pageGroups: batch.groups,
-              onlyQuestionIds: batch.onlyQuestionIds ?? [],
-              batchIndex: index,
-              grade: a.grade,
-              subject: a.subject,
-              framework: a.framework,
-              assessmentId: a.id,
-            })
-          ).result,
+          withSeenFits(
+            (
+              await analyzeRequest({
+                mode: "class_scan",
+                uploadIds: batch.uploadIds,
+                pageGroups: batch.groups,
+                onlyQuestionIds: batch.onlyQuestionIds ?? [],
+                batchIndex: index,
+                grade: a.grade,
+                subject: a.subject,
+                framework: a.framework,
+                assessmentId: a.id,
+              })
+            ).result,
+            students,
+          ),
         () => {},
         0,
         [],

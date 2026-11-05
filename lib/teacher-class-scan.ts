@@ -1,3 +1,4 @@
+import { pagesMayBelongElsewhere } from "./answer-mixups";
 import type { AnswerRegion, Assessment, Student, StudentResponse } from "./teacher-types";
 import {
   mergeStudentResponses,
@@ -215,7 +216,14 @@ export function mergeNameReads(
 }
 
 /** Grading for one group, keyed by the group number the app supplied. */
-export type GradedGroup = { group: number; responses: ScannedResponse[] };
+export type GradedGroup = {
+  group: number;
+  responses: ScannedResponse[];
+  /** Which roster students the name the grading pass read on this group's
+   * pages could be (lib/answer-mixups.ts seenFitsFor) -- never the name
+   * itself. Absent when no name was read. */
+  seenFits?: string[];
+};
 
 /** One group of pages belonging to the same student. */
 export type ScannedGroup = {
@@ -223,6 +231,8 @@ export type ScannedGroup = {
   detectedName: string;
   confidence: number;
   responses: ScannedResponse[];
+  /** Which roster students the grading pass's read name could be (GradedGroup). */
+  seenFits?: string[];
 };
 
 /**
@@ -936,6 +946,7 @@ export function resolveScannedGroups(
 ): ResolvedGroup[] {
   const nameOf = new Map(names.map((n) => [n.page, n]));
   const gradedByGroup = new Map(graded.map((g) => [g.group, g.responses]));
+  const seenByGroup = new Map(graded.map((g) => [g.group, g.seenFits]));
 
   const validPagesByGroup = pageGroups.map((pages) =>
     [
@@ -1024,6 +1035,7 @@ export function resolveScannedGroups(
         detectedName,
         confidence: readConfidence,
         responses: gradedByGroup.get(i) ?? [],
+        ...(seenByGroup.get(i) ? { seenFits: seenByGroup.get(i) } : {}),
         pageUploadIds: validPages.map((p) => pageUploadIds[p]),
         key: "group-" + i,
         // Left unset on anything but a strong match: an ambiguous or shaky paper
@@ -1145,6 +1157,12 @@ export type ConfirmedGroup = {
   name: string;
   pageUploadIds: string[];
   responses: ScannedResponse[];
+  /** The name the name pass read on the pile, and which roster students the
+   * grading pass's read could be: when that is someone else and the first
+   * does not fit them either, the answers are marked to check
+   * (lib/answer-mixups.ts). */
+  detectedName?: string;
+  seenFits?: string[];
 };
 
 /**
@@ -1254,7 +1272,10 @@ export function applyScannedGroups(
     // the same test unless it actually answers the question, so keep what an
     // earlier pass found where this one saw nothing.
     scanned.push(studentId);
-    const incoming = normalizeRecognizedResponses(a, studentId, group.responses);
+    const check = pagesMayBelongElsewhere(group.seenFits, studentId, group.detectedName ?? "", students);
+    const incoming = normalizeRecognizedResponses(a, studentId, group.responses).map((r) =>
+      check ? { ...r, checkPages: true } : r,
+    );
     const earlier = responsesByStudent.get(studentId);
     responsesByStudent.set(
       studentId,
@@ -1331,6 +1352,19 @@ export const BATCH_OUTPUT_BUDGET = 16000;
  * than it was. Twelve whole phone photos sit comfortably under the limit.
  */
 export const MAX_PAGES_PER_BATCH = 12;
+
+/**
+ * Pages per class-set GRADING request: 2 or 3 (Michael, 2 Nov 2026). The
+ * request that returned the answers on page 6 for the student of page 5, and
+ * the other way round, held seven pages; a request with fewer papers in it has
+ * fewer to confuse. A student whose work runs over the limit still goes whole,
+ * alone -- a student is never split. GRADE_CONCURRENCY requests run side by
+ * side, so the size is the one that finishes in the fewest rounds of them,
+ * and the smaller on a tie (gradePagesPerBatch). Measured on the recorded 21
+ * Oct and 2 Nov sets: tests/grading-batch-size.test.mjs.
+ */
+export const GRADE_PAGES_PER_BATCH = 3;
+export const GRADE_PAGES_OPTIONS = [2, 3] as const;
 
 /**
  * Bytes of page images per grading request, under the analyze route's 12 MB
@@ -1443,14 +1477,30 @@ export function planRemainingBatches(
 ): ScanBatch[] {
   const done = new Set(graded.map((g) => g.group));
   const remaining = pageGroups.map((_, i) => i).filter((i) => !done.has(i));
-  return planScanBatches(
-    remaining.map((i) => pageGroups[i]),
-    pageUploadIds,
-    questionCount,
-    undefined,
-    undefined,
-    pageBytes,
-  ).map((b) => ({ ...b, groupIndexes: b.groupIndexes.map((k) => remaining[k]) }));
+  const piles = remaining.map((i) => pageGroups[i]);
+  const plan = (size: number) => planScanBatches(piles, pageUploadIds, questionCount, undefined, size, pageBytes);
+  return plan(gradePagesPerBatch(piles, pageUploadIds, questionCount, pageBytes)).map((b) => ({
+    ...b,
+    groupIndexes: b.groupIndexes.map((k) => remaining[k]),
+  }));
+}
+
+/**
+ * The grading request size for these piles: of 2 and 3 pages, the one that
+ * takes the fewest rounds of GRADE_CONCURRENCY requests side by side (so the
+ * smaller requests never make the teacher wait longer), and 2 on a tie (fewer
+ * papers to confuse). Twelve one-page students: 2 pages (six requests, two
+ * rounds) rather than 3 (four requests, also two rounds). Thirty-six: 3.
+ */
+export function gradePagesPerBatch(
+  piles: number[][],
+  pageUploadIds: string[],
+  questionCount: number,
+  pageBytes: (number | undefined)[] = [],
+): number {
+  const rounds = (size: number) =>
+    Math.ceil(planScanBatches(piles, pageUploadIds, questionCount, undefined, size, pageBytes).length / GRADE_CONCURRENCY);
+  return [...GRADE_PAGES_OPTIONS].sort((x, y) => rounds(x) - rounds(y) || x - y)[0];
 }
 
 /**
@@ -1552,8 +1602,14 @@ export function absorbGraded(
     const at = attemptBatch.groupIndexes[g.group];
     if (at === undefined) continue;
     const prev = best.get(at);
-    if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0))
-      best.set(at, { ...g, group: at });
+    if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0)) {
+      // Never carried into what is kept: the read name is used only as
+      // seenFits (lib/answer-mixups), and `best` is saved by the regression
+      // runner and the scan's progress.
+      const { nameSeen: _read, ...kept } = g as GradedGroup & { nameSeen?: unknown };
+      void _read;
+      best.set(at, { ...kept, group: at });
+    }
   }
 }
 

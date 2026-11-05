@@ -17,6 +17,7 @@ import {
   analyzeInput,
   buildPrompt,
   finalizeAnalysis,
+  parseModelOutput,
   responseText,
   type ResponsesResult,
 } from "@/lib/analyze-shared";
@@ -328,7 +329,7 @@ export async function POST(request: Request) {
           422,
           "The document couldn’t be analyzed reliably. Please review it manually.",
         );
-      output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
+      output = finalizeAnalysis(p, parseModelOutput(text), w, catalog);
       if (svc && p.mode === "catalog")
         await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
       deliveredNothing =

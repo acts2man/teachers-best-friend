@@ -1,3 +1,4 @@
+import { withoutNameSeen } from "@/lib/name-seen";
 import { incompleteMessage, lessonPartIsFree } from "@/lib/lesson-billing";
 import { buildStamp } from "@/lib/build-info";
 import {
@@ -11,7 +12,7 @@ import { catalogFor } from "@/lib/teacher-catalog";
 import type { Standard, Workspace } from "@/lib/teacher-types";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { analyzeInput, finalizeAnalysis, responseText } from "@/lib/analyze-shared";
+import { analyzeInput, finalizeAnalysis, parseModelOutput, responseText } from "@/lib/analyze-shared";
 import {
   chargesForMode,
   confirmPages,
@@ -194,7 +195,7 @@ export async function GET(
 
     let output: Record<string, unknown>;
     try {
-      output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
+      output = finalizeAnalysis(p, parseModelOutput(text), w, catalog);
       if (p.mode === "catalog")
         await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
     } catch (e) {
@@ -231,7 +232,9 @@ export async function GET(
       .from("scans")
       // Stamped with the build that actually ran finalizeAnalysis, which is
       // the code every "it should already be fixed" question turns on.
-      .update({ result: output, build_ref_finish: buildStamp() })
+      // Kept without the names read on the piles: those reach only this reply
+      // (lib/name-seen.ts withoutNameSeen, review of #203).
+      .update({ result: withoutNameSeen(output), build_ref_finish: buildStamp() })
       .eq("id", scanId);
     if (writeError)
       console.error("Storing scan result failed", writeError.message);

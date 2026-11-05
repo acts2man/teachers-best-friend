@@ -163,7 +163,9 @@ test("drift reproduced: re-planning and skipping nextBatch lays an in-flight ans
 
 test("a resume grades every remaining student once, each with their own answers, whatever the plan does", async () => {
   for (const [firstQ, resumeQ] of [[10, 40], [40, 10], [10, 10]]) {
-    const first = C.planScanBatches(thirty, thirtyIds, firstQ);
+    // The run's own plan, as the app makes it: planRemainingBatches with
+    // nothing graded yet (since 4 Nov 2026 with GRADE_PAGES_PER_BATCH pages).
+    const first = C.planRemainingBatches(thirty, thirtyIds, firstQ, []);
     const banked = first[0].groupIndexes.map((g) => ({ group: g, responses: [{ questionId: "q1", answer: "from group " + g, verdict: "other" }] }));
     const progress = { graded: banked, nextBatch: 1, scanId: "job-1", inFlight: first[1].groupIndexes };
     const batches = C.planRemainingBatches(thirty, thirtyIds, resumeQ, banked);

@@ -2,8 +2,9 @@
 // builds. Since the 28 Sep decision the AI may read a name written on a page
 // (the whole page is graded, name and all, and a separate pass reads the name
 // off the top), but the class roster is never sent to either request, no name
-// is ever sent as text, and the grading pass is told to ignore any name it sees
-// and never report one. See docs/student-data-flow.md section 4.
+// is ever sent as text, and the grading pass is never told who anyone is. Since
+// 4 Nov 2026 it returns the name it reads on each group in one field
+// (nameSeen), compared in the app only. See docs/student-data-flow.md section 4.
 //
 // These assert on the built prompt text rather than on intent, so a future
 // edit that quietly puts a name back in the grading call fails here.
@@ -72,8 +73,14 @@ test("the grading pass is sent no student name and no roster", () => {
     mode: "class_scan", uploadIds: ["u1", "u2"], pageGroups: [[0], [1]],
   });
   assert.equal(mentionsAnyName(task), false, "a name reached the grading prompt");
-  assert.match(task, /ignore it/i, "grading is told to ignore a name on the page");
-  assert.match(task, /never report or reproduce any name/i);
+  // Since 4 Nov 2026 (Michael's swapped pages) the grading pass says the name
+  // it reads on each group, in one field, only so the app can check the pages
+  // were read as grouped (lib/answer-mixups.ts). It is still never told who
+  // anyone is, never uses the name to group, and puts it nowhere else.
+  assert.match(task, /Do not use it to decide who a page belongs to/);
+  assert.match(task, /give in nameSeen the name written on that group's pages exactly as written/);
+  assert.match(task, /used only to check that the pages were read as grouped/);
+  assert.match(task, /Never put a name anywhere else in your answer/);
 });
 
 test("the grading pass is told the groups, so it never needs to read a name", () => {
