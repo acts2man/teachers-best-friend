@@ -16,6 +16,8 @@ import {
   Table2,
   Trash2,
   Upload,
+  Grid3x3,
+  ChartColumn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -78,10 +80,10 @@ export function ClassesView() {
     [removeId, setRemoveId] = useState<string | null>(null);
   const options = frameworkOptions(w.customStandards.map((s) => s.framework));
 
-  async function open(c: Classroom) {
+  async function open(c: Classroom, to = "/students") {
     if (c.id !== classroom.id && !(await save({ ...w, activeClassId: c.id })))
       return;
-    go("/students");
+    go(to);
   }
   async function addClass() {
     if (!name.trim()) return;
@@ -246,6 +248,30 @@ export function ClassesView() {
                 <span>
                   <strong>{n.lessons}</strong>lesson plans
                 </span>
+              </div>
+              {/* Ricky's menu (23 Oct 2026): a shortcut to the class's super
+                  grid, which opens Lesson Planning on this class. */}
+              <div className="class-shortcuts">
+                <button
+                  type="button"
+                  className="text-link"
+                  disabled={busy}
+                  aria-label={"Class super grid for " + c.name}
+                  onClick={() => open(c, "/lessons")}
+                >
+                  <Grid3x3 size={15} />
+                  Class super grid
+                </button>
+                <button
+                  type="button"
+                  className="text-link"
+                  disabled={busy}
+                  aria-label={"Class insights for " + c.name}
+                  onClick={() => open(c, "/diagnostics")}
+                >
+                  <ChartColumn size={15} />
+                  Class insights
+                </button>
               </div>
               <footer>
                 <Action

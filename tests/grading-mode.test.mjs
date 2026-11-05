@@ -37,6 +37,8 @@ test("setup offers no choice: a new test takes its class's mode", () => {
 });
 
 test("the save schema keeps the teacher's last mode", () => {
-  const src = readFileSync("app/api/workspace/route.ts", "utf8");
+  // The settings schema moved to lib/settings-schema.ts; the route uses it.
+  assert.match(readFileSync("app/api/workspace/route.ts", "utf8"), /settings: settingsSchema,/);
+  const src = readFileSync("lib/settings-schema.ts", "utf8");
   assert.match(src, /lastGradingMode: z\.enum\(\["percentage", "sbg"\]\)\.optional\(\)/);
 });
