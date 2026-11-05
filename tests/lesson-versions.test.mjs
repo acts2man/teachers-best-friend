@@ -56,7 +56,10 @@ test("three versions of the flow, one set of everything else; the approach tabs 
 
 test("one generate: the full lesson in the chosen approach and the flow in the other two, side by side", () => {
   const gen = planning.slice(planning.indexOf("async function generateAI("), planning.indexOf("async function addQuestion("));
-  assert.match(gen, /Promise\.allSettled\(\[\s*analyzeRequest\(\{ \.\.\.base, modality: chosen, lessonPart: "full", lessonRun \}\),\s*\.\.\.others\.map\(\(o\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow", lessonRun \}\)\),/);
+  // The full lesson, and the other two once it is accepted (its scan id is
+  // back): side by side on the deployment, which runs every lesson as a job;
+  // never started at all when it is refused (review of #199).
+  assert.match(gen, /startGenerate\(\s*\(onAccepted\) => analyzeRequest\(\{ \.\.\.base, modality: chosen, lessonPart: "full", lessonRun \}, \{ onScanId: onAccepted \}\),\s*others\.map\(\(o\) => \(\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow", lessonRun \}\)\),/);
   // Since the #199 review, a missing full lesson no longer throws the flows
   // away: what came back is shown and the credit asked back
   // (tests/lesson-billing.test.mjs).

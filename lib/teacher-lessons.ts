@@ -201,8 +201,12 @@ export function generateMessage(
 ): string {
   if (!o.missing.length)
     return "Your lesson plan is ready in Visual, Hands-on and Auditory. Review it, edit anything, then save it.";
-  const credit =
-    refunded === null
+  // The full lesson failing released its own credit when it failed: nothing
+  // was charged, whatever else happened (review of #199). Only a version
+  // missing beside a delivered lesson asks for the credit back.
+  const credit = o.fullMissing
+    ? " Nothing was charged."
+    : refunded === null
       ? ""
       : refunded
         ? " You weren’t charged for this Generate."

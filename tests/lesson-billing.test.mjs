@@ -57,7 +57,8 @@ test("all three requests of a Generate share one run id, and a failure asks the 
   assert.match(gen, /const lessonRun = crypto\.randomUUID\(\);/);
   assert.match(gen, /lessonPart: "full", lessonRun \}/);
   assert.match(gen, /lessonPart: "flow", lessonRun \}/);
-  assert.match(gen, /const refunded = outcome\.missing\.length \? await refundLesson\(lessonRun\) : null;/);
+  // Only when the full lesson came back (its own failure released its credit).
+  assert.match(gen, /const refunded = outcome\.missing\.length && !outcome\.fullMissing \? await refundLesson\(lessonRun\) : null;/);
   assert.match(gen, /full\.reason\.reason === 402\) \{\s*toast\.error\(OUT_OF_CREDITS_FOR_LESSON/);
   const refund = readFileSync("app/api/lessons/refund/route.ts", "utf8");
   assert.match(refund, /rpc\("refund_lesson_generation", \{\s*p_teacher: user,\s*p_run: parsed\.data\.lessonRun,/);
@@ -86,13 +87,13 @@ test("what came back is shown, and the message says whether the credit came back
   assert.deepEqual(noFull.missing, ["Visual"]);
   assert.deepEqual(Object.keys(noFull.lesson.flows).sort(), ["Auditory", "Kinesthetic"]);
   assert.deepEqual(noFull.lesson.practice, []);
-  assert.match(L.generateMessage(noFull, true), /^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. You weren’t charged/);
+  assert.match(L.generateMessage(noFull, null), /^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. Nothing was charged\.$/);
   // The screen copes with a lesson with no practice yet (it crashed on
   // content.practice[0].q -- caught by scripts/browser-check/lesson-billing.mjs).
   assert.match(planning, /\{content\.practice\[0\] && \(\s*<div className="practice-prompt">/);
   const none = L.generateOutcome("Visual", null, [["Kinesthetic", null], ["Auditory", null]]);
   assert.equal(none.lesson, null);
-  assert.match(L.generateMessage(none, true), /none of the three versions came back\. You weren’t charged for this Generate\./);
+  assert.match(L.generateMessage(none, null), /none of the three versions came back\. Nothing was charged\./);
 });
 
 test("a refusal for credit is said in lesson words", () => {

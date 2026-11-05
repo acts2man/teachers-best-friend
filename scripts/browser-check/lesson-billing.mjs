@@ -31,7 +31,7 @@ const full = (label) => ({
 
 const browser = await chromium.launch({ executablePath: CHROMIUM });
 for (const [W, H] of [[390, 844], [1366, 768]]) {
-  for (const run of ["one version fails", "the full one fails", "out of credits"]) {
+  for (const run of ["one version fails", "the full one fails", "out of credits", "no credits on the meter"]) {
     const tag = `${W}x${H} ${run}`;
     const w = JSON.parse(readFileSync(join(OUT, "fixture.json"), "utf8"));
     w.classes = w.classes.map((c) => ({ ...c, demo: false }));
@@ -41,21 +41,32 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     await ctx.route("**/api/workspace", (r) =>
       r.request().method() === "GET" ? r.fulfill(json({ workspace: w, revision: 7, aiReady: true, authProvider: "supabase", impersonating: null })) : r.fulfill(json({ revision: 8 })),
     );
-    await ctx.route("**/api/quota", (r) => r.fulfill(json({ plan_id: "starter", quota: 150, used: 20, remaining: 130, can_scan: true })));
+    const remaining = run === "no credits on the meter" ? 0 : 130;
+    await ctx.route("**/api/quota", (r) => r.fulfill(json({ plan_id: "starter", quota: 150, used: 150 - remaining, remaining, can_scan: true })));
     await ctx.route("**/api/events", (r) => r.fulfill({ status: 204, body: "" }));
     await ctx.route("**/api/lessons/refund", (r) => {
       refunds.push(JSON.parse(r.request().postData() || "{}"));
       return r.fulfill(json({ refunded: true }));
     });
+    // As production runs a lesson: the POST is charged and answers with a
+    // scan id; the result (or the failure) comes on the poll.
+    const jobs = new Map();
     await ctx.route("**/api/analyze", async (r) => {
       const p = JSON.parse(r.request().postData() || "{}");
       requests.push(p);
-      const label = p.modality === "Kinesthetic" ? "HandsOn" : p.modality;
       const part = p.lessonPart ?? "full";
       if (run === "out of credits" && part === "full") return r.fulfill(json({ error: "This is 1 page. You have no credits left this period." }, 402));
-      if (run === "one version fails" && part === "flow" && p.modality === "Kinesthetic") return r.fulfill(json({ error: "The AI service couldn’t complete this analysis." }, 502));
-      if (run === "the full one fails" && part === "full") return r.fulfill(json({ error: "The AI service couldn’t complete this analysis." }, 502));
-      return r.fulfill(json({ model: "mock", result: part === "flow" ? flow(label) : full(label) }));
+      const id = "job-" + requests.length;
+      jobs.set(id, p);
+      return r.fulfill(json({ scanId: id }));
+    });
+    await ctx.route("**/api/analyze/job-*", async (r) => {
+      const p = jobs.get(r.request().url().split("/").pop());
+      const label = p.modality === "Kinesthetic" ? "HandsOn" : p.modality;
+      const part = p.lessonPart ?? "full";
+      if (run === "one version fails" && part === "flow" && p.modality === "Kinesthetic") return r.fulfill(json({ status: "failed", error: "The AI service couldn’t complete this analysis." }));
+      if (run === "the full one fails" && part === "full") return r.fulfill(json({ status: "failed", error: "The AI service couldn’t complete this analysis." }));
+      return r.fulfill(json({ status: "complete", result: part === "flow" ? flow(label) : full(label) }));
     });
     const page = await ctx.newPage();
     const errors = [];
@@ -69,18 +80,21 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
       await page.waitForTimeout(300);
       const said = (await toast.innerText()).replace(/\s+/g, " ").trim();
       const runs = new Set(requests.map((p) => p.lessonRun));
-      check(requests.length === 3 && runs.size === 1 && /^[0-9a-f-]{36}$/.test([...runs][0]), `${tag}: the three requests share one lessonRun`);
+      if (run === "out of credits") check(requests.length === 1, `${tag}: refused, so the two free versions never start (${requests.length} request)`);
+      else if (run === "no credits on the meter") check(requests.length === 0, `${tag}: nothing is sent at all (${requests.length})`);
+      else check(requests.length === 3 && runs.size === 1 && /^[0-9a-f-]{36}$/.test([...runs][0]), `${tag}: the three requests share one lessonRun`);
       if (run === "one version fails") {
         check(refunds.length === 1 && refunds[0].lessonRun === [...runs][0], `${tag}: the credit is asked back for that run`);
         check(said.includes("Your lesson plan is ready, but the Hands-on version didn’t come back. You weren’t charged for this Generate."), `${tag}: says what is missing and that it was free ("${said}")`);
         await page.getByRole("tab", { name: /Auditory/ }).click();
         check(/Auditory launch/.test(await page.locator(".lesson-timeline").innerText()), `${tag}: and shows what came back`);
       } else if (run === "the full one fails") {
-        check(refunds.length === 1, `${tag}: the credit is asked back`);
-        check(/^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. You weren’t charged/.test(said), `${tag}: says so ("${said}")`);
+        check(refunds.length === 0, `${tag}: no refund is asked -- its credit was released when it failed`);
+        check(/^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. Nothing was charged\.$/.test(said), `${tag}: says nothing was charged, not "contact support" ("${said}")`);
         await page.getByRole("tab", { name: /Hands-on/ }).click();
         check(/HandsOn launch/.test(await page.locator(".lesson-timeline").innerText()), `${tag}: the flows that came back are kept`);
       } else {
+        // "out of credits" (refused on the server) and "no credits on the meter" (never sent).
         check(refunds.length === 0, `${tag}: nothing was charged, so no refund is asked`);
         check(/^Generating a lesson uses 1 credit, and you have none left this period, so it wasn’t written\. Nothing was charged\./.test(said), `${tag}: a plain message ("${said}")`);
         check(!(await page.locator(".lesson-timeline").count()), `${tag}: and no lesson`);

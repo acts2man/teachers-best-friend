@@ -16,7 +16,6 @@ const OUT = join(HERE, "out");
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3100";
 const CHROMIUM = process.env.CHROMIUM || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pass = [];
 const fail = [];
 const check = (c, m) => (c ? pass : fail).push(m);
@@ -38,18 +37,32 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   );
   await ctx.route("**/api/quota", (r) => r.fulfill(json({ plan_id: "starter", quota: 150, used: 20, remaining: 130, can_scan: true })));
   await ctx.route("**/api/events", (r) => r.fulfill({ status: 204, body: "" }));
+  // As production runs a lesson (every lesson on record has a job id): the
+  // POST is charged and answers with a scan id at once; the model works for
+  // a while; the poll gets the result. Since the review of #199 the two free
+  // versions start once the full lesson's scan id is back, so all three are
+  // in flight together.
+  const jobs = new Map();
+  const duration = (part) => (part === "full" ? 2400 : part === "flow" ? 1800 : 300);
   await ctx.route("**/api/analyze", async (r) => {
     const p = JSON.parse(r.request().postData() || "{}");
     requests.push(p);
-    inFlight++;
+    const now = Date.now();
+    inFlight = [...jobs.values()].filter((j) => now < j.until).length + 1;
     maxInFlight = Math.max(maxInFlight, inFlight);
+    const id = "job-" + requests.length;
+    jobs.set(id, { p, until: now + duration(p.lessonPart ?? "full") });
+    return r.fulfill(json({ scanId: id }));
+  });
+  await ctx.route("**/api/analyze/job-*", async (r) => {
+    const job = jobs.get(r.request().url().split("/").pop());
+    if (Date.now() < job.until) return r.fulfill(json({ status: "analyzing" }));
+    const p = job.p;
     const part = p.lessonPart ?? "full";
-    await sleep(part === "full" ? 1200 : part === "flow" ? 800 : 300);
-    inFlight--;
-    if (part === "question") return r.fulfill(json({ model: "mock", result: { q: "New " + p.section + " question?", a: "new answer" } }));
+    if (part === "question") return r.fulfill(json({ status: "complete", result: { q: "New " + p.section + " question?", a: "new answer" } }));
     const label = p.modality === "Kinesthetic" ? "HandsOn" : p.modality;
-    if (part === "flow") return r.fulfill(json({ model: "mock", result: flow(label) }));
-    return r.fulfill(json({ model: "mock", result: {
+    if (part === "flow") return r.fulfill(json({ status: "complete", result: flow(label) }));
+    return r.fulfill(json({ status: "complete", result: {
       objective: "Demo objective", ...flow(label),
       practice: [{ q: "Practice one?", a: "1" }, { q: "Practice two?", a: "2" }], exit: [{ q: "Exit one?", a: "e1" }],
       game: { title: "Fact Relay", materials: ["Cones"], steps: ["Line up", "Solve and run"], connection: "Each leg practises the standard." },
@@ -68,7 +81,9 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     check(JSON.stringify(parts) === JSON.stringify(["flow:Auditory", "flow:Kinesthetic", "full:Visual"]), `${tag}: one generate, three requests (${parts.join(", ")})`);
     check(maxInFlight === 3, `${tag}: side by side -- all three in flight at once (${maxInFlight})`);
     const took = Number(((await page.locator(".lesson-generated-in").innerText()).match(/([\d.]+) s/) || [])[1]);
-    check(took > 1.1 && took < 2.4, `${tag}: so it took about the slowest one, not the sum (${took} s; 1.2 s full + 0.8 s × 2 mocked)`);
+    // The app polls every 1.5 s or so: the slowest job (2.4 s) is seen at the
+    // second or third poll -- well under the 6 s the three would take in turn.
+    check(took > 2.3 && took < 5.5, `${tag}: so it took about the slowest one, not the sum (${took} s; 2.4 s full + 1.8 s × 2 mocked)`);
     const flowText = async () => (await page.locator(".lesson-timeline").innerText()).replace(/\s+/g, " ");
     check(/Visual launch/.test(await flowText()), `${tag}: the Visual version first`);
     await page.getByRole("tab", { name: /Hands-on/ }).click();

@@ -483,7 +483,7 @@ export function ScanCamera({
   // offered as keep-anyway / try-again; a blurry auto-snap is skipped with a hint
   // (auto-snap keeps trying). `shoot` is a sync wrapper so the shutter onClick and
   // the auto-snap caller stay plain calls.
-  async function captureNow() {
+  async function captureNow(by: "teacher" | "auto" = "teacher") {
     if (!settledRef.current) return;
     if (capturingRef.current) return;
     // At the batch cap, take nothing more -- the banner tells the teacher to
@@ -498,8 +498,13 @@ export function ScanCamera({
       // Checked right after the capture, on the phone: no upload, no AI.
       if (isBlurry({ laplacian: res.score, reblur: res.reblur })) {
         lastCaptureRef.current = { w: res.canvas.width, h: res.canvas.height };
-        if (autoRef.current) flashBlurryHint();
-        else setBlurryShot(res);
+        // Auto-snap keeps trying, with a hint. A shutter press is the teacher
+        // asking for THIS photo, auto mode or not: it always gets Retake /
+        // Keep (review of #200 -- in auto mode it was dropped silently).
+        if (by === "auto") {
+          flashBlurryHint();
+          release(res.canvas);
+        } else setBlurryShot(res);
         return;
       }
       addShot(res.canvas);
@@ -508,7 +513,10 @@ export function ScanCamera({
     }
   }
   function shoot() {
-    void captureNow();
+    void captureNow("teacher");
+  }
+  function autoShoot() {
+    void captureNow("auto");
   }
   function keepBlurryShot() {
     if (blurryShot) addShot(blurryShot.canvas);
@@ -519,7 +527,7 @@ export function ScanCamera({
     setBlurryShot(null);
   }
   useEffect(() => {
-    shootRef.current = shoot;
+    shootRef.current = autoShoot;
   });
 
   // Load the (dependency-free) detection code only once the camera is open.
