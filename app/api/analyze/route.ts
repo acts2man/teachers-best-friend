@@ -1,3 +1,4 @@
+import { incompleteMessage, lessonOutputCeiling, lessonPartIsFree } from "@/lib/lesson-billing";
 import { buildStamp } from "@/lib/build-info";
 import {
   writingTeacherId,
@@ -109,7 +110,10 @@ export async function POST(request: Request) {
     // bytes can't be resolved.
     // The model settings are part of the fingerprint: a read made under older
     // settings is not what these settings would return.
-    const settings = await modelSettingsFor(p.mode);
+    const configured = await modelSettingsFor(p.mode);
+    // The full lesson needs room for its two new sections and its answers
+    // (lib/lesson-billing.ts); pipeline_config itself is unchanged.
+    const settings = { ...configured, maxOutput: lessonOutputCeiling(p, configured.maxOutput) };
     const readFingerprint = svc ? await readReuseFingerprint(svc, user, p, settings) : null;
     // Reading a document twice should not give two different answers. If these
     // exact pages were already read the same way for this teacher and the result
@@ -175,8 +179,10 @@ export async function POST(request: Request) {
       // nothing without anyone having to remember that it should.
       // Our own safeguards (the name pass, the answer-key check) are not
       // billable, so create_scan opens their row without charging a page.
+      // The other two lesson versions and "Add question" are free: one
+      // Generate is one credit (lib/lesson-billing.ts).
       const billable =
-        !adminCatalog && p.mode !== "name_strip" && p.mode !== "key_check";
+        !adminCatalog && p.mode !== "name_strip" && p.mode !== "key_check" && !lessonPartIsFree(p);
       // The charge is performed inside create_scan now, in the same transaction
       // that opens the scan row: a billable, charging-mode request is paid for
       // before its row exists, so no caller -- not a stale copy of the app, not
@@ -212,7 +218,7 @@ export async function POST(request: Request) {
     // Whether this scan carries a live page charge to settle after the model
     // call. create_scan already reserved it; confirm on success, release on
     // failure.
-    const charging = Boolean(svc && scanId && !adminCatalog && chargesForMode(p.mode));
+    const charging = Boolean(svc && scanId && !adminCatalog && chargesForMode(p.mode) && !lessonPartIsFree(p));
     // A generated lesson or passage had no page, so create_scan charged one
     // against gen:<scanId>. The same key confirms or releases it below.
     const genKey = charging && p.uploadIds.length === 0 ? generationKey(scanId!) : null;
@@ -315,10 +321,7 @@ export async function POST(request: Request) {
       resultData = run.value;
       attempts = run.attempts;
       if (resultData.status === "incomplete")
-        throw new HttpError(
-          422,
-          "This document needs a smaller batch. Try fewer pages.",
-        );
+        throw new HttpError(422, incompleteMessage(p.mode));
       const text = responseText(resultData);
       if (!text)
         throw new HttpError(

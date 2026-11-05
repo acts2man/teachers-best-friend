@@ -1,3 +1,4 @@
+import { incompleteMessage, lessonPartIsFree } from "@/lib/lesson-billing";
 import { buildStamp } from "@/lib/build-info";
 import {
   owningTeacherId,
@@ -127,7 +128,7 @@ export async function GET(
         return Response.json({ status: "analyzing" });
       const userMessage =
         status === "incomplete"
-          ? "This document needs a smaller batch. Try fewer pages."
+          ? incompleteMessage(p.mode)
           : "The analysis couldn’t be completed. Your documents are saved.";
       // Persist the provider's own terminal reason (e.g. max_output_tokens,
       // content_filter) to scans.error so a failure can be diagnosed from the
@@ -297,7 +298,7 @@ async function settle(
   scanId: string,
   ok: boolean,
 ) {
-  if (!chargesForMode(p.mode)) return;
+  if (!chargesForMode(p.mode) || lessonPartIsFree(p)) return;
   const genKey = p.uploadIds.length === 0 ? generationKey(scanId) : null;
   if (ok) await confirmPages(svc, teacher, p.uploadIds, genKey);
   else await releasePages(svc, teacher, p.uploadIds, genKey);
