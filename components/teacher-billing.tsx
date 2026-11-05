@@ -234,7 +234,10 @@ export function BillingView() {
       <p className="billing-small">
         1 credit = 1 page you photograph or upload. A page is never charged
         twice, however many times we look at it, and re-grading work you’ve
-        already scanned is free.{" "}
+        already scanned is free. Generating a lesson plan is 1 credit, and that
+        covers all three versions (Visual, Hands-on and Auditory); adding a
+        question to it is free. If a lesson doesn’t fully come back, the credit
+        is given back.{" "}
         <a href="/#pricing" target="_blank" rel="noreferrer">
           See the full comparison <ExternalLink size={13} aria-hidden="true" />
         </a>

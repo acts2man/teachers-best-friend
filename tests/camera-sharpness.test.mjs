@@ -162,12 +162,14 @@ test("capture takes a sharpest-of-burst frame", () => {
   assert.match(src, /drawImage\(video, crop\.x, crop\.y, crop\.w, crop\.h/, "draws the cover crop");
 });
 
-test("a too-blurry frame is not added silently: keep-anyway (manual) or skip (auto)", () => {
+test("a too-blurry frame is not added silently: retake / keep (manual) or skip (auto)", () => {
   assert.match(src, /BLUR_THRESHOLD/, "there is a blur threshold");
-  assert.match(src, /res\.score < BLUR_THRESHOLD/, "the best frame is checked against it");
-  // Manual: offered as keep-anyway / try-again (not added until the teacher says so).
+  // Both scores of the best frame (Ricky, 29 Oct: tuned, lib/camera.ts isBlurry).
+  assert.match(src, /if \(isBlurry\(\{ laplacian: res\.score, reblur: res\.reblur \}\)\) \{/, "the best frame is checked against it");
+  // Manual: offered as Retake / Keep (not added until the teacher says so).
   assert.match(src, /setBlurryShot\(res\)/, "a blurry manual shot is held, not added");
-  assert.match(src, /Keep anyway/, "keep-anyway affordance");
+  assert.match(src, />\s*Retake\s*</, "retake affordance");
+  assert.match(src, />\s*Keep\s*</, "keep affordance");
   assert.match(src, /Too blurry/, "a too-blurry message");
   // Auto: skipped with a hint, so it never buffers a blurry page on its own.
   assert.match(src, /if \(autoRef\.current\) flashBlurryHint\(\)/, "a blurry auto-snap is skipped");

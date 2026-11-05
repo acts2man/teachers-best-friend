@@ -14,6 +14,7 @@ import {
   Files,
   Users,
   Library,
+  LibraryBig,
   Settings,
   ArrowRight,
   Plus,
@@ -50,6 +51,7 @@ import { Pick, Action, Modal, Pill } from "./teacher-shared";
 import HomeView from "./teacher-home";
 import GuideView from "./teacher-guide";
 import { AssessmentView } from "./teacher-assessments";
+import { LibraryView } from "./teacher-library";
 import { ClassesView } from "./teacher-classes";
 import { ScanView } from "./teacher-scan";
 import {
@@ -71,6 +73,7 @@ import {
 const nav = [
   { id: "home", label: "Overview", icon: House },
   { id: "assessments", label: "Assessments", icon: Files },
+  { id: "library", label: "Assessment library", icon: LibraryBig },
   { id: "lessons", label: "Lesson plans", icon: BookOpen },
   { id: "classes", label: "Classes", icon: Users },
 ];
@@ -100,6 +103,7 @@ const isStale = () =>
 // they open as quickly as the sidebar destinations.
 const prefetchRoutes = [
   "/assessments",
+  "/library",
   "/lessons",
   "/classes",
   "/students",
@@ -663,6 +667,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <HomeView />
               ) : view === "assessments" ? (
                 <AssessmentView />
+              ) : view === "library" ? (
+                <LibraryView />
               ) : view === "guide" ? (
                 <GuideView />
               ) : view === "classes" ? (

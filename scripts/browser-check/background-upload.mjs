@@ -100,7 +100,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
       for (let tries = 0; tries < 5; tries++) {
         await shutter.click({ timeout: 20000 });
         // A fake camera frame can read as blurry: keep it.
-        const keep = page.getByRole("button", { name: "Keep anyway" });
+        const keep = page.getByRole("button", { name: "Keep", exact: true });
         if (await keep.waitFor({ timeout: 1500 }).then(() => true, () => false)) await keep.click();
         if (await more()) break;
       }

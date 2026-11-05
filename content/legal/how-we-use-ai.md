@@ -67,6 +67,9 @@ no pipeline that would collect student work for that purpose.
   example "7.RP"), the depth-of-knowledge level, up to three of the cluster's weakest
   standard codes, and how many answers across your class's tests showed each common error
   type. Again only codes and counts — never a student's name or anything a student wrote.
+- When you ask for one more practice or exit-ticket question: the lesson's own questions
+  in that section, so the new one doesn't repeat them. That is the lesson text you are
+  looking at, not student work.
 
 **Not sent:**
 - Student names. When the app analyzes student responses, it transmits an internal
