@@ -371,6 +371,52 @@ export function uploadsNoLongerUsed(
 }
 
 /**
+ * "Remove from this class" (review of #202): on a test used by more than one
+ * class, take it out of one class and keep it -- and every other class's
+ * work -- for the rest. Only that class's students lose their answers, their
+ * scanned pages, their place in the pile and the evidence the test gave them;
+ * the questions and key stay. If it is the class the test was made in, the
+ * next class it is used in becomes its home. Null when the test is in only
+ * this class (that is Delete) or not in it at all. Returns the upload ids the
+ * caller must delete from storage: only pages nothing else uses.
+ */
+export function removeFromClass(w: Workspace, assessmentId: string, classId: string) {
+  const a = w.assessments.find((x) => x.id === assessmentId);
+  if (!a || !assessmentInClass(a, classId)) return null;
+  const rest = assessmentClassIds(a).filter((id) => id !== classId);
+  if (!rest.length) return null;
+  const leaving = new Set(w.students.filter((s) => s.classId === classId).map((s) => s.id));
+  const pages = new Set<string>();
+  const studentUploadIds: Record<string, string[]> = {};
+  for (const [id, list] of Object.entries(a.studentUploadIds || {})) {
+    if (leaving.has(id)) for (const u of list || []) pages.add(u);
+    else studentUploadIds[id] = list;
+  }
+  const next: Assessment = {
+    ...a,
+    classId: rest[0],
+    classIds: rest.slice(1),
+    responses: a.responses.filter((r) => !leaving.has(r.studentId)),
+    ...(a.studentUploadIds ? { studentUploadIds } : {}),
+    ...(a.studentOrder ? { studentOrder: a.studentOrder.filter((id) => !leaving.has(id)) } : {}),
+  };
+  const workspace: Workspace = {
+    ...w,
+    assessments: w.assessments.map((x) => (x.id === a.id ? next : x)),
+    students: w.students.map((s) =>
+      leaving.has(s.id) && s.evidence.some((e) => e.assessmentId === a.id)
+        ? { ...s, evidence: s.evidence.filter((e) => e.assessmentId !== a.id) }
+        : s,
+    ),
+  };
+  return {
+    workspace,
+    uploadIds: uploadsNoLongerUsed(workspace, pages),
+    answersRemoved: a.responses.length - next.responses.length,
+  };
+}
+
+/**
  * Everything that goes when a teacher deletes one assessment: the assessment
  * itself (its questions and every student's responses to it, which live on the
  * assessment), the evidence records those responses produced on each student,
