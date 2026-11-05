@@ -1,8 +1,9 @@
 // Review of #194 (2 Nov 2026): a stale failed-page count from another device
 // must never block grading for ever. Proven when:
 //   - the computer can leave the other device's pages out (with a confirm):
-//     that device blocks again only if it reports MORE failed pages, and the
-//     leave-out survives a save conflict and that device's next save;
+//     by page, since 5 Nov 2026 (it was by count) -- a page that fails there
+//     later blocks again, whatever the count -- and the leave-out survives a
+//     save conflict and that device's next save;
 //   - "Start over" clears the other devices' counts and leave-outs;
 //   - a save that changes only the counts keeps the scan's expiry, so a
 //     count alone never keeps a scan (and its block) alive;
@@ -25,34 +26,36 @@ const S = bundle("lib/scan-session.ts");
 const panel = readFileSync("components/teacher-class-scan.tsx", "utf8");
 const session = (extra = {}) => ({ v: 1, piles: [[{ key: "k", bodyId: "b1" }]], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, ...extra });
 
-test("leaving another device's pages out unblocks grading until it reports more", () => {
-  const s = { failed: { phone: 2, "laptop/tab": 0 } };
+test("leaving another device's pages out unblocks grading until another page fails there", () => {
+  const s = { failed: { "phone/t": ["p1", "p2"], "laptop/tab": [] } };
   assert.equal(S.failedElsewhere(s, "laptop/tab"), 2);
   const dismissed = S.dismissFailed(s, "laptop/tab");
-  assert.deepEqual(dismissed, { phone: 2 }, "only the other device's count, at what it is now");
+  assert.deepEqual(dismissed, ["p1", "p2"], "the other device's pages, by page");
   assert.equal(S.failedElsewhere({ ...s, dismissed }, "laptop/tab"), 0, "left out");
-  assert.equal(S.failedElsewhere({ failed: { phone: 2 }, dismissed }, "laptop/tab"), 0, "the phone saving the same stale 2 again");
-  assert.equal(S.failedElsewhere({ failed: { phone: 3 }, dismissed }, "laptop/tab"), 3, "a new failure there blocks again");
+  assert.equal(S.failedElsewhere({ failed: { "phone/t": ["p1", "p2"] }, dismissed }, "laptop/tab"), 0, "the phone saving the same two again");
+  assert.equal(S.failedElsewhere({ failed: { "phone/t": ["p1", "p3"] }, dismissed }, "laptop/tab"), 1, "a NEW page there blocks again, at the same count (a count could not tell)");
 });
 
 test("a leave-out survives a save conflict, and goes when that device has none", () => {
   // The laptop left the phone's 2 out; the phone saved first (it knows nothing of it).
-  const server = session({ failed: { phone: 2 } });
-  const mine = session({ failed: { phone: 2 }, dismissed: { phone: 2 } });
+  const server = session({ failed: { "phone/t": ["p1", "p2"] } });
+  const mine = session({ failed: { "phone/t": ["p1", "p2"] }, dismissed: ["p1", "p2"] });
   const merged = S.mergeSessions(server, mine, "laptop/tab");
-  assert.deepEqual(merged.dismissed, { phone: 2 });
+  assert.deepEqual(merged.dismissed, ["p1", "p2"]);
   assert.equal(S.failedElsewhere(merged, "laptop/tab"), 0);
-  // The phone settled its pages: its count and the leave-out both go.
+  // The phone settled its pages: its pages and the leave-out both go.
   const cleared = S.mergeSessions(session({ failed: {} }), mine, "laptop/tab");
   assert.equal(cleared.dismissed, undefined);
-  assert.equal(S.parseSession(session({ failed: { phone: 1 }, dismissed: { phone: 1, junk: "x" } })).dismissed.phone, 1);
+  assert.deepEqual(S.parseSession(session({ failed: { "phone/t": ["p1"] }, dismissed: ["p1", "gone", 7] })).dismissed, ["p1"], "only pages still reported");
+  // An older session (counts) still reads: that many unnamed pages.
+  assert.equal(S.failedElsewhere(S.parseSession(session({ failed: { phone: 2 } })), "laptop/tab"), 2);
 });
 
 test("Start over clears the other devices' counts and leave-outs; the dialog asks first", () => {
   const reset = panel.slice(panel.indexOf("function reset() {"), panel.indexOf("function reset() {") + 400);
-  assert.match(reset, /setRemoteFailed\(\{\}\);\s*setDismissed\(\{\}\);/);
+  assert.match(reset, /setRemoteFailed\(\{\}\);\s*setDismissed\(\[\]\);/);
   assert.match(panel, /failed on another device — leave\{" "\}/);
-  assert.match(panel, /<AlertDialogAction onClick=\{\(\) => setDismissed\(dismissFailed\(\{ failed: remoteFailed, dismissed \}, failedKey\)\)\}>/);
+  assert.match(panel, /<AlertDialogAction onClick=\{\(\) => setDismissed\(dismissFailed\(\{ failed: \{ \.\.\.remoteFailed, \[failedKey\]: ownFailed \}, dismissed \}, failedKey\)\)\}>/);
 });
 
 test("a save that changes only the counts is recognised, whatever order jsonb keeps the keys in", () => {
@@ -111,11 +114,26 @@ test("each tab keeps its own count: two tabs on one device never overwrite each 
   const hook = readFileSync("components/use-scan-session.ts", "utf8");
   assert.match(hook, /const key = "tbf\.tab";\s*const found = sessionStorage\.getItem\(key\);/, "kept per tab, across its reloads");
   assert.match(panel, /const \[failedKey\] = useState\(\(\) => device \+ "\/" \+ tabId\(\)\);/);
-  // Tab B saves after tab A: A's count stays.
-  const server = session({ failed: { "dev/A": 2 } });
-  const tabB = session({ failed: { "dev/B": 0, "dev/A": 2 } });
+  // Tab B saves after tab A: A's pages stay.
+  const server = session({ failed: { "dev/A": ["a1", "a2"] } });
+  const tabB = session({ failed: { "dev/B": [], "dev/A": ["a1", "a2"] } });
   const merged = S.mergeSessions(server, tabB, "dev/B");
-  assert.deepEqual(merged.failed, { "dev/A": 2 });
+  assert.deepEqual(merged.failed, { "dev/A": ["a1", "a2"] });
   assert.equal(S.failedElsewhere(merged, "dev/B"), 2, "tab B waits on tab A's pages");
   assert.equal(S.failedElsewhere(merged, "dev/A"), 0, "and tab A on none but its own");
+});
+
+test("a tab reopened on the same phone leaves no ghost count (review of #194)", () => {
+  // The first tab closed holding two camera pages that failed; a new tab on
+  // the same phone gets them back (same keys) under its own tab id.
+  const server = session({ failed: { "phone/old": ["shot-1", "shot-2"] } });
+  const reopened = session({ failed: { "phone/new": ["shot-1", "shot-2"] } });
+  assert.equal(S.failedElsewhere({ failed: { ...server.failed, "phone/new": ["shot-1", "shot-2"] } }, "phone/new"), 0, "its own pages are not another device's");
+  const merged = S.mergeSessions(server, reopened, "phone/new");
+  assert.deepEqual(merged.failed, { "phone/new": ["shot-1", "shot-2"] }, "the old tab's entry is folded into the new one");
+  assert.equal(S.failedElsewhere(merged, "laptop/x"), 2, "the laptop sees the two pages once, not four");
+  // A second live tab with a page of its own is NOT folded away.
+  const live = S.mergeSessions(session({ failed: { "phone/other": ["shot-1", "file-9"] } }), reopened, "phone/new");
+  assert.deepEqual(live.failed["phone/other"], ["file-9", "shot-1"]);
+  assert.equal(S.failedElsewhere(live, "phone/new"), 1, "only the page this tab does not hold");
 });

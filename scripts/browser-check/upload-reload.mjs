@@ -127,7 +127,7 @@ async function run(W, H, mode) {
     if (mode === "dismiss") {
       // The phone has a failed page and is never opened again: the computer
       // leaves it out (review of #194).
-      remote.state = { v: 1, piles: [[{ key: "k1", label: "p", bodyId: "upload-x", stripId: null, pages: 1 }], []], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, failed: { "the-phone": 1 } };
+      remote.state = { v: 1, piles: [[{ key: "k1", label: "p", bodyId: "upload-x", stripId: null, pages: 1 }], []], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, failed: { "the-phone/tab": ["phone-page-1"] } };
       remote.revision = 3;
       await page.reload({ waitUntil: "networkidle" });
       const notice = page.locator(".failed-pages-elsewhere");
@@ -140,12 +140,12 @@ async function run(W, H, mode) {
       await dialog.getByRole("button", { name: "Leave it out" }).click();
       await page.waitForFunction(() => !document.querySelector(".failed-pages-elsewhere"), null, { timeout: 10000 });
       await sleep(1500);
-      check(JSON.stringify(remote.state?.dismissed) === JSON.stringify({ "the-phone": 1 }), `${tag}: the leave-out is saved with the scan (${JSON.stringify(remote.state?.dismissed)})`);
-      // The phone saving its same stale count again does not bring the block back.
-      remote.state = { ...remote.state, failed: { ...remote.state.failed, "the-phone": 1 } };
+      check(JSON.stringify(remote.state?.dismissed) === JSON.stringify(["phone-page-1"]), `${tag}: the leave-out is saved with the scan, by page (${JSON.stringify(remote.state?.dismissed)})`);
+      // The phone saving its same stale page again does not bring the block back.
+      remote.state = { ...remote.state, failed: { ...remote.state.failed, "the-phone/tab": ["phone-page-1"] } };
       remote.revision++;
       await sleep(6000);
-      check((await page.locator(".failed-pages-elsewhere").count()) === 0, `${tag}: the stale count saved again does not block`);
+      check((await page.locator(".failed-pages-elsewhere").count()) === 0, `${tag}: the same page saved again does not block`);
       await gradeButton().click();
       for (let t = 0; t < 100 && !grading.length; t++) await sleep(100);
       check(grading.length === 1, `${tag}: grading starts without the phone's page`);

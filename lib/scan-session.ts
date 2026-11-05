@@ -195,20 +195,22 @@ export type ScanSession = {
    */
   grading: { device: string; at: number } | null;
   /**
-   * Pages each device holds that did not upload (review of #188), by device
-   * id: a page failed on the phone blocks grading on the computer too, until
-   * the phone retries it or leaves it out. Each device writes only its own
-   * count. Absent (or no entry) is none.
+   * Pages each device holds that did not upload (review of #188), by
+   * "device/tab" key: a page failed on the phone blocks grading on the
+   * computer too, until the phone retries it or leaves it out. Each tab
+   * writes only its own entry: the keys of its failed pages (since the
+   * review of #194, so the same page reported by two tabs, or by a tab
+   * reopened after the first was closed, counts once). Absent is none. An
+   * older session's count reads as that many unnamed pages.
    */
-  failed?: Record<string, number>;
+  failed?: Record<string, string[]>;
   /**
-   * Counts another device's pages were left out at (review of #194): a
-   * device never opened again must not block grading for ever, so the
-   * teacher can leave its pages out from here. Kept by key, at the count
-   * left out: that device blocks again only if it reports MORE failed pages
-   * than that. A merge keeps the larger; a key with no count is dropped.
+   * Other devices' failed pages the teacher left out (review of #194), by
+   * page key: a device never opened again must not block grading for ever.
+   * By page, not by count: a page that fails later blocks again, whatever
+   * the count. A merge keeps the union; a key no device still reports goes.
    */
-  dismissed?: Record<string, number>;
+  dismissed?: string[];
 };
 
 /** How often a grading device refreshes its "I am grading this" note. The
@@ -301,7 +303,7 @@ export function parseSession(raw: unknown): ScanSession | null {
       ? { device: r.grading.device, at: r.grading.at }
       : null;
   const failed = cleanFailed(r.failed);
-  const dismissed = failed ? cleanFailed(r.dismissed) : undefined;
+  const dismissed = failed ? cleanDismissed(r.dismissed, failed) : undefined;
   const session: ScanSession = {
     v: 1,
     ...(failed ? { failed } : {}),
@@ -320,13 +322,36 @@ export function parseSession(raw: unknown): ScanSession | null {
   return isEmptySession(session) ? null : session;
 }
 
-/** The failed-page counts, with only real devices and real counts kept. */
-function cleanFailed(raw: unknown): Record<string, number> | undefined {
+/** The failed pages, with only real devices and page keys kept. An older
+ * session's count reads as that many unnamed pages of that device. */
+function cleanFailed(raw: unknown): Record<string, string[]> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const out: Record<string, number> = {};
-  for (const [device, n] of Object.entries(raw as Record<string, unknown>))
-    if (device && device.length <= 200 && Number.isInteger(n) && (n as number) > 0) out[device] = n as number;
+  const out: Record<string, string[]> = {};
+  for (const [device, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!device || device.length > 200) continue;
+    const keys = Array.isArray(v)
+      ? [...new Set(v.filter((k): k is string => typeof k === "string" && k.length > 0 && k.length <= 200))].slice(0, 500)
+      : Number.isInteger(v) && (v as number) > 0
+        ? Array.from({ length: Math.min(v as number, 500) }, (_, i) => device + "#" + (i + 1))
+        : [];
+    if (keys.length) out[device] = keys.sort();
+  }
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Left-out page keys that some device still reports; an older session's
+ * left-out counts are dropped (that device's pages ask once more). */
+function cleanDismissed(raw: unknown, failed: Record<string, string[]> | undefined): string[] | undefined {
+  if (!Array.isArray(raw) || !failed) return undefined;
+  const reported = new Set(Object.values(failed).flat());
+  const out = [...new Set(raw.filter((k): k is string => typeof k === "string" && reported.has(k)))].sort();
+  return out.length ? out : undefined;
+}
+
+/** The device part of a "device/tab" key. */
+export function deviceOf(key: string): string {
+  const at = key.indexOf("/");
+  return at < 0 ? key : key.slice(0, at);
 }
 
 /** A value as stable text: object keys sorted, so the same state read back
@@ -362,22 +387,44 @@ export function onlyFailedChanged(before: unknown, after: unknown): boolean {
   return canonical(strip(before)) === canonical(strip(after));
 }
 
-/** Pages that did not upload on devices (and tabs) other than this one --
- * not counting a device whose pages were left out at that count or more. */
-export function failedElsewhere(s: Pick<ScanSession, "failed" | "dismissed"> | null, device: string): number {
-  const left = s?.dismissed ?? {};
-  return Object.entries(s?.failed ?? {}).reduce(
-    (sum, [d, n]) => (d === device || n <= (left[d] ?? 0) ? sum : sum + n),
-    0,
-  );
+/** The page keys that did not upload somewhere other than this tab, and are
+ * not left out. A page this tab holds itself is never "elsewhere", whichever
+ * other key also lists it: a tab reopened after the first was closed gets
+ * the camera's saved pages back under the same keys, and used to see them as
+ * another device's (review of #194: the "ghost" count). The same page
+ * reported under two keys counts once. Another tab's own pages still count. */
+export function failedPagesElsewhere(s: Pick<ScanSession, "failed" | "dismissed"> | null, key: string): string[] {
+  const mine = new Set(s?.failed?.[key] ?? []);
+  const left = new Set(s?.dismissed ?? []);
+  const out = new Set<string>();
+  for (const [k, pages] of Object.entries(s?.failed ?? {}))
+    if (k !== key) for (const p of pages) if (!mine.has(p) && !left.has(p)) out.add(p);
+  return [...out].sort();
 }
 
-/** The other devices' counts, recorded as left out (the teacher's "Leave
- * them out" on this device). */
-export function dismissFailed(s: Pick<ScanSession, "failed" | "dismissed">, device: string): Record<string, number> {
-  const out = { ...(s.dismissed ?? {}) };
-  for (const [d, n] of Object.entries(s.failed ?? {})) if (d !== device) out[d] = Math.max(out[d] ?? 0, n);
+/**
+ * Drops the entries of this device's other tabs that hold nothing this tab
+ * does not: a closed tab's pages, reopened here. Without it the old tab's
+ * entry stayed in the session for good, and every other device counted it.
+ */
+function foldOwnTabs(failed: Record<string, string[]>, key: string): Record<string, string[]> {
+  const mine = new Set(failed[key] ?? []);
+  if (!mine.size) return failed;
+  const out: Record<string, string[]> = {};
+  for (const [k, pages] of Object.entries(failed))
+    if (k === key || deviceOf(k) !== deviceOf(key) || pages.some((p) => !mine.has(p))) out[k] = pages;
   return out;
+}
+
+/** How many pages other devices hold that did not upload (failedPagesElsewhere). */
+export function failedElsewhere(s: Pick<ScanSession, "failed" | "dismissed"> | null, key: string): number {
+  return failedPagesElsewhere(s, key).length;
+}
+
+/** "Leave them out": the other devices' failed pages, by page, recorded as
+ * left out -- a page that fails there later still blocks. */
+export function dismissFailed(s: Pick<ScanSession, "failed" | "dismissed">, key: string): string[] {
+  return [...new Set([...(s.dismissed ?? []), ...failedPagesElsewhere(s, key)])].sort();
 }
 
 /** Nothing scanned, nothing graded, nothing to match, nothing waiting to
@@ -450,16 +497,13 @@ export function mergeSessions(server: ScanSession, local: ScanSession, device?: 
   // Failed pages: every other device's count as the server has it, and this
   // device's own as this device knows it (it is the only one that writes it).
   // Without a device, the larger of the two for each.
-  const failedMap: Record<string, number> = { ...(server.failed ?? {}) };
-  for (const [d, n] of Object.entries(local.failed ?? {}))
-    if (!device) failedMap[d] = Math.max(failedMap[d] ?? 0, n);
-  if (device) failedMap[device] = local.failed?.[device] ?? 0;
-  const failed = cleanFailed(failedMap);
-  // A leave-out made on either side holds; only for devices with a count.
-  const dismissedMap: Record<string, number> = {};
-  for (const [d, n] of [...Object.entries(server.dismissed ?? {}), ...Object.entries(local.dismissed ?? {})])
-    if (failed?.[d]) dismissedMap[d] = Math.max(dismissedMap[d] ?? 0, n);
-  const dismissed = cleanFailed(dismissedMap);
+  const failedMap: Record<string, string[]> = { ...(server.failed ?? {}) };
+  for (const [d, pages] of Object.entries(local.failed ?? {}))
+    if (!device) failedMap[d] = [...new Set([...(failedMap[d] ?? []), ...pages])];
+  if (device) failedMap[device] = local.failed?.[device] ?? [];
+  const failed = cleanFailed(device ? foldOwnTabs(failedMap, device) : failedMap);
+  // A leave-out made on either side holds, for pages some device still reports.
+  const dismissed = cleanDismissed([...(server.dismissed ?? []), ...(local.dismissed ?? [])], failed);
   return {
     v: 1,
     ...(failed ? { failed } : {}),

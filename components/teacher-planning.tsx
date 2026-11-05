@@ -79,6 +79,7 @@ import { classSuperGrid, preteachFocus } from "@/lib/super-grid";
 import { schoolYearLabel, schoolYearOptions, teacherSchoolYear } from "@/lib/school-year";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
+  exitCheckStudents,
   hasCuratedLesson,
   lessonContent,
   adaptations,
@@ -1339,9 +1340,11 @@ export function ReteachView() {
         description="Record how many of the two exit questions each student answered correctly. Leave unassessed students blank."
       >
         <div className="exit-score-list">
-          {checkLesson?.studentIds
-            .map((id) => students.find((s) => s.id === id))
-            .filter((s): s is Student => !!s)
+          {checkLesson && !checkLesson.studentIds.length && (
+            <p className="cell-meta">A whole-class lesson: everyone in the class is listed.</p>
+          )}
+          {checkLesson &&
+            exitCheckStudents(checkLesson, w.students)
             .map((st) => (
               <div key={st.id}>
                 <Avatar student={st} size="small" />
