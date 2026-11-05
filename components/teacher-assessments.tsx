@@ -55,6 +55,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { clearClassScanSession, describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
 import {
+  Collapsible,
   Action,
   PageTitle,
   SectionTitle,
@@ -74,7 +75,7 @@ import {
   LevelPill,
   LevelStudents,
 } from "./teacher-shared";
-import { MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, masteryLevel4, rubricLevel } from "@/lib/mastery-levels";
+import { masteryLevel, MASTERY_LEVELS, MASTERY_LEVELS_NOTE, SCORE4_RANGES, levelClass, masteryLevel4, rubricLevel } from "@/lib/mastery-levels";
 import {
   classAnalysis,
   dokGrid,
@@ -1891,7 +1892,8 @@ export function AssessmentView() {
                 <p className="field-help">
                   {otherModeClasses === 1 ? "1 other class is" : otherModeClasses + " other classes are"} graded{" "}
                   {gradingModeOf(a) === "sbg" ? "as a Percentage" : "Standards-Based"}, so{" "}
-                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test.
+                  {otherModeClasses === 1 ? "it can't" : "they can't"} share this test. To use it in{" "}
+                  {gradingModeOf(a) === "sbg" ? "a Percentage" : "a Standards-Based"} class, upload it again as a new test.
                 </p>
               )}
             </div>
@@ -2958,23 +2960,44 @@ function ClassAnalysisPanel({
           </p>
         </div>
       )}
+      {/* Every section and every group under a standard folds, open by
+          default, with a one-line summary when closed (Ricky, 19 and 29 Oct). */}
       {errorTypes.length > 0 && (
-        <div className="panel error-type-summary">
-          <span className="cell-meta">
-            Most common error types across this assessment
-          </span>
-          <ErrorTypeList tallies={errorTypes} go={go} />
-        </div>
+        <Collapsible
+          className="analysis-section"
+          title="Most common error types across this assessment"
+          summary={
+            errorTypes.length +
+            (errorTypes.length === 1 ? " type" : " types") +
+            " · most common: " +
+            errorTypes[0].errorType +
+            " (" +
+            errorTypes[0].count +
+            ")"
+          }
+        >
+          <div className="panel error-type-summary">
+            <ErrorTypeList tallies={errorTypes} go={go} />
+          </div>
+        </Collapsible>
       )}
       {/* The DOK grid (docs/design/grading-modes-and-dok-grid.md 2.1) replaces
           the one-line-per-DOK rows here; Costa's levels stay below it. */}
-      <DokGrid {...dokGrid(a, students, catalog)} assessment={a} students={students} go={go} />
-      <CognitiveBreakdown
-        questions={a.questions}
-        responses={a.responses}
-        heading="Costa's levels across this assessment"
-        showDok={false}
-      />
+      <Collapsible
+        className="analysis-section"
+        title="Depth of knowledge"
+        summary={analysis.length + (analysis.length === 1 ? " standard" : " standards") + " by DOK 1–4"}
+      >
+        <DokGrid {...dokGrid(a, students, catalog)} assessment={a} students={students} go={go} />
+      </Collapsible>
+      <Collapsible className="analysis-section" title="Costa's levels" summary="Gathering, processing, applying">
+        <CognitiveBreakdown
+          questions={a.questions}
+          responses={a.responses}
+          heading="Costa's levels across this assessment"
+          showDok={false}
+        />
+      </Collapsible>
       <div className="student-groups-grid skill-gap-groups">
         {analysis.map((row) => (
           <section className="panel student-group-card skill" key={row.standard.code}>
@@ -2990,7 +3013,21 @@ function ClassAnalysisPanel({
                   : "Reteach: " + row.instruction.toLowerCase()}
               </Pill>
             </header>
-            <h2>{row.standard.title}</h2>
+            <Collapsible
+              className="standard-card-body"
+              title={<h2>{row.standard.title}</h2>}
+              summary={
+                row.standard.code +
+                " · " +
+                (row.average4 !== null
+                  ? score4Text(row.average4) + " out of 4 · " + masteryLevel4(row.average4).level
+                  : row.averagePercent === null
+                    ? "not yet graded"
+                    : row.averagePercent + "% · " + masteryLevel(row.averagePercent).level) +
+                " · " +
+                (row.instruction === "No reteach needed" ? "no reteach needed" : "reteach: " + row.instruction.toLowerCase())
+              }
+            >
             {row.average4 !== null ? (
               // Standards-Based: the class's 0–4 average on this standard,
               // one decimal, with its level on the 0–4 cuts.
@@ -3018,6 +3055,7 @@ function ClassAnalysisPanel({
               </>
             )}
             <LevelStudents
+              collapsible
               ranges={row.average4 !== null ? SCORE4_RANGES : undefined}
               byLevel={row.byLevel}
               onOpen={(member) =>
@@ -3082,6 +3120,7 @@ function ClassAnalysisPanel({
                 )}
               </div>
             )}
+            </Collapsible>
           </section>
         ))}
       </div>
