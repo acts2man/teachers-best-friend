@@ -267,3 +267,83 @@ export function framingGuide(
   const fill = polygonArea(onScreen) / (viewW * viewH);
   return fill >= minFill ? "steady" : "closer";
 }
+
+/**
+ * How much sharper a frame is than itself re-blurred (a 1-2-1 binomial at the
+ * score size), as a percentage, in its weaker direction -- a no-reference
+ * blur measure (after Crete-Roffet et al.). The frame's own content cancels
+ * out, so a sparse page and a page full of writing are judged alike, where
+ * the Laplacian's absolute value is not: a sharp frame loses a lot when
+ * re-blurred (55-65 on the tuning images), a blurry one hardly anything.
+ */
+export function reblurRatio(gray: ArrayLike<number>, w: number, h: number): number {
+  if (w < 5 || h < 5) return 0;
+  const b = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      b[i] =
+        (4 * gray[i] +
+          2 * (gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w]) +
+          gray[i - w - 1] +
+          gray[i - w + 1] +
+          gray[i + w - 1] +
+          gray[i + w + 1]) /
+        16;
+    }
+  const energy = (img: ArrayLike<number>, step: number) => {
+    let q = 0;
+    let n = 0;
+    for (let y = 2; y < h - 2; y++)
+      for (let x = 2; x < w - 2; x++) {
+        const i = y * w + x;
+        const d = img[i] - img[i - step];
+        q += d * d;
+        n++;
+      }
+    return n ? q / n : 0;
+  };
+  const ratio = (step: number) => {
+    const a = energy(gray, step);
+    return a > 1e-6 ? (a - energy(b, step)) / a : 0;
+  };
+  return Math.round(100 * Math.min(ratio(1), ratio(w)));
+}
+
+/**
+ * When a capture counts as too blurry to add without asking (Ricky, 29 Oct
+ * 2026: "catch when the photo is blurry and ask to retake or keep"). BOTH
+ * measures must say so (review of #200): either one alone is fooled -- the
+ * Laplacian by a page with little on it, the re-blur ratio by a phone's
+ * sensor noise, which looks sharp to it -- and a sharp page must never be
+ * questioned.
+ *
+ * Tuned with scripts/tune-blur-realistic.mjs (5 Nov 2026): six kinds of page
+ * -- light pencil on white, a grey photocopied worksheet, dense pen, a sparse
+ * far page, and the first tuning's two -- out of focus by 0-4 px, with no,
+ * good-light and poor-light sensor noise, a little vignetting, saved as JPEG
+ * (quality 82) and scored at the camera's 320-px size:
+ *
+ *   - flagged: 72 of 108 pages out of focus at sigma >= 3 px, and 6 of 54 at
+ *     sigma 2 -- the misses are the noisiest photos, where the noise hides
+ *     the blur from both measures;
+ *   - never flagged: all 162 at sigma <= 1.5, with room to spare (still none
+ *     at 15% more Laplacian and 3 points more re-blur).
+ *
+ * Shake (motion blur) is not caught reliably by either measure. The "i"
+ * panel shows both scores, to check it on a real phone.
+ */
+export const BLUR_LAPLACIAN_MIN = 145;
+export const BLUR_REBLUR_MIN = 30;
+export function isBlurry(s: { laplacian: number; reblur: number }): boolean {
+  return s.laplacian < BLUR_LAPLACIAN_MIN && s.reblur < BLUR_REBLUR_MIN;
+}
+
+/**
+ * Auto-capture's own cutoff: how sharp the live view must be for the camera
+ * to take the picture by itself, on the live frame's Laplacian. Kept apart
+ * from the Retake/Keep check (review of #200): it was 55 before that check
+ * existed, and it decides when to snap, not whether to question a photo --
+ * tying the two together moved auto-capture without anyone choosing to.
+ */
+export const AUTO_CAPTURE_MIN_SHARPNESS = 55;
