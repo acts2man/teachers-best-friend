@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { SET_STAGES, spendPage, type FetchRows, type SpendRow } from "./ai-spend";
 
 /**
  * SERVICE-ROLE client. Bypasses every RLS policy.
@@ -297,7 +298,7 @@ export async function getCostBreakdown(opts: { teacherId?: string; allTime?: boo
 export async function getTeacherScans(teacherId: string, limit = 50) {
   const { data, error } = await supabaseAdmin()
     .from("scans")
-    .select("id, status, stage, created_at, completed_at, cost_usd, extract_model, reteach_model, library_hits, library_misses, error")
+    .select("id, teacher_id, status, stage, created_at, completed_at, cost_usd, assessment_id, charge_keys, extract_model, reteach_model, library_hits, library_misses, error")
     .eq("teacher_id", teacherId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -357,4 +358,47 @@ export async function getImpersonationSessions(limit = 200): Promise<Impersonati
     ended_at: s.ended_at,
     expires_at: s.expires_at,
   }));
+}
+
+/**
+ * One page of the AI-spend list (lib/ai-spend.ts): every AI call, newest
+ * first, with each class set's name reads and grading calls as ONE item and
+ * its total -- for one teacher or everyone, one kind of work or all. Pages by
+ * item, so it reaches every call ever made, not the latest 50. Test titles
+ * are looked up for the calls that name one.
+ */
+export async function getSpendPage(opts: { teacherId?: string; stage?: string; from?: number }) {
+  const db = supabaseAdmin();
+  const isSet = !!opts.stage && (SET_STAGES as readonly string[]).includes(opts.stage);
+  // A set is name reads AND grading calls: either kind lists the whole set.
+  const stages = !opts.stage ? null : isSet ? [...SET_STAGES] : [opts.stage];
+  const fetchRows: FetchRows = async (from, size) => {
+    let q = db
+      .from("scans")
+      .select("id, teacher_id, stage, status, created_at, cost_usd, assessment_id, charge_keys")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+    if (opts.teacherId) q = q.eq("teacher_id", opts.teacherId);
+    if (stages) q = q.in("stage", stages);
+    const { data, error } = await q.range(from, from + size - 1);
+    if (error) throw error;
+    return (data ?? []) as SpendRow[];
+  };
+  const page = await spendPage(fetchRows, { from: Math.max(0, opts.from ?? 0) });
+  const testIds = [...new Set(page.items.map((i) => (i.kind === "set" ? i.assessmentId : i.row.assessment_id)).filter((x): x is string => !!x))];
+  const teacherIds = [...new Set(page.items.map((i) => (i.kind === "set" ? i.teacherId : i.row.teacher_id)))];
+  let countQ = db.from("scans").select("id", { count: "exact", head: true });
+  if (opts.teacherId) countQ = countQ.eq("teacher_id", opts.teacherId);
+  if (stages) countQ = countQ.in("stage", stages);
+  const [{ data: tests }, { data: people }, { count }] = await Promise.all([
+    testIds.length ? db.from("assessments").select("id, title").in("id", testIds) : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+    !opts.teacherId && teacherIds.length ? db.from("admin_accounts").select("teacher_id, email").in("teacher_id", teacherIds) : Promise.resolve({ data: [] as { teacher_id: string; email: string }[] }),
+    countQ,
+  ]);
+  return {
+    ...page,
+    titles: new Map((tests ?? []).map((t) => [t.id as string, t.title as string])),
+    emails: new Map((people ?? []).map((p) => [p.teacher_id as string, p.email as string])),
+    totalCalls: count ?? 0,
+  };
 }
