@@ -44,3 +44,8 @@ jobs:
 
       - name: Test (build + tests/*.test.mjs + tests/invariants/*.test.mjs)
         run: npm test
+
+      - name: Tests do not depend on today's date (clock moved a year each way)
+        # A test with a fixed date in it passes until the calendar reaches
+        # that date, then fails for a reason that is not the code's.
+        run: npm run test:clock

@@ -12,6 +12,7 @@
     "build:netlify": "next build --webpack",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/*.test.mjs tests/invariants/*.test.mjs",
+    "test:clock": "for d in -400 400; do echo \"clock moved $d days\"; SHIFT_DAYS=$d NODE_OPTIONS=--import=./scripts/shift-clock.mjs node --test tests/*.test.mjs tests/invariants/*.test.mjs || exit 1; done",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
   },

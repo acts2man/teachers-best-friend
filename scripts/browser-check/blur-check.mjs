@@ -58,7 +58,7 @@ function pageVideo(name, sigma) {
 const SHARP = pageVideo("tbf-blur-sharp", 0);
 const BLURRY = pageVideo("tbf-blur-blurry", 3);
 
-async function openCamera(video, W, H, seenTip) {
+async function openCamera(video, W, H, seenTip, keepAuto = false) {
   const browser = await chromium.launch({
     executablePath: CHROMIUM,
     args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--use-file-for-fake-video-capture=" + video],
@@ -85,7 +85,8 @@ async function openCamera(video, W, H, seenTip) {
   await page.getByRole("button", { name: /Scan student work/ }).click();
   await page.waitForFunction(() => { const b = document.querySelector("button.scan-camera-shutter"); return b && !b.disabled; }, null, { timeout: 30000 });
   const autoBtn = page.locator("button[aria-pressed]", { hasText: "Auto" }).first();
-  if ((await autoBtn.count()) && (await autoBtn.getAttribute("aria-pressed")) === "true") await autoBtn.click();
+  if (!keepAuto && (await autoBtn.count()) && (await autoBtn.getAttribute("aria-pressed")) === "true") await autoBtn.click();
+  if (keepAuto && (await autoBtn.count()) && (await autoBtn.getAttribute("aria-pressed")) !== "true") await autoBtn.click();
   await sleep(1200);
   return { browser, page, errors, sent };
 }
@@ -93,6 +94,27 @@ const thumbs = (page) => page.locator(".scan-camera-thumb").count();
 
 for (const [W, H] of [[390, 844], [412, 915]]) {
   const tag = `${W}x${H}`;
+  {
+    // Review of #200: Auto on, and the teacher presses the shutter herself on
+    // a blurry page. It used to be dropped with only the auto-snap hint.
+    const { browser, page, errors } = await openCamera(BLURRY, W, H, true, true);
+    try {
+      check((await page.locator("button[aria-pressed]", { hasText: "Auto" }).first().getAttribute("aria-pressed")) === "true", `${tag} auto: Auto is on`);
+      await page.locator("button.scan-camera-shutter").click();
+      const sheet = page.getByRole("dialog", { name: "Blurry photo" });
+      const asked = await sheet.waitFor({ timeout: 8000 }).then(() => true, () => false);
+      check(asked, `${tag} auto: a shutter press on a blurry page asks Retake / Keep`);
+      if (asked) {
+        await sheet.getByRole("button", { name: "Keep" }).click();
+        await sleep(1200);
+        check((await thumbs(page)) === 1, `${tag} auto: and Keep adds it`);
+      }
+      check(errors.length === 0, `${tag} auto: no page errors ${errors.join(" | ")}`);
+    } catch (e) {
+      fail.push(`${tag} auto: stopped -- ${String(e.message || e).split("\n")[0]}`);
+    }
+    await browser.close();
+  }
   {
     const { browser, page, errors, sent } = await openCamera(SHARP, W, H, false);
     try {
