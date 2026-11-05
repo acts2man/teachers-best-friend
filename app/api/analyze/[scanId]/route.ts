@@ -1,3 +1,4 @@
+import { withoutNameSeen } from "@/lib/name-seen";
 import { incompleteMessage, lessonPartIsFree } from "@/lib/lesson-billing";
 import { buildStamp } from "@/lib/build-info";
 import {
@@ -231,7 +232,9 @@ export async function GET(
       .from("scans")
       // Stamped with the build that actually ran finalizeAnalysis, which is
       // the code every "it should already be fixed" question turns on.
-      .update({ result: output, build_ref_finish: buildStamp() })
+      // Kept without the names read on the piles: those reach only this reply
+      // (lib/name-seen.ts withoutNameSeen, review of #203).
+      .update({ result: withoutNameSeen(output), build_ref_finish: buildStamp() })
       .eq("id", scanId);
     if (writeError)
       console.error("Storing scan result failed", writeError.message);

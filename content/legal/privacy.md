@@ -107,7 +107,8 @@ the whole page is graded, a name the student wrote on it is in the image that re
 sees. The model is not told who anyone is and is instructed not to use the name to decide
 whose work a page is; it reports the name it sees on each student's pages in one place,
 only so our system can check the answers were not credited to the wrong paper, and is
-instructed not to reproduce it anywhere else. Matching a name to a student happens only
+instructed not to reproduce it anywhere else. That reading is not stored: we keep only
+which of your students it could be, and only until the class set is saved (an unsaved scan is deleted after 7 days). Matching a name to a student happens only
 inside our system, and neither request is ever given your class list. Earlier versions cut the name off the top of the page before grading; that also cut
 off questions near the top of a photographed page, so the whole page is now graded.
 

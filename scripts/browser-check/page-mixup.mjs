@@ -62,21 +62,37 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     const what = await panel.locator(".mixup-what").innerText();
     check(what.includes("swap answers"), `${tag}: onto a student with answers it says it is a swap ("${what}")`);
     await panel.getByRole("button", { name: "Swap answers" }).click();
+    const ask = page.getByRole("alertdialog");
+    await ask.waitFor({ timeout: 5000 });
+    const askTitle = (await ask.locator("h2").innerText()).trim();
+    check(askTitle === `Swap ${s1}’s 8 answers and ${s2}’s 8 answers?`, `${tag}: it asks first ("${askTitle}")`);
+    check(!saved, `${tag}: and nothing is saved before the answer`);
+    await ask.getByRole("button", { name: "Swap answers" }).click();
     await page.waitForTimeout(800);
     const after = (id) => saved.assessments.find((x) => x.id === "math-demo").responses.filter((r) => r.studentId === id).map((r) => r.questionId + "=" + r.answer).sort();
     check(!!saved && JSON.stringify(after("s1")) === JSON.stringify(before("s2")) && JSON.stringify(after("s2")) === JSON.stringify(before("s1")), `${tag}: the save swaps ${s1}'s and ${s2}'s answers`);
     check(!!saved && !saved.assessments.find((x) => x.id === "math-demo").responses.some((r) => r.checkPages), `${tag}: and the marks clear`);
     await page.locator(".mixup-panel.has-flags").waitFor({ state: "detached", timeout: 5000 }).then(() => check(true, `${tag}: the check list goes away`)).catch(() => check(false, `${tag}: the check list goes away`));
+    const afterSwap = saved;
+    const ids = (ws) => new Set(ws.assessments.find((x) => x.id === "math-demo").responses.filter((r) => r.studentId === "s1" || r.studentId === "s2").map((r) => r.id));
+    const orig = new Set(a.responses.filter((r) => r.studentId === "s1" || r.studentId === "s2").map((r) => r.id));
+    check([...ids(afterSwap)].every((id) => !orig.has(id)), `${tag}: the swapped answers carry new ids`);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await page.waitForTimeout(800);
+    check(saved !== afterSwap && JSON.stringify(after("s1")) === JSON.stringify(before("s1")) && JSON.stringify(after("s2")) === JSON.stringify(before("s2")), `${tag}: Undo puts them back`);
     // Edit reading, on question 1.
     await page.locator(".gbq-question").first().getByRole("button").last().click();
     const edit = page.getByRole("button", { name: "Edit reading" }).first();
     await edit.waitFor({ timeout: 8000 });
     await edit.click();
     const input = page.locator(".edit-written input");
+    await input.fill("   ");
+    check(await page.locator(".edit-written").getByRole("button", { name: "Save" }).isDisabled(), `${tag}: an empty reading cannot be saved`);
     await input.fill("fixed reading");
     await page.locator(".edit-written").getByRole("button", { name: "Save" }).click();
     await page.waitForTimeout(800);
-    check(!!saved && saved.assessments.find((x) => x.id === "math-demo").responses.some((r) => r.answer === "fixed reading" && r.finalAnswer === "fixed reading"), `${tag}: Edit reading saves what the answer was read as`);
+    const edited = saved?.assessments.find((x) => x.id === "math-demo").responses.find((r) => r.answer === "fixed reading");
+    check(!!edited && edited.finalAnswer === "fixed reading" && edited.gradedAlone === true && edited.verified === false, `${tag}: Edit reading saves it, on its own and undecided (nobody else wrote that)`);
     check(!(await sideScroll()), `${tag}: nothing scrolls sideways after`);
     check(errors.length === 0, `${tag}: no page errors ${errors.join(" | ")}`);
   } catch (e) {

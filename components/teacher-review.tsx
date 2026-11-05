@@ -94,7 +94,17 @@ import { ClassScanPanel } from "./teacher-class-scan";
 import { ImageViewer } from "./image-viewer";
 import { CroppedPhoto } from "./cropped-photo";
 import { inScanOrder } from "@/lib/teacher-class-scan";
-import { clearCheckPages, editWrittenAnswer, moveAnswers, moveIsSwap, studentsToCheck } from "@/lib/answer-mixups";
+import { clearCheckPages, editWrittenAnswer, moveAnswers, moveCounts, moveIsSwap, studentsToCheck, undoMove } from "@/lib/answer-mixups";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScanCamera } from "./scan-camera";
 
 /**
@@ -720,7 +730,15 @@ function GradeByQuestion({
             onReopen={() => setReopened((p) => new Set(p).add(g.key))}
             onTag={(errorType) => tagError(g, errorType)}
             onReteach={() => makeReteachGroup(question, g)}
-            onEditWritten={(id, text) => onSave(editWrittenAnswer(a, id, text), "Reading corrected")}
+            onEditWritten={(id, text) => {
+              const next = editWrittenAnswer(a, id, text);
+              // An empty reading is refused, never saved as a blank.
+              if (!next) {
+                toast.error("A reading can’t be empty. Type what the student wrote, or Cancel.");
+                return;
+              }
+              void onSave(next, "Reading corrected");
+            }}
             toCheck={toCheck}
           />
         ))}
@@ -1061,21 +1079,44 @@ function MixupPanel({
   const [to, setTo] = useState("");
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
+  // The test as it is now, for an Undo pressed after later saves.
+  const latest = useRef(a);
+  useEffect(() => {
+    latest.current = a;
+  });
+  const [confirming, setConfirming] = useState(false);
   if (!withAnswers.length) return null;
   const nameOf = (id: string) => students.find((s) => s.id === id)?.name || "this student";
   const fromId = from || flagged[0] || "";
   const swap = !!to && moveIsSwap(a, to);
+  const counts = fromId && to ? moveCounts(a, fromId, to) : { from: 0, to: 0 };
+  const plural = (n: number) => n + (n === 1 ? " answer" : " answers");
+  const question = swap
+    ? "Swap " + nameOf(fromId) + "’s " + plural(counts.from) + " and " + nameOf(to) + "’s " + plural(counts.to) + "?"
+    : "Move " + plural(counts.from) + " from " + nameOf(fromId) + " to " + nameOf(to) + "?";
+  /** Asked first (review of #203), saved, then one tap to undo it. */
   async function move() {
     if (!fromId || !to || fromId === to) return;
+    setConfirming(false);
+    const before = a;
+    const pair = [fromId, to];
+    const names = [nameOf(fromId), nameOf(to)];
+    const wasSwap = swap;
     const ok = await onSave(
       moveAnswers(a, fromId, to),
-      swap ? "Swapped " + nameOf(fromId) + "’s and " + nameOf(to) + "’s answers" : "Moved the answers to " + nameOf(to),
+      wasSwap ? "Swapped " + names[0] + "’s and " + names[1] + "’s answers" : "Moved the answers to " + names[1],
     );
-    if (ok !== false) {
-      setFrom("");
-      setTo("");
-      setOpen(false);
-    }
+    if (ok === false) return;
+    setFrom("");
+    setTo("");
+    setOpen(false);
+    toast(wasSwap ? names[0] + " and " + names[1] + " swapped answers" : "Answers moved to " + names[1], {
+      duration: 12000,
+      action: {
+        label: "Undo",
+        onClick: () => void onSave(undoMove(latest.current, before, pair), "Put back as it was"),
+      },
+    });
   }
   const showForm = open || flagged.length > 0;
   return (
@@ -1128,6 +1169,24 @@ function MixupPanel({
           Answers on the wrong student? Move them
         </button>
       )}
+      <AlertDialog open={confirming} onOpenChange={(v) => !v && setConfirming(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{question}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {swap
+                ? "Each keeps the other’s answers, pages and credit. You can undo it right after."
+                : "Their pages and credit go with them. You can undo it right after."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={move}>
+              {swap ? "Swap answers" : "Move answers"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {showForm && (
         <div className="mixup-form">
           <label>
@@ -1163,7 +1222,7 @@ function MixupPanel({
             </p>
           )}
           <div className="mixup-actions">
-            <Action disabled={busy || !fromId || !to} onClick={move}>
+            <Action disabled={busy || !fromId || !to} onClick={() => setConfirming(true)}>
               {swap ? "Swap answers" : "Move answers"}
             </Action>
             {!flagged.length && (
@@ -1211,7 +1270,7 @@ function EditWritten({
         <span className="cell-meta">Written as</span>
         <input value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus maxLength={500} />
       </label>
-      <Action type="submit" variant="small" disabled={busy}>
+      <Action type="submit" variant="small" disabled={busy || !draft.trim()}>
         Save
       </Action>
       <Action variant="secondary small" onClick={() => setDraft(null)}>

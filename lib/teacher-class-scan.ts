@@ -219,9 +219,10 @@ export function mergeNameReads(
 export type GradedGroup = {
   group: number;
   responses: ScannedResponse[];
-  /** The name the grading pass read on this group's pages, only to check the
-   * pages were read as grouped (lib/answer-mixups.ts). Absent on older reads. */
-  nameSeen?: string;
+  /** Which roster students the name the grading pass read on this group's
+   * pages could be (lib/answer-mixups.ts seenFitsFor) -- never the name
+   * itself. Absent when no name was read. */
+  seenFits?: string[];
 };
 
 /** One group of pages belonging to the same student. */
@@ -230,8 +231,8 @@ export type ScannedGroup = {
   detectedName: string;
   confidence: number;
   responses: ScannedResponse[];
-  /** What the grading pass read as the name on these pages (GradedGroup). */
-  nameSeen?: string;
+  /** Which roster students the grading pass's read name could be (GradedGroup). */
+  seenFits?: string[];
 };
 
 /**
@@ -945,7 +946,7 @@ export function resolveScannedGroups(
 ): ResolvedGroup[] {
   const nameOf = new Map(names.map((n) => [n.page, n]));
   const gradedByGroup = new Map(graded.map((g) => [g.group, g.responses]));
-  const seenByGroup = new Map(graded.map((g) => [g.group, g.nameSeen ?? ""]));
+  const seenByGroup = new Map(graded.map((g) => [g.group, g.seenFits]));
 
   const validPagesByGroup = pageGroups.map((pages) =>
     [
@@ -1034,7 +1035,7 @@ export function resolveScannedGroups(
         detectedName,
         confidence: readConfidence,
         responses: gradedByGroup.get(i) ?? [],
-        nameSeen: seenByGroup.get(i) ?? "",
+        ...(seenByGroup.get(i) ? { seenFits: seenByGroup.get(i) } : {}),
         pageUploadIds: validPages.map((p) => pageUploadIds[p]),
         key: "group-" + i,
         // Left unset on anything but a strong match: an ambiguous or shaky paper
@@ -1156,11 +1157,12 @@ export type ConfirmedGroup = {
   name: string;
   pageUploadIds: string[];
   responses: ScannedResponse[];
-  /** The name the name pass read on the pile, and the one the grading pass
-   * read on the same pages: when the second fits neither the first nor the
-   * confirmed student, the answers are marked to check (lib/answer-mixups.ts). */
+  /** The name the name pass read on the pile, and which roster students the
+   * grading pass's read could be: when that is someone else and the first
+   * does not fit them either, the answers are marked to check
+   * (lib/answer-mixups.ts). */
   detectedName?: string;
-  nameSeen?: string;
+  seenFits?: string[];
 };
 
 /**
@@ -1270,8 +1272,7 @@ export function applyScannedGroups(
     // the same test unless it actually answers the question, so keep what an
     // earlier pass found where this one saw nothing.
     scanned.push(studentId);
-    const confirmedName = students.find((s) => s.id === studentId)?.name ?? newStudents.find((s) => s.id === studentId)?.name ?? group.name;
-    const check = pagesMayBelongElsewhere(group.nameSeen, confirmedName, group.detectedName);
+    const check = pagesMayBelongElsewhere(group.seenFits, studentId, group.detectedName ?? "", students);
     const incoming = normalizeRecognizedResponses(a, studentId, group.responses).map((r) =>
       check ? { ...r, checkPages: true } : r,
     );

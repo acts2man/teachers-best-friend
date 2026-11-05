@@ -1,3 +1,4 @@
+import { usableNameSeen } from "./name-seen";
 import { codeParts, matchCatalogCode, settleStandards } from "./standard-match";
 import { z } from "zod";
 import { HttpError } from "@/lib/teacher-server";
@@ -1066,7 +1067,8 @@ export function finalizeAnalysis(
         pageIndexes: p.pageGroups[g.group],
         // A short line of the name as read, for the app's own check. Never
         // matched to the roster here: that happens only in the app.
-        nameSeen: (g.nameSeen ?? "").replace(/\s+/g, " ").trim().slice(0, 80),
+        // No letters, or a placeholder ("?", "unreadable", "Name:"), is blank.
+        nameSeen: usableNameSeen(g.nameSeen),
         responses: g.responses
           .filter((r) => validQuestionIds.has(r.questionId))
           .map((r) => {

@@ -119,8 +119,9 @@ class list. No name is ever sent as text.
 **The limit, stated plainly.** Because the whole page is graded, a name the student wrote
 on the page is in the image the grading request sees. The model is instructed not to use it
 to decide whose work a page is, and to report it only in one place, so that our system can
-check the answers were not credited to the wrong paper; we do not claim the graded image
-carries no name. (An
+check the answers were not credited to the wrong paper. That reading is not stored: only
+which of the teacher's students it could be is kept, until the class set is saved (an unsaved scan is deleted after 7 days). We do
+not claim the graded image carries no name. (An
 earlier version cut a band off the top of each page before grading; it also cut off
 questions near the top of a photographed page.) A district that requires zero name
 transmission can direct teachers to the single-student upload path, which sends no name

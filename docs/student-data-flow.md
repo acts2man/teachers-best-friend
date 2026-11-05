@@ -241,9 +241,14 @@ What each request carries now:
   and the name the `name_strip` pass read, in `pagesMayBelongElsewhere()`
   (`lib/answer-mixups.ts`); when it fits neither, the answers are marked `checkPages` and
   Grade by question says "Answers may belong to another page — check". Nothing is moved
-  for the teacher. `nameSeen` is held only where grading results already are --
-  `scans.result` (the delivery buffer, section 2) and the scan in progress
-  (`class_scan_sessions`) -- and is not saved to the workspace; only the yes/no mark is.
+  for the teacher. **`nameSeen` is not stored** (review of #203): the job's stored
+  result (`scans.result`, the delivery buffer, section 2) is written without it
+  (`withoutNameSeen`, `lib/name-seen.ts`); the teacher's phone gets it once, in the
+  reply that finishes the job, and turns it at once into which roster students it
+  could be -- student ids, `seenFits` (`withSeenFits`, `lib/answer-mixups.ts`). Only
+  those ids ride in the scan in progress (`class_scan_sessions`, deleted when the class
+  set is saved; an unsaved one expires after 7 days), and only the yes/no mark reaches the workspace. A read that is not a
+  name ("?", "unreadable", "Name:", no letters) counts as none (`usableNameSeen`).
   It is the same kind of value the `name_strip` pass already returns (a name as written,
   matched only in the app). Grading requests also hold at most 3 pages now
   (`GRADE_PAGES_PER_BATCH`, was up to 12): more, smaller requests, same content.
