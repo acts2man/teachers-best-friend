@@ -86,7 +86,7 @@ test("the button sends only the focus: the lessons screen recomputes it from the
   assert.match(panel, /"&intent=preteach&cluster=" \+\s*encodeURIComponent\(f\.cluster\) \+\s*"&dok=" \+\s*f\.dok,/, "the link carries no errors or students");
   const planning = readFileSync("components/teacher-planning.tsx", "utf8");
   assert.match(planning, /preteachFocus\(classSuperGrid\(w, classroom\), params\.get\("cluster"\)!, dokLevels\[0\]\)/);
-  const req = planning.slice(planning.indexOf("...(preteach\n"), planning.indexOf("setCustom(d.result);"));
+  const req = planning.slice(planning.indexOf("...(preteach\n"), planning.indexOf("async function generateAI("));
   assert.match(req, /intent: "preteach" as const,\s*cluster: preteach\.cluster,\s*alsoStandards: preteach\.also,\s*dok: \[preteach\.dok\],\s*errorTypes: preteach\.errorTypes,/);
   assert.doesNotMatch(req, /students|studentIds|answer|name:/);
 });

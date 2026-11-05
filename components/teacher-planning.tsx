@@ -7,7 +7,9 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
-import { analyzeRequest } from "@/lib/analyze-client";
+import { AnalyzeError, analyzeRequest } from "@/lib/analyze-client";
+import { OUT_OF_CREDITS_FOR_LESSON } from "@/lib/lesson-billing";
+import { refundLesson } from "@/lib/lesson-refund-client";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -81,13 +83,22 @@ import {
   lessonContent,
   adaptations,
   resourceCatalog,
+  generateMessage,
+  generateOutcome,
+  flowFor,
+  hasFlow,
+  withFlow,
+  lessonPrintText,
+  practicePrintText,
+  approachLabel,
+  TEACHING_APPROACHES,
   type LessonContent,
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
 import { MASTERY_LEVELS, lessonIntent as intentFrom } from "@/lib/mastery-levels";
 import { lessonFocus } from "@/lib/teacher-class-analysis";
 import { themes, themeById } from "@/lib/themes";
-import type { Lesson, Resource, Student, Standard } from "@/lib/teacher-types";
+import type { Lesson, LessonFlow, Resource, Student, Standard, TeachingApproach } from "@/lib/teacher-types";
 
 function tomorrow() {
   const d = new Date();
@@ -218,6 +229,13 @@ export function AreaModel() {
   );
 }
 
+/** A promise's value and how long it took, in whole milliseconds. */
+async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number }> {
+  const started = performance.now();
+  const value = await run();
+  return { value, ms: Math.round(performance.now() - started) };
+}
+
 export function ReteachView() {
   const { w, classroom, students, save, busy, aiReady, go } = useTeacher();
   const params = useSearchParams(),
@@ -264,6 +282,10 @@ export function ReteachView() {
     [date, setDate] = useState(tomorrow()),
     [custom, setCustom] = useState<Lesson["custom"]>(),
     [aiBusy, setAiBusy] = useState(false),
+    // How long the last generate took, end to end (shown under the plan).
+    [generateMs, setGenerateMs] = useState<number | null>(null),
+    // "Add question" in practice or the exit ticket, while it runs.
+    [addingTo, setAddingTo] = useState<"practice" | "exit" | null>(null),
     [savedId, setSavedId] = useState<string | null>(null),
     [checkLesson, setCheckLesson] = useState<Lesson | null>(null),
     [exitScores, setExitScores] = useState<Record<string, string>>({}),
@@ -353,56 +375,23 @@ export function ReteachView() {
           : students.filter((st) => st.id === audience);
   function printLesson(practiceOnly = false) {
     if (!s || !content) return;
+    // Ricky (27 Oct): the answer key prints after the targeted practice and
+    // after the exit ticket, then the game and the performance task.
     const material = practiceOnly
-      ? content.practice
-          .map(
-            (q, i) =>
-              i +
-              1 +
-              ". " +
-              q.q +
-              (answerKeys ? "\nAnswer: " + q.a : "") +
-              "\n\n",
-          )
-          .join("\n")
-      : s.code +
-        " · " +
-        duration +
-        " minutes · " +
-        modality +
-        "\n\nGOAL\n" +
-        content.objective +
-        "\n\nMATERIALS\n" +
-        content.materials.join(", ") +
-        "\n\n" +
-        content.phases
-          .map(
-            (p, i) =>
-              (custom
-                ? p.time
-                : Math.round(([0, 2, 5, 9, 12][i] * Number(duration)) / 15) +
-                  "–" +
-                  Math.round(([2, 5, 9, 12, 15][i] * Number(duration)) / 15)) +
-              " MIN · " +
-              p.name.toUpperCase() +
-              "\n" +
-              p.text,
-          )
-          .join("\n\n") +
-        "\n\n" +
-        modality.toUpperCase() +
-        " APPROACH\n" +
-        adaptations[modality] +
-        "\n\nPRACTICE\n" +
-        content.practice
-          .map((q, i) => i + 1 + ". " + q.q + "\nTeacher key: " + q.a)
-          .join("\n\n") +
-        "\n\nEXIT TICKET\n" +
-        content.exit
-          .map((q, i) => i + 1 + ". " + q.q + "\nTeacher key: " + q.a)
-          .join("\n\n") +
-        "\n\nTEACHER NOTES\n" +
-        notes;
+      ? practicePrintText(content, answerKeys)
+      : lessonPrintText(content, {
+          code: s.code,
+          duration,
+          approach: modality,
+          adaptation: adaptations[modality],
+          notes,
+          phaseTime: (i) =>
+            custom
+              ? flowFor(content, modality).phases[i]?.time ?? ""
+              : Math.round(([0, 2, 5, 9, 12][i] * Number(duration)) / 15) +
+                "–" +
+                Math.round(([2, 5, 9, 12, 15][i] * Number(duration)) / 15),
+        });
     // Typeset math in print and Save as PDF too (Ricky, 25 Oct): the text
     // is escaped and its powers and fractions become MathML.
     printHtml((practiceOnly ? "Practice · " : "") + s.title, mathTextToHtml(material, { mathml: supportsMathML() }));
@@ -443,19 +432,18 @@ export function ReteachView() {
       setTab("plan");
     }
   }
-  async function generateAI() {
-    if (!s || !aiReady) return;
-    setAiBusy(true);
-    try {
-      const d = await analyzeRequest({
-        mode: "lesson",
-        standard: s.code,
-        duration: Number(duration),
-        modality,
-        text: notes,
-        framework: contextFramework,
-        grade: contextGrade,
-        ...(preteach
+  /** What every request for this lesson carries: the standard, the lesson's
+   * shape and its focus (a DOK-grid cell or a pre-teach). */
+  function lessonRequestBase() {
+    if (!s) return null;
+    return {
+      mode: "lesson" as const,
+      standard: s.code,
+      duration: Number(duration),
+      text: notes,
+      framework: contextFramework,
+      grade: contextGrade,
+      ...(preteach
           ? {
               intent: "preteach" as const,
               cluster: preteach.cluster,
@@ -467,20 +455,92 @@ export function ReteachView() {
               intent: lessonIntent,
               ...(focus ? { dok: focus.dok, errorTypes: focus.errorTypes } : {}),
             }),
-      });
-      setCustom(d.result);
+    };
+  }
+  // Ricky (27 Oct 2026): one generate writes the lesson flow in all three
+  // teaching approaches, side by side -- the full lesson (its flow, plus the
+  // one set of practice, exit ticket, game and performance task) in the
+  // approach chosen, and the flow alone in the other two -- and the teacher
+  // switches between them with the approach tabs.
+  async function generateAI() {
+    const base = lessonRequestBase();
+    if (!base || !aiReady) return;
+    setAiBusy(true);
+    try {
+      const chosen = (TEACHING_APPROACHES as readonly string[]).includes(modality)
+        ? (modality as TeachingApproach)
+        : "Visual";
+      const others = TEACHING_APPROACHES.filter((x) => x !== chosen);
+      // One Generate is one credit (review of #199, lib/lesson-billing.ts):
+      // the full lesson is charged, the other two versions are not, and all
+      // three carry this id so a failure can be refunded on the server's word.
+      const lessonRun = crypto.randomUUID();
+      const { value: [full, ...flows], ms } = await timed(() =>
+        Promise.allSettled([
+          analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }),
+          ...others.map((o) => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
+        ]),
+      );
+      // Out of credits: nothing was charged and nothing is shown; say why.
+      if (full.status === "rejected" && full.reason instanceof AnalyzeError && full.reason.reason === 402) {
+        toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
+        return;
+      }
+      const outcome = generateOutcome(
+        chosen,
+        full.status === "fulfilled" ? (full.value.result as LessonContent) : null,
+        others.map((o, i): [TeachingApproach, LessonFlow | null] => {
+          const r = flows[i];
+          return [o, r.status === "fulfilled" ? (r.value.result as LessonFlow) : null];
+        }),
+      );
+      // Anything missing: the Generate's credit goes back (server-checked).
+      const refunded = outcome.missing.length ? await refundLesson(lessonRun) : null;
+      const message = generateMessage(outcome, refunded);
+      if (!outcome.lesson) {
+        toast.error(message + (full.status === "rejected" ? " (" + describeFailure(full.reason, "") + ")" : ""), { duration: 12000 });
+        return;
+      }
+      setGenerateMs(ms);
+      setCustom(outcome.lesson);
       setEdited(false);
       setEditing(false);
       setLessonTab("lesson");
-      toast.success(
-        "Your lesson plan is ready. Review it, edit anything, then save it.",
-      );
+      if (outcome.missing.length) toast.warning(message, { duration: 12000 });
+      else toast.success(message);
     } catch (e) {
       toast.error(
         describeFailure(e, "The lesson couldn’t be created."),
       );
     } finally {
       setAiBusy(false);
+    }
+  }
+  /** "Add question" (Ricky, 27 Oct): one more targeted-practice or exit
+   * question from the AI, at the same standard and DOK, not repeating the
+   * section's own questions. */
+  async function addQuestion(section: "practice" | "exit") {
+    const base = lessonRequestBase();
+    if (!base || !content || !aiReady) return;
+    setAddingTo(section);
+    try {
+      const d = await analyzeRequest({
+        ...base,
+        modality,
+        lessonPart: "question",
+        section,
+        existing: content[section].slice(0, 20).map((q) => q.q.slice(0, 600)),
+      });
+      const q = d.result as { q?: string; a?: string };
+      if (!q?.q?.trim()) throw new Error("No question came back. Try again.");
+      const next = custom ?? structuredClone(content);
+      setCustom({ ...next, [section]: [...next[section], { q: q.q.trim(), a: (q.a ?? "").trim() }] });
+      setEdited(true);
+      toast.success("Question added to the " + (section === "exit" ? "exit ticket" : "targeted practice") + ".");
+    } catch (e) {
+      toast.error(describeFailure(e, "The question couldn’t be added."));
+    } finally {
+      setAddingTo(null);
     }
   }
   async function recordExit() {
@@ -753,6 +813,11 @@ export function ReteachView() {
                     </Pill>
                     <h2>{s.title}</h2>
                     <p>{content.objective}</p>
+                    {custom && generateMs !== null && !edited && (
+                      <p className="cell-meta lesson-generated-in">
+                        Generated in {(generateMs / 1000).toFixed(1)} s · Visual, Hands-on and Auditory
+                      </p>
+                    )}
                   </div>
                   <button
                     className="icon-button"
@@ -799,9 +864,18 @@ export function ReteachView() {
                 </div>
                 {editing && custom ? (
                   <LessonEditor
-                    content={custom}
+                    // The version on screen: switching approach edits that one.
+                    key={modality}
+                    content={{ ...custom, ...flowFor(custom, modality) }}
                     onChange={(next) => {
-                      setCustom(next);
+                      setCustom(
+                        custom.flows
+                          ? withFlow({ ...next, materials: custom.materials, phases: custom.phases }, modality, {
+                              materials: next.materials,
+                              phases: next.phases,
+                            })
+                          : next,
+                      );
                       setEdited(true);
                     }}
                   />
@@ -814,17 +888,28 @@ export function ReteachView() {
                       Targeted practice
                     </TabsTrigger>
                     <TabsTrigger value="exit">Exit ticket</TabsTrigger>
+                    {content.game && <TabsTrigger value="game">Game-Based Learning</TabsTrigger>}
+                    {content.performanceTask && <TabsTrigger value="task">Performance Task</TabsTrigger>}
                   </TabsList>
                   <TabsContent value="lesson">
+                    {content.flows && (
+                      <p className="cell-meta lesson-version-note">
+                        {hasFlow(content, modality)
+                          ? "The " + approachLabel(modality) + " version. Switch the teaching approach to see the others."
+                          : "The " + approachLabel(modality) + " version didn't come back, so this is the " +
+                            approachLabel(TEACHING_APPROACHES.find((x) => hasFlow(content, x)) ?? "Visual") +
+                            " one. Generate again to try once more."}
+                      </p>
+                    )}
                     <div className="lesson-materials">
                       <BookOpen size={17} />
                       <span>
                         <strong>Bring along:</strong>{" "}
-                        {content.materials.join(" · ")}
+                        {flowFor(content, modality).materials.join(" · ")}
                       </span>
                     </div>
                     <div className="lesson-timeline">
-                      {content.phases.map((p, i) => {
+                      {flowFor(content, modality).phases.map((p, i) => {
                         const boundaries = [0, 2, 5, 9, 12, 15].map((n) =>
                           Math.round((n * Number(duration)) / 15),
                         );
@@ -921,9 +1006,13 @@ export function ReteachView() {
                             <li key={t}>{t}</li>
                           ))}
                         </ol>
-                        <div className="practice-prompt">
-                          <MathText text={content.practice[0].q} />
-                        </div>
+                        {/* A lesson whose full version did not come back has
+                            no practice yet (review of #199). */}
+                        {content.practice[0] && (
+                          <div className="practice-prompt">
+                            <MathText text={content.practice[0].q} />
+                          </div>
+                        )}
                       </div>
                     )}
                     <p className="method-note">
@@ -939,13 +1028,25 @@ export function ReteachView() {
                           Five tasks that progress from support to explanation.
                         </p>
                       </div>
-                      <Action
-                        variant="secondary small"
-                        onClick={() => printLesson(true)}
-                      >
-                        <Printer size={15} />
-                        Print practice
-                      </Action>
+                      <div className="practice-actions">
+                        {aiReady && (
+                          <Action
+                            variant="secondary small"
+                            disabled={!!addingTo || aiBusy}
+                            onClick={() => void addQuestion("practice")}
+                          >
+                            {addingTo === "practice" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
+                            Add question
+                          </Action>
+                        )}
+                        <Action
+                          variant="secondary small"
+                          onClick={() => printLesson(true)}
+                        >
+                          <Printer size={15} />
+                          Print practice
+                        </Action>
+                      </div>
                     </div>
                     <label className="switch-label">
                       <Switch
@@ -1003,6 +1104,16 @@ export function ReteachView() {
                       ))}
                     </div>
                     <div className="exit-actions">
+                      {aiReady && (
+                        <Action
+                          variant="secondary"
+                          disabled={!!addingTo || aiBusy}
+                          onClick={() => void addQuestion("exit")}
+                        >
+                          {addingTo === "exit" ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}
+                          Add question
+                        </Action>
+                      )}
                       <Action
                         variant="secondary"
                         onClick={() =>
@@ -1039,6 +1150,48 @@ export function ReteachView() {
                       </Action>
                     </div>
                   </TabsContent>
+                  {content.game && (
+                    <TabsContent value="game">
+                      <div className="lesson-extra">
+                        <span className="eyebrow">GAME-BASED LEARNING</span>
+                        <h3>{content.game.title}</h3>
+                        {content.game.materials.length > 0 && (
+                          <p className="cell-meta">Materials: {content.game.materials.join(" · ")}</p>
+                        )}
+                        <ol>
+                          {content.game.steps.map((step, i) => (
+                            <li key={i}><MathText text={step} /></li>
+                          ))}
+                        </ol>
+                        <p className="lesson-extra-why">
+                          <strong>How it practises the standard:</strong> {content.game.connection}
+                        </p>
+                      </div>
+                    </TabsContent>
+                  )}
+                  {content.performanceTask && (
+                    <TabsContent value="task">
+                      <div className="lesson-extra">
+                        <span className="eyebrow">PERFORMANCE TASK</span>
+                        <h3>{content.performanceTask.title}</h3>
+                        <p className="cell-meta">
+                          {content.performanceTask.minutes} minutes · {content.performanceTask.groupSize}
+                        </p>
+                        <p><MathText text={content.performanceTask.scenario} /></p>
+                        <ol>
+                          {content.performanceTask.steps.map((step, i) => (
+                            <li key={i}><MathText text={step} /></li>
+                          ))}
+                        </ol>
+                        <span className="cell-meta">Success looks like</span>
+                        <ul>
+                          {content.performanceTask.success.map((c, i) => (
+                            <li key={i}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </TabsContent>
+                  )}
                 </Tabs>
                 )}
                 <div className="ai-plan-cta">

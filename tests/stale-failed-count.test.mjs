@@ -64,7 +64,11 @@ test("a save that changes only the counts is recognised, whatever order jsonb ke
 
 test("the session route keeps the expiry when only the counts changed, and renews it otherwise", async () => {
   const calls = [];
-  const row = { teacher_id: "t1", assessment_id: "a1", state: { v: 1, piles: [[{ key: "k", bodyId: "b1" }]], failed: { phone: 1 } }, revision: 4, expires_at: "2026-11-05T00:00:00.000Z" };
+  // Relative to now: a fixed date passed on 5 Nov 2026 and the stub session
+  // then read as expired, failing the suite on main for a reason that is not
+  // the code's.
+  const expires = new Date(Date.now() + 3 * 86400000).toISOString();
+  const row = { teacher_id: "t1", assessment_id: "a1", state: { v: 1, piles: [[{ key: "k", bodyId: "b1" }]], failed: { phone: 1 } }, revision: 4, expires_at: expires };
   globalThis.__sessionStub = { calls, row };
   const stub = `
     const s = globalThis.__sessionStub;
@@ -98,9 +102,9 @@ test("the session route keeps the expiry when only the counts changed, and renew
   new Function("module", "exports", "require", r.outputFiles[0].text)(m, m.exports, require);
   const put = (state) => m.exports.PUT(new Request("https://x/api/scans/session", { method: "PUT", body: JSON.stringify({ assessmentId: "a1", state, baseRevision: 4 }) }));
   assert.equal((await put({ failed: { phone: 1, "laptop/t": 0 }, piles: [[{ bodyId: "b1", key: "k" }]], v: 1 })).status, 200);
-  assert.equal(calls[0].expires_at, "2026-11-05T00:00:00.000Z", "only the counts changed: the expiry stays");
+  assert.equal(calls[0].expires_at, expires, "only the counts changed: the expiry stays");
   await put({ v: 1, piles: [[{ key: "k", bodyId: "b1" }, { key: "k2", bodyId: "b2" }]], failed: { phone: 1 } });
-  assert.ok(Date.parse(calls[1].expires_at) > Date.parse("2026-11-08T00:00:00.000Z"), "a real change renews it (7 days)");
+  assert.ok(Date.parse(calls[1].expires_at) > Date.now() + 6 * 86400000, "a real change renews it (7 days)");
 });
 
 test("each tab keeps its own count: two tabs on one device never overwrite each other's", () => {

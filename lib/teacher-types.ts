@@ -224,8 +224,28 @@ export type Lesson = {
     phases: { time: string; name: string; text: string }[];
     practice: { q: string; a: string }[];
     exit: { q: string; a: string }[];
+    /** The lesson flow in each teaching approach (Ricky, 27 Oct 2026): one
+     * generate writes all three, and the teacher switches between them. The
+     * practice, exit ticket, game and task above stay one set. Absent on a
+     * lesson from before: `materials` and `phases` are its one flow. */
+    flows?: Partial<Record<TeachingApproach, LessonFlow>>;
+    /** Game-Based Learning, after the exit ticket. */
+    game?: { title: string; materials: string[]; steps: string[]; connection: string };
+    /** Performance Task, last: 15-20 minutes, small collaborative groups. */
+    performanceTask?: {
+      title: string;
+      minutes: number;
+      groupSize: string;
+      scenario: string;
+      steps: string[];
+      success: string[];
+    };
   };
 };
+/** The three teaching approaches a lesson flow comes in ("Kinesthetic" is
+ * shown as "Hands-on"). */
+export type TeachingApproach = "Visual" | "Kinesthetic" | "Auditory";
+export type LessonFlow = { materials: string[]; phases: { time: string; name: string; text: string }[] };
 export type Resource = {
   id: string;
   title: string;
