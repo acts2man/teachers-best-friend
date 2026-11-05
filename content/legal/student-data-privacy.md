@@ -66,8 +66,8 @@ the service.
 
 **We will not use student work to train artificial intelligence models.** Not ours, not
 a vendor's. Our AI provider is contractually prohibited from training on data submitted
-through our account, and our requests are configured so the provider does not retain
-request content. This commitment appears in Section 6 in more detail.
+through our account, and the copy it holds while returning a result is deleted shortly
+after — within about an hour at most. This commitment appears in Section 6 in more detail.
 
 ---
 
@@ -188,9 +188,11 @@ student's or teacher's device to an AI provider.
 **Which provider.** OpenAI, through its API. This is the business API, not a consumer
 chat product.
 
-**Retention by the provider.** Requests are configured with retention disabled. The
-provider does not store the content of our requests beyond what is needed to return a
-response.
+**Retention by the provider.** Each request is sent as a background job, which the
+provider must hold until we retrieve the result. We delete that copy as soon as we have
+read it — usually within minutes — and an hourly job deletes any copy still present, so
+nothing we send is kept by the provider beyond about an hour. We have enabled no provider
+setting that would retain it longer.
 
 **Training.** Our agreement with the provider prohibits the use of data submitted
 through our account to train or improve their models. This is the default for API
@@ -242,7 +244,7 @@ records, and remediation.
 |---|---|---|---|
 | [HOSTING PROVIDER] | Database and file storage | [REGION] | Yes — at rest |
 | [DEPLOYMENT PROVIDER] | Application hosting | [REGION] | In transit only |
-| OpenAI | AI processing | United States | Transiently, not retained |
+| OpenAI | AI processing | United States | Held only until we delete it — within about an hour |
 | Stripe | Billing | United States | No |
 
 Each is contractually bound to use information only to provide services to us and is

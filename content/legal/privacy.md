@@ -217,7 +217,10 @@ required by SOPIPA and we treat it as non-negotiable.
 Submitted work is sent to OpenAI's API for analysis. Specifically:
 
 - Requests are made server-side. Our credentials are never exposed to a browser.
-- Requests are configured so the provider does not retain the content of the request.
+- Each request is sent as a background job, so the provider holds a copy only until we
+  collect the result. We delete that copy as soon as we have it — usually within minutes —
+  and an hourly job deletes any that remains, so nothing we send stays with the provider
+  beyond about an hour. We have enabled no setting that would keep it longer.
 - Our agreement with the provider prohibits using data submitted through our account to
   train their models.
 - We never send your class roster, or any list of student names, to the AI provider.

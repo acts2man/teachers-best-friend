@@ -43,8 +43,14 @@ We use OpenAI's API — the business interface, not the consumer chat product. F
 customers, submitted data is not used to train models by default. We have not opted
 into any program that would change that.
 
-We also send our requests with retention switched off, meaning the provider does not
-store the content of what we send beyond producing a response.
+Here is exactly what the provider keeps, and for how long. To grade a class set without
+timing out, we send each request as a background job. The provider has to hold that
+request until we come back for the result — there is no way to retrieve a background job
+otherwise. So the provider does keep a copy, briefly: we delete it the moment we have
+read the result, which is usually within minutes, and a job that runs every hour deletes
+any copy still there, so nothing we send stays with the provider beyond about an hour. We
+have not enabled any provider setting that would keep it longer, and the provider does
+not use what we send to train its models.
 
 And we don't train models ourselves. We have no model of our own, no plans for one, and
 no pipeline that would collect student work for that purpose.

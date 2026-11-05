@@ -95,7 +95,8 @@ export async function GET(
       // No params means no upload ids, so there is nothing to hand back by
       // name. The reservation ages out on its own after two hours and stops
       // counting against the teacher, which is the same outcome.
-      await failScan(svc, scanId, config.key, providerId, model, false, "");
+      await failScan(svc, scanId, model, false, "");
+      await recordProviderDeleted(svc, scanId, providerId, config.key);
       throw new HttpError(500, "The analysis settings couldn’t be read.");
     }
     const p = parsedParams.data;
@@ -123,10 +124,17 @@ export async function GET(
       throw failure;
     }
     const status = remote.status ?? "in_progress";
+    // The job is still running: nothing to delete yet, poll again.
+    if (status !== "completed" && !TERMINAL_FAILURES.has(status))
+      return Response.json({ status: "analyzing" });
 
+    // From here the job is FINISHED (completed or terminally failed). Whatever
+    // happens below, its stored copy at the provider is deleted and the
+    // deletion recorded, so the legal promise holds for every outcome -- not
+    // only a clean success (review of #203). The sweep covers a delete that
+    // fails every retry here, or a job the phone never polls back.
+    try {
     if (status !== "completed") {
-      if (!TERMINAL_FAILURES.has(status))
-        return Response.json({ status: "analyzing" });
       const userMessage =
         status === "incomplete"
           ? incompleteMessage(p.mode)
@@ -136,16 +144,7 @@ export async function GET(
       // table without re-running it.
       const reason = remote.incomplete_details?.reason;
       const storedMessage = `${status}${reason ? ": " + reason : ""} — ${userMessage}`;
-      await failScan(
-        svc,
-        scanId,
-        config.key,
-        providerId,
-        model,
-        isLesson,
-        storedMessage,
-        remote.usage,
-      );
+      await failScan(svc, scanId, model, isLesson, storedMessage, remote.usage);
       await logAiFailure({
         teacherId: user,
         mode: p.mode,
@@ -164,16 +163,7 @@ export async function GET(
     if (!text) {
       const message =
         "The document couldn’t be analyzed reliably. Please review it manually.";
-      await failScan(
-        svc,
-        scanId,
-        config.key,
-        providerId,
-        model,
-        isLesson,
-        message,
-        remote.usage,
-      );
+      await failScan(svc, scanId, model, isLesson, message, remote.usage);
       await logAiFailure({
         teacherId: user,
         mode: p.mode,
@@ -201,16 +191,7 @@ export async function GET(
     } catch (e) {
       const message =
         e instanceof HttpError ? e.message : "The analysis needs manual review.";
-      await failScan(
-        svc,
-        scanId,
-        config.key,
-        providerId,
-        model,
-        isLesson,
-        message,
-        remote.usage,
-      );
+      await failScan(svc, scanId, model, isLesson, message, remote.usage);
       await logAiFailure({
         teacherId: user,
         mode: p.mode,
@@ -258,19 +239,43 @@ export async function GET(
     await settle(svc, user, p, scanId, !deliveredNothing);
     if (deliveredNothing)
       await svc.from("scans").update({ billable: false }).eq("id", scanId);
-    await deleteBackgroundResponse(providerId, config.key);
-
     return Response.json({ status: "complete", result: output });
+    } finally {
+      await recordProviderDeleted(svc, scanId, providerId, config.key);
+    }
   } catch (e) {
     return apiError(e);
+  }
+}
+
+/**
+ * Deletes the provider's stored copy of a finished job and records the moment
+ * it was deleted (provider_deleted_at), so the scheduled sweep knows it is done
+ * and need not try again. A delete that fails every retry leaves the column
+ * null; the sweep picks the job up. Never throws -- it runs in a finally.
+ */
+async function recordProviderDeleted(
+  svc: ReturnType<typeof createServiceClient>,
+  scanId: string,
+  providerId: string,
+  key: string,
+) {
+  try {
+    const outcome = await deleteBackgroundResponse(providerId, key);
+    if (outcome === "failed") return;
+    const { error } = await svc
+      .from("scans")
+      .update({ provider_deleted_at: new Date().toISOString() })
+      .eq("id", scanId);
+    if (error) console.error("Recording provider deletion failed", error.message);
+  } catch (error) {
+    console.error("Recording provider deletion failed", error instanceof Error ? error.name : "unknown");
   }
 }
 
 async function failScan(
   svc: ReturnType<typeof createServiceClient>,
   scanId: string,
-  key: string,
-  providerId: string,
   model: string,
   isLesson: boolean,
   message: string,
@@ -283,7 +288,6 @@ async function failScan(
     usage,
     errorMessage: message,
   });
-  await deleteBackgroundResponse(providerId, key);
 }
 
 /**
