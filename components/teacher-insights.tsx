@@ -2,6 +2,7 @@
 import { withoutStandardNote } from "@/lib/standard-match";
 import { useEffect, useState } from "react";
 import { StudentSuperGrid } from "./class-super-grid";
+import { StudentReportDialog } from "./student-report";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -9,6 +10,7 @@ import {
   ArrowUpRight,
   Search,
   Plus,
+  FileText,
   Target,
   Check,
   BookOpen,
@@ -1214,7 +1216,8 @@ export function StudentsView() {
     [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
     [note, setNote] = useState(""),
     [removing, setRemoving] = useState(false),
-    [clearing, setClearing] = useState(false);
+    [clearing, setClearing] = useState(false),
+    [reporting, setReporting] = useState(false);
   useEffect(() => {
     setSelected(params.get("id"));
   }, [params]);
@@ -1361,6 +1364,10 @@ export function StudentsView() {
               <Plus size={17} />
               Record evidence
             </Action>
+            <Action variant="secondary" onClick={() => setReporting(true)}>
+              <FileText size={16} />
+              Student report
+            </Action>
             <Action
               variant="secondary"
               disabled={busy}
@@ -1371,6 +1378,9 @@ export function StudentsView() {
             </Action>
           </div>
           <StudentSuperGrid w={w} classroom={classroom} student={student} />
+          {reporting && (
+            <StudentReportDialog w={w} classroom={classroom} student={student} open onClose={() => setReporting(false)} />
+          )}
           <div className="profile-layout">
             <section className="panel">
               <SectionTitle
