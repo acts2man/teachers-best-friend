@@ -77,6 +77,20 @@ the three above. The full nightly sequence is now:
 | 09:15 | `purge-expired-student-notes` | Teacher notes past a teacher-set expiry |
 | 09:30 | `roll-expired-billing-periods` | Rolls billing periods that have ended |
 | 09:45 | `purge-scan-payloads` | `scans.params`, `.result`, `.error` past 48 hours |
+| hourly (:07) | `sweep-provider-copies` | Deletes the AI provider's stored copy of any background job older than ~1 hour whose `provider_deleted_at` is still null (review of #203) |
+
+`sweep-provider-copies` is scheduled by a migration
+(`20261107120100_schedule_provider_sweep.sql`, following `purge-scan-payloads`
+rather than the three hand-scheduled jobs), but the work it triggers lives
+outside the database: it calls the `provider-sweep` edge function, which POSTs
+to the app's `/api/cron/provider-sweep` with a shared `CRON_SECRET`, because
+deleting a provider copy needs the OpenAI key, and that key lives only in the
+app. Before the schedule does anything, deploy the `provider-sweep` edge
+function and set its `APP_SWEEP_URL` and `CRON_SECRET` edge secrets, plus the
+same `CRON_SECRET` in the app's environment -- the same by-hand secret step the
+`purge-expired-uploads` edge function needed. The admin backfill
+(`POST /api/admin/provider-backfill`, admin only) clears the pre-sweep backlog
+once.
 
 ## Working on the schema from here
 

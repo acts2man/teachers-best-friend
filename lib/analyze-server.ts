@@ -2,6 +2,7 @@ import "server-only";
 import { HttpError } from "@/lib/teacher-server";
 import { ledgerError } from "@/lib/page-ledger";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
+import { deleteProviderCopy, type DeleteOutcome } from "@/lib/provider-retention";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pipelineStage } from "@/lib/pipeline-config";
 import { stateFor } from "@/lib/states";
@@ -557,21 +558,14 @@ export async function getBackgroundResponse(
 
 /**
  * Deletes a stored background response so nothing lingers on the provider once
- * its result has been read. Best-effort: a failure here is logged, not thrown.
+ * the job is finished with. Retries a transient refusal and treats an
+ * already-deleted id as done (lib/provider-retention.ts). Never throws; returns
+ * how it went so the caller can record a real deletion. The legal pages promise
+ * the provider keeps a background job only until we delete it (content/legal),
+ * so this is the delete that keeps that true.
  */
-export async function deleteBackgroundResponse(id: string, key: string) {
-  try {
-    await fetch(OPENAI_RESPONSES + "/" + encodeURIComponent(id), {
-      method: "DELETE",
-      headers: { Authorization: "Bearer " + key },
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (error) {
-    console.error(
-      "Deleting stored analysis failed",
-      error instanceof Error ? error.name : "unknown",
-    );
-  }
+export async function deleteBackgroundResponse(id: string, key: string): Promise<DeleteOutcome> {
+  return deleteProviderCopy(id, key);
 }
 
 /**
