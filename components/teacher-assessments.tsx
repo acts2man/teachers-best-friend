@@ -682,7 +682,15 @@ export function AssessmentView() {
               Export report
             </Action>
             <Action
-              onClick={() => setTab("responses")}
+              onClick={() => {
+                setTab("responses");
+                // On a phone the tabs sit below the test's summary, so the
+                // switch happened off screen and the tap looked like nothing
+                // (Michael, 4 Nov 2026, Android): bring the step into view.
+                requestAnimationFrame(() =>
+                  document.querySelector(".assessment-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                );
+              }}
               disabled={!preparationGaps(a).ready}
             >
               <Plus size={16} />
@@ -2332,20 +2340,28 @@ function WritingReview({
   const risk = confirmedGradesAtRisk(a, selected ? [selected] : []);
   const [askReplace, setAskReplace] = useState(false);
   const replaceConfirmed = useRef(false);
-  function chooseWriting() {
+  // Where the new writing comes from: the file picker, or the app's own
+  // camera (Michael, 4 Nov 2026: on Android the picker opened the phone's
+  // camera, not the app's with its framing guide and blur check).
+  const source = useRef<"files" | "camera">("files");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const open = (from: "files" | "camera") =>
+    from === "camera" ? setCameraOpen(true) : input.current?.click();
+  function chooseWriting(from: "files" | "camera" = "files") {
+    source.current = from;
     if (risk.answers > 0) setAskReplace(true);
     else {
       replaceConfirmed.current = false;
-      input.current?.click();
+      open(from);
     }
   }
   function pickFiles(replace: boolean) {
     setAskReplace(false);
     replaceConfirmed.current = replace;
-    input.current?.click();
+    open(source.current);
   }
 
-  async function gradeEssay(list: FileList | null) {
+  async function gradeEssay(list: FileList | File[] | null) {
     if (!list || !selected) return;
     const incoming = Array.from(list);
     if (incoming.length > 12) {
@@ -2455,18 +2471,46 @@ function WritingReview({
         </label>
         {student && (
           <div className="review-heading-actions">
+            {/* Named types, not image/*: on Android "image/*" lets the browser
+                go straight to the phone's camera, and the app camera is the
+                button beside this one. */}
             <input
               ref={input}
               type="file"
-              accept="image/*,application/pdf"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
               multiple
               hidden
+              aria-label={"Upload writing for " + (student?.name ?? "this student")}
               onChange={(e) => gradeEssay(e.target.files)}
             />
-            <Action disabled={uploading || busy} onClick={chooseWriting}>
+            <Action disabled={uploading || busy} onClick={() => chooseWriting("camera")}>
+              <Camera size={16} />
+              {hasScores ? "Retake writing" : "Take a photo"}
+            </Action>
+            <Action variant="secondary" disabled={uploading || busy} onClick={() => chooseWriting("files")}>
               {uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}
               {hasScores ? "Replace writing" : "Add writing"}
             </Action>
+            {cameraOpen && student && (
+              <ScanCamera
+                mode="single"
+                title={student.name}
+                assessmentId={a.id}
+                onComplete={(groups) => {
+                  setCameraOpen(false);
+                  const files = groups.flat();
+                  if (files.length) void gradeEssay(files);
+                }}
+                onCancel={() => setCameraOpen(false)}
+                // A browser that will not give the page the camera: the file
+                // picker, as every other "take a photo" button does
+                // (tests/in-app-camera.test.mjs) -- never the phone's camera.
+                onFallback={() => {
+                  setCameraOpen(false);
+                  input.current?.click();
+                }}
+              />
+            )}
             <ConfirmRescan
               risk={risk}
               open={askReplace}
