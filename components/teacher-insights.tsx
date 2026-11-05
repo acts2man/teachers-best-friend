@@ -1,6 +1,7 @@
 "use client";
 import { withoutStandardNote } from "@/lib/standard-match";
 import { useEffect, useState } from "react";
+import { StudentSuperGrid } from "./class-super-grid";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -1369,6 +1370,7 @@ export function StudentsView() {
               Remove from roster
             </Action>
           </div>
+          <StudentSuperGrid w={w} classroom={classroom} student={student} />
           <div className="profile-layout">
             <section className="panel">
               <SectionTitle
