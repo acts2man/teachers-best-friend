@@ -70,8 +70,11 @@ test("the question counts the confirmed trait scores it would discard", () => {
 test('"Replace writing" asks before it uploads, and the answer reaches the merge', () => {
   const src = readFileSync("components/teacher-assessments.tsx", "utf8").replace(/\/\/.*$/gm, "");
   const view = src.slice(src.indexOf("function WritingReview("));
-  assert.match(view, /<Action disabled=\{uploading \|\| busy\} onClick=\{chooseWriting\}>/, "the button goes through the question");
-  assert.match(view, /function chooseWriting\(\) \{\s*if \(risk\.answers > 0\) setAskReplace\(true\);/);
+  // Both ways in -- the app camera and the file picker (4 Nov 2026) -- go
+  // through the question.
+  assert.match(view, /<Action disabled=\{uploading \|\| busy\} onClick=\{\(\) => chooseWriting\("camera"\)\}>/, "the camera button goes through the question");
+  assert.match(view, /<Action variant="secondary" disabled=\{uploading \|\| busy\} onClick=\{\(\) => chooseWriting\("files"\)\}>/, "the upload button goes through the question");
+  assert.match(view, /function chooseWriting\(from: "files" \| "camera" = "files"\) \{\s*source\.current = from;\s*if \(risk\.answers > 0\) setAskReplace\(true\);/);
   assert.match(view, /<ConfirmRescan[\s\S]*?wording=\{writingReplaceWarning\}[\s\S]*?onKeep=\{\(\) => pickFiles\(false\)\}[\s\S]*?onReplace=\{\(\) => pickFiles\(true\)\}/);
   assert.match(view, /replaceWritingResponses\(\s*withFiles,\s*selected,[\s\S]*?replaceConfirmed\.current,\s*\)/);
 });
