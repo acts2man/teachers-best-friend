@@ -7,7 +7,9 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
-import { analyzeRequest } from "@/lib/analyze-client";
+import { AnalyzeError, analyzeRequest } from "@/lib/analyze-client";
+import { OUT_OF_CREDITS_FOR_LESSON } from "@/lib/lesson-billing";
+import { refundLesson } from "@/lib/lesson-refund-client";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -81,7 +83,8 @@ import {
   lessonContent,
   adaptations,
   resourceCatalog,
-  assembleLesson,
+  generateMessage,
+  generateOutcome,
   flowFor,
   hasFlow,
   withFlow,
@@ -468,39 +471,43 @@ export function ReteachView() {
         ? (modality as TeachingApproach)
         : "Visual";
       const others = TEACHING_APPROACHES.filter((x) => x !== chosen);
+      // One Generate is one credit (review of #199, lib/lesson-billing.ts):
+      // the full lesson is charged, the other two versions are not, and all
+      // three carry this id so a failure can be refunded on the server's word.
+      const lessonRun = crypto.randomUUID();
       const { value: [full, ...flows], ms } = await timed(() =>
         Promise.allSettled([
-          analyzeRequest({ ...base, modality: chosen, lessonPart: "full" }),
-          ...others.map((o) => analyzeRequest({ ...base, modality: o, lessonPart: "flow" })),
+          analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }),
+          ...others.map((o) => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
         ]),
       );
-      if (full.status === "rejected") throw full.reason;
-      const lesson = assembleLesson(
-        full.value.result as LessonContent,
+      // Out of credits: nothing was charged and nothing is shown; say why.
+      if (full.status === "rejected" && full.reason instanceof AnalyzeError && full.reason.reason === 402) {
+        toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
+        return;
+      }
+      const outcome = generateOutcome(
         chosen,
+        full.status === "fulfilled" ? (full.value.result as LessonContent) : null,
         others.map((o, i): [TeachingApproach, LessonFlow | null] => {
           const r = flows[i];
           return [o, r.status === "fulfilled" ? (r.value.result as LessonFlow) : null];
         }),
       );
+      // Anything missing: the Generate's credit goes back (server-checked).
+      const refunded = outcome.missing.length ? await refundLesson(lessonRun) : null;
+      const message = generateMessage(outcome, refunded);
+      if (!outcome.lesson) {
+        toast.error(message + (full.status === "rejected" ? " (" + describeFailure(full.reason, "") + ")" : ""), { duration: 12000 });
+        return;
+      }
       setGenerateMs(ms);
-      setCustom(lesson);
+      setCustom(outcome.lesson);
       setEdited(false);
       setEditing(false);
       setLessonTab("lesson");
-      const missing = others.filter((o) => !hasFlow(lesson, o)).map(approachLabel);
-      if (missing.length)
-        toast.warning(
-          "Your lesson plan is ready, but the " +
-            missing.join(" and ") +
-            " version" +
-            (missing.length === 1 ? " didn't" : "s didn't") +
-            " come back. Generate again to try once more.",
-        );
-      else
-        toast.success(
-          "Your lesson plan is ready in Visual, Hands-on and Auditory. Review it, edit anything, then save it.",
-        );
+      if (outcome.missing.length) toast.warning(message, { duration: 12000 });
+      else toast.success(message);
     } catch (e) {
       toast.error(
         describeFailure(e, "The lesson couldn’t be created."),
@@ -999,9 +1006,13 @@ export function ReteachView() {
                             <li key={t}>{t}</li>
                           ))}
                         </ol>
-                        <div className="practice-prompt">
-                          <MathText text={content.practice[0].q} />
-                        </div>
+                        {/* A lesson whose full version did not come back has
+                            no practice yet (review of #199). */}
+                        {content.practice[0] && (
+                          <div className="practice-prompt">
+                            <MathText text={content.practice[0].q} />
+                          </div>
+                        )}
                       </div>
                     )}
                     <p className="method-note">

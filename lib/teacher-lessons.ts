@@ -142,3 +142,63 @@ export function practicePrintText(content: LessonContent, withKey: boolean): str
     ? questionsThenKey("Targeted practice", content.practice)
     : content.practice.map((q, i) => i + 1 + ". " + q.q).join("\n\n");
 }
+
+/**
+ * What one Generate's three requests came back as (review of #199): the
+ * lesson to show, if anything did, and which versions are missing. If any of
+ * the three failed, the Generate's one credit is asked back
+ * (lib/lesson-billing.ts).
+ */
+export function generateOutcome(
+  chosen: TeachingApproach,
+  full: LessonContent | null,
+  others: [TeachingApproach, LessonFlow | null][],
+): { lesson: LessonContent | null; missing: TeachingApproach[]; fullMissing: boolean } {
+  const missing = [...(full ? [] : [chosen]), ...others.filter(([, f]) => !f).map(([a]) => a)];
+  if (full) return { lesson: assembleLesson(full, chosen, others), missing, fullMissing: false };
+  // The full lesson did not come back: show the flows that did, so nothing
+  // already written is lost. The practice and exit ticket can then be filled
+  // with "Add question", or by generating again.
+  const came = others.filter((o): o is [TeachingApproach, LessonFlow] => !!o[1]);
+  if (!came.length) return { lesson: null, missing, fullMissing: true };
+  const flows: Partial<Record<TeachingApproach, LessonFlow>> = {};
+  for (const [a, f] of came) flows[a] = f;
+  const [, first] = came[0];
+  return {
+    lesson: { objective: "", materials: first.materials, phases: first.phases, practice: [], exit: [], flows },
+    missing,
+    fullMissing: true,
+  };
+}
+
+const listOf = (names: string[]) =>
+  names.length <= 1 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+
+/**
+ * The message after a Generate: what came back, and whether the credit was
+ * given back (`refunded`: null when nothing failed, so nothing was asked).
+ */
+export function generateMessage(
+  o: { lesson: LessonContent | null; missing: TeachingApproach[]; fullMissing: boolean },
+  refunded: boolean | null,
+): string {
+  if (!o.missing.length)
+    return "Your lesson plan is ready in Visual, Hands-on and Auditory. Review it, edit anything, then save it.";
+  const credit =
+    refunded === null
+      ? ""
+      : refunded
+        ? " You weren’t charged for this Generate."
+        : " The credit couldn’t be given back automatically — contact support and we will.";
+  const missing = o.missing.map(approachLabel);
+  if (!o.lesson) return "The lesson couldn’t be created: none of the three versions came back." + credit + " Try again in a moment.";
+  if (o.fullMissing)
+    return (
+      "The " + listOf(missing) + (missing.length === 1 ? " version" : " versions") +
+      " didn’t come back, and the practice and exit ticket come with the first one — they are empty below. Use Add question, or generate again." + credit
+    );
+  return (
+    "Your lesson plan is ready, but the " + listOf(missing) + (missing.length === 1 ? " version didn’t" : " versions didn’t") +
+    " come back." + credit + " Generate again to try once more."
+  );
+}

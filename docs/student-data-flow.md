@@ -368,6 +368,12 @@ lesson is opened for named students, with the text of any misconception noted on
 their verified wrong answers -- whatever the teacher typed there, which could
 include a name. That is unchanged by this entry and is the one free-text path.
 
+*5 Nov 2026 (review of #199):* each of a Generate's three requests also carries
+`lessonRun`, a random id that ties them together for billing (one credit per
+Generate; a failed one is refunded, `lib/lesson-billing.ts`). It is stored with
+the scan's params on our side and is **not** part of the prompt: nothing new
+reaches the AI provider.
+
 **Added by the DOK grid's cell panel (D2):** a lesson planned from a cell of a
 test's DOK grid also sends
 

@@ -56,8 +56,11 @@ test("three versions of the flow, one set of everything else; the approach tabs 
 
 test("one generate: the full lesson in the chosen approach and the flow in the other two, side by side", () => {
   const gen = planning.slice(planning.indexOf("async function generateAI("), planning.indexOf("async function addQuestion("));
-  assert.match(gen, /Promise\.allSettled\(\[\s*analyzeRequest\(\{ \.\.\.base, modality: chosen, lessonPart: "full" \}\),\s*\.\.\.others\.map\(\(o\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow" \}\)\),/);
-  assert.match(gen, /if \(full\.status === "rejected"\) throw full\.reason;/, "the full lesson is required; a missing flow is reported");
+  assert.match(gen, /Promise\.allSettled\(\[\s*analyzeRequest\(\{ \.\.\.base, modality: chosen, lessonPart: "full", lessonRun \}\),\s*\.\.\.others\.map\(\(o\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow", lessonRun \}\)\),/);
+  // Since the #199 review, a missing full lesson no longer throws the flows
+  // away: what came back is shown and the credit asked back
+  // (tests/lesson-billing.test.mjs).
+  assert.match(gen, /const outcome = generateOutcome\(/, "whatever came back is kept; what is missing is reported");
   assert.match(planning, /flowFor\(content, modality\)\.phases\.map/, "the flow on screen follows the approach tabs");
 });
 

@@ -185,6 +185,9 @@ export const analyzeInput = z.object({
    *             `existing` -- the lesson's own questions in that section.
    * Absent is "full". */
   lessonPart: z.enum(["full", "flow", "question"]).optional(),
+  /** One Generate's three requests share this id (lib/lesson-billing.ts): the
+   * full lesson is the one credit, and a refund checks its siblings. */
+  lessonRun: z.string().uuid().optional(),
   section: z.enum(["practice", "exit"]).optional(),
   existing: z.array(z.string().max(600)).max(20).optional(),
   alsoStandards: z.array(z.string().max(60)).max(3).optional(),
