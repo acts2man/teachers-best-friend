@@ -6,6 +6,7 @@ import TeacherApp from "@/components/teacher-app";
 // screens instant instead of waiting on a server function for each click.
 const views = [
   "assessments",
+  "library",
   "scan",
   "standards",
   "diagnostics",
