@@ -98,8 +98,14 @@ test("the camera captures instantly and stays open — no review/retake", () => 
   const src = readFileSync("components/scan-camera.tsx", "utf8");
   // Capture buffers a shot in memory (setShots); it does not await an upload.
   assert.match(src, /setShots\(\(s\) => \[/, "a shot is buffered on capture");
-  // No confirm/retake BUTTON between capture and buffering (prose comments aside).
-  assert.ok(!/>\s*(Retake|Use Photo)\s*</i.test(src), "no retake / use-photo button");
+  // No confirm/retake BUTTON between capture and buffering (prose comments
+  // aside) -- except on a photo that came out blurry (Ricky, 29 Oct 2026), the
+  // only place Retake appears.
+  assert.ok(!/>\s*Use Photo\s*</i.test(src), "no use-photo button");
+  const retakes = [...src.matchAll(/>\s*Retake\s*</g)].map((m) => m.index);
+  const sheet = src.indexOf('aria-label="Blurry photo"');
+  assert.equal(retakes.length, 1, "one Retake button");
+  assert.ok(sheet > 0 && retakes[0] > sheet, "and it is in the blurry-photo sheet");
   // Captured at the stream's real pixel size, for sharp handwriting.
   assert.match(src, /video\.videoWidth/, "captures at native resolution");
   assert.match(src, /video\.videoHeight/);

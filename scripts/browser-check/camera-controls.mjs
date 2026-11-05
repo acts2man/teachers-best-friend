@@ -114,7 +114,7 @@ for (const [W, H] of [[390, 844], [412, 915]]) {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at] });
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: at.x - 30, y: at.y - 6 }] });
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      const keep = page.getByRole("button", { name: "Keep anyway" });
+      const keep = page.getByRole("button", { name: "Keep", exact: true });
       if (await keep.waitFor({ timeout: 2500 }).then(() => true, () => false)) await keep.click();
       const one = await page.waitForFunction(() => document.querySelectorAll(".scan-camera-thumb").length === 1, null, { timeout: 6000 }).then(() => true, () => false);
       check(one, `${tag}: a touch near the shutter's edge that slid before lifting took the photo`);
