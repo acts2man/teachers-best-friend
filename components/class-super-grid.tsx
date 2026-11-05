@@ -7,11 +7,20 @@ import { gradingModeName, score4Text } from "@/lib/grading-mode";
 import { MASTERY_LEVELS, SCORE4_RANGES } from "@/lib/mastery-levels";
 import { schoolYearLabel } from "@/lib/school-year";
 import { BookOpen } from "lucide-react";
-import { classSuperGrid, preteachFocus, type PreteachFocus, type Score, type SuperGridCell, type SuperGridRow } from "@/lib/super-grid";
+import {
+  classSuperGrid,
+  preteachFocus,
+  studentSuperGrid,
+  type PreteachFocus,
+  type Score,
+  type SuperGrid,
+  type SuperGridCell,
+  type SuperGridRow,
+} from "@/lib/super-grid";
 import { Action } from "./teacher-shared";
 import { useTeacher } from "./teacher-context";
 import { DOK_LEVELS } from "@/lib/teacher-class-analysis";
-import type { Classroom, Workspace } from "@/lib/teacher-types";
+import type { Classroom, Student, Workspace } from "@/lib/teacher-types";
 import { shortAdvice } from "./dok-grid";
 
 /**
@@ -31,27 +40,92 @@ import { shortAdvice } from "./dok-grid";
  */
 export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Classroom }) {
   const grid = classSuperGrid(w, classroom);
+  return (
+    <SuperGridView
+      grid={grid}
+      scope="class"
+      title="Class super grid"
+      label="Class super grid"
+      meta={
+        <>
+          <p className="cell-meta">
+            {classroom.name} · {schoolYearLabel(grid.schoolYear)} school year · every confirmed answer from{" "}
+            {grid.tests} test{grid.tests === 1 ? "" : "s"}, by standard cluster and depth of knowledge ·{" "}
+            {gradingModeName(grid.mode)}
+          </p>
+          <p className="cell-meta">Counts students now on this class&rsquo;s roster.</p>
+        </>
+      }
+      empty={
+        grid.tests
+          ? "No graded questions with a standard and a DOK level yet this school year."
+          : "No tests given to this class in the " + schoolYearLabel(grid.schoolYear) + " school year yet."
+      }
+    />
+  );
+}
+
+/**
+ * One student's super grid (design 4; Ricky, 22 Oct 2026: "something that we
+ * can generate a summary report from for teacher, parent conferences" and IEP
+ * meetings): the class grid's rows and columns from this student's confirmed
+ * answers only, in their class's grading mode (lib/super-grid.ts
+ * studentSuperGrid). Its panel has the same score, question counts (last 30
+ * days and before), weakest standards and common errors -- all the student's
+ * own. No AI call, and no pre-teach button: a pre-teach lesson is planned for
+ * the class.
+ */
+export function StudentSuperGrid({ w, classroom, student }: { w: Workspace; classroom: Classroom; student: Pick<Student, "id" | "name"> }) {
+  const grid = studentSuperGrid(w, classroom, student.id);
+  return (
+    <SuperGridView
+      grid={grid}
+      scope="student"
+      title="Student super grid"
+      label={"Student super grid for " + student.name}
+      meta={
+        <p className="cell-meta">
+          {schoolYearLabel(grid.schoolYear)} school year · every confirmed answer of {student.name}&rsquo;s from{" "}
+          {grid.tests} test{grid.tests === 1 ? "" : "s"}, by standard cluster and depth of knowledge ·{" "}
+          {gradingModeName(grid.mode)}
+        </p>
+      }
+      empty={
+        grid.tests
+          ? "None of " + student.name + "\u2019s confirmed answers this school year is on a question with a standard and a DOK level yet."
+          : "No confirmed answers from " + student.name + " in the " + schoolYearLabel(grid.schoolYear) + " school year yet."
+      }
+    />
+  );
+}
+
+/** The grid itself, for a class or one student. */
+export function SuperGridView({
+  grid,
+  scope,
+  title,
+  label,
+  meta,
+  empty,
+}: {
+  grid: SuperGrid;
+  scope: "class" | "student";
+  title: string;
+  label: string;
+  meta: React.ReactNode;
+  empty: string;
+}) {
   const { go } = useTeacher();
   const [opened, setOpened] = useState<{ row: SuperGridRow; cell: SuperGridCell } | null>(null);
   const sbg = grid.mode === "sbg";
   return (
-    <section className="panel dok-grid-panel class-super-grid" aria-label="Class super grid">
+    <section className={"panel dok-grid-panel class-super-grid" + (scope === "student" ? " student-super-grid" : "")} aria-label={label}>
       <div className="super-grid-head">
-        <h2>Class super grid</h2>
-        <p className="cell-meta">
-          {classroom.name} · {schoolYearLabel(grid.schoolYear)} school year · every confirmed answer from{" "}
-          {grid.tests} test{grid.tests === 1 ? "" : "s"}, by standard cluster and depth of knowledge ·{" "}
-          {gradingModeName(grid.mode)}
-        </p>
-        <p className="cell-meta">Counts students now on this class&rsquo;s roster.</p>
+        <h2>{title}</h2>
+        {meta}
       </div>
       {!grid.rows.length ? (
-        <p className="cell-meta super-grid-empty">
-          {grid.tests
-            ? "No graded questions with a standard and a DOK level yet this school year."
-            : "No tests given to this class in the " + schoolYearLabel(grid.schoolYear) + " school year yet."}{" "}
-          The grid fills in as tests are graded.
-        </p>
+        <p className="cell-meta super-grid-empty">{empty} The grid fills in as tests are graded.</p>
       ) : (
         <div className="dok-grid">
           <div className="dok-grid-head" aria-hidden="true">
@@ -70,7 +144,7 @@ export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Clas
                 {row.cluster.code && row.cluster.name && <span>{row.cluster.name}</span>}
               </div>
               {row.cells.map((cell) => (
-                <Cell key={cell.dok} label={row.label} cell={cell} onOpen={() => setOpened({ row, cell })} />
+                <Cell key={cell.dok} label={row.label} cell={cell} scope={scope} onOpen={() => setOpened({ row, cell })} />
               ))}
             </div>
           ))}
@@ -97,7 +171,8 @@ export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Clas
           row={opened.row}
           cell={opened.cell}
           sbg={sbg}
-          preteach={preteachFocus(grid, opened.row.cluster.key, opened.cell.dok)}
+          scope={scope}
+          preteach={scope === "class" ? preteachFocus(grid, opened.row.cluster.key, opened.cell.dok) : null}
           onPreteach={(f) => {
             setOpened(null);
             go(
@@ -122,8 +197,9 @@ export function ClassSuperGrid({ w, classroom }: { w: Workspace; classroom: Clas
 
 const shown = (s: Score) => (s.score4 !== null ? score4Text(s.score4) : s.percent + "%");
 
-function Cell({ label, cell, onOpen }: { label: string; cell: SuperGridCell; onOpen: () => void }) {
-  const qs = cell.questions + " question" + (cell.questions === 1 ? "" : "s");
+function Cell({ label, cell, scope, onOpen }: { label: string; cell: SuperGridCell; scope: "class" | "student"; onOpen: () => void }) {
+  // One student's cell rests on few answers: it says so (design 4).
+  const qs = (scope === "student" ? "on " : "") + cell.questions + " question" + (cell.questions === 1 ? "" : "s");
   const tap = {
     role: "button",
     tabIndex: 0,
@@ -166,6 +242,7 @@ function SuperGridCellPanel({
   row,
   cell,
   sbg,
+  scope,
   preteach,
   onPreteach,
   onClose,
@@ -173,6 +250,7 @@ function SuperGridCellPanel({
   row: SuperGridRow;
   cell: SuperGridCell;
   sbg: boolean;
+  scope: "class" | "student";
   preteach: PreteachFocus | null;
   onPreteach: (f: PreteachFocus) => void;
   onClose: () => void;
@@ -192,7 +270,7 @@ function SuperGridCellPanel({
         <div className="dok-cell-panel-body">
           {!cell.questions ? (
             <p className="not-tested-why">
-              No question this school year was at DOK {cell.dok}
+              No question{scope === "student" ? " they answered" : ""} this school year was at DOK {cell.dok}
               {name ? " (" + name.toLowerCase() + ")" : ""} on this cluster, so there is no score for this box.
             </p>
           ) : (
@@ -214,7 +292,7 @@ function SuperGridCellPanel({
               )}
 
               <section>
-                <h3>Questions asked this school year</h3>
+                <h3>{scope === "student" ? "Questions answered this school year" : "Questions asked this school year"}</h3>
                 <dl className="super-grid-counts">
                   <div>
                     <dt>In total</dt>
