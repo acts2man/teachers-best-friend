@@ -11,7 +11,7 @@ import { installAppEventLogging } from "@/lib/app-events-client";
 import {
   House,
   ScanLine,
-  Files,
+  FileText,
   Users,
   Library,
   LibraryBig,
@@ -43,6 +43,7 @@ import { Toaster, toast } from "sonner";
 import { catalogFor } from "@/lib/teacher-catalog";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { assessmentInClass } from "@/lib/teacher-classes";
+import { withLastWorkedOn } from "@/lib/last-worked-on";
 import { frameworkOptions } from "@/lib/states";
 import type { Workspace } from "@/lib/teacher-types";
 import { ViewAsPicker } from "./teacher-view-as";
@@ -61,6 +62,7 @@ import {
 } from "./teacher-insights";
 import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
+import { StudentReportsView } from "./student-reports";
 import { ClassGradingModeField } from "./grading-mode-choice";
 import type { GradingMode } from "@/lib/grading-mode";
 import { BillingView } from "./teacher-billing";
@@ -70,13 +72,19 @@ import {
   SCAN_COMPLETE_EVENT,
   type Quota,
 } from "@/lib/quota-client";
+// Ricky's menu (23 Oct 2026): New Assessment on top (the button above this
+// list), then these, in this order. Every page that left the menu stays one
+// tap away: All assessments from Overview and the Assessment Library, the
+// roster and Class insights from Classes (tests/menu.test.mjs).
 const nav = [
   { id: "home", label: "Overview", icon: House },
-  { id: "assessments", label: "Assessments", icon: Files },
-  { id: "library", label: "Assessment library", icon: LibraryBig },
-  { id: "lessons", label: "Lesson plans", icon: BookOpen },
+  { id: "library", label: "Assessment Library", icon: LibraryBig },
   { id: "classes", label: "Classes", icon: Users },
+  { id: "lessons", label: "Lesson Planning", icon: BookOpen },
+  { id: "reports", label: "Student Reports", icon: FileText },
 ];
+/** The menu item lit for a screen that is not in the menu itself. */
+const navFor: Record<string, string> = { assessments: "library", students: "classes", diagnostics: "classes" };
 const libraryNav = [
   { id: "standards", label: "Standards", icon: Library },
   { id: "guide", label: "How to use", icon: HelpCircle },
@@ -107,6 +115,7 @@ const prefetchRoutes = [
   "/lessons",
   "/classes",
   "/students",
+  "/reports",
   "/scan",
   "/standards",
   "/settings",
@@ -337,6 +346,9 @@ export default function TeacherApp({ view }: { view: string }) {
       return false;
     }
     if (lock.current) return false;
+    // Where the teacher is goes with the save: Overview's "Pick up where you
+    // left off" (lib/last-worked-on.ts). No save of its own.
+    next = withLastWorkedOn(next, view, window.location.search);
     lock.current = true;
     setBusy(true);
     try {
@@ -426,11 +438,13 @@ export default function TeacherApp({ view }: { view: string }) {
     go: (url: string) => navigate(router, url),
   };
   const shownView = pending && pending.from === view ? pending.to : view;
+  const litNav = navFor[shownView] ?? shownView;
   const title =
     [
       ...nav,
       ...libraryNav,
       { id: "scan", label: "New assessment" },
+      { id: "assessments", label: "Assessments" },
       { id: "students", label: "Roster" },
       { id: "billing", label: "Plan and billing" },
       { id: "settings", label: "Settings" },
@@ -519,7 +533,7 @@ export default function TeacherApp({ view }: { view: string }) {
                 <SidebarMenuItem key={n.id}>
                   <SidebarMenuButton
                     asChild
-                    isActive={shownView === n.id}
+                    isActive={litNav === n.id}
                     className="nav-link"
                   >
                     <Link
@@ -528,7 +542,7 @@ export default function TeacherApp({ view }: { view: string }) {
                     >
                       <n.icon size={19} />
                       <span>{n.label}</span>
-                      {shownView === n.id && (
+                      {litNav === n.id && (
                         <span className="nav-active-dot" />
                       )}
                     </Link>
@@ -681,6 +695,8 @@ export default function TeacherApp({ view }: { view: string }) {
                 <DiagnosticsView />
               ) : view === "students" ? (
                 <StudentsView />
+              ) : view === "reports" ? (
+                <StudentReportsView />
               ) : view === "lessons" ? (
                 <ReteachView />
               ) : view === "resources" ? (

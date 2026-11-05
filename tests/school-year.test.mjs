@@ -72,7 +72,8 @@ test("the test page edits the date given; Settings and sign-up choose the school
   assert.match(login, /useState\(\(\) => currentSchoolYear\(\)\)/, "the current one unless they change it");
   assert.match(login, /data: \{ school_year: schoolYear \}/);
   const route = readFileSync("app/api/workspace/route.ts", "utf8");
-  assert.match(route, /schoolYear: z\.number\(\)\.int\(\)\.min\(2000\)\.max\(2100\)\.optional\(\),/);
+  assert.match(route, /settings: settingsSchema,/);
+  assert.match(readFileSync("lib/settings-schema.ts", "utf8"), /schoolYear: z\.number\(\)\.int\(\)\.min\(2000\)\.max\(2100\)\.optional\(\),/);
   assert.match(route, /if \(!saved\) saved = await initializeWorkspace\(id, await firstWorkspace\(id\)\);/);
   assert.match(route, /validSchoolYear\(data\?\.user\?\.user_metadata\?\.school_year\)/);
   // The class set's grading passes the day.

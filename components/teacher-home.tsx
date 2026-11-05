@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { LAST_WORKED_ON_KEY, parseLastWorkedOn, resumeTarget } from "@/lib/last-worked-on";
 import {
   ArrowRight,
   BookOpen,
@@ -24,7 +25,22 @@ import { gradeLabel } from "@/lib/grade-labels";
 const GUIDE_KEY = "tbf-guide-dismissed";
 
 export default function HomeView() {
-  const { w, classroom, assessments, go } = useTeacher();
+  const { w, classroom, assessments, go, save, busy } = useTeacher();
+  // Ricky's menu (23 Oct 2026): Overview jumps back into the last class and
+  // test the teacher was working on (lib/last-worked-on.ts).
+  const [onDevice] = useState(() => {
+    try {
+      return parseLastWorkedOn(localStorage.getItem(LAST_WORKED_ON_KEY));
+    } catch {
+      return null;
+    }
+  });
+  const resume = resumeTarget(w, onDevice);
+  async function pickUp() {
+    if (!resume) return;
+    if (resume.classroom.id !== classroom.id && !(await save({ ...w, activeClassId: resume.classroom.id }))) return;
+    go("/assessments?id=" + encodeURIComponent(resume.assessment.id));
+  }
   // This view only mounts after the workspace loads on the client, so the
   // stored preference can be read during the first render.
   const [showGuide, setShowGuide] = useState(() => {
@@ -81,6 +97,22 @@ export default function HomeView() {
             <X size={15} />
           </button>
         </div>
+      )}
+      {resume && (
+        <section className="panel resume-card" aria-label="Pick up where you left off">
+          <div>
+            <span className="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
+            <h2>{resume.assessment.title}</h2>
+            <p>
+              {resume.classroom.name} · Grade {resume.classroom.grade}
+              {resume.classroom.id !== classroom.id && " · switches to this class"}
+            </p>
+          </div>
+          <Action onClick={pickUp} disabled={busy}>
+            Open it
+            <ArrowRight size={16} />
+          </Action>
+        </section>
       )}
       <section className="start-work-card">
         <div className="start-work-icon">
