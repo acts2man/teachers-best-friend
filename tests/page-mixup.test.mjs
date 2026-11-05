@@ -212,3 +212,41 @@ test("Grade by question shows the mark, the move and the edit; the mark is saved
   assert.match(migration, /''checkPages'', r\.check_pages/);
   assert.match(readFileSync("supabase/checks/check-pages-round-trip.sql", "utf8"), /ROLLED_BACK/);
 });
+
+// Review of #203, round 2.
+test("a printed label read with the name is not part of it: \"Name: Fay Gray\" filed on Eli Ford still flags", () => {
+  for (const read of ["Name: Fay Gray", "NAME - Fay Gray", "Name:Fay Gray", "Student: Fay Gray", "Student Name: Fay Gray", "name — Fay Gray"])
+    assert.equal(N.usableNameSeen(read), "Fay Gray", JSON.stringify(read));
+  assert.equal(M.pagesMayBelongElsewhere(M.seenFitsFor("Name: Fay Gray", students), "s4", "Eli Ford", students), true);
+  assert.equal(M.pagesMayBelongElsewhere(M.seenFitsFor("Name: Fay Gray", students), "s5", "Fay Gray", students), false, "on her own pile it does not");
+  for (const blank of ["Name:", "Name: ?", "Student: unreadable", "Name - "]) assert.equal(N.usableNameSeen(blank), "", JSON.stringify(blank));
+  assert.equal(N.usableNameSeen("Namira Patel"), "Namira Patel", "a name that starts like the label is kept");
+});
+
+test("Undo after a move puts back only the two students' places in the pile; a reorder of others made since stays", () => {
+  const order = ["s0", "s1", "s2", "s3", "s4", "s5", "s6"];
+  const a = { ...assessment, studentOrder: order, responses: [
+    { id: "r5", studentId: "s5", questionId: "q1", answer: "x", correct: false, match: 0, misconception: "", confidence: 90, verified: false },
+    { id: "r6", studentId: "s6", questionId: "q1", answer: "y", correct: false, match: 0, misconception: "", confidence: 90, verified: false },
+  ] };
+  const moved = M.moveAnswers(a, "s5", "s6");
+  assert.deepEqual(moved.studentOrder, ["s0", "s1", "s2", "s3", "s4", "s6", "s5"]);
+  // Meanwhile the teacher moved s0 to the end of the pile.
+  const reordered = { ...moved, studentOrder: ["s1", "s2", "s3", "s4", "s6", "s5", "s0"] };
+  assert.deepEqual(M.undoMove(reordered, a, ["s5", "s6"]).studentOrder, ["s1", "s2", "s3", "s4", "s5", "s6", "s0"]);
+  // A move onto a student with no answers, and a reorder of s5 itself since.
+  const onto = M.moveAnswers(a, "s5", "s2");
+  assert.deepEqual(onto.studentOrder, ["s0", "s1", "s5", "s3", "s4", "s2", "s6"]);
+  const later = { ...onto, studentOrder: ["s3", "s0", "s1", "s5", "s4", "s2", "s6"] };
+  assert.deepEqual(M.undoMove(later, a, ["s5", "s2"]).studentOrder, ["s3", "s0", "s1", "s2", "s4", "s5", "s6"]);
+});
+
+test("a model output that is not JSON never puts its text in an error message (stored on scans.error and app_events)", () => {
+  assert.throws(() => A.parseModelOutput('Fay Gray wrote {"groups":[]}'), (e) => e instanceof SyntaxError && !/Fay|Gray|wrote/.test(String(e)));
+  assert.deepEqual(A.parseModelOutput('{"groups":[]}'), { groups: [] });
+  for (const f of ["app/api/analyze/route.ts", "app/api/analyze/[scanId]/route.ts", "lib/regression/runner.ts"]) {
+    const src = readFileSync(f, "utf8");
+    assert.doesNotMatch(src, /JSON\.parse\(text\)/, f);
+    assert.match(src, /parseModelOutput\(text\)/, f);
+  }
+});

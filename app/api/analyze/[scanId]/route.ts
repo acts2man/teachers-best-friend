@@ -12,7 +12,7 @@ import { catalogFor } from "@/lib/teacher-catalog";
 import type { Standard, Workspace } from "@/lib/teacher-types";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { analyzeInput, finalizeAnalysis, responseText } from "@/lib/analyze-shared";
+import { analyzeInput, finalizeAnalysis, parseModelOutput, responseText } from "@/lib/analyze-shared";
 import {
   chargesForMode,
   confirmPages,
@@ -195,7 +195,7 @@ export async function GET(
 
     let output: Record<string, unknown>;
     try {
-      output = finalizeAnalysis(p, JSON.parse(text), w, catalog);
+      output = finalizeAnalysis(p, parseModelOutput(text), w, catalog);
       if (p.mode === "catalog")
         await shareCatalog(svc, p, (output.standards ?? []) as Standard[]);
     } catch (e) {

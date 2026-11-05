@@ -13,7 +13,15 @@ const PLACEHOLDERS = new Set([
 
 export function usableNameSeen(raw: unknown): string {
   if (typeof raw !== "string") return "";
-  const name = raw.replace(/\s+/g, " ").trim().slice(0, 80);
+  // A printed label the read carried along ("Name: …", "Name - …",
+  // "Student: …") is not part of the name: without this, "Name: Ana" never
+  // fits Ana, and a pile with that paper on it would not be flagged.
+  const name = raw
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:student(?:['’]s)?\s*name|name|student)\s*[:\-–—]+\s*/i, "")
+    .trim()
+    .slice(0, 80);
   if (!/\p{L}/u.test(name)) return "";
   const bare = name.toLowerCase().replace(/[\s:.\-_()[\]?!*"'“”‘’]+/g, " ").trim();
   if (PLACEHOLDERS.has(bare) || PLACEHOLDERS.has(bare.replace(/\s+/g, ""))) return "";

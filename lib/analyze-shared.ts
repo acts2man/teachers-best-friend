@@ -1300,6 +1300,20 @@ export function finalizeAnalysis(
 }
 
 /**
+ * Parses the model's output text. A failure throws a SyntaxError with a fixed
+ * message: the parser's own message quotes the text around the error ("Unexpected
+ * token 'P', "Placeholde"..."), which can be a student's name or answer, and
+ * an error message is stored (scans.error, app_events, regression_run_cases).
+ */
+export function parseModelOutput(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new SyntaxError("The model's output was not valid JSON.");
+  }
+}
+
+/**
  * Pulls the joined output text out of a Responses API result. Returns an empty
  * string when the model produced no usable text.
  */

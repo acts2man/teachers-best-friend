@@ -1602,8 +1602,14 @@ export function absorbGraded(
     const at = attemptBatch.groupIndexes[g.group];
     if (at === undefined) continue;
     const prev = best.get(at);
-    if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0))
-      best.set(at, { ...g, group: at });
+    if (!prev || (g.responses?.length ?? 0) >= (prev.responses?.length ?? 0)) {
+      // Never carried into what is kept: the read name is used only as
+      // seenFits (lib/answer-mixups), and `best` is saved by the regression
+      // runner and the scan's progress.
+      const { nameSeen: _read, ...kept } = g as GradedGroup & { nameSeen?: unknown };
+      void _read;
+      best.set(at, { ...kept, group: at });
+    }
   }
 }
 

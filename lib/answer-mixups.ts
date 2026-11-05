@@ -129,14 +129,15 @@ export function moveAnswers(a: Assessment, fromId: string, toId: string): Assess
 }
 
 /**
- * Undo of a move or swap: the two students' answers, pages, place in the
- * pile and check marks as they were in `before`, under fresh ids again (the
- * ids in `before` were just removed by the move, and reusing them would hit
- * the same unique key on the way back). Everyone else stays as `current` has
- * them.
+ * Undo of a move or swap: the two students' answers, pages, places in the
+ * pile (restoreOrder) and check marks as they were in `before`, under fresh
+ * ids again (the ids in `before` were just removed by the move, and reusing
+ * them would hit the same unique key on the way back). Everyone else stays as
+ * `current` has them, their places in the pile included.
  */
 export function undoMove(current: Assessment, before: Assessment, ids: string[]): Assessment {
   const who = new Set(ids);
+  const order = restoreOrder(current.studentOrder, before.studentOrder, ids);
   const pages = { ...(current.studentUploadIds || {}) };
   for (const id of ids) {
     delete pages[id];
@@ -150,8 +151,28 @@ export function undoMove(current: Assessment, before: Assessment, ids: string[])
       ...before.responses.filter((r) => who.has(r.studentId)).map((r) => ({ ...r, id: newId() })),
     ],
     ...(current.studentUploadIds || before.studentUploadIds ? { studentUploadIds: pages } : {}),
-    ...(before.studentOrder ? { studentOrder: before.studentOrder } : {}),
+    ...(order ? { studentOrder: order } : {}),
   };
+}
+
+/**
+ * The pile order for an undo: `current` as it is now, with only the moved
+ * students put back in the order they had in `before` -- in the places they
+ * hold now. A reorder of anyone else made since the move stays (review of
+ * #203).
+ */
+function restoreOrder(current: string[] | undefined, before: string[] | undefined, ids: string[]): string[] | undefined {
+  if (!before) return current;
+  if (!current) return before;
+  const who = new Set(ids.filter((id) => before.includes(id)));
+  const wanted = before.filter((id) => who.has(id));
+  const out = [...current];
+  const slots = current.flatMap((id, i) => (who.has(id) ? [i] : []));
+  wanted.forEach((id, k) => {
+    if (k < slots.length) out[slots[k]] = id;
+    else out.push(id);
+  });
+  return [...new Set(out)];
 }
 
 /** How many answers each side of a move has: for the confirm. */

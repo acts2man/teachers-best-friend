@@ -33,6 +33,7 @@ import {
   analyzeInput,
   buildPrompt,
   finalizeAnalysis,
+  parseModelOutput,
   responseText,
   type AnalyzeParams,
   type Mode,
@@ -48,6 +49,7 @@ import {
   deleteBackgroundResponse,
 } from "@/lib/analyze-server";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { withoutNameSeen } from "@/lib/name-seen";
 import {
   absorbGraded,
   absorbPartsReask,
@@ -245,14 +247,11 @@ async function advanceJob(
   const text = responseText(remote);
   if (!text) throw new Error("The model returned no output.");
   const { w, catalog } = await prompt();
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // Never pass the parser's message on: it quotes the model's output.
-    throw new Error("The model's output was not valid JSON.");
-  }
-  return finalizeAnalysis(p, parsed, w, catalog);
+  // Never the parser's own message: it quotes the model's output.
+  const parsed = parseModelOutput(text);
+  // The name the grading pass read on each pile is never stored (review of
+  // #203): this output becomes regression_run_cases.state.
+  return withoutNameSeen(finalizeAnalysis(p, parsed, w, catalog));
 }
 
 /**
