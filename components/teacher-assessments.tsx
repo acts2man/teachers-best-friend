@@ -54,6 +54,8 @@ import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { clearClassScanSession, describeFailure, deleteUploads, keptInScanMessage } from "@/lib/connection";
 import { useTeacher } from "./teacher-context";
+import { logAppEvent } from "@/lib/app-events-client";
+import { draftFromTraits, readFailureNotice, rubricReadNotice, uploadFailureNotice, type ReadTrait } from "@/lib/rubric-read";
 import {
   Collapsible,
   Action,
@@ -2212,47 +2214,61 @@ function WritingRubricPanel({
     const incoming = Array.from(list).slice(0, 4);
     setReading(true);
     setNotice("");
+    // Traits read earlier and not saved yet: a later failure must say they are
+    // still there rather than read as if nothing was read (Michael, 3 Nov).
+    const unsaved = dirty ? draft.length : 0;
     try {
       const ids: string[] = [];
+      const refused: string[] = [];
       for (const raw of incoming) {
-        const file = await uprightPage(raw);
-        const d = await uploadFile(file);
-        ids.push(d.id);
+        try {
+          const file = await uprightPage(raw);
+          const d = await uploadFile(file);
+          ids.push(d.id);
+        } catch (e) {
+          // That file, by name, in the server's own words -- and the others
+          // still go. A photo is never reported as "This PDF".
+          const reason = describeFailure(e, "it couldn’t be uploaded.");
+          refused.push(uploadFailureNotice(raw.name || "Your file", reason));
+          logAppEvent("api_failure", {
+            message: reason,
+            assessmentId: a.id,
+            detail: { endpoint: "/api/uploads", method: "POST", mode: "rubric", image: raw.type.startsWith("image/"), pdf: raw.type === "application/pdf" },
+          });
+        }
       }
-      const d = await analyzeRequest({
-        mode: "rubric",
-        uploadIds: ids,
-        grade: a.grade,
-        subject: a.subject,
-        framework: a.framework,
-      });
-      const traits = (d.result.traits ?? []) as {
-        name: string;
-        max: number;
-        descriptor: string;
-        standard: string;
-      }[];
+      if (!ids.length) {
+        setNotice(readFailureNotice(refused.join(" "), unsaved));
+        return;
+      }
+      let d: { result: Record<string, unknown> };
+      try {
+        d = await analyzeRequest({
+          mode: "rubric",
+          uploadIds: ids,
+          grade: a.grade,
+          subject: a.subject,
+          framework: a.framework,
+        });
+      } catch (e) {
+        const reason = describeFailure(e, "Your rubric couldn’t be read.");
+        logAppEvent("ai_failure", { message: reason, assessmentId: a.id, detail: { mode: "rubric", kind: "error" } });
+        setNotice(readFailureNotice([...refused, reason].join(" "), unsaved));
+        return;
+      }
+      const traits = ((d.result.traits ?? []) as ReadTrait[]).filter((t) => t && typeof t.name === "string");
       if (!traits.length) {
         setNotice(
-          "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand.",
+          readFailureNotice(
+            [...refused, "No rubric traits could be read from that file. Try a clearer photo, or edit the traits below by hand."].join(" "),
+            unsaved,
+          ),
         );
         return;
       }
-      setDraft(
-        traits.map((t) => ({
-          id: crypto.randomUUID(),
-          name: t.name,
-          max: t.max,
-          descriptor: t.descriptor,
-          standard: t.standard,
-        })),
-      );
-      setNotice(
-        traits.length +
-          " traits read from your rubric. Check each one and its standard, then Save rubric.",
-      );
-    } catch (e) {
-      setNotice(describeFailure(e, "Your rubric couldn’t be read."));
+      // Traits with no standard are kept, blank, for the teacher to set.
+      setDraft(draftFromTraits(traits, () => crypto.randomUUID()));
+      setNotice([...refused, rubricReadNotice(traits)].join(" "));
     } finally {
       setReading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -2357,12 +2373,13 @@ function WritingRubricPanel({
             <label>
               Standard
               <input
-                className="class-scan-name-input"
+                className={"class-scan-name-input" + (d.standard ? "" : " needs-standard")}
                 value={d.standard}
-                placeholder="e.g. W.5.2"
+                placeholder="Set a standard, e.g. W.5.2"
                 aria-label={d.name + " standard"}
                 onChange={(e) => set(d.id, { standard: e.target.value.trim() })}
               />
+              {!d.standard && <span className="field-help">No standard yet: set one, or leave it blank (it is still scored).</span>}
             </label>
           </div>
         </div>
