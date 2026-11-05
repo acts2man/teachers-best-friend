@@ -341,9 +341,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
   const [remoteGrading, setRemoteGrading] = useState<ScanSession["grading"]>(null);
   // Pages that did not upload on the teacher's other devices (review of
   // #188): grading waits on them as on this device's own.
-  const [remoteFailed, setRemoteFailed] = useState<Record<string, number>>({});
-  // Other devices' pages the teacher left out from here, at those counts.
-  const [dismissed, setDismissed] = useState<Record<string, number>>({});
+  const [remoteFailed, setRemoteFailed] = useState<Record<string, string[]>>({});
+  // Other devices' pages the teacher left out from here, by page.
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const [gradingAt, setGradingAt] = useState(0);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -365,6 +365,8 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       clearInterval(t);
     };
   }, [scanning]);
+  // This tab's own pages are never another device's (review of #194).
+  const ownFailed = useMemo(() => failedPages.map((f) => f.key), [failedPages]);
   const session = useMemo<ScanSession | null>(() => {
     const s: ScanSession = {
       v: 1,
@@ -374,21 +376,22 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       discarded: [...discarded].sort(),
       pageUploadIds: groups ? pageUploadIds : [],
       grading: null,
-      // Every other device's count as last seen, and this device's own.
-      failed: { ...remoteFailed, [failedKey]: failedPages.length },
+      // Every other device's failed pages as last seen, and this tab's own,
+      // by page key (the same page is the same page however many tabs say so).
+      failed: { ...remoteFailed, [failedKey]: ownFailed },
       dismissed,
     };
     if (isEmptySession(s)) return null;
     return s;
-  }, [piles, progress, groups, discarded, pageUploadIds, remoteFailed, dismissed, failedKey, failedPages.length]);
-  const otherFailed = failedElsewhere({ failed: remoteFailed, dismissed }, failedKey);
+  }, [piles, progress, groups, discarded, pageUploadIds, remoteFailed, dismissed, failedKey, ownFailed]);
+  const otherFailed = failedElsewhere({ failed: { ...remoteFailed, [failedKey]: ownFailed }, dismissed }, failedKey);
   /** Shows what the other device saved. `null` means it saved the class or
    * started over, so this device clears too -- without releasing the pages,
    * which the other device already settled. */
   function applyRemote(next: ScanSession | null) {
     setRemoteGrading(next?.grading ?? null);
     setRemoteFailed(Object.fromEntries(Object.entries(next?.failed ?? {}).filter(([d]) => d !== failedKey)));
-    setDismissed(next?.dismissed ?? {});
+    setDismissed(next?.dismissed ?? []);
     setEdited(next ? next.piles : EMPTY);
     setProgress(next?.progress ?? null);
     setGroups(next?.groups ?? null);
@@ -937,7 +940,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     clearFailed();
     // Starting over clears the other devices' counts too (review of #194).
     setRemoteFailed({});
-    setDismissed({});
+    setDismissed([]);
     // Give back anything reserved but never graded. Confirmed pages stay
     // charged, so this cannot be used to undo work already delivered.
     void releaseStack(pageUploadIds);
@@ -1976,7 +1979,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Keep waiting</AlertDialogCancel>
-                <AlertDialogAction onClick={() => setDismissed(dismissFailed({ failed: remoteFailed, dismissed }, failedKey))}>Leave {otherFailed === 1 ? "it" : "them"} out</AlertDialogAction>
+                <AlertDialogAction onClick={() => setDismissed(dismissFailed({ failed: { ...remoteFailed, [failedKey]: ownFailed }, dismissed }, failedKey))}>Leave {otherFailed === 1 ? "it" : "them"} out</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

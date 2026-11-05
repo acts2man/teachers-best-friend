@@ -20,3 +20,20 @@ export function resourceCatalog():Resource[]{return [
 {id:"r6",title:"A fresh start with place value",category:"Intervention",standard:"4.NBT.A.2",content:"Start with two-digit numbers. Build 42 and 24 using tens and ones. Compare the tens before comparing the ones. Move to 402 and 420. Ask: What does the zero tell us?\nCheck: Compare 3,042 and 3,402.\nTeacher key: 3,042 < 3,402 because 0 hundreds < 4 hundreds."},
 {id:"r7",title:"One problem. Two ways.",category:"Enrichment",standard:"4.OA.A.3",content:"Design two different multi-step stories with the same answer, 48. Use multiplication and subtraction in one story, and addition and division in the other. Write equations, solve them, and explain why both answers are reasonable.\nTeacher examples: 5 × 12 − 12 = 48; (72 + 24) ÷ 2 = 48."}
 ];}
+
+/**
+ * Who an exit check is recorded for (review of #198): the lesson's students,
+ * or -- for a whole-class lesson, which saves with none picked -- every
+ * student in the lesson's class, by name. A whole-class lesson used to open
+ * an empty list, so its exit ticket could not be recorded at all.
+ */
+export function exitCheckStudents<S extends { id: string; classId: string; name: string }>(
+  lesson: { studentIds: string[]; classId: string },
+  students: S[],
+): S[] {
+  if (lesson.studentIds.length)
+    return lesson.studentIds.map((id) => students.find((s) => s.id === id)).filter((s): s is S => !!s);
+  return students
+    .filter((s) => s.classId === lesson.classId)
+    .sort((x, y) => x.name.localeCompare(y.name, undefined, { sensitivity: "base" }));
+}

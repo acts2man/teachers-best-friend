@@ -69,26 +69,28 @@ test("(a) a student with no pile yet gets one, shared by its pages", () => {
 const session = (extra = {}) => ({ v: 1, piles: [[]], progress: null, groups: null, discarded: [], pageUploadIds: [], grading: null, ...extra });
 
 test("(b) the failed-page count rides with the scan session, per device", () => {
-  const parsed = S.parseSession(session({ failed: { phone: 2, laptop: 0, "": 3, junk: "x", neg: -1 } }));
-  assert.deepEqual(parsed.failed, { phone: 2 }, "real counts only");
-  assert.ok(!S.isEmptySession(session({ failed: { phone: 1 } })), "a failed page alone keeps the session");
-  assert.equal(S.failedElsewhere({ failed: { phone: 2, laptop: 1 } }, "laptop"), 2);
-  assert.equal(S.failedElsewhere({ failed: { phone: 2 } }, "phone"), 0);
+  // By page since 5 Nov 2026; an older session's count reads as unnamed pages.
+  const parsed = S.parseSession(session({ failed: { phone: ["p2", "p1", "p1", 3], laptop: [], "": ["x"], junk: "x", old: 2 } }));
+  assert.deepEqual(parsed.failed, { phone: ["p1", "p2"], old: ["old#1", "old#2"] }, "real pages only");
+  assert.ok(!S.isEmptySession(session({ failed: { phone: ["p1"] } })), "a failed page alone keeps the session");
+  assert.equal(S.failedElsewhere({ failed: { phone: ["p1", "p2"], laptop: ["l1"] } }, "laptop"), 2);
+  assert.equal(S.failedElsewhere({ failed: { phone: ["p1", "p2"] } }, "phone"), 0);
 });
 
 test("(b) merging keeps the other device's count and this device's own", () => {
-  const server = session({ piles: [[{ key: "k", bodyId: "b1" }]], failed: { phone: 1, laptop: 3 } });
-  const mine = session({ piles: [[{ key: "k", bodyId: "b1" }]], failed: { laptop: 0, phone: 0 } });
-  // On the laptop: the phone's 1 stays (only the phone writes it); the laptop's 0 wins over the server's stale 3.
-  assert.deepEqual(S.mergeSessions(server, mine, "laptop").failed, { phone: 1 });
-  // On the phone, after leaving its page out: 0 is the phone's own.
+  const server = session({ piles: [[{ key: "k", bodyId: "b1" }]], failed: { phone: ["p1"], laptop: ["l1", "l2", "l3"] } });
+  const mine = session({ piles: [[{ key: "k", bodyId: "b1" }]], failed: { laptop: [], phone: [] } });
+  // On the laptop: the phone's page stays (only the phone writes it); the laptop's none wins over the server's stale three.
+  assert.deepEqual(S.mergeSessions(server, mine, "laptop").failed, { phone: ["p1"] });
+  // On the phone, after leaving its page out: none is the phone's own.
   assert.equal(S.mergeSessions(server, mine, "phone").failed?.phone, undefined);
   const hook = readFileSync("components/use-scan-session.ts", "utf8");
   assert.equal((hook.match(/mergeSessions\(theirs, (state|mine), failedKey \?\? device\)/g) ?? []).length, 2, "both merges pass this tab's key");
 });
 
 test("(b) grading refuses while another device has a failed page", () => {
-  assert.match(panel, /failed: \{ \.\.\.remoteFailed, \[failedKey\]: failedPages\.length \},/, "this tab's count is saved");
+  assert.match(panel, /failed: \{ \.\.\.remoteFailed, \[failedKey\]: ownFailed \},/, "this tab's pages are saved, by key");
+  assert.match(panel, /const ownFailed = useMemo\(\(\) => failedPages\.map\(\(f\) => f\.key\), \[failedPages\]\);/);
   assert.match(panel, /setRemoteFailed\(Object\.fromEntries\(Object\.entries\(next\?\.failed \?\? \{\}\)\.filter\(\(\[d\]\) => d !== failedKey\)\)\);/);
   const grade = panel.slice(panel.indexOf("if (failedPages.length) {"));
   assert.match(grade, /if \(otherFailed\) \{\s*toast\.error\(/);
