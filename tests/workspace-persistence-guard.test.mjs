@@ -44,6 +44,8 @@ const PERSISTED = {
     "finalAnswer", "answerRegion", "suggestedErrorType",
     // Grade on their own, kept (20261013120000).
     "gradedAlone",
+    // Answers may belong to another page (20261104120000, NOT YET APPLIED).
+    "checkPages",
   ],
   Assessment: [
     "id", "classId", "elaArea", "title", "subject", "grade", "framework",

@@ -82,7 +82,10 @@ no pipeline that would collect student work for that purpose.
 There is one honest exception. If a student wrote their name on the worksheet, that
 name is in the photograph, and the photograph is what gets sent. We can't crop what we
 can't predict. What we do instead: the model is instructed not to reproduce names it
-sees on a page, and the image is deleted automatically on a schedule rather than kept.
+sees on a page -- except that, when a whole class set is graded, it reports the name it
+sees on each student's pages so we can check no answers landed on the wrong child (that
+reading is not stored; we keep only which of your students it could be, until the class
+set is saved or, unsaved, for 7 days) -- and the image is deleted automatically on a schedule rather than kept.
 
 ---
 

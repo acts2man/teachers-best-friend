@@ -33,6 +33,7 @@ import {
   analyzeInput,
   buildPrompt,
   finalizeAnalysis,
+  parseModelOutput,
   responseText,
   type AnalyzeParams,
   type Mode,
@@ -48,6 +49,7 @@ import {
   deleteBackgroundResponse,
 } from "@/lib/analyze-server";
 import { catalogFor } from "@/lib/teacher-catalog";
+import { withoutNameSeen } from "@/lib/name-seen";
 import {
   absorbGraded,
   absorbPartsReask,
@@ -61,6 +63,7 @@ import {
   mergeNameReads,
   planNameBatches,
   planScanBatches,
+  gradePagesPerBatch,
   resolveScannedGroups,
   retryBatch,
   shortGroups,
@@ -244,14 +247,11 @@ async function advanceJob(
   const text = responseText(remote);
   if (!text) throw new Error("The model returned no output.");
   const { w, catalog } = await prompt();
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // Never pass the parser's message on: it quotes the model's output.
-    throw new Error("The model's output was not valid JSON.");
-  }
-  return finalizeAnalysis(p, parsed, w, catalog);
+  // Never the parser's own message: it quotes the model's output.
+  const parsed = parseModelOutput(text);
+  // The name the grading pass read on each pile is never stored (review of
+  // #203): this output becomes regression_run_cases.state.
+  return withoutNameSeen(finalizeAnalysis(p, parsed, w, catalog));
 }
 
 /**
@@ -304,13 +304,16 @@ export async function planCase(svc: Svc, c: RegressionCase): Promise<RunState> {
     .eq("teacher_id", c.teacherId)
     .eq("assessment_legacy_id", c.assessmentLegacyId);
   const bytes = new Map((sizes ?? []).map((r) => [r.source_upload_id as string, Number(r.size_bytes) || undefined]));
+  const questionCount = activeQuestions(asAssessment(e.assessment)).length;
+  const pageBytes = pages.map((id) => bytes.get(id));
   const batches = planScanBatches(
     groups,
     pages,
-    activeQuestions(asAssessment(e.assessment)).length,
+    questionCount,
     undefined,
-    undefined,
-    pages.map((id) => bytes.get(id)),
+    // The app's grading batch size, so a replay grades as the app does.
+    gradePagesPerBatch(groups, pages, questionCount, pageBytes),
+    pageBytes,
   );
   return { stage, batches, cursor: 0, attempt: 0, attemptBatch: null, best: [], graded: [], job: null };
 }

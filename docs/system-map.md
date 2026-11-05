@@ -401,6 +401,12 @@ unassigned is always allowed.
   - 13 Oct 2026 (#125 review): a motto-shaped name that was really an unrostered student had
     their pages folded under three other children.
   - 9 Oct 2026 (#115, Ricky): never pre-fill a roster name on a weak match.
+  - 2 Nov 2026 (Michael, scan 9df4a4a3): a seven-page grading request returned two
+    students' answers swapped, though the piles were right. The grading request now
+    holds 2-3 pages (`gradePagesPerBatch`) and reports the name it reads per group
+    (`nameSeen`); a mismatch marks the answers `checkPages` for the teacher, who can
+    move or swap them (`lib/answer-mixups.ts`). Nothing is moved automatically.
+    *Built 4 Nov 2026, not yet live; needs migration 20261104120000.*
 - **Enforced by:**
   - `planNameBatches` (`lib/teacher-class-scan.ts:69`);
   - `mergeNameReads` failed-stays-unknown (`:178`);
