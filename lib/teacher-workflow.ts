@@ -1303,10 +1303,12 @@ export function applyGroupScore(
             correct: score >= 100,
             verified: true,
             // Full credit is never an error, so it carries no error type.
-            // Otherwise keep whatever tag the caller passed, or the group's
-            // existing one when the caller passed none (a re-score at the same
-            // credit should not silently drop the tag).
-            errorType: score >= 100 ? "" : errorType ?? r.errorType,
+            // Otherwise keep whatever tag the caller passed, or the answer's
+            // existing one when the caller passed none -- "" included, which
+            // is what the grading screen passes when the teacher picked no tag
+            // (review of #195: re-grading must not erase a stored tag).
+            // Clearing a tag is setGroupErrorType's job ("No error type").
+            errorType: score >= 100 ? "" : errorType || r.errorType,
           }
         : r,
     ),
