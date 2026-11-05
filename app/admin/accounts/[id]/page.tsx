@@ -5,6 +5,7 @@ import { getAccount, getTeacherScans, getTeacherAudit, getPipeline, getCostBreak
 import { setPlan, setStatus, setAdminRole, setAppManagerRole, resetTeacher, addInternalNote, clearFailedScans, deleteAccount } from "@/app/admin/actions";
 import { startImpersonation } from "@/lib/impersonation-actions";
 import { currentIsAppManager } from "@/lib/admin-gate";
+import { groupSpend, spendHref } from "@/lib/ai-spend";
 import { fmtUsd, fmtBytes, fmtRel, fmtDate, fmtCents, fmtPerScan, fmtInt, stageInfo, modelLabel, describeAudit } from "@/components/admin/format";
 
 const TARGET_COST_PER_SCAN = 0.01;
@@ -95,7 +96,7 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
                   const tone = perCall > TARGET_COST_PER_SCAN * 2 ? "bad" : perCall > TARGET_COST_PER_SCAN ? "warn" : "good";
                   return (
                     <tr key={`${r.stage}|${r.model}`}>
-                      <td><strong>{info.label}</strong><div className="muted" style={{ fontSize: ".78rem" }}>{info.what}{info.unit ? ` · ${info.unit}` : ""}</div></td>
+                      <td><Link href={spendHref({ teacher: a.teacher_id, stage: r.stage })}><strong>{info.label}</strong></Link><div className="muted" style={{ fontSize: ".78rem" }}>{info.what}{info.unit ? ` · ${info.unit}` : ""}</div></td>
                       <td>{modelLabel(r.model)}<div className="mono muted" style={{ fontSize: ".72rem" }}>{r.model}</div></td>
                       <td className="num">{fmtInt(r.calls)}</td>
                       <td className="num">{r.failed ? <span className="pill pill-bad">{r.failed}</span> : <span className="muted">0</span>}</td>
@@ -212,20 +213,32 @@ export default async function AccountDetail({ params }: { params: Promise<{ id: 
         <section className="panel" style={{ padding: "1.1rem" }}>
           <div className="ad-panel-head">
             <div className="ad-panel-title"><h2>Recent scans</h2><span className="ad-count">{okScans.length} completed</span></div>
+            <Link className="ad-meta" href={spendHref({ teacher: a.teacher_id })}>All AI spend, paged →</Link>
           </div>
           {okScans.length === 0 ? <div className="ad-empty"><span><strong>No completed scans yet.</strong></span></div> : (
             <div className="ad-table-wrap">
               <table>
                 <thead><tr><th>When</th><th>Kind of work</th><th>Model</th><th className="num">Cost</th></tr></thead>
                 <tbody>
-                  {okScans.slice(0, 25).map((s) => (
-                    <tr key={s.id}>
-                      <td className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(s.created_at)}</td>
-                      <td>{stageInfo(s.stage).label}</td>
-                      <td>{[s.extract_model, s.reteach_model].filter(Boolean).map((m) => modelLabel(m)).join(" + ") || "—"}</td>
-                      <td className="num" title={`exact: ${fmtUsd(s.cost_usd, 4)}`}>{fmtCents(s.cost_usd)}</td>
-                    </tr>
-                  ))}
+                  {/* A class set's name checks and grading calls read as one row
+                      with its total (lib/ai-spend.ts), not as many scans. */}
+                  {groupSpend(okScans).slice(0, 25).map((it) =>
+                    it.kind === "set" ? (
+                      <tr key={"set-" + it.rows[0].id}>
+                        <td className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(it.start)}</td>
+                        <td>Class set · {it.pages} pages · {it.rows.length} calls</td>
+                        <td>{modelLabel(it.rows[0].extract_model ?? it.rows[0].reteach_model ?? "")}</td>
+                        <td className="num" title={`exact: ${fmtUsd(it.cost, 4)}`}>{fmtCents(it.cost)}</td>
+                      </tr>
+                    ) : (
+                      <tr key={it.row.id}>
+                        <td className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(it.row.created_at)}</td>
+                        <td>{stageInfo(it.row.stage).label}</td>
+                        <td>{[it.row.extract_model, it.row.reteach_model].filter(Boolean).map((m) => modelLabel(m)).join(" + ") || "—"}</td>
+                        <td className="num" title={`exact: ${fmtUsd(it.row.cost_usd, 4)}`}>{fmtCents(it.row.cost_usd)}</td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>

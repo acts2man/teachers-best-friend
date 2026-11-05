@@ -94,6 +94,17 @@ import { ClassScanPanel } from "./teacher-class-scan";
 import { ImageViewer } from "./image-viewer";
 import { CroppedPhoto } from "./cropped-photo";
 import { inScanOrder } from "@/lib/teacher-class-scan";
+import { clearCheckPages, editWrittenAnswer, moveAnswers, moveCounts, moveIsSwap, studentsToCheck, undoMove } from "@/lib/answer-mixups";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScanCamera } from "./scan-camera";
 
 /**
@@ -323,6 +334,7 @@ function GradeByQuestion({
   const question = questions.find((q) => q.id === openId) || null;
   const autoConfirmIds = autoGradedToConfirm(a);
   const nameFor = (id: string) => students.find((s) => s.id === id)?.name || "—";
+  const toCheck = new Set(studentsToCheck(a));
   const hasWork = (assessment: Assessment, id: string) =>
     groupAnswers(assessment, id).some((g) => g.needsDecision);
   const anyAnswers = questions.some((q) => groupAnswers(a, q.id).length > 0);
@@ -718,6 +730,16 @@ function GradeByQuestion({
             onReopen={() => setReopened((p) => new Set(p).add(g.key))}
             onTag={(errorType) => tagError(g, errorType)}
             onReteach={() => makeReteachGroup(question, g)}
+            onEditWritten={(id, text) => {
+              const next = editWrittenAnswer(a, id, text);
+              // An empty reading is refused, never saved as a blank.
+              if (!next) {
+                toast.error("A reading can’t be empty. Type what the student wrote, or Cancel.");
+                return;
+              }
+              void onSave(next, "Reading corrected");
+            }}
+            toCheck={toCheck}
           />
         ))}
       </div>
@@ -773,6 +795,8 @@ function AnswerGroupCard({
   onReopen,
   onTag,
   onReteach,
+  onEditWritten,
+  toCheck,
 }: {
   assessment: Assessment;
   question: Question;
@@ -787,6 +811,10 @@ function AnswerGroupCard({
   onReopen: () => void;
   onTag: (errorType: string) => void;
   onReteach: () => void;
+  /** The teacher corrects what an answer was read as (lib/answer-mixups.ts). */
+  onEditWritten: (responseId: string, text: string) => void;
+  /** Students whose answers may belong to another page. */
+  toCheck: Set<string>;
 }) {
   const worth = questionPoints(a, q);
   const types = errorTypesFor(a.subject, a.elaArea);
@@ -876,6 +904,15 @@ function AnswerGroupCard({
       {!g.unsure && g.written.length > 0 && !(g.written.length === 1 && g.written[0] === g.answer) && (
         <span className="cell-meta">Written as: {g.written.map((x) => "“" + x + "”").join(", ")}</span>
       )}
+      {g.alone && (() => {
+        const only = a.responses.find((r) => r.id === g.responseIds[0]);
+        return only ? (
+          <div className="gbq-alone-reading">
+            {toCheck.has(only.studentId) && <span className="check-pages-tag">May be another page’s answer</span>}
+            <EditWritten response={only} busy={busy} onSave={onEditWritten} />
+          </div>
+        ) : null;
+      })()}
       {!g.unsure && photos.length > 0 && (
         <div className="gbq-photos">
           {photos.map((p) => (
@@ -960,6 +997,8 @@ function AnswerGroupCard({
               <div className="gbq-student-head">
                 <span>{nameFor(r.studentId)}</span>
                 {alone && r.answer.trim() && <span className="cell-meta">wrote “{r.answer}”</span>}
+                {toCheck.has(r.studentId) && <span className="check-pages-tag">May be another page’s answer</span>}
+                <EditWritten response={r} busy={busy} onSave={onEditWritten} />
                 {!g.unsure && g.studentIds.length > 1 && (
                   <button type="button" className="grade-change" disabled={busy} onClick={() => onSeparate(r.id, true)}>
                     Grade on their own
@@ -1009,6 +1048,235 @@ function AnswerGroupCard({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Answers on the wrong paper (Michael, 2 Nov 2026). Lists the students whose
+ * answers may belong to another page (lib/answer-mixups.ts) with their pages,
+ * and lets the teacher fix a mix-up: move one student's answers to another
+ * student on this test -- a swap when that student has answers too -- or say
+ * they are right. Nothing moves until the teacher says so.
+ */
+function MixupPanel({
+  assessment: a,
+  students,
+  onSave,
+  busy,
+}: {
+  assessment: Assessment;
+  students: Student[];
+  onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+  busy: boolean;
+}) {
+  const inClass = new Set(students.map((s) => s.id));
+  const flagged = studentsToCheck(a).filter((id) => inClass.has(id));
+  const withAnswers = inScanOrder(
+    students.filter((s) => a.responses.some((r) => r.studentId === s.id)),
+    a,
+  );
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [open, setOpen] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
+  // The test as it is now, for an Undo pressed after later saves.
+  const latest = useRef(a);
+  useEffect(() => {
+    latest.current = a;
+  });
+  const [confirming, setConfirming] = useState(false);
+  if (!withAnswers.length) return null;
+  const nameOf = (id: string) => students.find((s) => s.id === id)?.name || "this student";
+  const fromId = from || flagged[0] || "";
+  const swap = !!to && moveIsSwap(a, to);
+  const counts = fromId && to ? moveCounts(a, fromId, to) : { from: 0, to: 0 };
+  const plural = (n: number) => n + (n === 1 ? " answer" : " answers");
+  const question = swap
+    ? "Swap " + nameOf(fromId) + "’s " + plural(counts.from) + " and " + nameOf(to) + "’s " + plural(counts.to) + "?"
+    : "Move " + plural(counts.from) + " from " + nameOf(fromId) + " to " + nameOf(to) + "?";
+  /** Asked first (review of #203), saved, then one tap to undo it. */
+  async function move() {
+    if (!fromId || !to || fromId === to) return;
+    setConfirming(false);
+    const before = a;
+    const pair = [fromId, to];
+    const names = [nameOf(fromId), nameOf(to)];
+    const wasSwap = swap;
+    const ok = await onSave(
+      moveAnswers(a, fromId, to),
+      wasSwap ? "Swapped " + names[0] + "’s and " + names[1] + "’s answers" : "Moved the answers to " + names[1],
+    );
+    if (ok === false) return;
+    setFrom("");
+    setTo("");
+    setOpen(false);
+    toast(wasSwap ? names[0] + " and " + names[1] + " swapped answers" : "Answers moved to " + names[1], {
+      duration: 12000,
+      action: {
+        label: "Undo",
+        onClick: () => void onSave(undoMove(latest.current, before, pair), "Put back as it was"),
+      },
+    });
+  }
+  const showForm = open || flagged.length > 0;
+  return (
+    <div className={"panel mixup-panel" + (flagged.length ? " has-flags" : "")}>
+      {flagged.length > 0 && (
+        <>
+          <SectionTitle
+            title={flagged.length === 1 ? "Check 1 student’s answers" : "Check " + flagged.length + " students’ answers"}
+            description="The name the AI saw on these pages doesn’t match the student they were filed under. Look at the pages: if the answers are someone else’s, move them below."
+          />
+          <ul className="mixup-list">
+            {flagged.map((id) => (
+              <li key={id}>
+                <div className="mixup-head">
+                  <strong>{nameOf(id)}</strong>
+                  <span className="check-pages-tag">Answers may belong to another page — check</span>
+                </div>
+                <div className="mixup-actions">
+                  <Action variant="secondary small" onClick={() => setViewing(viewing === id ? null : id)}>
+                    {viewing === id ? "Hide pages" : "See pages"}
+                  </Action>
+                  <Action
+                    variant="secondary small"
+                    disabled={busy}
+                    onClick={() => {
+                      setFrom(id);
+                      setOpen(true);
+                    }}
+                  >
+                    Move these answers to…
+                  </Action>
+                  <Action
+                    variant="secondary small"
+                    disabled={busy}
+                    onClick={() => onSave(clearCheckPages(a, id), nameOf(id) + "’s answers kept")}
+                  >
+                    They’re right
+                  </Action>
+                </div>
+                {viewing === id && (
+                  <StudentWorkPhoto pages={a.studentUploadIds?.[id] ?? []} alt={nameOf(id) + "’s scanned pages"} />
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {!flagged.length && !open && (
+        <button type="button" className="text-link mixup-open" onClick={() => setOpen(true)}>
+          Answers on the wrong student? Move them
+        </button>
+      )}
+      <AlertDialog open={confirming} onOpenChange={(v) => !v && setConfirming(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{question}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {swap
+                ? "Each keeps the other’s answers, pages and credit. You can undo it right after."
+                : "Their pages and credit go with them. You can undo it right after."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={move}>
+              {swap ? "Swap answers" : "Move answers"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {showForm && (
+        <div className="mixup-form">
+          <label>
+            Move the answers of
+            <select value={fromId} onChange={(e) => setFrom(e.target.value)} aria-label="Move the answers of">
+              <option value="">Choose a student</option>
+              {withAnswers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            to
+            <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Move them to">
+              <option value="">Choose a student</option>
+              {inScanOrder(students, a)
+                .filter((s) => s.id !== fromId)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {moveIsSwap(a, s.id) ? " (has answers — swap)" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {fromId && to && (
+            <p className="cell-meta mixup-what">
+              {swap
+                ? nameOf(fromId) + " and " + nameOf(to) + " swap answers, pages and credit."
+                : nameOf(fromId) + "’s answers, pages and credit go to " + nameOf(to) + "."}
+            </p>
+          )}
+          <div className="mixup-actions">
+            <Action disabled={busy || !fromId || !to} onClick={() => setConfirming(true)}>
+              {swap ? "Swap answers" : "Move answers"}
+            </Action>
+            {!flagged.length && (
+              <Action variant="secondary small" onClick={() => setOpen(false)}>
+                Cancel
+              </Action>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Correct what an answer was read as ("Written as", Michael 2 Nov 2026): the
+ * reading the AI transcribed, edited by the teacher. Credit is left alone.
+ */
+function EditWritten({
+  response: r,
+  busy,
+  onSave,
+}: {
+  response: StudentResponse;
+  busy: boolean;
+  onSave: (responseId: string, text: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (draft === null)
+    return (
+      <button type="button" className="grade-change" disabled={busy} onClick={() => setDraft(r.answer)}>
+        Edit reading
+      </button>
+    );
+  return (
+    <form
+      className="edit-written"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(r.id, draft);
+        setDraft(null);
+      }}
+    >
+      <label>
+        <span className="cell-meta">Written as</span>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus maxLength={500} />
+      </label>
+      <Action type="submit" variant="small" disabled={busy || !draft.trim()}>
+        Save
+      </Action>
+      <Action variant="secondary small" onClick={() => setDraft(null)}>
+        Cancel
+      </Action>
+    </form>
   );
 }
 
@@ -1553,6 +1821,7 @@ export function StudentResponseReview({
   return (
     <div className="student-review-space">
       <ClassScanPanel assessment={a} />
+      <MixupPanel assessment={a} students={students} onSave={onSave} busy={busy} />
       <GradeByQuestion assessment={a} students={students} onSave={onSave} busy={busy} />
       <div className="panel">
         <SectionTitle

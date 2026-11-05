@@ -146,8 +146,10 @@ export async function uprightPage(file: File): Promise<File> {
  * Nothing is cut off the graded page any more. The old split removed the top
  * 18% so grading never saw a name, and on a phone photo that 18% could hold the
  * first question -- grading then read it as blank. Since the 28 Sep decision the
- * AI may see names, so the page is graded whole (the grading prompt still tells
- * it to ignore and never report a name). See docs/student-data-flow.md section 4.
+ * AI may see names, so the page is graded whole (the grading prompt tells it
+ * not to use a name to group pages, and since 4 Nov 2026 to report the name it
+ * sees only in `nameSeen`, for the app's own check). See
+ * docs/student-data-flow.md section 4.
  *
  * Returns null for a non-image, or when the browser cannot do the work; the
  * caller then grades the original file and reads no name from it.

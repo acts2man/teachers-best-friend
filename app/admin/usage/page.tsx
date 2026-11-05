@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Coins, ScanLine, Target, Gauge, CalendarRange } from "lucide-react";
 import { getDailyUsage, getModelCosts, getPlatformStats, getCostBreakdown, supabaseAdmin, type UnitEconomicsRow } from "@/lib/supabase-admin";
 import { UsageChart } from "@/components/admin/usage-chart";
+import { spendHref } from "@/lib/ai-spend";
 import { Kpi } from "@/components/admin/kpi";
 import { fmtUsd, fmtInt, fmtCents, fmtPerScan, stageInfo, modelLabel } from "@/components/admin/format";
 
@@ -78,10 +79,10 @@ export default async function UsagePage() {
       <section className="panel ad-panel ad-section-gap">
         <div className="ad-panel-head">
           <div className="ad-panel-title"><h2>What generated the cost this month</h2><span className="ad-count">{workRows.length} kinds of work</span></div>
-          <span className="ad-meta">Averages shown in cents · hover for the exact figure</span>
+          <span className="ad-meta">Averages shown in cents · hover for the exact figure · <Link href={spendHref({})}>Every call, paged →</Link></span>
         </div>
         <p className="muted" style={{ fontSize: ".875rem", margin: "0 0 12px", maxWidth: "72ch" }}>
-          Every time the app asks the AI to do something, that is one <strong>call</strong>. A student worksheet scan is one call per student; reading an assignment is one call per assignment; a lesson plan is one call per lesson. Each row shows the kind of work, which model did it, and what it cost on average.
+          Click a kind of work for its items, with date, test and cost. Every time the app asks the AI to do something, that is one <strong>call</strong>. A student worksheet scan is one call per student; reading an assignment is one call per assignment; a lesson plan is one call per lesson. Each row shows the kind of work, which model did it, and what it cost on average.
         </p>
         {workRows.length === 0 ? (
           <div className="ad-empty"><ScanLine aria-hidden="true" /><span><strong>Nothing yet this month.</strong> Rows appear as teachers scan.</span></div>
@@ -95,7 +96,7 @@ export default async function UsagePage() {
                   const perCall = r.completed ? r.cost / r.completed : r.calls ? r.cost / r.calls : 0;
                   return (
                     <tr key={`${r.stage}|${r.model}`}>
-                      <td><strong>{info.label}</strong><div className="muted" style={{ fontSize: ".78rem" }}>{info.what}{info.unit ? ` · ${info.unit}` : ""}</div></td>
+                      <td><Link href={spendHref({ stage: r.stage })}><strong>{info.label}</strong></Link><div className="muted" style={{ fontSize: ".78rem" }}>{info.what}{info.unit ? ` · ${info.unit}` : ""}</div></td>
                       <td>{modelLabel(r.model)}<div className="mono muted" style={{ fontSize: ".72rem" }}>{r.model}</div></td>
                       <td className="num">{fmtInt(r.calls)}</td>
                       <td className="num">{r.failed ? <span className="pill pill-bad">{r.failed}</span> : <span className="muted">0</span>}</td>

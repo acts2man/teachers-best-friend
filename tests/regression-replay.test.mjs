@@ -415,6 +415,44 @@ test("a grouping case runs start->poll per batch, re-asks a short batch once, an
   assert.equal(result.metrics.answers.inGroup, 1);
 });
 
+// Review of #203: the name the grading pass reads on each pile is never
+// stored, here either. The admin route saves every step's state into
+// regression_run_cases.state, so no step's state may carry it.
+test("a regression run's saved state never holds the name the grading pass read", async () => {
+  const expected = ex.buildExpected("grouping", workspaceFor(), "a1", uploads);
+  let firstAnswer = true;
+  const { runner, svc } = runnerWith((req) => {
+    const groups = JSON.parse(req.text.match(/Groups, as page positions: (\[.*?\])\./)[1]);
+    const short = firstAnswer;
+    firstAnswer = false;
+    return {
+      groups: groups.map((g, i) => ({
+        group: g.group,
+        nameSeen: "Placeholder Readname " + i,
+        responses: (short && i === 1 ? ["q1"] : ["q1", "q2"]).map((questionId) => ({
+          questionId, answer: "1", verdict: "match", finalAnswer: "1",
+          region: { page: g.pages[0], x: 0.1, y: 0.1, width: 0.2, height: 0.1 }, errorType: "",
+        })),
+      })),
+    };
+  });
+  const c = { id: "c1", code: "case-abc123", teacherId: "t", assessmentLegacyId: "a1", kind: "grouping", expected };
+  const usage = { costUsd: 0, model: "", effort: "" };
+  let state = await runner.planCase(svc, c);
+  const saved = [];
+  for (let i = 0; i < 20; i++) {
+    const out = await runner.stepCase(svc, c, "key", state, usage);
+    state = out.state;
+    saved.push(JSON.stringify(out.state), JSON.stringify(out.result));
+    if (out.result.status !== "running") break;
+  }
+  assert.ok(saved.some((s) => s.includes('"graded":[{')), "the run did grade piles");
+  for (const s of saved) {
+    assert.doesNotMatch(s, /nameSeen/);
+    assert.doesNotMatch(s, /Readname/);
+  }
+});
+
 test("the runner never reuses a stored read", () => {
   const src = readFileSync("lib/regression/runner.ts", "utf8");
   assert.doesNotMatch(src, /reusablePriorResult|readReuseFingerprint/);
