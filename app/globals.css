@@ -1127,3 +1127,4 @@ math.math-inline{font-size:1.1em;math-style:normal}
 /* Overview at phone width: the getting-started note wraps its button onto its
    own line instead of squeezing the text into a one-word column. */
 @media(max-width:767px){.getting-started{flex-wrap:wrap}.getting-started>div{flex:1 1 calc(100% - 60px)}}
+.student-report-note{display:flex;flex-direction:column;gap:6px;font-size:14px}.student-report-note textarea{width:100%;border:1px solid var(--border,#d9e0dd);border-radius:8px;padding:8px 10px;font:inherit;resize:vertical;min-height:60px}

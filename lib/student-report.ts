@@ -1,26 +1,24 @@
 /**
  * The printable student report (docs/design/super-grids.md section 4; Ricky,
  * 22 Oct 2026: "something that we can generate a summary report from for
- * teacher, parent conferences" and IEP meetings). Built in the browser from
- * the saved workspace: no AI call, nothing sent anywhere, so printing changes
+ * teacher, parent conferences" and IEP meetings). Built in the browser from the
+ * saved workspace: no AI call, nothing sent anywhere, so printing changes
  * nothing in docs/student-data-flow.md.
  *
- * It holds only this student's data, plus the class's average per cluster as
- * a number -- never another student's name, score or answer (Ricky, 27 Oct
- * 2026). Free text the report prints (test titles, evidence sources, the
- * teacher's notes) goes through `redactOthers`, which takes out any other
- * student's name on the teacher's roster, so a test called after a student or
- * a note that mentions a classmate cannot carry one onto the page.
- *
- * Sections: the student super grid with a class-average column, the common
- * error types, the Standard Tracker for the standards the teacher picks, and
- * the teacher's notes -- off unless they tick "include my notes". Laid out to
- * print on one or two Letter or A4 pages; the browser's "Save as PDF" makes
- * the PDF.
+ * Privacy (review of #209). The report holds ONLY this student's own figures,
+ * plus a class average per cluster -- and that average is shown only where at
+ * least MIN_OTHER_ANSWERERS *other* students answered the cluster, so a small
+ * class can never let one classmate's score be read off the average. It carries
+ * NO teacher-typed free text that could name another student: no test titles,
+ * no evidence sources, no stored notes, no custom "Other: ..." error text. Only
+ * dates, fixed labels, academic-standard titles from the catalog, and the fixed
+ * error-type names (a typed "Other" shows as just "Other"). The one free-text
+ * field is a note the teacher types for THIS report, in their own words, if they
+ * choose. Laid out to print on one or two Letter or A4 pages.
  */
 import { gradingModeName, score4Text } from "./grading-mode";
 import { localDateString, schoolYearLabel } from "./school-year";
-import { classSuperGrid, studentSuperGrid, type Score, type SuperGridCell } from "./super-grid";
+import { classSuperGrid, clusterAnswererCounts, studentSuperGrid, type Score, type SuperGridCell } from "./super-grid";
 import { allStandards } from "./teacher-catalog";
 import { evidenceShown, standardHeadline } from "./teacher-workflow";
 import type { Classroom, Student, Workspace } from "./teacher-types";
@@ -30,8 +28,9 @@ export type ReportSections = { superGrid: boolean; tracker: boolean };
 export type StudentReportOptions = {
   /** Standard codes for the Standard Tracker, in the order given. */
   standards: string[];
-  /** The teacher's notes on the student. Off by default. */
-  includeNotes?: boolean;
+  /** A note the teacher types for this one report. The only free text on the
+   * page; blank by default. Never pulled from stored notes. */
+  note?: string;
   /** Both on by default. */
   sections?: Partial<ReportSections>;
   now?: Date;
@@ -41,34 +40,17 @@ export type StudentReportOptions = {
 export const MAX_TRACKER_STANDARDS = 8;
 /** Records shown per tracker standard: the latest ones. */
 const TRACKER_ROWS = 6;
+/** A class average is shown only with at least this many OTHER answerers, so it
+ * cannot reveal one classmate's score (privacy review of #209). */
+export const MIN_OTHER_ANSWERERS = 5;
 
 const ESC: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ESC[c]);
-const reEscape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/**
- * Takes every other student's name on the teacher's roster (every class) out
- * of a piece of free text: their full name, and each word of it two letters or
- * longer ("Mo", not an initial "R."), whole words, any case -- except words this student's own name
- * shares. Safe before pretty: a test titled "Will it float?" loses "Will" if a
- * classmate is called Will.
- */
-export function redactOthers(text: string, students: Pick<Student, "id" | "name">[], studentId: string): string {
-  const own = students.find((s) => s.id === studentId);
-  const ownWords = new Set((own?.name ?? "").toLowerCase().split(/[^\p{L}'’-]+/u).filter(Boolean));
-  const names = new Set<string>();
-  for (const s of students) {
-    if (s.id === studentId) continue;
-    const full = s.name.trim();
-    if (full) names.add(full);
-    for (const word of full.split(/[^\p{L}'’-]+/u)) if (word.length >= 2 && !ownWords.has(word.toLowerCase())) names.add(word);
-  }
-  let out = text;
-  for (const name of [...names].sort((a, b) => b.length - a.length)) {
-    if (own && name.toLowerCase() === own.name.trim().toLowerCase()) continue;
-    out = out.replace(new RegExp("(?<![\\p{L}])" + reEscape(name) + "(?![\\p{L}])", "giu"), "another student");
-  }
-  return out;
+/** A fixed error-type name, with any teacher-typed "Other: ..." detail dropped
+ * to just "Other" so no free text reaches the page (privacy review of #209). */
+export function fixedErrorName(name: string): string {
+  return /^other\b/i.test(name.trim()) ? "Other" : name;
 }
 
 const scoreText = (s: Score) => (s.score4 !== null ? score4Text(s.score4) + " / 4" : s.percent + "%");
@@ -92,16 +74,25 @@ export function studentReportHtml(
 ): { title: string; html: string } {
   const now = options.now ?? new Date();
   const sections: ReportSections = { superGrid: true, tracker: true, ...options.sections };
-  const clean = (text: string) => escapeHtml(redactOthers(text, w.students, student.id));
   const grid = studentSuperGrid(w, classroom, student.id, now);
   const classRows = new Map(classSuperGrid(w, classroom, now).rows.map((r) => [r.cluster.key, r]));
+  // How many OTHER students answered each cluster -- the class average is shown
+  // only when that is at least MIN_OTHER_ANSWERERS.
+  const answerers = clusterAnswererCounts(w, classroom, now);
+  const othersIn = (key: string) => {
+    const set = answerers.get(key);
+    if (!set) return 0;
+    return set.size - (set.has(student.id) ? 1 : 0);
+  };
   const catalog = allStandards(w);
   const title = student.name + " · Progress report";
   const parts: string[] = [];
 
+  // The student's own name (this is their report) and class facts only -- never
+  // the teacher-typed class name, which could carry another student's name.
   parts.push(
     `<header><h1>${escapeHtml(student.name)}</h1>` +
-      `<p>${clean(classroom.name)} · Grade ${escapeHtml(String(classroom.grade))} · ${schoolYearLabel(grid.schoolYear)} school year · as of ${localDateString(now)}</p>` +
+      `<p>Grade ${escapeHtml(String(classroom.grade))} · ${schoolYearLabel(grid.schoolYear)} school year · as of ${localDateString(now)}</p>` +
       `<p>From ${grid.tests} graded test${grid.tests === 1 ? "" : "s"} this school year · ${escapeHtml(gradingModeName(grid.mode))}</p></header>`,
   );
 
@@ -116,31 +107,36 @@ export function studentReportHtml(
       );
       for (const row of grid.rows) {
         const cls = classRows.get(row.cluster.key)?.overall;
+        const showClass = cls?.level && othersIn(row.cluster.key) >= MIN_OTHER_ANSWERERS;
         parts.push(
           `<tr><th scope="row">${escapeHtml(row.cluster.code ?? row.cluster.name ?? "Other standards")}` +
             (row.cluster.code && row.cluster.name ? `<small>${escapeHtml(row.cluster.name)}</small>` : "") +
             "</th>" +
             row.cells.map(cellHtml).join("") +
             `<td class="avg">${row.overall.level ? escapeHtml(scoreText(row.overall)) + `<span>${escapeHtml(row.overall.level.level)}</span>` : "—"}</td>` +
-            `<td class="avg">${cls?.level ? escapeHtml(scoreText(cls)) + `<span>${escapeHtml(cls.level.level)}</span>` : "—"}</td></tr>`,
+            `<td class="avg">${showClass && cls?.level ? escapeHtml(scoreText(cls)) + `<span>${escapeHtml(cls.level.level)}</span>` : "—"}</td></tr>`,
         );
       }
       parts.push("</tbody></table>");
       parts.push(
         '<p class="note">Each box: the score on every confirmed answer at that depth of knowledge, its level, and how many questions it rests on. ' +
-          "A box on one or two questions is a hint, not a measure. The class average counts every student now in the class, as one number per cluster.</p>",
+          `A box on one or two questions is a hint, not a measure. A class average is shown only where at least ${MIN_OTHER_ANSWERERS} other students answered that cluster, and is a single number &mdash; never another student&rsquo;s own result.</p>`,
       );
     }
     if (grid.noDok) parts.push(`<p class="note">${grid.noDok} answered question${grid.noDok === 1 ? " has" : "s have"} no depth-of-knowledge level and ${grid.noDok === 1 ? "is" : "are"} not in the grid.</p>`);
     parts.push("</section>");
 
+    // Error types: the fixed-list names only, a typed "Other: ..." as "Other".
     const errors = new Map<string, number>();
-    for (const row of grid.rows) for (const cell of row.cells) for (const e of cell.errorTypes) errors.set(e.name, (errors.get(e.name) ?? 0) + e.count);
+    for (const row of grid.rows) for (const cell of row.cells) for (const e of cell.errorTypes) {
+      const name = fixedErrorName(e.name);
+      errors.set(name, (errors.get(name) ?? 0) + e.count);
+    }
     const common = [...errors].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
     parts.push('<section class="errors"><h2>Common error types</h2>');
     parts.push(
       common.length
-        ? "<ul>" + common.map(([name, count]) => `<li><strong>${clean(name)}</strong> · ${count} answer${count === 1 ? "" : "s"}</li>`).join("") + "</ul>"
+        ? "<ul>" + common.map(([name, count]) => `<li><strong>${escapeHtml(name)}</strong> · ${count} answer${count === 1 ? "" : "s"}</li>`).join("") + "</ul>"
         : "<p>No error types tagged on these answers yet.</p>",
     );
     parts.push("</section>");
@@ -163,15 +159,15 @@ export function studentReportHtml(
           : head.kind === "sbg"
             ? head.text + " / 4 · " + head.level
             : head.percent + "% (latest three)" + (head.mixed ? " · 0–4 tests counted as score × 25" : "");
-      parts.push(`<div class="std"><h3>${escapeHtml(code)}${std?.title ? " — " + clean(std.title) : ""}</h3><p class="headline">${escapeHtml(headline)}</p>`);
+      // The standard's title is academic-catalog text, not teacher free text.
+      parts.push(`<div class="std"><h3>${escapeHtml(code)}${std?.title ? " — " + escapeHtml(std.title) : ""}</h3><p class="headline">${escapeHtml(headline)}</p>`);
       if (records.length) {
-        parts.push("<table><thead><tr><th>Date</th><th>From</th><th>Score</th></tr></thead><tbody>");
+        // Date and score only: the source/test name is teacher free text and is
+        // left off the page (privacy review of #209).
+        parts.push("<table><thead><tr><th>Date</th><th>Score</th></tr></thead><tbody>");
         for (const e of records) {
-          const shown = evidenceShown(w, student.id, e);
-          const test = e.assessmentId ? w.assessments.find((a) => a.id === e.assessmentId) : undefined;
-          parts.push(
-            `<tr><td>${escapeHtml(e.date)}</td><td>${clean(test?.title ?? e.source)}</td><td>${escapeHtml(shown.sbg ? shown.text : shown.percent + "%")}</td></tr>`,
-          );
+          const shown = evidenceScore(w, student.id, e);
+          parts.push(`<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(shown)}</td></tr>`);
         }
         parts.push("</tbody></table>");
       }
@@ -180,8 +176,9 @@ export function studentReportHtml(
     parts.push("</section>");
   }
 
-  if (options.includeNotes && student.notes.trim())
-    parts.push(`<section class="notes"><h2>Teacher&rsquo;s notes</h2><p>${clean(student.notes.trim())}</p></section>`);
+  // The only free text on the page: a note the teacher typed for this report.
+  const note = (options.note ?? "").trim();
+  if (note) parts.push(`<section class="report-note"><h2>Notes for this report</h2><p>${escapeHtml(note)}</p></section>`);
 
   parts.push(
     "<footer>A progress summary from classroom tests, made by the teacher with A Teacher&rsquo;s Best Friend. " +
@@ -192,6 +189,16 @@ export function studentReportHtml(
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${REPORT_CSS}</style></head>` +
     `<body>${parts.join("")}</body></html>`;
   return { title, html };
+}
+
+/** One evidence record's score as shown, in the test's own mode (no source). */
+function evidenceScore(
+  w: Pick<Workspace, "assessments">,
+  studentId: string,
+  e: Pick<Student["evidence"][number], "score" | "standard" | "assessmentId">,
+): string {
+  const shown = evidenceShown(w, studentId, e);
+  return shown.sbg ? shown.text : shown.percent + "%";
 }
 
 const REPORT_CSS = [
@@ -208,6 +215,6 @@ const REPORT_CSS = [
   ".lv-red{background:#fde4e2}.lv-yellow{background:#fdf3d0}.lv-blue{background:#e0ecfb}.lv-green{background:#dff3e4}.none{color:#6b7a76;background:#f4f5f4}",
   ".avg{background:#fafbfa}.note{color:#4a5a56;font-size:10px;margin:4px 0}",
   ".errors ul{margin:0;padding-left:18px;columns:2}.std{break-inside:avoid;page-break-inside:avoid}.headline{margin:0 0 4px}",
-  ".notes p{white-space:pre-wrap}",
+  ".report-note p{white-space:pre-wrap}",
   "footer{margin-top:14px;padding-top:6px;border-top:1px solid #b9c4c0;font-size:9px;color:#4a5a56}",
 ].join("");
