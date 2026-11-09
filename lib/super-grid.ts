@@ -151,18 +151,46 @@ function onList(listed: string[], errorType: string): boolean {
   return listed.includes(errorType) || (listed.includes("Other") && errorType.startsWith("Other: "));
 }
 
+type GridWorkspace = Pick<Workspace, "assessments" | "students" | "customStandards" | "sharedStandards" | "settings">;
+
 /** The class super grid for one class (see the top of this file). */
-export function classSuperGrid(
-  w: Pick<Workspace, "assessments" | "students" | "customStandards" | "sharedStandards" | "settings">,
+export function classSuperGrid(w: GridWorkspace, classroom: Pick<Classroom, "id" | "gradingMode">, now: Date = new Date()): SuperGrid {
+  const roster = new Set(w.students.filter((s) => s.classId === classroom.id).map((s) => s.id));
+  return superGrid(w, classroom, roster, false, now);
+}
+
+/**
+ * One student's super grid (design 4; Ricky, 22 Oct 2026): the class grid's
+ * rows, columns and numbers, from this student's confirmed answers only, on
+ * their class's tests this school year, in their class's grading mode. A
+ * question counts only where the student has a confirmed answer to it, so
+ * "questions", the 30-day split and "tests" are theirs, not the class's.
+ */
+export function studentSuperGrid(
+  w: GridWorkspace,
   classroom: Pick<Classroom, "id" | "gradingMode">,
+  studentId: string,
   now: Date = new Date(),
+): SuperGrid {
+  return superGrid(w, classroom, new Set([studentId]), true, now);
+}
+
+function superGrid(
+  w: GridWorkspace,
+  classroom: Pick<Classroom, "id" | "gradingMode">,
+  roster: Set<string>,
+  answeredOnly: boolean,
+  now: Date,
 ): SuperGrid {
   const mode = classGradingMode(w, classroom);
   const schoolYear = teacherSchoolYear(w, now);
-  const roster = new Set(w.students.filter((s) => s.classId === classroom.id).map((s) => s.id));
   const catalog = allStandards(w);
   const tests = w.assessments.filter(
-    (a) => assessmentInClass(a, classroom.id) && givenInSchoolYear(a, schoolYear) && a.elaArea !== "writing",
+    (a) =>
+      assessmentInClass(a, classroom.id) &&
+      givenInSchoolYear(a, schoolYear) &&
+      a.elaArea !== "writing" &&
+      (!answeredOnly || a.responses.some((r) => r.verified && roster.has(r.studentId))),
   );
   const findStandard = (a: Assessment, code: string) =>
     catalog.find((s) => s.code === code && s.framework === a.framework) ?? catalog.find((s) => s.code === code) ?? null;
@@ -174,14 +202,15 @@ export function classSuperGrid(
     for (const q of a.questions) {
       if (q.excluded || !q.standard || (isSecondChoice(q) && !q.verified)) continue;
       const dok = q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
+      const answers = a.responses
+        .filter((r) => r.questionId === q.id && r.verified && roster.has(r.studentId))
+        .map((r) => ({ match: responseMatch(r), errorType: (r.errorType || "").trim(), listed }));
+      if (answeredOnly && !answers.length) continue;
       if (dok === null) {
         noDok++;
         continue;
       }
       const standard = findStandard(a, q.standard);
-      const answers = a.responses
-        .filter((r) => r.questionId === q.id && r.verified && roster.has(r.studentId))
-        .map((r) => ({ match: responseMatch(r), errorType: (r.errorType || "").trim(), listed }));
       asked.push({ a, q, code: q.standard, dok, answers, cluster: clusterOf(q.standard, standard), title: standard?.title ?? "" });
     }
   }
