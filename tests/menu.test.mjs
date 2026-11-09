@@ -87,8 +87,18 @@ test("the save keeps it: the settings schema names lastWorkedOn (z.object drops 
   const { settingsSchema } = bundle("lib/settings-schema.ts");
   const lastWorkedOn = { classId: "c1", assessmentId: "t1", at: "2026-11-05T12:00:00.000Z" };
   const parsed = settingsSchema.parse({ teacherName: "", school: "", reduceMotion: false, lastWorkedOn });
-  assert.deepEqual(parsed.lastWorkedOn, lastWorkedOn);
+  assert.deepEqual(parsed.lastWorkedOn, lastWorkedOn, "a listed key survives the save schema");
+  // An UNLISTED key is dropped -- which is exactly why lastWorkedOn has to be
+  // named (the bug this guards against: a new setting silently lost on save).
+  const stripped = settingsSchema.parse({ teacherName: "", school: "", reduceMotion: false, somethingNew: 1 });
+  assert.ok(!("somethingNew" in stripped), "z.object strips an unlisted settings key");
+  // A bad lastWorkedOn shape is rejected, not silently stored.
+  assert.throws(() => settingsSchema.parse({ teacherName: "", school: "", reduceMotion: false, lastWorkedOn: { classId: 1 } }));
+  // The route uses the shared schema, and the Workspace type declares the key,
+  // so the two stay in lockstep.
   assert.match(readFileSync("app/api/workspace/route.ts", "utf8"), /settings: settingsSchema,/);
+  assert.match(readFileSync("lib/teacher-types.ts", "utf8"), /lastWorkedOn\?: \{ classId: string; assessmentId: string; at: string \}/);
+  assert.match(readFileSync("lib/settings-schema.ts", "utf8"), /lastWorkedOn:\s*z/);
   const home = readFileSync("components/teacher-home.tsx", "utf8");
   assert.match(home, /resumeTarget\(w, onDevice\)/);
   assert.match(home, /PICK UP WHERE YOU LEFT OFF/);
