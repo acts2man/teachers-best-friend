@@ -10,10 +10,11 @@ import { Action, Modal } from "./teacher-shared";
 
 /**
  * The printable student report (lib/student-report.ts) for parent conferences
- * and IEP meetings: the teacher picks the Standard Tracker standards and
- * whether to include their notes (off by default), sees the page as it will
- * print, and prints it or saves it as a PDF from the browser's print dialog.
- * Built in the browser; nothing is sent anywhere.
+ * and IEP meetings: the teacher picks the Standard Tracker standards, may type a
+ * note for this one report, sees the page as it will print, and prints it or
+ * saves it as a PDF. Built in the browser; nothing is sent anywhere. The report
+ * carries no other student's data and no stored free text (privacy review of
+ * #209) -- the note box is the only free text, and the teacher fills it here.
  */
 export function StudentReportDialog({
   w,
@@ -34,11 +35,12 @@ export function StudentReportDialog({
 }) {
   const tracked = trackedStandards(student);
   const [picked, setPicked] = useState<{ for: string; codes: string[] } | null>(null);
-  const [includeNotes, setIncludeNotes] = useState(false);
+  const [note, setNote] = useState<{ for: string; text: string }>({ for: student.id, text: "" });
   // Derived per student: the latest standards with evidence, until the teacher picks.
   const codes = picked && picked.for === student.id ? picked.codes : tracked.slice(0, MAX_TRACKER_STANDARDS);
+  const noteText = note.for === student.id ? note.text : "";
   const showTracker = sections?.tracker !== false;
-  const report = studentReportHtml(w, classroom, student, { standards: codes, includeNotes, sections });
+  const report = studentReportHtml(w, classroom, student, { standards: codes, note: noteText, sections });
   const titles = new Map(allStandards(w).map((s) => [s.code, s.title]));
   const toggle = (code: string, on: boolean) =>
     setPicked({ for: student.id, codes: on ? [...codes, code].slice(0, MAX_TRACKER_STANDARDS) : codes.filter((c) => c !== code) });
@@ -48,7 +50,7 @@ export function StudentReportDialog({
       onClose={onClose}
       wide
       title={title + " · " + student.name}
-      description="Only this student's results, with the class average per cluster as a number. Print it, or choose Save as PDF in the print window."
+      description="Only this student's own results. A class average shows only where enough other students answered. Print it, or choose Save as PDF in the print window."
     >
       <div className="student-report-options">
         {showTracker && (
@@ -74,9 +76,14 @@ export function StudentReportDialog({
             )}
           </fieldset>
         )}
-        <label className="checkbox-label student-report-notes">
-          <Checkbox checked={includeNotes} onCheckedChange={(v) => setIncludeNotes(v === true)} />
-          <span>Include my notes on {student.name}</span>
+        <label className="student-report-note">
+          <span>Notes for this report (optional) — shown only on this printout</span>
+          <textarea
+            rows={3}
+            value={noteText}
+            placeholder="Type a note for this conference. Nothing you&rsquo;ve saved elsewhere is included."
+            onChange={(e) => setNote({ for: student.id, text: e.target.value })}
+          />
         </label>
       </div>
       <iframe className="student-report-preview" title="Report preview" srcDoc={report.html} sandbox="" />

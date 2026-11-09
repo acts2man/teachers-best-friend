@@ -1,6 +1,6 @@
 // The printable student report (Ricky, 22 and 27 Oct 2026), at 390x844 and
 // 1366x768: "Student report" on a student's page opens a dialog with the
-// Standard Tracker standards to pick and "Include my notes" unticked, a
+// Standard Tracker standards to pick, a report-only note box, a
 // preview, and "Print or save as PDF". The document it prints holds no other
 // student's name, and as a PDF it is one or two pages. Demo data with
 // placeholder names; /api/* mocked; nothing is requested from the AI.
@@ -24,7 +24,9 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
   const w = JSON.parse(readFileSync(join(OUT, "fixture.json"), "utf8"));
   w.classes = w.classes.map((c) => ({ ...c, demo: false }));
   const me = w.students.find((s) => s.id === "s1");
-  me.notes = "Private note for the report check.";
+  me.notes = "Stored note mentioning " + (w.students.find((s) => s.id !== "s1")?.name || "a classmate") + " PRIVATE-STORED.";
+  // Plant every classmate's name in a test title so we prove it never prints.
+  for (const a of w.assessments) a.title = "Retake for " + w.students.filter((s) => s.id !== "s1").map((s) => s.name).join(", ");
   const others = w.students.filter((s) => s.id !== "s1").flatMap((s) => [s.name, ...s.name.split(/[^\p{L}'’-]+/u).filter((x) => x.length >= 2)]);
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const requests = [];
@@ -54,7 +56,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     await page.getByRole("button", { name: "Student report" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.waitFor({ timeout: 8000 });
-    check((await dialog.getByRole("checkbox", { name: /Include my notes/ }).getAttribute("aria-checked")) === "false", `${tag}: "Include my notes" starts unticked`);
+    check((await dialog.locator("textarea").count()) > 0, `${tag}: a report-only note box is offered`);
     const picks = await dialog.locator(".student-report-standards [role=checkbox]").count();
     check(picks > 0, `${tag}: Standard Tracker standards to pick (${picks})`);
     const preview = page.frameLocator(".student-report-preview");
@@ -70,7 +72,15 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
     check(printed.includes(me.name), `${tag}: the printed report is ${me.name}'s`);
     const leaked = others.filter((n) => new RegExp("(?<![\\p{L}])" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\p{L}])", "u").test(printed));
     check(leaked.length === 0, `${tag}: no other student's name in the printed HTML${leaked.length ? " -- found " + leaked.join(", ") : ""}`);
-    check(!printed.includes("Private note"), `${tag}: no notes unless ticked`);
+    check(!printed.includes("PRIVATE-STORED") && !printed.includes("Retake for"), `${tag}: no stored note and no test title in the printout`);
+    // A typed note appears; nothing stored does.
+    await dialog.locator("textarea").fill("Conference note typed here.");
+    await page.waitForTimeout(150);
+    page.evaluate(() => (window.__printed = []));
+    await dialog.getByRole("button", { name: "Print or save as PDF" }).click();
+    await page.waitForFunction(() => window.__printed.length > 0, null, { timeout: 8000 });
+    const withNote = (await page.evaluate(() => window.__printed[0])) || "";
+    check(withNote.includes("Conference note typed here."), `${tag}: a typed note appears`);
     if (W === 1366) {
       writeFileSync(join(OUT, "student-report.html"), printed);
       const pdfPage = await ctx.newPage();

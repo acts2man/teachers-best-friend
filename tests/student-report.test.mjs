@@ -1,11 +1,13 @@
-// The printable student report (docs/design/super-grids.md section 4; Ricky,
-// 22 and 27 Oct 2026). Proven when the report, built in the browser with no
-// AI call, holds this student's super grid with the class's average per
-// cluster as a number, their common error types and the Standard Tracker for
-// the standards the teacher picked -- and NO other student's name, score or
-// answer, even where a test title, an evidence source or the teacher's notes
-// name a classmate; and the teacher's notes are left out unless asked for.
-// Made-up names and data only.
+// The printable student report (docs/design/super-grids.md section 4; Ricky
+// 22/27 Oct, privacy review of #209). Proven when the report, built in the
+// browser with no AI call, holds ONLY this student's own figures plus a class
+// average per cluster that is shown only where at least 5 OTHER students
+// answered -- and carries NO teacher-typed free text that could name a
+// classmate (test titles, evidence sources, stored notes, custom "Other"
+// text), even when those fields are full of classmates' names (accented,
+// hyphenated, curly-apostrophe, initialled, a former student, a common word).
+// The one free-text field is a note the teacher types for this report. Made-up
+// names and data only.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,62 +20,98 @@ function bundle(path) {
   return m.exports;
 }
 const R = bundle("lib/student-report.ts");
-const [E1, E2] = bundle("lib/error-types.ts").errorTypesFor("Math");
+const [E1] = bundle("lib/error-types.ts").errorTypesFor("Math");
 
 const NOW = new Date(2026, 9, 27, 12);
 const q = (id, standard, dok) => ({ id, number: 1, text: "", passage: "", answer: "", standard, secondary: "", skill: "", dok, alignment: 90, confidence: 90, level: "", reasoning: "", verified: true, excluded: false });
 const r = (studentId, questionId, match, extra = {}) => ({ id: studentId + questionId, studentId, questionId, answer: studentId + " wrote ANSWER-" + studentId, correct: match === 100, match, misconception: "", confidence: 90, verified: true, ...extra });
 const base = { classId: "c1", subject: "Math", grade: 7, framework: "California", createdAt: "2026-09-01T12:00:00Z", status: "Ready", source: "manual", targetStandards: [], answerKeyVerified: true, uploadIds: [] };
-const t1 = { ...base, id: "t1", title: "Zed Quill's retake on ratios", dateGiven: "2026-10-20",
+
+// Classmates with names that trip simple redaction, planted everywhere a
+// classmate's name could leak: a test title, evidence sources, stored notes.
+const TRICKY = ["Zoé Bär", "Al-Rashid", "O’Brien", "O'Brien", "J. Kim", "Will May", "Former Student"];
+const t1 = {
+  ...base, id: "t1", title: "Retake for " + TRICKY.join(", "), dateGiven: "2026-10-20",
   questions: [q("a", "7.RP.1", 1), q("b", "7.RP.2", 2), q("c", "7.EE.1", 3)],
   responses: [
-    r("s1", "a", 100), r("s1", "b", 50, { errorType: E1 }), r("s1", "c", 0, { errorType: E2 }),
-    r("s2", "a", 13), r("s2", "b", 13, { errorType: E2 }), r("s2", "c", 13),
-    r("s3", "a", 41), r("s3", "b", 41), r("s3", "c", 41),
-  ] };
+    r("s1", "a", 100), r("s1", "b", 50, { errorType: E1 }), r("s1", "c", 0, { errorType: "Other: SECRET-OTHER-TEXT" }),
+    // Six other students answer the 7.RP cluster (q a); none answer 7.EE.
+    ...["s2", "s3", "s4", "s5", "s6", "s7"].map((id) => r(id, "a", 20)),
+  ],
+};
 const students = [
-  { id: "s1", classId: "c1", name: "Ana Bell", color: "#000", notes: "Ana works best next to Zed Quill. Mo Rivers distracts her.",
+  { id: "s1", classId: "c1", name: "Ana Bell", color: "#000",
+    notes: "Ana sits by " + TRICKY.join(" and ") + ". PRIVATE-NOTE.",
     evidence: [
-      { id: "e1", standard: "7.RP.1", score: 100, date: "2026-10-20", source: "Ratios quiz", assessmentId: "t1" },
-      { id: "e2", standard: "7.RP.1", score: 70, date: "2026-10-10", source: "Partner work with Mo" },
-      { id: "e3", standard: "7.EE.1", score: 0, date: "2026-10-20", source: "Ratios quiz", assessmentId: "t1" },
+      { id: "e1", standard: "7.RP.1", score: 100, date: "2026-10-20", source: "Quiz with " + TRICKY[0], assessmentId: "t1" },
+      { id: "e2", standard: "7.RP.1", score: 70, date: "2026-10-10", source: "Partner work with " + TRICKY[2] },
+      { id: "e3", standard: "7.EE.1", score: 0, date: "2026-10-20", source: TRICKY[5] + " helped", assessmentId: "t1" },
     ] },
-  { id: "s2", classId: "c1", name: "Zed Quill", color: "#000", notes: "PRIVATE-ZED", evidence: [{ id: "e9", standard: "7.RP.1", score: 13, date: "2026-10-20", source: "Exit ticket" }] },
-  { id: "s3", classId: "c1", name: "Mo Rivers", color: "#000", notes: "", evidence: [] },
-  { id: "s4", classId: "c2", name: "Pat Lowe", color: "#000", notes: "", evidence: [] },
+  ...["s2", "s3", "s4", "s5", "s6", "s7"].map((id, i) => ({ id, classId: "c1", name: TRICKY[i] ?? "Pat Lowe", color: "#000", notes: "", evidence: [] })),
 ];
 const w = { students, assessments: [t1], customStandards: [], sharedStandards: [], settings: { teacherName: "", school: "", reduceMotion: false } };
-const classroom = { id: "c1", name: "Period 2 Math", grade: 7, gradingMode: "percentage" };
+const classroom = { id: "c1", name: "Period 2 " + TRICKY[0], grade: 7, gradingMode: "percentage" };
 const build = (opts = {}) => R.studentReportHtml(w, classroom, students[0], { standards: ["7.RP.1", "7.EE.1"], now: NOW, ...opts }).html;
-const OTHERS = ["Zed", "Quill", "Mo Rivers", "Rivers", "Pat", "Lowe", "PRIVATE-ZED", "ANSWER-s2", "ANSWER-s3", "s2 wrote", "13%", "41%"];
 
-test("no other student's name, score or answer is in the printed HTML", () => {
-  for (const html of [build(), build({ includeNotes: true })]) {
-    for (const bad of OTHERS) assert.ok(!html.includes(bad), "must not print " + JSON.stringify(bad));
-    assert.ok(!/\bMo\b/.test(html), "not even a first name");
-    assert.ok(html.includes("Ana Bell"));
-  }
-  // A test named after a classmate prints with the name taken out.
-  assert.match(build(), /another student&#39;s retake on ratios/);
+test("no classmate's name, nor any stored free text, is in the printed HTML", () => {
+  const html = build();
+  for (const name of TRICKY) assert.ok(!html.includes(name), "must not print classmate name " + JSON.stringify(name));
+  // The distinctive parts, too.
+  for (const token of ["Bär", "Al-Rashid", "Brien", "Kim", "SECRET-OTHER-TEXT", "PRIVATE-NOTE", "ANSWER-s2", "Retake for", "Partner work", "Quiz with", "Period 2"])
+    assert.ok(!html.includes(token), "must not print " + JSON.stringify(token));
+  assert.ok(html.includes("Ana Bell"), "the student's own name is shown");
+  assert.ok(!/<th>From<\/th>/.test(html), "the tracker drops the teacher-typed source column");
 });
 
-test("the teacher's notes are off by default, and redacted when included", () => {
-  assert.ok(!build().includes("works best"), "off unless asked for");
-  const html = build({ includeNotes: true });
-  assert.match(html, /Ana works best next to another student\. another student distracts her\./);
+test("a typed note is the only free text, and appears verbatim (escaped)", () => {
+  assert.ok(!build().includes("Notes for this report"), "no note section when the box is empty");
+  const html = build({ note: "Meet Tue; focus on ratios <3" });
+  assert.match(html, /<h2>Notes for this report<\/h2><p>Meet Tue; focus on ratios &lt;3<\/p>/);
 });
 
-test("it holds their super grid with a class average per cluster, their error types, and the tracker for the chosen standards", () => {
+test("a custom \"Other: ...\" error shows as just \"Other\" -- no typed detail", () => {
+  const html = build();
+  assert.match(html, /<strong>Other<\/strong>/);
+  assert.ok(!html.includes("SECRET-OTHER-TEXT"));
+  assert.equal(R.fixedErrorName("Other: anything a teacher typed"), "Other");
+  assert.equal(R.fixedErrorName("Setup/Method Error"), "Setup/Method Error");
+});
+
+test("a class average shows only where at least 5 OTHER students answered the cluster", () => {
+  const html = build();
+  // 7.RP: six others answered q a -> the class average is a number.
+  const rp = html.slice(html.indexOf(">7.RP<"), html.indexOf("</tr>", html.indexOf(">7.RP<")));
+  assert.match(rp, /<td class="avg">\d+%<span>[^<]+<\/span><\/td><td class="avg">\d+%<span>[^<]+<\/span><\/td>/, "this student's own + the class average, both numbers");
+  // 7.EE: no other student answered -> the class-average cell is blank.
+  const ee = html.slice(html.indexOf(">7.EE<"), html.indexOf("</tr>", html.indexOf(">7.EE<")));
+  const cells = ee.match(/<td class="avg">[^<]*/g) || [];
+  assert.equal(cells.length, 2);
+  assert.match(cells[0], /\d+%/, "this student's own 7.EE average still shows");
+  assert.equal(cells[1].replace('<td class="avg">', ""), "—", "no class average with too few other answerers");
+});
+
+test("a class of two never shows a class average (one classmate could be read off it)", () => {
+  const small = {
+    students: [
+      { id: "a", classId: "k", name: "Ana Bell", color: "#000", notes: "", evidence: [] },
+      { id: "b", classId: "k", name: "Bo Cole", color: "#000", notes: "", evidence: [] },
+    ],
+    assessments: [{ ...base, id: "tk", classId: "k", title: "Bo Cole quiz", dateGiven: "2026-10-20",
+      questions: [q("a", "7.RP.1", 1)], responses: [r("a", "a", 90), r("b", "a", 10)] }],
+    customStandards: [], sharedStandards: [], settings: { teacherName: "", school: "", reduceMotion: false },
+  };
+  const html = R.studentReportHtml(small, { id: "k", name: "K", grade: 7, gradingMode: "percentage" }, small.students[0], { standards: [], now: NOW }).html;
+  const rp = html.slice(html.indexOf(">7.RP<"), html.indexOf("</tr>", html.indexOf(">7.RP<")));
+  const cells = rp.match(/<td class="avg">[^<]*/g) || [];
+  assert.equal(cells[1].replace('<td class="avg">', ""), "—", "class average hidden");
+  assert.ok(!html.includes("Bo Cole"), "the classmate's name (and the test named after them) never appears");
+});
+
+test("the academic-standard title (catalog text) is kept, and only the chosen standards appear", () => {
   const html = build();
   assert.match(html, /<h2>Student super grid<\/h2>/);
-  assert.match(html, /Class average/);
-  // 7.RP: Ana 100 and 50 -> 75%; the class (Ana, s2, s3): 100 50 13 13 41 41 -> 258/6 = 43%.
-  const rp = html.slice(html.indexOf(">7.RP<"), html.indexOf("</tr>", html.indexOf(">7.RP<")));
-  assert.match(rp, /<td class="avg">75%<span>Approaching<\/span><\/td><td class="avg">43%<span>Beginning<\/span><\/td>/);
-  assert.match(html, /<h2>Common error types<\/h2><ul><li><strong>[^<]+<\/strong> · 1 answer<\/li><li><strong>[^<]+<\/strong> · 1 answer<\/li><\/ul>/, "Ana's two, not s2's");
   assert.match(html, /<h2>Standard Tracker<\/h2><div class="std"><h3>7\.RP\.1/);
   assert.match(html, /<h3>7\.EE\.1/);
-  assert.match(html, /Partner work with another student/, "an evidence source naming a classmate is redacted");
   assert.doesNotMatch(build({ standards: ["7.EE.1"] }), /<h3>7\.RP\.1/, "only the chosen standards");
   assert.match(html, /not an assessment of disability/);
 });
@@ -87,21 +125,18 @@ test("each part can be printed on its own (the two reports on Student Reports)",
   assert.doesNotMatch(trackerOnly, /Student super grid|Class average/);
 });
 
-test("redactOthers keeps the student's own name, even a word a classmate shares", () => {
-  const roster = [{ id: "a", name: "Ana Bell" }, { id: "b", name: "Ana Cruz" }];
-  assert.equal(R.redactOthers("Ana Bell and Ana Cruz", roster, "a"), "Ana Bell and another student");
-  assert.equal(R.redactOthers("<b>", roster, "a"), "<b>", "redaction does not escape; escaping is separate");
-});
-
-test("it prints on one or two pages and is made in the browser: a Student report button, notes unticked, no request", () => {
+test("it prints on one or two pages, is made in the browser, and the dialog offers a report-only note box", () => {
   const html = build();
   assert.match(html, /@page\{size:auto;margin:12mm\}/);
   assert.match(html, /break-inside:avoid/);
   const page = readFileSync("components/teacher-insights.tsx", "utf8");
   assert.match(page, /onClick=\{\(\) => setReporting\(true\)\}>\s*<FileText size=\{16\} \/>\s*Student report/);
   const dialog = readFileSync("components/student-report.tsx", "utf8");
-  assert.match(dialog, /const \[includeNotes, setIncludeNotes\] = useState\(false\)/);
+  assert.match(dialog, /Notes for this report \(optional\)/);
+  assert.doesNotMatch(dialog, /includeNotes/, "the stored-notes toggle is gone");
   assert.match(dialog, /Print or save as PDF/);
   for (const f of ["lib/student-report.ts", "components/student-report.tsx"])
     assert.doesNotMatch(readFileSync(f, "utf8"), /fetch\(|\/api\/|callAi/, f + ": nothing sent anywhere");
+  // No stored free text is ever read into the report.
+  assert.doesNotMatch(readFileSync("lib/student-report.ts", "utf8"), /\.notes\b|\.source\b|redactOthers/, "no stored notes, sources, or redaction (catalog titles are allowed)");
 });

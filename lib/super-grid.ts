@@ -166,6 +166,39 @@ export function classSuperGrid(w: GridWorkspace, classroom: Pick<Classroom, "id"
 }
 
 /**
+ * How many DISTINCT students on the class roster have a confirmed answer that
+ * counts toward each cluster's average (the same filters the grid uses: in the
+ * school year, not writing, a standard, a DOK level, not excluded, not an
+ * unchecked second choice, verified). Keyed by cluster key. The student report
+ * uses it to hide a class average that rests on too few OTHER students to be
+ * anonymous (privacy review of #209).
+ */
+export function clusterAnswererCounts(
+  w: GridWorkspace,
+  classroom: Pick<Classroom, "id">,
+  now: Date = new Date(),
+): Map<string, Set<string>> {
+  const roster = new Set(w.students.filter((s) => s.classId === classroom.id).map((s) => s.id));
+  const schoolYear = teacherSchoolYear(w, now);
+  const catalog = allStandards(w);
+  const byCluster = new Map<string, Set<string>>();
+  for (const a of w.assessments) {
+    if (!assessmentInClass(a, classroom.id) || !givenInSchoolYear(a, schoolYear) || a.elaArea === "writing") continue;
+    for (const q of a.questions) {
+      if (q.excluded || !q.standard || (isSecondChoice(q) && !q.verified)) continue;
+      const dok = q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
+      if (dok === null) continue;
+      const standard = catalog.find((x) => x.code === q.standard && x.framework === a.framework) ?? catalog.find((x) => x.code === q.standard) ?? null;
+      const key = clusterOf(q.standard, standard).key;
+      let set = byCluster.get(key);
+      if (!set) byCluster.set(key, (set = new Set()));
+      for (const r of a.responses) if (r.questionId === q.id && r.verified && roster.has(r.studentId)) set.add(r.studentId);
+    }
+  }
+  return byCluster;
+}
+
+/**
  * One student's super grid (design 4; Ricky, 22 Oct 2026): the class grid's
  * rows, columns and numbers, from this student's confirmed answers only, on
  * their class's tests this school year, in their class's grading mode. A
