@@ -77,14 +77,38 @@ test("picking a test for a class graded the same way links it and opens Student 
 
 const q = (n, over = {}) => ({ id: "q" + n, number: n, text: "Q" + n, answer: "4", standard: "7.RP.A.1", verified: true, excluded: false, points: 1, ...over });
 
-test("a ready test lands on Student work; one with questions left lands on their review", () => {
+test("the library holds only a confirmed key with nothing left to review (Ricky, 5 Nov 2026)", () => {
   const ready = test_("r", { questions: [q(1), q(2)], targetStandards: ["7.RP.A.1"] });
-  assert.equal(L.librarySetupLeft(ready), 0);
+  assert.equal(L.questionsToReview(ready), 0);
+  assert.equal(L.inLibrary(ready), true);
   assert.equal(L.libraryLandingUrl(ready), "/assessments?id=r&tab=responses&from=library");
+  // A confirmed key whose questions are not all reviewed KEEPS its key but
+  // stays out of the library until the review is finished.
   const left = test_("s", { questions: [q(1), q(2, { verified: false }), q(3, { standard: "" })], targetStandards: ["7.RP.A.1"] });
-  assert.equal(L.inLibrary(left), true, "a confirmed key is in the library either way");
-  assert.equal(L.librarySetupLeft(left), 2);
-  assert.equal(L.libraryLandingUrl(left), "/assessments?id=s&tab=questions", "never a scan that is switched off");
+  assert.equal(L.keyConfirmed(left), true, "the key stays confirmed");
+  assert.equal(L.questionsToReview(left), 2);
+  assert.equal(L.inLibrary(left), false, "but it is not in the library");
+  assert.equal(L.libraryLandingUrl(left), "/assessments?id=s&tab=questions", "picking would land on the review, not a scan");
+  // So libraryCourses leaves it out.
+  const courses = L.libraryCourses(ws([ready, left]));
+  const titles = courses.flatMap((c) => c.tests.map((t) => t.title));
+  assert.deepEqual(titles, ["Test r"], "only the fully-reviewed test is listed");
+});
+
+test("a question with no answer yet also counts as to review, and a key with none confirmed is never in the library", () => {
+  assert.equal(L.questionsToReview(test_("x", { questions: [q(1), q(2, { answer: "" })] })), 1);
+  assert.equal(L.inLibrary(test_("y", { questions: [q(1, { verified: false })], answerKeyVerified: false })), false);
+  assert.equal(L.inLibrary(test_("z", { questions: [q(1)] })), true, "confirmed + all reviewed");
+});
+
+test("the answer key cannot be confirmed until every question is reviewed", () => {
+  const key = fs.readFileSync("components/teacher-answer-key.tsx", "utf8");
+  assert.match(key, /const toReview = questionsToReview\(a\)/);
+  assert.match(key, /if \(unsettled\.length \|\| toReview > 0\) return;/, "confirm() is blocked");
+  assert.match(key, /disabled=\{working \|\| checking \|\| !complete \|\| unsettled\.length > 0 \|\| toReview > 0\}/, "the button is disabled");
+  // The Assessments view surfaces the count on a confirmed-but-unreviewed test.
+  const view = fs.readFileSync("components/teacher-assessments.tsx", "utf8");
+  assert.match(view, /"Key confirmed · " \+ questionsToReview\(item\) \+ " to review"/);
 });
 
 test("a class graded the other way cannot pick it", () => {

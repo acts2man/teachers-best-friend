@@ -14,18 +14,36 @@
  */
 import { classGradingMode, gradingModeOf } from "./grading-mode";
 import { assessmentInClass, shareAssessmentWith } from "./teacher-classes";
-import { activeQuestions, preparationGaps } from "./teacher-workflow";
+import { activeQuestions } from "./teacher-workflow";
 import type { Assessment, Classroom, Workspace } from "./teacher-types";
 
-/**
- * In the library: a test whose answer key the teacher has confirmed. The same
- * rule the setup checklist uses (preparationGaps): `answerKeyVerified`, or a
- * sample test from before the flag existed. A writing test has a rubric, not
- * an answer key, so it is not in the library.
- */
-export function inLibrary(a: Pick<Assessment, "rubric" | "answerKeyVerified" | "source">): boolean {
-  if (a.rubric) return false;
+/** Whether the teacher has confirmed this test's answer key. A sample test from
+ * before the flag existed counts (the setup checklist's rule). */
+export function keyConfirmed(a: Pick<Assessment, "answerKeyVerified" | "source">): boolean {
   return a.answerKeyVerified === true || (a.answerKeyVerified === undefined && a.source === "sample");
+}
+
+/**
+ * Active questions still to review -- no standard, not verified, or no answer
+ * yet (Ricky, 5 Nov 2026). Writing has no questions. This is the count the
+ * Assessments view shows, and what gates both confirming the key and the
+ * library.
+ */
+export function questionsToReview(a: Pick<Assessment, "rubric" | "questions">): number {
+  if (a.rubric) return 0;
+  return activeQuestions(a).filter((q) => !q.verified || !q.standard || !q.answer.trim()).length;
+}
+
+/**
+ * In the library: a test whose answer key is confirmed AND that has nothing
+ * left to review (Ricky, 5 Nov 2026). A test whose key was confirmed before
+ * this rule but still has questions to review keeps its key but stays out of
+ * the library until the review is finished. A writing test has a rubric, not
+ * an answer key, so it is never in the library.
+ */
+export function inLibrary(a: Pick<Assessment, "rubric" | "questions" | "answerKeyVerified" | "source">): boolean {
+  if (a.rubric) return false;
+  return keyConfirmed(a) && questionsToReview(a) === 0;
 }
 
 const SUBJECT_NAMES: Record<Assessment["subject"], string> = { Math: "Math", ELA: "ELA", Mixed: "Mixed subjects" };
@@ -80,20 +98,9 @@ export function libraryStudentWorkUrl(assessmentId: string): string {
   return "/assessments?id=" + encodeURIComponent(assessmentId) + "&tab=responses&from=library";
 }
 
-/**
- * Questions still to review before the test can be scanned. A confirmed key
- * is not quite "ready": scanning also waits on every question's standard (on
- * 3 Nov 2026, 2 of the 9 confirmed-key tests on record had questions left).
- * Zero means picking it goes straight to uploading student work.
- */
-export function librarySetupLeft(a: Assessment): number {
-  if (preparationGaps(a).ready) return 0;
-  const open = activeQuestions(a).filter((q) => !q.verified || !q.standard || !q.answer.trim()).length;
-  return Math.max(1, open);
-}
-
-/** Where picking lands: Student work when the test can be scanned, otherwise
- * the review step that still needs finishing -- never a scan that is off. */
+/** Where picking lands: Student work when there is nothing left to review
+ * (every library test, by the rule above), otherwise the review step -- never
+ * a scan that is off. */
 export function libraryLandingUrl(a: Assessment): string {
-  return librarySetupLeft(a) ? "/assessments?id=" + encodeURIComponent(a.id) + "&tab=questions" : libraryStudentWorkUrl(a.id);
+  return questionsToReview(a) ? "/assessments?id=" + encodeURIComponent(a.id) + "&tab=questions" : libraryStudentWorkUrl(a.id);
 }

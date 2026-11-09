@@ -29,6 +29,7 @@ import {
   questionsToCheck,
   settleDisagreements,
 } from "@/lib/key-check";
+import { questionsToReview } from "@/lib/assessment-library";
 import { extractUploadedPdfText } from "@/lib/pdf-text";
 import type { Assessment } from "@/lib/teacher-types";
 
@@ -91,6 +92,10 @@ export function AnswerKeyReview({
   }, [a.id, a.questions]);
   const questions = activeQuestions(a),
     complete = questions.length > 0 && questions.every((q) => answers[q.id]?.trim());
+  // Every question must be reviewed (its standard confirmed) before the key can
+  // be confirmed (Ricky, 5 Nov 2026): a question with no standard or not yet
+  // verified blocks the confirm.
+  const toReview = questionsToReview(a);
   const changed = questions.some(
     (q) => (answers[q.id] || "").trim() !== q.answer.trim(),
   );
@@ -305,7 +310,7 @@ export function AnswerKeyReview({
   }
 
   async function confirm() {
-    if (unsettled.length) return;
+    if (unsettled.length || toReview > 0) return;
     // Every disagreement on screen has been settled by now (the button waits
     // for it), so they are recorded as settled along with the key.
     const next = settleDisagreements(applyAnswerKey(a, answers));
@@ -555,7 +560,11 @@ export function AnswerKeyReview({
       </div>
       <div className="key-confirm">
         <p>
-          {unsettled.length
+          {toReview > 0
+            ? "Review " +
+              (toReview === 1 ? "the 1 question" : "all " + toReview + " questions") +
+              " (confirm each one\u2019s standard on the Questions tab) before confirming the answer key."
+            : unsettled.length
             ? unsettled.length +
               (unsettled.length === 1 ? " answer was" : " answers were") +
               " solved two different ways. Settle " +
@@ -565,7 +574,7 @@ export function AnswerKeyReview({
               ? "Changing the key sends affected student answers back for review."
               : "Confirm the answers and acceptable reasoning before comparing student work."}
         </p>
-        <Action onClick={confirm} disabled={working || checking || !complete || unsettled.length > 0}>
+        <Action onClick={confirm} disabled={working || checking || !complete || unsettled.length > 0 || toReview > 0}>
           <Check size={17} />
           Confirm answer key
         </Action>
