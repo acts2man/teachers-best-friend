@@ -43,8 +43,11 @@ We use OpenAI's API — the business interface, not the consumer chat product. F
 customers, submitted data is not used to train models by default. We have not opted
 into any program that would change that.
 
-We also send our requests with retention switched off, meaning the provider does not
-store the content of what we send beyond producing a response.
+To analyze a class set without timing out, longer requests are sent to OpenAI's API as
+background jobs. The provider holds each request until we retrieve the result, and we
+then ask it to delete the stored copy. Under OpenAI's API data policy, request data may
+be retained for up to 30 days for abuse monitoring and is then deleted; API traffic is
+not used to train models. We have not enabled any setting that would keep it longer.
 
 And we don't train models ourselves. We have no model of our own, no plans for one, and
 no pipeline that would collect student work for that purpose.

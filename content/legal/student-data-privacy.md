@@ -66,8 +66,10 @@ the service.
 
 **We will not use student work to train artificial intelligence models.** Not ours, not
 a vendor's. Our AI provider is contractually prohibited from training on data submitted
-through our account, and our requests are configured so the provider does not retain
-request content. This commitment appears in Section 6 in more detail.
+through our account. Requests are sent as background jobs, which the provider holds until
+we collect the result and then deletes at our request; under the provider's API data
+policy a request may be retained for up to 30 days for abuse monitoring before deletion,
+and is never used to train models. This appears in Section 6 in more detail.
 
 ---
 
@@ -188,9 +190,11 @@ student's or teacher's device to an AI provider.
 **Which provider.** OpenAI, through its API. This is the business API, not a consumer
 chat product.
 
-**Retention by the provider.** Requests are configured with retention disabled. The
-provider does not store the content of our requests beyond what is needed to return a
-response.
+**Retention by the provider.** Longer requests are sent as background jobs, which the
+provider holds until we retrieve the result; we then ask it to delete the stored copy.
+Under the provider's API data policy, request data may be retained for up to 30 days for
+abuse monitoring and is then deleted. We have not enabled any provider setting (such as
+zero data retention) that would change this, in either direction.
 
 **Training.** Our agreement with the provider prohibits the use of data submitted
 through our account to train or improve their models. This is the default for API
@@ -242,7 +246,7 @@ records, and remediation.
 |---|---|---|---|
 | [HOSTING PROVIDER] | Database and file storage | [REGION] | Yes — at rest |
 | [DEPLOYMENT PROVIDER] | Application hosting | [REGION] | In transit only |
-| OpenAI | AI processing | United States | Transiently, not retained |
+| OpenAI | AI processing | United States | Up to 30 days for abuse monitoring, then deleted |
 | Stripe | Billing | United States | No |
 
 Each is contractually bound to use information only to provide services to us and is

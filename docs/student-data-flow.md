@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-03 for three lesson versions per generate and "Add question", against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-03 for three lesson versions per generate and "Add question", against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live. Section 4 corrected 2026-11-09 for AI-provider retention: production uses background jobs (store:true), we request deletion when the result is collected, and the provider may retain request data up to 30 days for abuse monitoring under its API data policy (no zero-data-retention; no automated sweep yet) -- live wording.
 
 ---
 
@@ -160,11 +160,11 @@ This is the hop districts ask about, so it is the most specific.
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
 | Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; since 4 Nov 2026 it says the name it reads on each student's group of pages in one field (`nameSeen`), used only to check the pages were read as grouped, and it is told to put a name nowhere else |
 | Encrypted | Yes, TLS |
-| Stored there | Per the OpenAI API data policy for API traffic |
-| Retained | Per that policy; not used to build a profile for us |
+| Stored there | Longer requests are sent as background jobs (`store: true`, app/api/analyze), so the provider holds the request until we retrieve the result. Required to read a background job back; production uses this path (every scan in the last 30 days has a `provider_response_id`) |
+| Retained | Once we have the result we ask the provider to delete its stored copy (app/api/analyze/[scanId] on completion). Beyond that, the provider may retain request data for up to 30 days for abuse monitoring under its API data policy, then deletes it. We have not enabled zero data retention. No automated sweep exists yet (that is PR #212); today a job the client never polls back is deleted only by the provider's own 30-day cycle |
 | Used for training | No. API data is excluded from training by OpenAI's API terms |
 | Other use | No |
-| Deletable | The request payload is not something we can recall once sent, which is exactly why identity is stripped before it leaves |
+| Deletable | We request deletion of the stored copy once the result is collected; we cannot pull back what has already left, which is why identity is stripped before it does. The provider's own abuse-monitoring copy follows its 30-day cycle |
 
 Endpoint: `https://api.openai.com/v1/responses`.
 
