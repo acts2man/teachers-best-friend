@@ -505,6 +505,11 @@ export async function startModelBackground(
   mode: Mode,
   schema: unknown,
   key: string,
+  // A stable key for this one scan's job (the scan id). Sent as the provider's
+  // Idempotency-Key so a create that is retried after the request was already
+  // accepted -- a dropped connection on the way back -- returns the SAME job
+  // instead of starting a second one we would never poll (#212 review c).
+  idempotencyKey?: string,
 ): Promise<Attempted<string>> {
   // Starting a background job only hands the request over -- the model has not
   // begun thinking yet -- so this returns in well under a second when it is
@@ -516,6 +521,7 @@ export async function startModelBackground(
       headers: {
         Authorization: "Bearer " + key,
         "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": "scan-" + idempotencyKey } : {}),
       },
       signal: AbortSignal.timeout(20000),
       body: JSON.stringify(

@@ -45,9 +45,10 @@ into any program that would change that.
 
 To analyze a class set without timing out, longer requests are sent to OpenAI's API as
 background jobs. The provider holds each request until we retrieve the result, and we
-then ask it to delete the stored copy. Under OpenAI's API data policy, request data may
-be retained for up to 30 days for abuse monitoring and is then deleted; API traffic is
-not used to train models. We have not enabled any setting that would keep it longer.
+then ask it to delete the stored copy; a cleanup job removes any copy we did not delete
+at that point. Under OpenAI's API data policy, request data may still be retained for up
+to 30 days for abuse monitoring and is then deleted; API traffic is not used to train
+models. We have not enabled any setting that would keep it longer.
 
 And we don't train models ourselves. We have no model of our own, no plans for one, and
 no pipeline that would collect student work for that purpose.

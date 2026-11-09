@@ -110,6 +110,28 @@ export async function GET(
     try {
       remote = await getBackgroundResponse(providerId, config.key);
     } catch (e) {
+      // The provider's copy is gone (404) before we read the result: deleted by
+      // the sweep, by another poll, or expired at the provider. There is no
+      // result to wait for, so fail the scan with a clear message and hand the
+      // pages back rather than leave the client spinning forever (#212 review
+      // b). The copy is already gone, so record the deletion too.
+      if ((e as { status?: number }).status === 404) {
+        const message = "The analysis is no longer available. Please scan this page again — your work is saved.";
+        await failScan(svc, scanId, model, isLesson, message, undefined);
+        await settle(svc, user, p, scanId, false);
+        await svc.from("scans").update({ provider_deleted_at: new Date().toISOString() }).eq("id", scanId);
+        await logAiFailure({
+          teacherId: user,
+          mode: p.mode,
+          kind: "error",
+          model,
+          assessmentId: p.assessmentId,
+          scanId,
+          message: "provider copy gone before collection",
+          status: 404,
+        });
+        return Response.json({ status: "failed", error: message });
+      }
       const failure = aiHttpError(e);
       await logAiFailure({
         teacherId: user,

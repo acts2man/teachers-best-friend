@@ -21,6 +21,9 @@ const LEGAL = [
 ];
 const FLOW = "docs/student-data-flow.md";
 const read = (f) => readFileSync(f, "utf8");
+// Prose wraps, so a phrase like "up to 30 days" can straddle a line break;
+// collapse whitespace before matching a phrase.
+const flat = (f) => read(f).replace(/\s+/g, " ");
 
 // Claims that are no longer true now that production uses background jobs.
 const FALSE_CLAIMS = [
@@ -45,7 +48,7 @@ test("every page that describes the provider hop states the 30-day abuse-monitor
   // The four legal pages and the data-flow doc each mention OpenAI/the provider
   // and must carry the real ceiling where they describe retention.
   for (const f of [...LEGAL, FLOW]) {
-    const text = read(f);
+    const text = flat(f);
     assert.match(text, /up to 30 days/i, `${f} must state the up-to-30-day retention`);
     assert.match(text, /abuse monitoring/i, `${f} must say the 30 days is for abuse monitoring`);
   }
@@ -67,10 +70,10 @@ test("no page promises deletion within an hour (no sweep exists yet)", () => {
 });
 
 test("training is still correctly denied, and zero-data-retention is addressed honestly", () => {
-  const sdp = read("content/legal/student-data-privacy.md");
+  const sdp = flat("content/legal/student-data-privacy.md");
   assert.match(sdp, /not used to train|never used to train|prohibited from training/i);
   assert.match(sdp, /zero data retention/i, "the strongest page names ZDR so the ceiling is not mistaken for it");
-  const flow = read(FLOW);
+  const flow = flat(FLOW);
   assert.match(flow, /store: ?true|background job/i);
   assert.match(flow, /not? (?:enabled )?zero data retention/i);
 });

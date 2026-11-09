@@ -191,10 +191,11 @@ student's or teacher's device to an AI provider.
 chat product.
 
 **Retention by the provider.** Longer requests are sent as background jobs, which the
-provider holds until we retrieve the result; we then ask it to delete the stored copy.
-Under the provider's API data policy, request data may be retained for up to 30 days for
-abuse monitoring and is then deleted. We have not enabled any provider setting (such as
-zero data retention) that would change this, in either direction.
+provider holds until we retrieve the result; we then ask it to delete the stored copy,
+and a cleanup job removes any copy we did not delete at that point. Under the provider's
+API data policy, request data may still be retained for up to 30 days for abuse
+monitoring and is then deleted. We have not enabled any provider setting (such as zero
+data retention) that would change this, in either direction.
 
 **Training.** Our agreement with the provider prohibits the use of data submitted
 through our account to train or improve their models. This is the default for API

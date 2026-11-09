@@ -1,4 +1,4 @@
--- Schedule the hourly provider-retention sweep (review of #203).
+-- Schedule the provider-retention sweep every 15 minutes (review of #203, #212 review a/e).
 --
 -- Mirrors how the live "purge-expired-uploads" job is wired on production:
 -- pg_cron calls the edge function over pg_net, and the edge function
@@ -19,7 +19,12 @@ set lock_timeout = '5s';
 
 select cron.schedule(
   'sweep-provider-copies',
-  '7 * * * *',
+  -- Every 15 minutes. The app route only deletes a copy once the job is
+  -- terminal or older than its one-hour lifetime and at least 30 minutes old,
+  -- so a job the client never finished collecting is removed from our side
+  -- within roughly 75 minutes at the outside; the provider's own
+  -- abuse-monitoring copy still follows its up-to-30-day cycle.
+  '*/15 * * * *',
   $cron$
   select net.http_post(
     url := 'https://mmzbgmquhfdfqaootrvh.supabase.co/functions/v1/provider-sweep',

@@ -11,7 +11,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // job content.
 //
 // Secrets (set as edge-function secrets, not in the repo):
-//   APP_SWEEP_URL   e.g. https://ateachersbestfriend.com/api/cron/provider-sweep
+//   APP_SWEEP_URL   the app's sweep route, e.g.
+//                   https://teachersbestfriend.netlify.app/api/cron/provider-sweep
+//                   (the app is the Netlify site; ateachersbestfriend.com is the
+//                   separate WordPress marketing site and must NOT be used here)
 //   CRON_SECRET     the same value the app route checks
 
 Deno.serve(async () => {

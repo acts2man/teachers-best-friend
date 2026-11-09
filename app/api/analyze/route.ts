@@ -30,6 +30,7 @@ import {
 } from "@/lib/page-ledger";
 import {
   analyzeAsyncEnabled,
+  deleteBackgroundResponse,
   modelSettingsFor,
   recordScanUsage,
   relationalRow,
@@ -238,6 +239,10 @@ export async function POST(request: Request) {
     // the result, validates it, and records usage. Only enabled on the
     // Supabase deployment, where the scans table tracks the job.
     if (svc && scanId && analyzeAsyncEnabled()) {
+      // Set once the provider job exists; cleared once its id is safely saved.
+      // If anything throws in between, the catch deletes it, so a job we cannot
+      // poll is never left running at the provider (#212 review c).
+      let startedProviderId: string | null = null;
       try {
         const started = await startModelBackground(
           settings,
@@ -245,8 +250,11 @@ export async function POST(request: Request) {
           p.mode,
           schema,
           config.key,
+          // Idempotency key so a retried create returns the same job.
+          scanId,
         );
         const providerId = started.value;
+        startedProviderId = providerId;
         const { error } = await svc
           .from("scans")
           .update({
@@ -266,7 +274,12 @@ export async function POST(request: Request) {
           console.error("Storing background scan failed", error.message);
           throw new HttpError(500, "Couldn't start the analysis. Please try again.");
         }
+        // Saved: the poll route owns the job now, so do not delete it here.
+        startedProviderId = null;
       } catch (e) {
+        // The job was created but its id never reached the scans row, so nobody
+        // will ever poll it. Delete it now rather than wait for the sweep.
+        if (startedProviderId) await deleteBackgroundResponse(startedProviderId, config.key);
         // Only the provider refusing or failing the start is an AI failure; a
         // scans-table write failing here is ours and is logged by the route.
         if (e instanceof AiCallError) await logAiFailure({
