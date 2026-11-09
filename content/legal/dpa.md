@@ -174,8 +174,9 @@ standards, and a pseudonymous identifier. It does **not** receive the student's 
 the teacher's name, or the school's name from our application.
 
 The AI provider is contractually prohibited from training on data sent through our
-account. Each request is sent as a background job, which the provider holds until we
-retrieve the result; we delete that copy shortly after — within about an hour at most.
+account. Requests are sent as background jobs, which the provider holds until we retrieve
+the result and then deletes at our request; under its API data policy a request may be
+retained for up to 30 days for abuse monitoring before deletion.
 
 One honest limitation: the uploaded image is a photograph of a child's work and may
 contain a name the student wrote on the page. We instruct teachers to avoid this, and
