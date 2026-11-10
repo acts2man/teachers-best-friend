@@ -2,7 +2,7 @@
 
 **Read this before changing anything. Update it in the same PR when behaviour changes.**
 
-Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.10's prompt version re-checked 2026-10-15. Every
+Last verified against the code: **2026-10-14, `main` at `831aa25`** (#134 merged); §1.10's prompt version re-checked 2026-10-15. §1.12 re-checked 2026-11-10 for store:false background retention and the one-time backfill, against the code on its branch -- built, not yet live. Every
 claim cites `file:line` as of that commit. Line numbers drift; the function names do not, so
 search by name when a line has moved. Anything not checked against the running system says
 so. `lib/teacher-server.ts` line numbers, §1.8 step 6, R7 and G4 re-checked 2026-10-14 for the
@@ -326,6 +326,7 @@ computer can share one scan. They are separate from the workspace.
 |---|---|---|
 | Uploaded files (`teacher-documents`) and `teacher_uploads` rows | 30 days (rows stay, marked `purged_at`) | `20260915005258_teacher_uploads_30_day_retention.sql:10-21`; edge function `supabase/functions/purge-expired-uploads/index.ts`, **200 rows per table per run** (`:18`). Its cron schedule lives only in `cron.job` (`supabase/migrations/README.md:59-79`). The job recorded in `20260909175336_tbf_11_scheduled_purges.sql:2-7` calls a function since **dropped** (`20260915005628…:6-7`). **Not checked on production: run `select * from cron.job`.** |
 | `scans.params/result/error` (AI payloads) | 48 hours | `purge_scan_payloads`, `20260921233844_clear_scan_payloads_after_48_hours.sql:99-137` (09:45 UTC) |
+| AI provider's copy of a background response | Deleted automatically by the provider ~10 min after the job finishes (`store: false`, `lib/analyze-server.ts`); we also delete it on collect/failure and stamp `scans.provider_deleted_at` (`app/api/analyze/[scanId]`). A poll that finds it gone (404/410) fails the scan and releases its pages. The provider's own abuse-monitoring logs follow its up-to-30-day API policy and are not ours to shorten. | `lib/provider-retention.ts`; migration `20261110120000_provider_deleted_at.sql`; one-time admin backfill `app/api/admin/provider-backfill` clears the pre-store:false backlog. **No cron.** |
 | `class_scan_sessions` | 7 days | 09:30 UTC job (above) |
 | `app_events` | 30 days | `20261012190000_app_events_and_regression_replay.sql:91-95` (09:50 UTC) |
 | Camera shots in IndexedDB | **No expiry** | `lib/scan-store.ts`; cleared on Done or Discard (`components/scan-camera.tsx:671`, `:688`, `:701`) |
