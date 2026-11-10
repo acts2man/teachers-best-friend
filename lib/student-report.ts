@@ -18,8 +18,8 @@
  */
 import { gradingModeName, score4Text } from "./grading-mode";
 import { localDateString, schoolYearLabel } from "./school-year";
-import { classSuperGrid, clusterAnswererCounts, studentSuperGrid, type Score, type SuperGridCell } from "./super-grid";
-import { allStandards } from "./teacher-catalog";
+import { classSuperGrid, clusterAnswererCounts, clusterOf, studentSuperGrid, type Score, type SuperGridCell } from "./super-grid";
+import { builtInStandards } from "./teacher-catalog";
 import { evidenceShown, standardHeadline } from "./teacher-workflow";
 import type { Classroom, Student, Workspace } from "./teacher-types";
 
@@ -40,6 +40,8 @@ export type StudentReportOptions = {
 export const MAX_TRACKER_STANDARDS = 8;
 /** Records shown per tracker standard: the latest ones. */
 const TRACKER_ROWS = 6;
+/** The teacher's note is capped so the worst case still prints on two pages. */
+export const MAX_NOTE_CHARS = 600;
 /** A class average is shown only with at least this many OTHER answerers, so it
  * cannot reveal one classmate's score (privacy review of #209). */
 export const MIN_OTHER_ANSWERERS = 5;
@@ -84,7 +86,19 @@ export function studentReportHtml(
     if (!set) return 0;
     return set.size - (set.has(student.id) ? 1 : 0);
   };
-  const catalog = allStandards(w);
+  // Only the bundled catalogs are trusted to print: a custom or shared
+  // standard's title and domain are teacher-typed and could name a classmate
+  // (privacy review of #209). A built-in standard's code, title and the
+  // catalog domain for each cluster; a custom standard prints as its code only,
+  // and its cluster as the code prefix or "Other standards".
+  const builtin = builtInStandards();
+  const builtinTitle = new Map<string, string>();
+  const builtinClusterName = new Map<string, string>();
+  for (const b of builtin) {
+    if (!builtinTitle.has(b.code)) builtinTitle.set(b.code, b.title);
+    const c = clusterOf(b.code, b);
+    if (c.name && !builtinClusterName.has(c.key)) builtinClusterName.set(c.key, c.name);
+  }
   const title = student.name + " · Progress report";
   const parts: string[] = [];
 
@@ -109,8 +123,8 @@ export function studentReportHtml(
         const cls = classRows.get(row.cluster.key)?.overall;
         const showClass = cls?.level && othersIn(row.cluster.key) >= MIN_OTHER_ANSWERERS;
         parts.push(
-          `<tr><th scope="row">${escapeHtml(row.cluster.code ?? row.cluster.name ?? "Other standards")}` +
-            (row.cluster.code && row.cluster.name ? `<small>${escapeHtml(row.cluster.name)}</small>` : "") +
+          `<tr><th scope="row">${escapeHtml(row.cluster.code ?? builtinClusterName.get(row.cluster.key) ?? "Other standards")}` +
+            (row.cluster.code && builtinClusterName.get(row.cluster.key) ? `<small>${escapeHtml(builtinClusterName.get(row.cluster.key)!)}</small>` : "") +
             "</th>" +
             row.cells.map(cellHtml).join("") +
             `<td class="avg">${row.overall.level ? escapeHtml(scoreText(row.overall)) + `<span>${escapeHtml(row.overall.level.level)}</span>` : "—"}</td>` +
@@ -147,7 +161,6 @@ export function studentReportHtml(
     parts.push('<section class="tracker"><h2>Standard Tracker</h2>');
     if (!codes.length) parts.push("<p>No standards chosen.</p>");
     for (const code of codes) {
-      const std = catalog.find((s) => s.code === code);
       const head = standardHeadline(w, student, code);
       const records = student.evidence
         .filter((e) => e.standard === code)
@@ -159,8 +172,10 @@ export function studentReportHtml(
           : head.kind === "sbg"
             ? head.text + " / 4 · " + head.level
             : head.percent + "% (latest three)" + (head.mixed ? " · 0–4 tests counted as score × 25" : "");
-      // The standard's title is academic-catalog text, not teacher free text.
-      parts.push(`<div class="std"><h3>${escapeHtml(code)}${std?.title ? " — " + escapeHtml(std.title) : ""}</h3><p class="headline">${escapeHtml(headline)}</p>`);
+      // Only a built-in catalog title prints; a custom standard shows its code
+      // alone (its title is teacher-typed -- privacy review of #209).
+      const title2 = builtinTitle.get(code);
+      parts.push(`<div class="std"><h3>${escapeHtml(code)}${title2 ? " — " + escapeHtml(title2) : ""}</h3><p class="headline">${escapeHtml(headline)}</p>`);
       if (records.length) {
         // Date and score only: the source/test name is teacher free text and is
         // left off the page (privacy review of #209).
@@ -177,7 +192,7 @@ export function studentReportHtml(
   }
 
   // The only free text on the page: a note the teacher typed for this report.
-  const note = (options.note ?? "").trim();
+  const note = (options.note ?? "").trim().slice(0, MAX_NOTE_CHARS);
   if (note) parts.push(`<section class="report-note"><h2>Notes for this report</h2><p>${escapeHtml(note)}</p></section>`);
 
   parts.push(
