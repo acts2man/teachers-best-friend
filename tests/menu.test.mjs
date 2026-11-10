@@ -104,6 +104,22 @@ test("the save keeps it: the settings schema names lastWorkedOn (z.object drops 
   assert.match(home, /PICK UP WHERE YOU LEFT OFF/);
 });
 
+test("all seven settings keys round-trip through settingsSchema unchanged", () => {
+  const { settingsSchema } = bundle("lib/settings-schema.ts");
+  const settings = {
+    teacherName: "Ms. Ruiz",
+    school: "Maplewood Elementary",
+    reduceMotion: true,
+    theme: "dark",
+    lastGradingMode: "sbg",
+    schoolYear: 2026,
+    lastWorkedOn: { classId: "c1", assessmentId: "t1", at: "2026-11-05T12:00:00.000Z" },
+  };
+  const parsed = settingsSchema.parse(settings);
+  assert.deepEqual(parsed, settings, "every key comes back exactly as given");
+  assert.deepEqual(Object.keys(parsed).sort(), Object.keys(settings).sort(), "no key is dropped or added");
+});
+
 test("Classes has a shortcut to each class's super grid", () => {
   const classes = readFileSync("components/teacher-classes.tsx", "utf8");
   assert.match(classes, /aria-label=\{"Class super grid for " \+ c\.name\}\s*onClick=\{\(\) => open\(c, "\/lessons"\)\}/);
