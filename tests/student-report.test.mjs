@@ -140,3 +140,51 @@ test("it prints on one or two pages, is made in the browser, and the dialog offe
   // No stored free text is ever read into the report.
   assert.doesNotMatch(readFileSync("lib/student-report.ts", "utf8"), /\.notes\b|\.source\b|redactOthers/, "no stored notes, sources, or redaction (catalog titles are allowed)");
 });
+
+// ---- Custom/shared standards print as code only (privacy review of #209) ----
+const CUSTOM = "Zoé Bär"; // a classmate's name, planted in a custom standard's title AND domain
+const mkStd = (over) => ({ subject: "Math", grade: 7, framework: "California", cluster: "", summary: "", skills: [], prerequisites: [], next: [], vocabulary: [], misconception: "", ...over });
+const customUnparsed = mkStd({ code: "LOCAL.1", title: "Ratios, by " + CUSTOM, domain: CUSTOM + "'s custom unit" });
+const customParsed = mkStd({ code: "7.ZZ.1", title: "Made by " + CUSTOM, domain: CUSTOM + " domain" });
+const tc = { ...base, id: "tc", title: "X", dateGiven: "2026-10-20",
+  questions: [q("ca", "LOCAL.1", 1), q("cb", "7.ZZ.1", 2)],
+  responses: [r("s1", "ca", 80), r("s1", "cb", 80)] };
+const wc = {
+  students: [{ id: "s1", classId: "c1", name: "Ana Bell", color: "#000", notes: "",
+    evidence: [{ id: "ev1", standard: "LOCAL.1", score: 80, date: "2026-10-20" }, { id: "ev2", standard: "7.ZZ.1", score: 80, date: "2026-10-20" }] }],
+  assessments: [tc], customStandards: [customUnparsed, customParsed], sharedStandards: [],
+  settings: { teacherName: "", school: "", reduceMotion: false },
+};
+const buildC = (opts = {}) => R.studentReportHtml(wc, classroom, wc.students[0], { standards: ["LOCAL.1", "7.ZZ.1"], now: NOW, ...opts }).html;
+
+test("a custom standard prints as its code only -- never its teacher-typed title or domain", () => {
+  const html = buildC();
+  assert.ok(!html.includes(CUSTOM), "the custom standard's title/domain name never prints");
+  for (const bad of ["Bär", "Zoé", "custom unit", "Ratios, by", "Made by", "7.ZZ domain", CUSTOM + " domain"])
+    assert.ok(!html.includes(bad), "must not print " + JSON.stringify(bad));
+  // The tracker headings are the codes alone (no " — title").
+  assert.match(html, /<h3>LOCAL\.1<\/h3>/, "custom code, no title");
+  assert.match(html, /<h3>7\.ZZ\.1<\/h3>/, "custom code with a parseable prefix, still no title");
+  // The grid clusters: a parseable prefix shows the code; an unparseable one is "Other standards".
+  assert.match(html, /scope="row">7\.ZZ</, "the code prefix is derived from the code, not the custom domain");
+  assert.match(html, /scope="row">Other standards</, "an unparseable custom code never prints its custom domain");
+});
+
+test("a built-in standard still prints its catalog title and cluster domain", () => {
+  const html = build();
+  // 7.RP.1 is a bundled California standard: its title and the Ratios domain print.
+  assert.match(html, /<h3>7\.RP\.1 — [^<]+<\/h3>/, "a built-in tracker title prints");
+  assert.match(html, /scope="row">7\.RP<small>[^<]+<\/small>/, "a built-in cluster shows its catalog domain subtitle");
+});
+
+test("the teacher's note is capped so the worst case stays on two pages", () => {
+  const long = "x".repeat(700);
+  const html = build({ note: long });
+  const printed = html.slice(html.indexOf("Notes for this report"));
+  const body = printed.slice(printed.indexOf("<p>") + 3, printed.indexOf("</p>"));
+  assert.equal(body.length, R.MAX_NOTE_CHARS ?? 600, "the note is sliced to the cap");
+  assert.ok(body.length <= 600);
+  const dialog = readFileSync("components/student-report.tsx", "utf8");
+  assert.match(dialog, /maxLength=\{MAX_NOTE_CHARS\}/, "the box enforces the cap");
+  assert.match(dialog, /student-report-note-count/, "with a counter");
+});

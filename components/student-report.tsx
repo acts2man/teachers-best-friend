@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Printer } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { allStandards } from "@/lib/teacher-catalog";
-import { MAX_TRACKER_STANDARDS, studentReportHtml, type ReportSections } from "@/lib/student-report";
+import { MAX_NOTE_CHARS, MAX_TRACKER_STANDARDS, studentReportHtml, type ReportSections } from "@/lib/student-report";
 import type { Classroom, Student, Workspace } from "@/lib/teacher-types";
 import { Action, Modal } from "./teacher-shared";
 
@@ -77,12 +77,18 @@ export function StudentReportDialog({
           </fieldset>
         )}
         <label className="student-report-note">
-          <span>Notes for this report (optional) — shown only on this printout</span>
+          <span>
+            Notes for this report (optional) — shown only on this printout
+            <span className="student-report-note-count">
+              {noteText.length}/{MAX_NOTE_CHARS}
+            </span>
+          </span>
           <textarea
             rows={3}
             value={noteText}
+            maxLength={MAX_NOTE_CHARS}
             placeholder="Type a note for this conference. Nothing you&rsquo;ve saved elsewhere is included."
-            onChange={(e) => setNote({ for: student.id, text: e.target.value })}
+            onChange={(e) => setNote({ for: student.id, text: e.target.value.slice(0, MAX_NOTE_CHARS) })}
           />
         </label>
       </div>
