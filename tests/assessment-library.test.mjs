@@ -101,12 +101,21 @@ test("a question with no answer yet also counts as to review, and a key with non
   assert.equal(L.inLibrary(test_("z", { questions: [q(1)] })), true, "confirmed + all reviewed");
 });
 
-test("the answer key cannot be confirmed until every question is reviewed", () => {
+test("the answer key confirm is gated on on-screen answers and reviewed standards, not saved answers (#214 review)", () => {
   const key = fs.readFileSync("components/teacher-answer-key.tsx", "utf8");
-  assert.match(key, /const toReview = questionsToReview\(a\)/);
-  assert.match(key, /if \(unsettled\.length \|\| toReview > 0\) return;/, "confirm() is blocked");
-  assert.match(key, /disabled=\{working \|\| checking \|\| !complete \|\| unsettled\.length > 0 \|\| toReview > 0\}/, "the button is disabled");
-  // The Assessments view surfaces the count on a confirmed-but-unreviewed test.
+  // Blank answers are counted from the on-screen `answers` map (typed or read),
+  // never from the saved `q.answer` -- the key is only written on Confirm, so a
+  // typed-in key must be confirmable.
+  assert.match(key, /answersBlank = questions\.filter\(\(q\) => !\(answers\[q\.id\] \|\| ""\)\.trim\(\)\)\.length/);
+  assert.match(key, /const standardsToReview = questions\.filter\(\(q\) => !q\.verified \|\| !q\.standard\)\.length/);
+  assert.match(key, /if \(unsettled\.length \|\| standardsToReview > 0 \|\| !complete\) return;/, "confirm() is blocked on the on-screen gate");
+  assert.match(key, /disabled=\{working \|\| checking \|\| !complete \|\| unsettled\.length > 0 \|\| standardsToReview > 0\}/, "the button too");
+  assert.doesNotMatch(key, /questionsToReview/, "the answer-key tab no longer gates on saved answers");
+  // The reason text names exactly what is missing.
+  assert.match(key, /answers blank/);
+  assert.match(key, /standards to review/);
+  // The Assessments view still surfaces the saved-state count on a
+  // confirmed-but-unreviewed test (there the answers are saved).
   const view = fs.readFileSync("components/teacher-assessments.tsx", "utf8");
   assert.match(view, /"Key confirmed · " \+ questionsToReview\(item\) \+ " to review"/);
 });
