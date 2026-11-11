@@ -90,7 +90,16 @@ export function AnswerKeyReview({
     setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, q.answer])));
   }, [a.id, a.questions]);
   const questions = activeQuestions(a),
-    complete = questions.length > 0 && questions.every((q) => answers[q.id]?.trim());
+    // Answers filled ON SCREEN (typed here, or read from the document), not the
+    // saved answers -- the key is only written to the questions on Confirm, so
+    // gating on the saved answer would make a typed-in key impossible to confirm
+    // (#214 review).
+    answersBlank = questions.filter((q) => !(answers[q.id] || "").trim()).length,
+    complete = questions.length > 0 && answersBlank === 0;
+  // Every question must also have its standard reviewed before the key can be
+  // confirmed (Ricky, 5 Nov 2026): that is done on the Questions tab (verified +
+  // a standard set), independent of the answer.
+  const standardsToReview = questions.filter((q) => !q.verified || !q.standard).length;
   const changed = questions.some(
     (q) => (answers[q.id] || "").trim() !== q.answer.trim(),
   );
@@ -305,7 +314,7 @@ export function AnswerKeyReview({
   }
 
   async function confirm() {
-    if (unsettled.length) return;
+    if (unsettled.length || standardsToReview > 0 || !complete) return;
     // Every disagreement on screen has been settled by now (the button waits
     // for it), so they are recorded as settled along with the key.
     const next = settleDisagreements(applyAnswerKey(a, answers));
@@ -555,7 +564,18 @@ export function AnswerKeyReview({
       </div>
       <div className="key-confirm">
         <p>
-          {unsettled.length
+          {answersBlank > 0 || standardsToReview > 0
+            ? "Before confirming: " +
+              [
+                answersBlank > 0 ? answersBlank + (answersBlank === 1 ? " answer blank" : " answers blank") : null,
+                standardsToReview > 0
+                  ? standardsToReview + (standardsToReview === 1 ? " standard to review" : " standards to review") + " (on the Questions tab)"
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(", ") +
+              "."
+            : unsettled.length
             ? unsettled.length +
               (unsettled.length === 1 ? " answer was" : " answers were") +
               " solved two different ways. Settle " +
@@ -565,7 +585,7 @@ export function AnswerKeyReview({
               ? "Changing the key sends affected student answers back for review."
               : "Confirm the answers and acceptable reasoning before comparing student work."}
         </p>
-        <Action onClick={confirm} disabled={working || checking || !complete || unsettled.length > 0}>
+        <Action onClick={confirm} disabled={working || checking || !complete || unsettled.length > 0 || standardsToReview > 0}>
           <Check size={17} />
           Confirm answer key
         </Action>

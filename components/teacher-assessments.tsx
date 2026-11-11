@@ -128,6 +128,7 @@ import {
   confirmResponses,
   gradesClearedByReread,
 } from "@/lib/teacher-workflow";
+import { questionsToReview } from "@/lib/assessment-library";
 import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
@@ -638,7 +639,11 @@ export function AssessmentView() {
                         : alignment(item) === null
                           ? "Alignment —"
                           : alignment(item) + "% alignment"} ·{" "}
-                      {preparationGaps(item).keyConfirmed ? "Key confirmed" : "Key needed"} ·{" "}
+                      {preparationGaps(item).keyConfirmed
+                        ? questionsToReview(item) > 0
+                          ? "Key confirmed · " + questionsToReview(item) + " to review"
+                          : "Key confirmed"
+                        : "Key needed"} ·{" "}
                       {new Set(item.responses.map((response) => response.studentId)).size} students
                     </span>
                   </div>
