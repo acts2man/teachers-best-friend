@@ -15,6 +15,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Plus,
+  ChartColumn,
   Check,
   Clock,
   Lightbulb,
@@ -75,7 +76,8 @@ import {
   printHtml,
 } from "./teacher-shared";
 import { ClassSuperGrid } from "./class-super-grid";
-import { classSuperGrid, preteachFocus } from "@/lib/super-grid";
+import { classSuperGrid, preteachFocus, weakestStandard } from "@/lib/super-grid";
+import { score4Text } from "@/lib/grading-mode";
 import { schoolYearLabel, schoolYearOptions, teacherSchoolYear } from "@/lib/school-year";
 import { catalogFor } from "@/lib/teacher-catalog";
 import {
@@ -297,6 +299,12 @@ export function ReteachView() {
     .filter((id) => students.some((student) => student.id === id));
   const plans = w.lessons.filter((l) => l.classId === classroom.id),
     s = catalog.find((s) => s.code === standard);
+  // Opened from the menu with nothing to plan from yet: the class super grid
+  // and the two ways to start (Ricky's menu, 23 Oct 2026).
+  const choosing = !["standard", "assessment", "lesson", "intent", "student", "students", "tab", "start", "dok", "cluster"].some((k) =>
+    params.has(k),
+  );
+  const weakest = weakestStandard(classSuperGrid(w, classroom));
   // A pre-teach lesson from the class super grid (?intent=preteach&cluster=
   // &dok=): worked out again here from the class's own grid -- the cluster,
   // the DOK, the cell's weakest standard codes and its error-type names with
@@ -603,10 +611,10 @@ export function ReteachView() {
     <>
       <PageTitle
         eyebrow="FROM “NOW WHAT?” TO “I’VE GOT THIS.”"
-        title="Lesson plans"
-        description="Choose a different way to teach the skill, generate the plan, and keep it here."
+        title="Lesson Planning"
+        description="Start from your class's super grid or from scratch, generate the plan, and keep it here."
       >
-        <Action variant="secondary" onClick={() => setTab("plan")}>
+        <Action variant="secondary" onClick={() => (choosing ? go("/lessons?tab=plan") : setTab("plan"))}>
           <CalendarDays size={16} />
           Saved lesson plans<Pill>{plans.length}</Pill>
         </Action>
@@ -674,8 +682,64 @@ export function ReteachView() {
         </div>
       )}
       {/* Ricky's menu (23 Oct 2026): Lesson Planning opens on the class super
-          grid, "the engine that powers the lesson plan". */}
+          grid, "the engine that powers the lesson plan", and two ways to
+          start: from the class's data, or from scratch. */}
       <ClassSuperGrid w={w} classroom={classroom} />
+      {choosing ? (
+        <section className="panel lesson-start" aria-label="Start a lesson">
+          <h2>Start a lesson</h2>
+          <div className="lesson-start-actions">
+            <Action
+              disabled={!weakest}
+              onClick={() =>
+                weakest &&
+                go(
+                  "/lessons?start=data&standard=" +
+                    encodeURIComponent(weakest.code) +
+                    "&grade=" +
+                    weakest.grade +
+                    "&framework=" +
+                    encodeURIComponent(weakest.framework),
+                )
+              }
+            >
+              <ChartColumn size={16} />
+              Data-driven lesson
+            </Action>
+            <Action variant="secondary" onClick={() => go("/lessons?start=scratch")}>
+              <Plus size={16} />
+              Start from scratch
+            </Action>
+          </div>
+          <p className="cell-meta">
+            {weakest
+              ? "Data-driven starts on " +
+                weakest.code +
+                (weakest.title ? " (" + weakest.title + ")" : "") +
+                ", the class\u2019s weakest standard on the grid: " +
+                (weakest.score.score4 !== null ? score4Text(weakest.score.score4) + " out of 4" : weakest.score.percent + "%") +
+                " at DOK " +
+                weakest.dok +
+                ". Or tap any box in the grid for a pre-teach lesson."
+              : "Grade a test with standards and DOK levels and a data-driven lesson can start from the grid."}{" "}
+            From scratch: any skill, for anyone, with no student work.
+          </p>
+        </section>
+      ) : (
+      <>
+      {params.get("start") === "data" && weakest && standard === weakest.code && (
+        <div className="reteach-context">
+          <ChartColumn size={21} />
+          <div>
+            <strong>Data-driven · {weakest.label}</strong>
+            <p>
+              The class&rsquo;s weakest standard on the super grid:{" "}
+              {weakest.score.score4 !== null ? score4Text(weakest.score.score4) + " out of 4" : weakest.score.percent + "%"} at DOK{" "}
+              {weakest.dok}, on {weakest.score.answers} answer{weakest.score.answers === 1 ? "" : "s"}.
+            </p>
+          </div>
+        </div>
+      )}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="page-tabs">
           <TabsTrigger value="build">
@@ -1342,6 +1406,8 @@ export function ReteachView() {
           )}
         </TabsContent>
       </Tabs>
+      </>
+      )}
       <Modal
         open={!!checkLesson}
         onClose={() => setCheckLesson(null)}

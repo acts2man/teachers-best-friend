@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { settingsSchema } from "@/lib/settings-schema";
 import {
   writingTeacherId,
   resolveOwningTeacher,
@@ -84,15 +85,7 @@ const dataSchema = z.object({
   resources: z.array(z.any()).max(1000),
   customStandards: z.array(z.any()).max(1000),
   groups: z.array(z.any()).max(300),
-  settings: z.object({
-    teacherName: z.string().max(100),
-    school: z.string().max(200),
-    reduceMotion: z.boolean(),
-    theme: z.string().max(40).optional(),
-    lastGradingMode: z.enum(["percentage", "sbg"]).optional(),
-    // The year the school year starts (2026 = 2026–27; lib/school-year.ts).
-    schoolYear: z.number().int().min(2000).max(2100).optional(),
-  }),
+  settings: settingsSchema,
 });
 
 /** A new teacher's workspace: the demo, in the school year they chose at

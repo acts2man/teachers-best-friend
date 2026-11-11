@@ -4,6 +4,7 @@ import { isSecondChoice } from "@/lib/standard-match";
 import { useEffect, useRef, useState } from "react";
 import { REQUIRE_CONFIRM_MATCHES } from "@/lib/grading-settings";
 import { useSearchParams } from "next/navigation";
+import { LAST_WORKED_ON_KEY } from "@/lib/last-worked-on";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { analyzeRequest } from "@/lib/analyze-client";
@@ -212,6 +213,19 @@ export function AssessmentView() {
     setSelected(params.get("id"));
     setTab(params.get("tab") || "questions");
   }, [params]);
+  // Overview's "Pick up where you left off" (lib/last-worked-on.ts): a test
+  // opened on this device counts, even if nothing is saved on it.
+  const openedId = params.get("id");
+  const openedHere = !!openedId && w.assessments.some((a) => a.id === openedId);
+  useEffect(() => {
+    if (!openedId || !openedHere) return;
+    try {
+      localStorage.setItem(
+        LAST_WORKED_ON_KEY,
+        JSON.stringify({ classId: classroom.id, assessmentId: openedId, at: new Date().toISOString() }),
+      );
+    } catch {}
+  }, [openedId, openedHere, classroom.id]);
   // Picked from the Assessment library: "skip straight to upload student
   // work" (Ricky, 27 Oct 2026), so the class-set upload is brought into view
   // -- on a phone it sits below the test's summary.

@@ -131,7 +131,7 @@ test("a class graded the other way cannot pick it", () => {
 
 test("the library is in the menu and its own page, and New assessment points to it", () => {
   const app = fs.readFileSync(path.join(ROOT, "components/teacher-app.tsx"), "utf8");
-  assert.match(app, /\{ id: "library", label: "Assessment library"/);
+  assert.match(app, /\{ id: "library", label: "Assessment Library"/);
   assert.match(app, /view === "library" \? \(\s*<LibraryView \/>/);
   assert.match(fs.readFileSync(path.join(ROOT, "app/[view]/page.tsx"), "utf8"), /"library",/);
   const page = fs.readFileSync(path.join(ROOT, "components/teacher-library.tsx"), "utf8");

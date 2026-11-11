@@ -360,3 +360,22 @@ export function preteachFocus(grid: SuperGrid, clusterKey: string, dok: number):
       .slice(0, 10),
   };
 }
+
+/**
+ * Where a "Data-driven lesson" starts (Ricky's menu, 23 Oct 2026): the
+ * class's weakest graded standard anywhere on its super grid, with the DOK and
+ * cluster it is weakest at. Null when nothing is graded yet. Pure.
+ */
+export function weakestStandard(
+  grid: SuperGrid,
+): { code: string; title: string; grade: number; framework: string; dok: 1 | 2 | 3 | 4; label: string; score: Score } | null {
+  let best: ReturnType<typeof weakestStandard> = null;
+  for (const row of grid.rows)
+    for (const cell of row.cells)
+      for (const s of cell.standards) {
+        if (!s.level) continue;
+        if (!best || weakness(s) < weakness(best.score) || (weakness(s) === weakness(best.score) && s.answers > best.score.answers))
+          best = { code: s.code, title: s.title, grade: s.grade, framework: s.framework, dok: cell.dok, label: row.label, score: s };
+      }
+  return best;
+}

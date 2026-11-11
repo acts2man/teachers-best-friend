@@ -51,6 +51,10 @@ export function LibraryView() {
         title="Assessment library"
         description="Every test with a confirmed answer key, by course. Use one with any class graded the same way and go straight to uploading student work."
       >
+        <Action variant="secondary" onClick={() => go("/assessments")}>
+          All assessments
+          <ArrowRight size={16} />
+        </Action>
         <Action onClick={() => go("/scan")}>
           <Plus size={17} />
           New assessment

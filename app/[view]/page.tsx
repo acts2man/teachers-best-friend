@@ -13,6 +13,7 @@ const views = [
   "lessons",
   "reteach",
   "students",
+  "reports",
   "classes",
   "resources",
   "billing",

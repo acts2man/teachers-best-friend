@@ -294,6 +294,10 @@ export type Workspace = {
      * sign-up, editable in Settings (lib/school-year.ts). Absent: the
      * current one. */
     schoolYear?: number;
+    /** The class and test the teacher last saved work on, for Overview's
+     * "Pick up where you left off" (lib/last-worked-on.ts). Stored whole with
+     * settings: no column. */
+    lastWorkedOn?: { classId: string; assessmentId: string; at: string };
   };
 };
 export type Priority = {
