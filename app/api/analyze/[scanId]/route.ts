@@ -109,6 +109,52 @@ export async function GET(
     try {
       remote = await getBackgroundResponse(providerId, config.key);
     } catch (e) {
+      // The provider's copy is gone (404) or expired (410): with store:false it
+      // is deleted automatically about 10 minutes after the job finishes, so a
+      // teacher who comes back much later finds nothing to collect. There is no
+      // result and no endless spinner -- fail the scan with a clear message and
+      // hand the pages (and their credit) back. The copy is already gone, so
+      // record that too.
+      const status = (e as { status?: number }).status;
+      if (status === 404 || status === 410) {
+        const message = "This took too long to collect — please run it again; you weren't charged.";
+        // A parallel poll (another tab, a retry, a phone waking) may already have
+        // delivered or failed this scan between our first read and now.
+        // record_scan_usage has no status guard, so failing here would overwrite
+        // a delivered 'complete' back to 'failed' and release pages that were
+        // confirmed. Re-read and only fail a scan that is still analyzing; a scan
+        // already settled was settled by that other poll, which also recorded the
+        // provider copy as gone, so there is nothing left to do here.
+        const { data: fresh } = await svc
+          .from("scans")
+          .select("status, result, error")
+          .eq("id", scanId)
+          .eq("teacher_id", user)
+          .maybeSingle();
+        if (!fresh || fresh.status !== "analyzing") {
+          if (fresh?.status === "complete" && fresh.result)
+            return Response.json({ status: "complete", result: fresh.result });
+          return Response.json({ status: "failed", error: fresh?.error || message });
+        }
+        // Still analyzing: the provider copy is already gone (that is what the
+        // 404/410 means), so skip the DELETE call recordProviderDeleted would
+        // make and just record the usage failure, hand the pages back, and stamp
+        // provider_deleted_at once.
+        await recordScanUsage(svc, scanId, { ok: false, model, isLesson, usage: undefined, errorMessage: message });
+        await settle(svc, user, p, scanId, false);
+        await svc.from("scans").update({ provider_deleted_at: new Date().toISOString() }).eq("id", scanId);
+        await logAiFailure({
+          teacherId: user,
+          mode: p.mode,
+          kind: "timeout",
+          model,
+          assessmentId: p.assessmentId,
+          scanId,
+          message: "provider copy expired before collection",
+          status,
+        });
+        return Response.json({ status: "failed", error: message });
+      }
       const failure = aiHttpError(e);
       await logAiFailure({
         teacherId: user,
@@ -258,11 +304,33 @@ export async function GET(
     await settle(svc, user, p, scanId, !deliveredNothing);
     if (deliveredNothing)
       await svc.from("scans").update({ billable: false }).eq("id", scanId);
-    await deleteBackgroundResponse(providerId, config.key);
+    await recordProviderDeleted(svc, scanId, providerId, config.key);
 
     return Response.json({ status: "complete", result: output });
   } catch (e) {
     return apiError(e);
+  }
+}
+
+/**
+ * Deletes the provider's copy of this job and records when (provider_deleted_at)
+ * so the one-time backfill and its confirm SQL can prove nothing is left. A
+ * delete that fails every retry leaves the stamp null; the backfill picks it up.
+ * Never throws.
+ */
+async function recordProviderDeleted(
+  svc: ReturnType<typeof createServiceClient>,
+  scanId: string,
+  providerId: string,
+  key: string,
+) {
+  try {
+    const outcome = await deleteBackgroundResponse(providerId, key);
+    if (outcome === "failed") return;
+    const { error } = await svc.from("scans").update({ provider_deleted_at: new Date().toISOString() }).eq("id", scanId);
+    if (error) console.error("Recording provider deletion failed", error.message);
+  } catch (error) {
+    console.error("Recording provider deletion failed", error instanceof Error ? error.name : "unknown");
   }
 }
 
@@ -283,7 +351,7 @@ async function failScan(
     usage,
     errorMessage: message,
   });
-  await deleteBackgroundResponse(providerId, key);
+  await recordProviderDeleted(svc, scanId, providerId, key);
 }
 
 /**

@@ -197,7 +197,7 @@ information only to provide services to us:
 |---|---|---|
 | [HOSTING PROVIDER, e.g. Supabase / AWS] | Database and file storage | All stored data |
 | [DEPLOYMENT PROVIDER, e.g. Netlify] | Application hosting | Requests in transit |
-| OpenAI | AI processing | Submitted work, transiently — see Section 8 |
+| OpenAI | AI processing | Submitted work; the response is deleted within ~10 min, abuse logs up to 30 days — see Section 8 |
 | Stripe | Billing | Teacher payment details only |
 
 **At a school's direction.** If a school or district has a contract with us covering a
@@ -217,7 +217,11 @@ required by SOPIPA and we treat it as non-negotiable.
 Submitted work is sent to OpenAI's API for analysis. Specifically:
 
 - Requests are made server-side. Our credentials are never exposed to a browser.
-- Requests are configured so the provider does not retain the content of the request.
+- Longer requests are sent as background jobs with storage turned off, so the provider
+  deletes the response automatically within about 10 minutes (we also
+  delete it as soon as we collect the result). Separately, under the provider's API data
+  policy, abuse-monitoring logs may be kept for up to 30 days and are then deleted. We
+  have not turned on zero data retention.
 - Our agreement with the provider prohibits using data submitted through our account to
   train their models.
 - We never send your class roster, or any list of student names, to the AI provider.

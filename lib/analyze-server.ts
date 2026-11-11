@@ -2,6 +2,7 @@ import "server-only";
 import { HttpError } from "@/lib/teacher-server";
 import { ledgerError } from "@/lib/page-ledger";
 import { hasSupabaseConfig } from "@/lib/supabase/server";
+import { deleteProviderCopy, type DeleteOutcome } from "@/lib/provider-retention";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pipelineStage } from "@/lib/pipeline-config";
 import { stateFor } from "@/lib/states";
@@ -495,8 +496,11 @@ export async function runModelSync(
 
 /**
  * Starts a background analysis and returns the provider response id to poll.
- * Background jobs must be stored (store:true) so they can be retrieved; the
- * poll route deletes each one once it has read the result.
+ * Sent with `store: false`: the provider keeps the response only long enough to
+ * collect the result and deletes it automatically about 10 minutes after the
+ * job finishes. The longest real job in 45 days was 95s, so a poll always lands
+ * inside that window; a teacher who comes back much later gets a clear "run it
+ * again" (the poll route handles the 404). We also delete it on collect.
  */
 export async function startModelBackground(
   settings: ModelSettings,
@@ -519,7 +523,7 @@ export async function startModelBackground(
       signal: AbortSignal.timeout(20000),
       body: JSON.stringify(
         requestBody(settings, content, mode, schema, {
-          store: true,
+          store: false,
           background: true,
         }),
       ),
@@ -556,22 +560,15 @@ export async function getBackgroundResponse(
 }
 
 /**
- * Deletes a stored background response so nothing lingers on the provider once
- * its result has been read. Best-effort: a failure here is logged, not thrown.
+ * Deletes the provider's copy of a background response once its result has been
+ * read -- belt and braces, since `store: false` already has the provider delete
+ * it automatically about 10 minutes after the job finishes. Retries a transient
+ * refusal, treats an already-gone id (404/410) as done, and never throws;
+ * returns how it went so the caller can record the deletion
+ * (lib/provider-retention.ts).
  */
-export async function deleteBackgroundResponse(id: string, key: string) {
-  try {
-    await fetch(OPENAI_RESPONSES + "/" + encodeURIComponent(id), {
-      method: "DELETE",
-      headers: { Authorization: "Bearer " + key },
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (error) {
-    console.error(
-      "Deleting stored analysis failed",
-      error instanceof Error ? error.name : "unknown",
-    );
-  }
+export async function deleteBackgroundResponse(id: string, key: string): Promise<DeleteOutcome> {
+  return deleteProviderCopy(id, key);
 }
 
 /**

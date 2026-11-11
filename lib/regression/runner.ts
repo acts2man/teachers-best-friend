@@ -229,10 +229,19 @@ async function advanceJob(
   let remote: ResponsesResult;
   try {
     remote = await getBackgroundResponse(job.providerId, key);
-  } catch {
-    // A failed poll is not a failed job: the job is still running (and costing)
-    // at the provider. Say "still working" and poll again next step, as the
-    // teacher's client does, rather than abandoning a paid job.
+  } catch (e) {
+    // The provider's copy is gone (404) or expired (410): with store:false it is
+    // deleted ~10 min after the job finishes, so there is nothing left to
+    // collect and no amount of polling will bring it back. Fail this case
+    // instead of reporting "still working" forever.
+    const status = (e as { status?: number }).status;
+    if (status === 404 || status === 410) {
+      setJob(null);
+      throw new Error("The provider copy was gone before the result could be collected — run this case again.");
+    }
+    // Any other failed poll is not a failed job: the job is still running (and
+    // costing) at the provider. Say "still working" and poll again next step, as
+    // the teacher's client does, rather than abandoning a paid job.
     return null;
   }
   const status = remote.status ?? "in_progress";
