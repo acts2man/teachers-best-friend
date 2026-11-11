@@ -45,8 +45,8 @@ into any program that would change that.
 
 To analyze a class set without timing out, longer requests are sent to OpenAI's API as
 background jobs. We send them with storage turned off, so the provider keeps the response
-only long enough for us to collect the result and then deletes it automatically — about
-10 minutes after the job finishes. Separately, under OpenAI's API data policy, abuse-
+only long enough for us to collect the result and then deletes it automatically — within
+about 10 minutes. Separately, under OpenAI's API data policy, abuse-
 monitoring logs of API traffic may be kept for up to 30 days and are then deleted; API
 data is not used to train models. We have not enabled any setting that keeps data longer,
 and we have not turned on zero data retention.

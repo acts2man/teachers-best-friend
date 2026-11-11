@@ -118,7 +118,29 @@ export async function GET(
       const status = (e as { status?: number }).status;
       if (status === 404 || status === 410) {
         const message = "This took too long to collect — please run it again; you weren't charged.";
-        await failScan(svc, scanId, config.key, providerId, model, isLesson, message);
+        // A parallel poll (another tab, a retry, a phone waking) may already have
+        // delivered or failed this scan between our first read and now.
+        // record_scan_usage has no status guard, so failing here would overwrite
+        // a delivered 'complete' back to 'failed' and release pages that were
+        // confirmed. Re-read and only fail a scan that is still analyzing; a scan
+        // already settled was settled by that other poll, which also recorded the
+        // provider copy as gone, so there is nothing left to do here.
+        const { data: fresh } = await svc
+          .from("scans")
+          .select("status, result, error")
+          .eq("id", scanId)
+          .eq("teacher_id", user)
+          .maybeSingle();
+        if (!fresh || fresh.status !== "analyzing") {
+          if (fresh?.status === "complete" && fresh.result)
+            return Response.json({ status: "complete", result: fresh.result });
+          return Response.json({ status: "failed", error: fresh?.error || message });
+        }
+        // Still analyzing: the provider copy is already gone (that is what the
+        // 404/410 means), so skip the DELETE call recordProviderDeleted would
+        // make and just record the usage failure, hand the pages back, and stamp
+        // provider_deleted_at once.
+        await recordScanUsage(svc, scanId, { ok: false, model, isLesson, usage: undefined, errorMessage: message });
         await settle(svc, user, p, scanId, false);
         await svc.from("scans").update({ provider_deleted_at: new Date().toISOString() }).eq("id", scanId);
         await logAiFailure({

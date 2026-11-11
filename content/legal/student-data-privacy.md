@@ -66,8 +66,8 @@ the service.
 
 **We will not use student work to train artificial intelligence models.** Not ours, not
 a vendor's. Our AI provider is contractually prohibited from training on data submitted
-through our account. Requests are sent as background jobs with storage turned off, so the
-provider deletes the response automatically about 10 minutes after the job finishes; under
+through our account. Longer requests are sent as background jobs with storage turned off, so the
+provider deletes the response automatically within about 10 minutes; under
 its API data policy, abuse-monitoring logs may be kept for up to 30 days. This appears in
 Section 6 in more detail.
 
@@ -192,7 +192,7 @@ chat product.
 
 **Retention by the provider.** Longer requests are sent as background jobs with storage
 turned off, so the provider keeps the response only long enough for us to collect the
-result and then deletes it automatically — about 10 minutes after the job finishes (we
+result and then deletes it automatically — within about 10 minutes (we
 also delete it on collect). Separately, under the provider's API data policy, abuse-
 monitoring logs of API traffic may be kept for up to 30 days and are then deleted. We have
 not enabled zero data retention.
@@ -247,7 +247,7 @@ records, and remediation.
 |---|---|---|---|
 | [HOSTING PROVIDER] | Database and file storage | [REGION] | Yes — at rest |
 | [DEPLOYMENT PROVIDER] | Application hosting | [REGION] | In transit only |
-| OpenAI | AI processing | United States | Response deleted ~10 min after the job finishes; abuse logs up to 30 days |
+| OpenAI | AI processing | United States | Response deleted within ~10 min; abuse logs up to 30 days |
 | Stripe | Billing | United States | No |
 
 Each is contractually bound to use information only to provide services to us and is
