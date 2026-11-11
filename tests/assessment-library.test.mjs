@@ -77,14 +77,47 @@ test("picking a test for a class graded the same way links it and opens Student 
 
 const q = (n, over = {}) => ({ id: "q" + n, number: n, text: "Q" + n, answer: "4", standard: "7.RP.A.1", verified: true, excluded: false, points: 1, ...over });
 
-test("a ready test lands on Student work; one with questions left lands on their review", () => {
+test("the library holds only a confirmed key with nothing left to review (Ricky, 5 Nov 2026)", () => {
   const ready = test_("r", { questions: [q(1), q(2)], targetStandards: ["7.RP.A.1"] });
-  assert.equal(L.librarySetupLeft(ready), 0);
+  assert.equal(L.questionsToReview(ready), 0);
+  assert.equal(L.inLibrary(ready), true);
   assert.equal(L.libraryLandingUrl(ready), "/assessments?id=r&tab=responses&from=library");
+  // A confirmed key whose questions are not all reviewed KEEPS its key but
+  // stays out of the library until the review is finished.
   const left = test_("s", { questions: [q(1), q(2, { verified: false }), q(3, { standard: "" })], targetStandards: ["7.RP.A.1"] });
-  assert.equal(L.inLibrary(left), true, "a confirmed key is in the library either way");
-  assert.equal(L.librarySetupLeft(left), 2);
-  assert.equal(L.libraryLandingUrl(left), "/assessments?id=s&tab=questions", "never a scan that is switched off");
+  assert.equal(L.keyConfirmed(left), true, "the key stays confirmed");
+  assert.equal(L.questionsToReview(left), 2);
+  assert.equal(L.inLibrary(left), false, "but it is not in the library");
+  assert.equal(L.libraryLandingUrl(left), "/assessments?id=s&tab=questions", "picking would land on the review, not a scan");
+  // So libraryCourses leaves it out.
+  const courses = L.libraryCourses(ws([ready, left]));
+  const titles = courses.flatMap((c) => c.tests.map((t) => t.title));
+  assert.deepEqual(titles, ["Test r"], "only the fully-reviewed test is listed");
+});
+
+test("a question with no answer yet also counts as to review, and a key with none confirmed is never in the library", () => {
+  assert.equal(L.questionsToReview(test_("x", { questions: [q(1), q(2, { answer: "" })] })), 1);
+  assert.equal(L.inLibrary(test_("y", { questions: [q(1, { verified: false })], answerKeyVerified: false })), false);
+  assert.equal(L.inLibrary(test_("z", { questions: [q(1)] })), true, "confirmed + all reviewed");
+});
+
+test("the answer key confirm is gated on on-screen answers and reviewed standards, not saved answers (#214 review)", () => {
+  const key = fs.readFileSync("components/teacher-answer-key.tsx", "utf8");
+  // Blank answers are counted from the on-screen `answers` map (typed or read),
+  // never from the saved `q.answer` -- the key is only written on Confirm, so a
+  // typed-in key must be confirmable.
+  assert.match(key, /answersBlank = questions\.filter\(\(q\) => !\(answers\[q\.id\] \|\| ""\)\.trim\(\)\)\.length/);
+  assert.match(key, /const standardsToReview = questions\.filter\(\(q\) => !q\.verified \|\| !q\.standard\)\.length/);
+  assert.match(key, /if \(unsettled\.length \|\| standardsToReview > 0 \|\| !complete\) return;/, "confirm() is blocked on the on-screen gate");
+  assert.match(key, /disabled=\{working \|\| checking \|\| !complete \|\| unsettled\.length > 0 \|\| standardsToReview > 0\}/, "the button too");
+  assert.doesNotMatch(key, /questionsToReview/, "the answer-key tab no longer gates on saved answers");
+  // The reason text names exactly what is missing.
+  assert.match(key, /answers blank/);
+  assert.match(key, /standards to review/);
+  // The Assessments view still surfaces the saved-state count on a
+  // confirmed-but-unreviewed test (there the answers are saved).
+  const view = fs.readFileSync("components/teacher-assessments.tsx", "utf8");
+  assert.match(view, /"Key confirmed · " \+ questionsToReview\(item\) \+ " to review"/);
 });
 
 test("a class graded the other way cannot pick it", () => {
@@ -98,7 +131,7 @@ test("a class graded the other way cannot pick it", () => {
 
 test("the library is in the menu and its own page, and New assessment points to it", () => {
   const app = fs.readFileSync(path.join(ROOT, "components/teacher-app.tsx"), "utf8");
-  assert.match(app, /\{ id: "library", label: "Assessment library"/);
+  assert.match(app, /\{ id: "library", label: "Assessment Library"/);
   assert.match(app, /view === "library" \? \(\s*<LibraryView \/>/);
   assert.match(fs.readFileSync(path.join(ROOT, "app/[view]/page.tsx"), "utf8"), /"library",/);
   const page = fs.readFileSync(path.join(ROOT, "components/teacher-library.tsx"), "utf8");

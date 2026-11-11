@@ -114,7 +114,13 @@ export type SuperGridCell = Score & {
   errorTypes: { name: string; count: number }[];
 };
 
-export type SuperGridRow = { cluster: Cluster; label: string; cells: SuperGridCell[] };
+export type SuperGridRow = {
+  cluster: Cluster;
+  label: string;
+  cells: SuperGridCell[];
+  /** Every answer in the row, all DOKs pooled: the cluster's own average. */
+  overall: Score;
+};
 
 export type SuperGrid = {
   rows: SuperGridRow[];
@@ -157,6 +163,39 @@ type GridWorkspace = Pick<Workspace, "assessments" | "students" | "customStandar
 export function classSuperGrid(w: GridWorkspace, classroom: Pick<Classroom, "id" | "gradingMode">, now: Date = new Date()): SuperGrid {
   const roster = new Set(w.students.filter((s) => s.classId === classroom.id).map((s) => s.id));
   return superGrid(w, classroom, roster, false, now);
+}
+
+/**
+ * How many DISTINCT students on the class roster have a confirmed answer that
+ * counts toward each cluster's average (the same filters the grid uses: in the
+ * school year, not writing, a standard, a DOK level, not excluded, not an
+ * unchecked second choice, verified). Keyed by cluster key. The student report
+ * uses it to hide a class average that rests on too few OTHER students to be
+ * anonymous (privacy review of #209).
+ */
+export function clusterAnswererCounts(
+  w: GridWorkspace,
+  classroom: Pick<Classroom, "id">,
+  now: Date = new Date(),
+): Map<string, Set<string>> {
+  const roster = new Set(w.students.filter((s) => s.classId === classroom.id).map((s) => s.id));
+  const schoolYear = teacherSchoolYear(w, now);
+  const catalog = allStandards(w);
+  const byCluster = new Map<string, Set<string>>();
+  for (const a of w.assessments) {
+    if (!assessmentInClass(a, classroom.id) || !givenInSchoolYear(a, schoolYear) || a.elaArea === "writing") continue;
+    for (const q of a.questions) {
+      if (q.excluded || !q.standard || (isSecondChoice(q) && !q.verified)) continue;
+      const dok = q.dok === 1 || q.dok === 2 || q.dok === 3 || q.dok === 4 ? q.dok : null;
+      if (dok === null) continue;
+      const standard = catalog.find((x) => x.code === q.standard && x.framework === a.framework) ?? catalog.find((x) => x.code === q.standard) ?? null;
+      const key = clusterOf(q.standard, standard).key;
+      let set = byCluster.get(key);
+      if (!set) byCluster.set(key, (set = new Set()));
+      for (const r of a.responses) if (r.questionId === q.id && r.verified && roster.has(r.studentId)) set.add(r.studentId);
+    }
+  }
+  return byCluster;
 }
 
 /**
@@ -238,6 +277,7 @@ function superGrid(
     .map(({ cluster, items }): SuperGridRow => ({
       cluster,
       label: clusterLabel(cluster),
+      overall: score(items.flatMap((i) => i.answers.map((x) => x.match)), mode),
       cells: DOKS.map((dok): SuperGridCell => {
         const here = items.filter((i) => i.dok === dok);
         const answers = here.flatMap((i) => i.answers);
@@ -319,4 +359,23 @@ export function preteachFocus(grid: SuperGrid, clusterKey: string, dok: number):
       .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
       .slice(0, 10),
   };
+}
+
+/**
+ * Where a "Data-driven lesson" starts (Ricky's menu, 23 Oct 2026): the
+ * class's weakest graded standard anywhere on its super grid, with the DOK and
+ * cluster it is weakest at. Null when nothing is graded yet. Pure.
+ */
+export function weakestStandard(
+  grid: SuperGrid,
+): { code: string; title: string; grade: number; framework: string; dok: 1 | 2 | 3 | 4; label: string; score: Score } | null {
+  let best: ReturnType<typeof weakestStandard> = null;
+  for (const row of grid.rows)
+    for (const cell of row.cells)
+      for (const s of cell.standards) {
+        if (!s.level) continue;
+        if (!best || weakness(s) < weakness(best.score) || (weakness(s) === weakness(best.score) && s.answers > best.score.answers))
+          best = { code: s.code, title: s.title, grade: s.grade, framework: s.framework, dok: cell.dok, label: row.label, score: s };
+      }
+  return best;
 }

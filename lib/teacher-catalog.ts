@@ -127,6 +127,14 @@ export function isBuiltInCatalog(framework: string, grade: number, subject?: str
   );
 }
 
+/** The bundled, official catalogs only -- never a teacher's custom or shared
+ * standard. Their titles and domains are curriculum text and are safe to print
+ * in a report; a custom standard's are teacher-typed and are not (privacy
+ * review of #209). */
+export function builtInStandards(): Standard[] {
+  return [...standards, ...californiaStandards];
+}
+
 export function allStandards(
   w: Pick<Workspace, "customStandards" | "sharedStandards">,
 ) {

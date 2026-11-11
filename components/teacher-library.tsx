@@ -8,7 +8,7 @@ import {
   libraryClassesFor,
   libraryCourses,
   libraryLandingUrl,
-  librarySetupLeft,
+  questionsToReview,
   pickFromLibrary,
 } from "@/lib/assessment-library";
 import { gradingModeLabel, gradingModeOf } from "@/lib/grading-mode";
@@ -51,6 +51,10 @@ export function LibraryView() {
         title="Assessment library"
         description="Every test with a confirmed answer key, by course. Use one with any class graded the same way and go straight to uploading student work."
       >
+        <Action variant="secondary" onClick={() => go("/assessments")}>
+          All assessments
+          <ArrowRight size={16} />
+        </Action>
         <Action onClick={() => go("/scan")}>
           <Plus size={17} />
           New assessment
@@ -75,7 +79,7 @@ export function LibraryView() {
             <ul className="library-tests">
               {tests.map((a) => {
                 const n = activeQuestions(a).length;
-                const left = librarySetupLeft(a);
+                const left = questionsToReview(a);
                 return (
                   <li key={a.id} className="library-test">
                     <div className="library-test-main">
@@ -106,7 +110,7 @@ export function LibraryView() {
         onClose={() => setPicking(null)}
         title={picking ? "Use “" + picking.title + "”" : "Use a test"}
         description={
-          picking && librarySetupLeft(picking)
+          picking && questionsToReview(picking)
             ? "Pick the class. The test opens where its questions still need a review; scanning opens once they're done."
             : "Pick the class. The test opens on Student work for that class; each class keeps its own students' work."
         }

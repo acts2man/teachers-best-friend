@@ -22,7 +22,7 @@ import {
   responseMatch,
 } from "./teacher-metrics";
 
-export function activeQuestions(a: Assessment) {
+export function activeQuestions(a: Pick<Assessment, "questions">) {
   return a.questions.filter((q) => !q.excluded);
 }
 
