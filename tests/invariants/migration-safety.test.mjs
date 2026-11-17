@@ -39,6 +39,13 @@ export const ALLOWED_DROPS = {
   // except by dropping it. The file builds the wider unique index and
   // re-points sync_workspace at it first, in the same transaction.
   "20261014130000_custom_standards_per_framework.sql": ["drop index if exists public.custom_standards_key"],
+  // #215 review: the backfill now orders its pending set by
+  // provider_delete_attempts then created_at (to sink wedged rows), so its
+  // partial index has to move from (created_at) to (provider_delete_attempts,
+  // created_at). An index's columns cannot be changed in place; the file drops
+  // and rebuilds it under the same name, in the same file, right after adding
+  // the column it now indexes. No data lives in an index.
+  "20261110120000_provider_deleted_at.sql": ["drop index if exists scans_provider_copy_pending"],
 };
 
 const normal = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();

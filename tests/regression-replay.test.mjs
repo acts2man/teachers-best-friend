@@ -327,7 +327,7 @@ test("a case is refused where the teacher has not confirmed what it would test",
 });
 
 // ------------------------------------------------------------------ the runner, end to end
-function runnerWith(model, { failStarts = () => false } = {}) {
+function runnerWith(model, { failStarts = () => false, pollError = null } = {}) {
   const calls = { start: [], poll: 0, deleted: 0, refused: 0 };
   const settings = { model: "gpt-5.6-luna", effort: "medium", maxOutput: 32000 };
   const analyzeServer = {
@@ -344,6 +344,7 @@ function runnerWith(model, { failStarts = () => false } = {}) {
     },
     getBackgroundResponse: async (id) => {
       calls.poll++;
+      if (pollError) throw pollError;
       const n = Number(id.split("-")[1]);
       const body = model(calls.start[n - 1]);
       return { status: "completed", usage: { input_tokens: 1000, output_tokens: 500 }, output: [{ content: [{ type: "output_text", text: JSON.stringify(body) }] }] };
@@ -414,6 +415,31 @@ test("a grouping case runs start->poll per batch, re-asks a short batch once, an
   assert.equal(result.metrics.answers.answers, 1);
   assert.equal(result.metrics.answers.inGroup, 1);
 });
+
+// #215 review: a poll that finds the provider copy gone (404/410) must fail the
+// case, not return "still working" forever. With store:false the copy is deleted
+// ~10 min after the job finishes, so there is nothing left to collect and no
+// amount of polling brings it back.
+for (const status of [404, 410]) {
+  test(`a poll that 404/410s (${status}) fails the case instead of polling forever`, async () => {
+    const expected = ex.buildExpected("grouping", workspaceFor(), "a1", uploads);
+    const { runner, calls, svc } = runnerWith(() => ({}), {
+      pollError: Object.assign(new Error("gone"), { status }),
+    });
+    const c = { id: "c1", code: "case-abc123", teacherId: "t", assessmentLegacyId: "a1", kind: "grouping", expected };
+    const usage = { costUsd: 0, model: "", effort: "" };
+    const state = await runner.planCase(svc, c);
+    // First step starts the job and reports "running"; the next step polls.
+    const first = await runner.stepCase(svc, c, "key", state, usage);
+    assert.equal(first.result.status, "running", "the job was started");
+    await assert.rejects(
+      () => runner.stepCase(svc, c, "key", first.state, usage),
+      /gone before the result could be collected|run this case again/i,
+      "the gone poll fails the case",
+    );
+    assert.ok(calls.poll >= 1, "it actually polled");
+  });
+}
 
 // Review of #203: the name the grading pass reads on each pile is never
 // stored, here either. The admin route saves every step's state into
