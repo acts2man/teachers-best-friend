@@ -1076,6 +1076,9 @@ html[data-theme="slate"]{--th:65deg;--ts:.18}
 .dok-cell-errors{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.dok-cell-errors li{display:flex;flex-direction:column;gap:1px;font-size:13.5px;overflow-wrap:anywhere}.dok-cell-errors li span{font-size:12.5px;color:#4f5a55}
 .dok-cell-levels{border:0;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}.dok-cell-levels label{flex-direction:row;align-items:center;gap:8px;font-weight:500;font-size:13.5px}
 .dok-grid-note{margin:0}
+.writing-trait-grid .dok-grid-head,.writing-trait-grid .dok-grid-row{grid-template-columns:minmax(130px,1.4fr) repeat(var(--levels,4),minmax(0,1fr))}
+.trait-cell-students{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.trait-cell-students li{display:flex;align-items:center;gap:9px;font-size:14px}
 @media(max-width:699px){.dok-grid-head{display:none}.dok-grid{gap:10px}.dok-grid-row{grid-template-columns:repeat(4,minmax(0,1fr));padding:10px;border:1px solid #e2e5e2;border-radius:12px}.dok-grid-standard{grid-column:1/-1}.dok-cell{min-height:0;padding:6px 5px}.dok-cell-dok{display:block}.dok-cell strong{font-size:16px}.dok-cell-advice{font-size:10.5px}.dok-cell-advice .advice-full{display:none}.dok-cell-advice .advice-short{display:inline}}
 /* "5 of 9 questions use standards outside your list" under Standards alignment (Michael, 19 Oct 2026). */
 .assignment-status-bar .off-list-note{font-size:.8rem;line-height:1.35;color:#8a5a00}

@@ -201,6 +201,66 @@ export function writingClassAnalysis(
   });
 }
 
+/** One box of the writing trait grid: a trait at one score level (1..max). */
+export type WritingTraitCell = {
+  level: number;
+  /** How many students scored exactly this level on this trait. */
+  count: number;
+  /** Those students, for the cell's tap panel (shown locally, never sent to AI). */
+  students: Student[];
+  /** The colour of this level, on the same 0–4 cuts as the DOK grid / class card. */
+  levelInfo: MasteryLevelInfo;
+};
+
+/** One row of the writing trait grid: a rubric trait and its cells, levels across. */
+export type WritingTraitRow = {
+  dimension: RubricDimension;
+  max: number;
+  cells: WritingTraitCell[];
+  /** Students with a confirmed score on this trait (the cells' counts sum to this). */
+  scored: number;
+  /** Students with no confirmed score on this trait yet. */
+  notScored: Student[];
+};
+
+/**
+ * The writing trait grid (Michael, 11 Nov 2026, "option A"): rubric traits down
+ * the side, score levels 1..max across, each box the number of students who
+ * scored that level on that trait, coloured by the level on the same 0–4 cuts
+ * as the DOK grid. Computed from the teacher's CONFIRMED rubric scores already
+ * on the responses (keyed by trait id) -- no AI call, no new stored field.
+ */
+export function writingTraitGrid(a: Assessment, students: Student[]): WritingTraitRow[] {
+  return rubricDimensions(a).map((dimension) => {
+    const max = dimension.max > 0 ? dimension.max : 4;
+    const byStudentLevel = new Map<string, Student[]>();
+    const notScored: Student[] = [];
+    let scored = 0;
+    for (const student of students) {
+      const r = a.responses.find(
+        (r) =>
+          r.studentId === student.id &&
+          r.questionId === dimension.id &&
+          r.verified &&
+          r.rubricScore !== undefined,
+      );
+      if (!r || r.rubricScore === undefined) {
+        notScored.push(student);
+        continue;
+      }
+      scored++;
+      const key = String(r.rubricScore);
+      (byStudentLevel.get(key) ?? byStudentLevel.set(key, []).get(key)!).push(student);
+    }
+    const cells: WritingTraitCell[] = [];
+    for (let level = 1; level <= max; level++) {
+      const studentsAt = byStudentLevel.get(String(level)) ?? [];
+      cells.push({ level, count: studentsAt.length, students: studentsAt, levelInfo: rubricLevel(level, max) });
+    }
+    return { dimension, max, cells, scored, notScored };
+  });
+}
+
 /**
  * Per-standard class breakdown for one assessment, computed from the
  * questions/responses already captured — no AI call. Only responses the

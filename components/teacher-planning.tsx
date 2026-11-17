@@ -95,6 +95,7 @@ import {
   practicePrintText,
   approachLabel,
   TEACHING_APPROACHES,
+  writingTraitReteachNote,
   type LessonContent,
 } from "@/lib/teacher-lessons";
 import { priorities } from "@/lib/teacher-data";
@@ -321,6 +322,20 @@ export function ReteachView() {
     dokLevels.length && sourceAssessment && standard
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
       : null;
+  // "Reteach this trait" from the writing trait grid: the trait name, the level
+  // the teacher tapped and the whole-class level counts -- the only writing
+  // data sent to the AI, never a student (docs/student-data-flow.md section 4).
+  const traitReteach = (() => {
+    const trait = params.get("trait");
+    if (!trait) return null;
+    const max = Number(params.get("traitMax")) || 4;
+    const level = Number(params.get("traitLevel")) || 1;
+    const counts = (params.get("traitCounts") || "")
+      .split(",")
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n));
+    return { trait, level, max, counts };
+  })();
   useEffect(() => {
     const l = params.get("lesson"),
       st = params.get("standard");
@@ -348,19 +363,33 @@ export function ReteachView() {
         groupIds = (params.get("students") || "").split(",").filter(Boolean);
       setAudience(groupIds.length ? "suggested" : student || "");
       setNotes("");
-      const observed = sourceAssessment?.responses
-        .filter(
-          (r) =>
-            (r.studentId === student || groupIds.includes(r.studentId)) &&
-            r.verified &&
-            !r.correct &&
-            sourceAssessment.questions.some(
-              (q) => q.id === r.questionId && q.standard === st,
-            ),
-        )
-        .map((r) => r.misconception)
-        .filter(Boolean);
-      if (observed?.length) setNotes([...new Set(observed)].join("\n"));
+      if (params.get("trait")) {
+        // A trait reteach from the writing grid prefills the note from the
+        // trait name/level/counts (no student data); the per-student
+        // misconception prefill below does not apply to a whole-class trait.
+        setNotes(
+          writingTraitReteachNote({
+            trait: params.get("trait")!,
+            level: Number(params.get("traitLevel")) || 1,
+            max: Number(params.get("traitMax")) || 4,
+            counts: (params.get("traitCounts") || "").split(",").map((n) => Number(n)).filter((n) => Number.isFinite(n)),
+          }),
+        );
+      } else {
+        const observed = sourceAssessment?.responses
+          .filter(
+            (r) =>
+              (r.studentId === student || groupIds.includes(r.studentId)) &&
+              r.verified &&
+              !r.correct &&
+              sourceAssessment.questions.some(
+                (q) => q.id === r.questionId && q.standard === st,
+              ),
+          )
+          .map((r) => r.misconception)
+          .filter(Boolean);
+        if (observed?.length) setNotes([...new Set(observed)].join("\n"));
+      }
     } else {
       setStandard("");
       setAudience("");
@@ -619,6 +648,22 @@ export function ReteachView() {
           Saved lesson plans<Pill>{plans.length}</Pill>
         </Action>
       </PageTitle>
+      {traitReteach && (
+        <div className="reteach-context preteach-context">
+          <BookOpen size={21} />
+          <div>
+            <strong>Writing trait · {traitReteach.trait} · level {traitReteach.level} of {traitReteach.max}</strong>
+            <p>
+              From the writing trait grid. Across the class:{" "}
+              {traitReteach.counts.map((c, i) => `${c} at ${i + 1}`).join(", ")} (out of {traitReteach.max}).
+            </p>
+            <p className="cell-meta">
+              Only the trait name, the level and these counts are sent to the AI — never a
+              student&rsquo;s name or writing.
+            </p>
+          </div>
+        </div>
+      )}
       {preteach && (
         <div className="reteach-context preteach-context">
           <BookOpen size={21} />
