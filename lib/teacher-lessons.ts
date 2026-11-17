@@ -2,6 +2,25 @@ import type {Standard,Lesson,Resource,LessonFlow,TeachingApproach} from "./teach
 import {gardenPassage} from "./teacher-data";
 export type LessonContent=NonNullable<Lesson["custom"]>;
 export function hasCuratedLesson(s:Standard){return ["4.OA.A.3","4.NBT.B.5","4.NBT.A.2","4.NBT.B.4","RI.4.2","RL.4.1","RI.4.4"].includes(s.code)}
+
+/**
+ * The lesson note for a "Reteach this trait" from the writing trait grid
+ * (Michael, 11 Nov 2026). It is what the lesson request sends to the AI as its
+ * free-text context, so by construction it carries ONLY the trait name, the
+ * level the teacher tapped, and the whole-class level counts -- never a
+ * student's name or writing (docs/student-data-flow.md section 4). Pure, so the
+ * "no identity" contract is a test, not a hope.
+ */
+export function writingTraitReteachNote(input: { trait: string; level: number; max: number; counts: number[] }): string {
+  const { trait, level, max, counts } = input;
+  const breakdown = counts.map((c, i) => `${c} at level ${i + 1}`).join(", ");
+  return (
+    `Reteach the writing trait "${trait}". ` +
+    `Most attention is needed at level ${level} of ${max}. ` +
+    `Across the class the confirmed scores were: ${breakdown} (out of ${max}). ` +
+    `Build a short lesson that moves students up on this trait.`
+  );
+}
 export function lessonContent(s:Standard):LessonContent {
 if(!hasCuratedLesson(s))throw new Error("This standard requires a specific reteach lesson.");
 if(s.code==="4.OA.A.3")return {objective:"Students will identify the question, choose and sequence two operations, and explain what the final answer means.",materials:["Mini whiteboards","Two-color pencils","Problem cards"],phases:[{time:"0–2",name:"Activate",text:"Read: There are 6 boxes with 24 pencils each. Ask: Are we finding groups, a total, or a difference? Estimate the total before calculating."},{time:"2–5",name:"Model",text:"Add: Students use 38 pencils. Think aloud: First find the total, 6 × 24 = 144. Then find what remains, 144 − 38 = 106. Label each result with its meaning. Model a bar diagram and cross out irrelevant information."},{time:"5–9",name:"Guide",text:"Solve together: A teacher has 5 packs of 16 markers and gives away 27. Ask students to name each step before computing. Expected: 80 − 27 = 53 markers."},{time:"9–12",name:"Try independently",text:"Students solve the first two practice tasks. Before calculating, have them underline the question, circle useful numbers, and write their operation plan."},{time:"12–15",name:"Check & respond",text:"Use the two-question exit ticket. If the operation plan is wrong, repeat a number-free story. If the plan is right but arithmetic is wrong, provide separate calculation support."}],practice:[{q:"4 packs contain 12 pencils each. You use 9 pencils. How many remain? Write a two-step plan.",a:"4 × 12 = 48; 48 − 9 = 39 pencils."},{q:"A library buys 6 boxes of 18 books and lends 35 books. How many of the new books are left?",a:"6 × 18 = 108; 108 − 35 = 73 books."},{q:"There are 73 children. Each table seats 8. How many tables are needed? Explain.",a:"10 tables. Nine tables seat 72; one more is needed."},{q:"A club earns $144, spends $36, and divides the remainder equally among 6 projects. How much does each project receive?",a:"(144 − 36) ÷ 6 = $18."},{q:"Mina says 4 boxes of 18 stickers, with 25 stickers given away, leaves 97 stickers. Explain and correct her error.",a:"She added 25 instead of subtracting. 4 × 18 − 25 = 47 stickers."}],exit:[{q:"3 boxes contain 24 crayons each. You give away 17. How many are left? Show your plan.",a:"3 × 24 − 17 = 55 crayons."},{q:"41 children need cars that seat 6 children each. How many cars are needed, and why?",a:"7 cars: six cars seat 36, leaving five children who need another car."}]};
