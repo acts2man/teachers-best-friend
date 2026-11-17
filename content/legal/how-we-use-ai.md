@@ -48,8 +48,8 @@ off, so the provider keeps the response only long enough for us to collect the r
 then deletes it automatically — within about 10 minutes. Separately, under OpenAI's API
 data policy, abuse-monitoring logs of API traffic may be kept for up to 30 days and are
 then deleted; API data is not used to train models. We have not enabled any setting that
-keeps data longer, and we have not turned on zero data retention. Requests sent before
-November 11, 2026 were stored by the provider for at least 30 days; we are deleting those
+keeps data longer, and we have not turned on zero data retention. Requests sent before we turned storage off in
+November 2026 were stored by the provider for at least 30 days; we are deleting those
 older copies as well.
 
 And we don't train models ourselves. We have no model of our own, no plans for one, and

@@ -219,7 +219,7 @@ Submitted work is sent to OpenAI's API for analysis. Specifically:
 - Requests are made server-side. Our credentials are never exposed to a browser.
 - Requests are sent as background jobs with storage turned off, so the provider
   deletes the response automatically within about 10 minutes (we also
-  delete it as soon as we collect the result). Requests sent before November 11, 2026 were
+  delete it as soon as we collect the result). Requests sent before we turned storage off in November 2026 were
   stored by the provider for at least 30 days; we are deleting those older copies as well.
   Separately, under the provider's API data policy, abuse-monitoring logs may be kept for
   up to 30 days and are then deleted. We have not turned on zero data retention.
