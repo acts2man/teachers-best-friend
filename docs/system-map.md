@@ -497,6 +497,24 @@ unassigned is always allowed.
   the count (`writingReplaceWarning`, through `ConfirmRescan`) -- before anything is uploaded
   or scored. `replaceWritingResponses` keeps verified trait scores unless told
   `replaceConfirmed`. Guarded by `tests/invariants/writing-replace-keeps-confirmed.test.mjs`.
+- **Writing class set** (Michael Zotzman, grade 4 ELA, Android — 5 and 16 Nov 2026): a
+  writing test's "Add student work" opens the **class-set camera** by default, like a math or
+  reading test, with the one-student panel (`WritingReview`) kept as the secondary option
+  ("One student at a time" / "Scan the whole class instead"). `components/writing-class-scan.tsx`
+  (`WritingClassScan`) reuses the class-set camera COMPONENT (`ScanCamera mode="class"`, several
+  pages per student with "Next student") and the SAME name-pass + matching library the math set
+  uses (`planNameBatches`, `mergeNameReads`, `resolveScannedGroups`) — it does not touch the
+  `class_scan` grading/billing path (§1.6). Matching is made from the read name and the page
+  (name check, reassign, discard), so grading is deferred to AFTER matching: each matched
+  student's pages then go to the existing per-student writing/rubric path (one `mode: "writing"`
+  request holding that student's ~2–3 pages — the same request and cost as the one-student panel,
+  so a 3-page essay is **one** grading call), and the suggested trait scores persist through
+  `replaceWritingResponses` (keyed by the trait id, their own table — never `student_responses`).
+  No new workspace field; no page reservation (each writing call charges itself, so no double
+  charge). No AI prompt or request-body change — the `name_strip` and `writing` requests are the
+  ones already documented in `docs/student-data-flow.md` section 4, so no student name is sent
+  beyond what the class-set path already sends. Guarded by `tests/writing-class-set.test.mjs` and
+  `scripts/browser-check/writing-class-set.mjs`.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
