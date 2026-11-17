@@ -134,6 +134,7 @@ import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
+import { WritingClassScan } from "./writing-class-scan";
 import { DokGrid } from "./dok-grid";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
@@ -207,7 +208,10 @@ export function AssessmentView() {
     [leaving, setLeaving] = useState(false),
     // "Read document again" on a test that already has graded answers waits
     // here for the teacher to say the grades may go (see ConfirmReread).
-    [confirmingReread, setConfirmingReread] = useState(false);
+    [confirmingReread, setConfirmingReread] = useState(false),
+    // Writing uploads (Michael, Nov 2026): the class-set camera is the default,
+    // with the one-student-at-a-time panel as the secondary option.
+    [writingUpload, setWritingUpload] = useState<"class" | "single">("class");
   const autoRead = useRef<string | null>(null);
   useEffect(() => {
     setSelected(params.get("id"));
@@ -1000,11 +1004,20 @@ export function AssessmentView() {
                 <WritingRubricPanel assessment={a} onSave={saveAssessment} />
               </TabsContent>
               <TabsContent value="responses">
-                <WritingReview
-                  assessment={a}
-                  students={students}
-                  onSave={saveAssessment}
-                />
+                {writingUpload === "class" ? (
+                  <WritingClassScan
+                    assessment={a}
+                    students={students}
+                    onUseSingle={() => setWritingUpload("single")}
+                  />
+                ) : (
+                  <WritingReview
+                    assessment={a}
+                    students={students}
+                    onSave={saveAssessment}
+                    onUseClassSet={() => setWritingUpload("class")}
+                  />
+                )}
               </TabsContent>
               <TabsContent value="analysis">
                 <WritingClassPanel assessment={a} students={students} go={go} />
@@ -2435,10 +2448,13 @@ function WritingReview({
   assessment: a,
   students,
   onSave,
+  onUseClassSet,
 }: {
   assessment: Assessment;
   students: import("@/lib/teacher-types").Student[];
   onSave: (next: Assessment, message: string) => Promise<boolean | void>;
+  /** Back to the class-set camera (the default "Add student work"). */
+  onUseClassSet?: () => void;
 }) {
   const { aiReady, busy } = useTeacher();
   const [selected, setSelected] = useState(students[0]?.id || "");
@@ -2571,6 +2587,12 @@ function WritingReview({
         title="Student writing"
         description="One student at a time. Upload the whole piece; the AI suggests a level and a reason for each trait, and you decide."
       />
+      {onUseClassSet && (
+        <Action variant="secondary small" onClick={onUseClassSet}>
+          <Camera size={15} />
+          Scan the whole class instead
+        </Action>
+      )}
       <div className="review-student-toolbar">
         <label>
           Student
