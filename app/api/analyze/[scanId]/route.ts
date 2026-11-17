@@ -110,7 +110,7 @@ export async function GET(
       remote = await getBackgroundResponse(providerId, config.key);
     } catch (e) {
       // The provider's copy is gone (404) or expired (410): with store:false it
-      // is deleted automatically about 10 minutes after the job finishes, so a
+      // is deleted automatically within about 10 minutes, so a
       // teacher who comes back much later finds nothing to collect. There is no
       // result and no endless spinner -- fail the scan with a clear message and
       // hand the pages (and their credit) back. The copy is already gone, so

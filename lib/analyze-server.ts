@@ -497,8 +497,8 @@ export async function runModelSync(
 /**
  * Starts a background analysis and returns the provider response id to poll.
  * Sent with `store: false`: the provider keeps the response only long enough to
- * collect the result and deletes it automatically about 10 minutes after the
- * job finishes. The longest real job in 45 days was 95s, so a poll always lands
+ * collect the result and deletes it automatically within about 10 minutes.
+ * The longest real job in 45 days was 95s, so a poll always lands
  * inside that window; a teacher who comes back much later gets a clear "run it
  * again" (the poll route handles the 404). We also delete it on collect.
  */
@@ -562,7 +562,7 @@ export async function getBackgroundResponse(
 /**
  * Deletes the provider's copy of a background response once its result has been
  * read -- belt and braces, since `store: false` already has the provider delete
- * it automatically about 10 minutes after the job finishes. Retries a transient
+ * it automatically within about 10 minutes. Retries a transient
  * refusal, treats an already-gone id (404/410) as done, and never throws;
  * returns how it went so the caller can record the deletion
  * (lib/provider-retention.ts).

@@ -102,7 +102,28 @@ function backfillDb(rows) {
         not: (c, _op, v) => ((data = data.filter((r) => r[c] !== v)), q),
         is: (c, v) => ((data = data.filter((r) => (r[c] ?? null) === v)), q),
         lt: (c, v) => ((data = data.filter((r) => (r[c] ?? 0) < v)), q),
+        // Kept so this file also runs against the pre-fix source (which chained
+        // `.neq("status","analyzing").lt("created_at", …)`); there the orphan
+        // test fails on its assertion rather than on a missing method.
         neq: (c, v) => ((data = data.filter((r) => r[c] !== v)), q),
+        // PostgREST `.or("col.op.val,col.op.val")`: a row is kept when ANY term
+        // matches. Split each term into col/op/value by the first two dots, so a
+        // value that itself contains dots (an ISO timestamp's ".000Z") survives.
+        or: (expr) => {
+          const terms = expr.split(",").map((t) => {
+            const [col, op, ...rest] = t.split(".");
+            return { col, op, val: rest.join(".") };
+          });
+          data = data.filter((r) =>
+            terms.some(({ col, op, val }) => {
+              const cell = r[col];
+              if (op === "neq") return String(cell) !== val;
+              if (op === "lt") return String(cell ?? "") < val;
+              throw new Error("unhandled or-op " + op);
+            }),
+          );
+          return q;
+        },
         order: (c) => (orderBy.push(c), q),
         limit: (n) => {
           data.sort((a, b) => {
@@ -152,23 +173,29 @@ test("the backfill works only eligible rows: deletes each, stamps it, counts, si
   assert.ok(s1.provider_delete_last_error_at, "and timestamped");
 });
 
-test("the backfill never touches an in-flight job: an 'analyzing' or just-started row is skipped", async () => {
+test("the backfill cleans up an OLD 'analyzing' orphan but leaves a RECENT in-flight job alone", async () => {
+  // Production has four scans stuck in status='analyzing' with a
+  // provider_response_id, created Oct-Nov 2026 (orphans; the longest real job
+  // was ~95s). They must be cleaned up, or "remaining = 0" is never reached.
+  // Only a job that could still be running -- 'analyzing' AND under an hour --
+  // is left alone.
   const removed = [];
   const rows = [
-    pending("ok"),
-    pending("analyzing", { status: "analyzing", created_at: OLD }),
-    pending("recent", { created_at: RECENT }),
+    pending("ok"), // complete, old -> deleted
+    pending("orphan", { status: "analyzing", created_at: OLD }), // analyzing, >1h -> deleted
+    pending("recent", { status: "analyzing", created_at: RECENT }), // analyzing, <1h -> skipped
   ];
   const { svc, updated } = backfillDb(rows);
   const counts = await R.backfillProviderCopies(svc, "k", {
     limit: 50, now: NOW,
     remove: async (id) => (removed.push(id), "deleted"),
   });
-  assert.deepEqual(removed, ["rok"], "only the old, non-analyzing row is deleted");
-  assert.equal(counts.checked, 1);
-  assert.equal(counts.deleted, 1);
+  assert.ok(removed.includes("rorphan"), "an 'analyzing' orphan older than an hour IS cleaned up");
+  assert.ok(!removed.includes("rrecent"), "a recent 'analyzing' job is left for the poll route");
+  assert.deepEqual([...removed].sort(), ["rok", "rorphan"], "the orphan and the old complete row, nothing else");
+  assert.equal(counts.deleted, 2);
   assert.equal(counts.more, false);
-  assert.deepEqual(updated.map((u) => u.id), ["ok"], "neither in-flight row is stamped");
+  assert.ok(!updated.some((u) => u.id === "recent"), "the recent in-flight row is not stamped");
 });
 
 test("the backfill gives up on a wedged row: >=5 attempts is never re-selected, and the 5th failure reports gaveUp", async () => {

@@ -231,7 +231,7 @@ async function advanceJob(
     remote = await getBackgroundResponse(job.providerId, key);
   } catch (e) {
     // The provider's copy is gone (404) or expired (410): with store:false it is
-    // deleted ~10 min after the job finishes, so there is nothing left to
+    // deleted within ~10 min, so there is nothing left to
     // collect and no amount of polling will bring it back. Fail this case
     // instead of reporting "still working" forever.
     const status = (e as { status?: number }).status;

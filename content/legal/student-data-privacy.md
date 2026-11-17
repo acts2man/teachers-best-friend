@@ -66,10 +66,11 @@ the service.
 
 **We will not use student work to train artificial intelligence models.** Not ours, not
 a vendor's. Our AI provider is contractually prohibited from training on data submitted
-through our account. Longer requests are sent as background jobs with storage turned off, so the
+through our account. Requests are sent as background jobs with storage turned off, so the
 provider deletes the response automatically within about 10 minutes; under
-its API data policy, abuse-monitoring logs may be kept for up to 30 days. This appears in
-Section 6 in more detail.
+its API data policy, abuse-monitoring logs may be kept for up to 30 days. Requests sent
+before November 11, 2026 were stored by the provider for at least 30 days; we are deleting
+those older copies as well. This appears in Section 6 in more detail.
 
 ---
 
@@ -190,12 +191,13 @@ student's or teacher's device to an AI provider.
 **Which provider.** OpenAI, through its API. This is the business API, not a consumer
 chat product.
 
-**Retention by the provider.** Longer requests are sent as background jobs with storage
+**Retention by the provider.** Requests are sent as background jobs with storage
 turned off, so the provider keeps the response only long enough for us to collect the
 result and then deletes it automatically — within about 10 minutes (we
-also delete it on collect). Separately, under the provider's API data policy, abuse-
-monitoring logs of API traffic may be kept for up to 30 days and are then deleted. We have
-not enabled zero data retention.
+also delete it on collect). Requests sent before November 11, 2026 were stored by the
+provider for at least 30 days; we are deleting those older copies as well. Separately,
+under the provider's API data policy, abuse-monitoring logs of API traffic may be kept for
+up to 30 days and are then deleted. We have not enabled zero data retention.
 
 **Training.** Our agreement with the provider prohibits the use of data submitted
 through our account to train or improve their models. This is the default for API

@@ -3,7 +3,7 @@
  *
  * Background requests are sent with `store: false`, so the provider keeps a
  * response only long enough for us to collect the result and deletes it
- * automatically about 10 minutes after the job finishes (OpenAI API data
+ * automatically within about 10 minutes (OpenAI API data
  * policy). We also delete it ourselves the moment we have read the result --
  * belt and braces, so nothing lingers even inside that window. This helper is
  * that delete: it retries a transient refusal, treats an already-gone id (404)
@@ -78,7 +78,11 @@ export async function deleteProviderCopy(id: string, key: string, opts: Options 
  */
 export const MAX_DELETE_ATTEMPTS = 5;
 
-/** A scan younger than this is treated as possibly in-flight and left alone. */
+/**
+ * An 'analyzing' scan younger than this might still be in flight, so it is left
+ * alone; an 'analyzing' scan older than this is an orphan whose provider copy we
+ * still delete. (The longest real job in 45 days was ~95s.)
+ */
 const IN_FLIGHT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 /**
@@ -90,10 +94,10 @@ const DELETE_RESERVE_MS = 6000;
 
 /**
  * The minimum of the Supabase client the backfill uses. Spelled as a finite
- * chain in the exact call order (not -> is -> lt -> neq -> lt -> order -> order
- * -> limit) rather than a self-referential interface: a recursive chain type
- * makes TS try to prove the real client's deeply-generic builder conforms and
- * trips "excessively deep" (TS2589).
+ * chain in the exact call order (not -> is -> lt -> or -> order -> order ->
+ * limit) rather than a self-referential interface: a recursive chain type makes
+ * TS try to prove the real client's deeply-generic builder conforms and trips
+ * "excessively deep" (TS2589).
  */
 type Thenable = PromiseLike<{ data: unknown; error: unknown }>;
 export type BackfillClient = {
@@ -102,11 +106,9 @@ export type BackfillClient = {
       not: (c: string, op: string, v: null) => {
         is: (c: string, v: null) => {
           lt: (c: string, v: number) => {
-            neq: (c: string, v: string) => {
-              lt: (c: string, v: string) => {
-                order: (c: string) => {
-                  order: (c: string) => { limit: (n: number) => Thenable };
-                };
+            or: (filters: string) => {
+              order: (c: string) => {
+                order: (c: string) => { limit: (n: number) => Thenable };
               };
             };
           };
@@ -135,9 +137,10 @@ type PendingRow = { id: string; provider_response_id: string; provider_delete_at
  * when a full batch came back, so the caller runs it again. Safe to call
  * repeatedly.
  *
- * It never touches an in-flight job -- only scans that are not 'analyzing' and
- * are older than an hour, so a background request the poll route is still
- * collecting is left for it. Rows are taken fewest-failed-attempts first (then
+ * It never touches a job that could still be in flight -- an 'analyzing' scan
+ * under an hour old -- so a background request the poll route is still
+ * collecting is left for it; but an 'analyzing' scan older than that is an
+ * orphan and IS cleaned up. Rows are taken fewest-failed-attempts first (then
  * oldest), a failed delete bumps provider_delete_attempts, and a row that has
  * failed MAX_DELETE_ATTEMPTS times is skipped and reported as `gaveUp` rather
  * than re-selected forever. Each delete is given the pass deadline so one slow
@@ -156,8 +159,12 @@ export async function backfillProviderCopies(
     .not("provider_response_id", "is", null)
     .is("provider_deleted_at", null)
     .lt("provider_delete_attempts", MAX_DELETE_ATTEMPTS)
-    .neq("status", "analyzing")
-    .lt("created_at", olderThan)
+    // Skip only a job that could still be in flight: 'analyzing' AND under an
+    // hour old. An 'analyzing' row older than that is an orphan (a job that
+    // never finished writing its result -- the longest real job was ~95s), and
+    // its provider copy must still be deleted, so it is NOT skipped.
+    // De Morgan: not(analyzing and recent) == (not analyzing) or (not recent).
+    .or(`status.neq.analyzing,created_at.lt.${olderThan}`)
     .order("provider_delete_attempts")
     .order("created_at")
     .limit(limit);

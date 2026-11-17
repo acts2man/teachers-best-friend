@@ -1,15 +1,23 @@
 -- When we deleted the AI provider's copy of a background job.
 --
 -- Background requests are now sent with store:false, so the provider deletes
--- its copy automatically about 10 minutes after the job finishes. We also
--- delete it on collect (belt and braces) and stamp this column; a one-time
--- admin backfill (app/api/admin/provider-backfill) does the same for every past
--- scan that still carries a provider_response_id -- clearing the old store:true
--- backlog -- so this column lets us prove nothing is left:
+-- its copy automatically within about 10 minutes. We also delete it on collect
+-- (belt and braces) and stamp this column; a one-time admin backfill
+-- (app/api/admin/provider-backfill) does the same for every past scan that
+-- still carries a provider_response_id -- clearing the old store:true backlog --
+-- so these two counts let us prove nothing is left. A row given up on after 5
+-- failed deletes stops being retried, so it can never reach 0 in the first
+-- count; split it out as `given_up` for a human to look at (expected 0):
 --
+--   -- remaining to delete (expect 0 once the backfill has run to completion):
 --   select count(*) from public.scans
---    where provider_response_id is not null and provider_deleted_at is null;
---   -- expect 0 after the backfill has run to completion.
+--    where provider_response_id is not null and provider_deleted_at is null
+--      and provider_delete_attempts < 5;
+--   -- given up on after 5 failed deletes (expect 0; if >0, list the ids for a
+--   -- human decision):
+--   select count(*) from public.scans
+--    where provider_response_id is not null and provider_deleted_at is null
+--      and provider_delete_attempts >= 5;
 --
 -- Additive and nullable: the synchronous path never sets it, and an existing
 -- background row reads null until it is deleted. Safe to apply ahead of the
