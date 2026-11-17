@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
-import { AnalyzeError, analyzeRequest } from "@/lib/analyze-client";
+import { AnalyzeError, analyzeRequest, isRetryableAnalyzeError, resumeScan } from "@/lib/analyze-client";
 import { OUT_OF_CREDITS_FOR_LESSON, hasCreditForLesson, startGenerate } from "@/lib/lesson-billing";
 import { refundLesson } from "@/lib/lesson-refund-client";
 import { toast } from "sonner";
@@ -293,7 +293,8 @@ export function ReteachView() {
     [checkLesson, setCheckLesson] = useState<Lesson | null>(null),
     [exitScores, setExitScores] = useState<Record<string, string>>({}),
     [answerKeys, setAnswerKeys] = useState(false),
-    [deleteId, setDeleteId] = useState<string | null>(null);
+    [deleteId, setDeleteId] = useState<string | null>(null),
+    [confirmNew, setConfirmNew] = useState(false);
   const suggestedIds = (params.get("students") || "")
     .split(",")
     .filter((id) => students.some((student) => student.id === id));
@@ -474,6 +475,15 @@ export function ReteachView() {
   async function generateAI() {
     const base = lessonRequestBase();
     if (!base || !aiReady) return;
+    // No credits left: nothing is started, not even the two free versions
+    // (review of #199) -- they would only be spent on a lesson that cannot be
+    // written. Checked BEFORE setAiBusy(true), so the busy state is only ever
+    // entered for a Generate that actually runs and is always cleared by the
+    // `finally` below -- it can never stick "Building your plan…" on.
+    if (quota && !hasCreditForLesson(quota)) {
+      toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
+      return;
+    }
     setAiBusy(true);
     try {
       const chosen = (TEACHING_APPROACHES as readonly string[]).includes(modality)
@@ -484,16 +494,24 @@ export function ReteachView() {
       // the full lesson is charged, the other two versions are not, and all
       // three carry this id so a failure can be refunded on the server's word.
       const lessonRun = crypto.randomUUID();
-      // No credits left: nothing is started, not even the two free versions
-      // (review of #199) -- they would only be spent on a lesson that cannot
-      // be written.
-      if (quota && !hasCreditForLesson(quota)) {
-        toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
-        return;
-      }
+      // The full lesson is the charged request. If the browser loses its POST
+      // response or a poll mid-flight (status 0 -- a dropped connection, a
+      // slept phone), the job is still running and already billed on the
+      // server, so retry by the scan id the server already handed back rather
+      // than abandoning a paid lesson and leaving its scan 'analyzing' forever
+      // with nobody polling it (Ricky, 16 Nov 2026).
+      let fullScanId: string | null = null;
+      const runFull = (onAccepted: () => void) =>
+        analyzeRequest(
+          { ...base, modality: chosen, lessonPart: "full", lessonRun },
+          { onScanId: (id) => { fullScanId = id; onAccepted(); } },
+        ).catch((e) => {
+          if (fullScanId && isRetryableAnalyzeError(e)) return resumeScan(fullScanId);
+          throw e;
+        });
       const { value: [full, ...flows], ms } = await timed(() =>
         startGenerate(
-          (onAccepted) => analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }, { onScanId: onAccepted }),
+          runFull,
           others.map((o) => () => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
         ),
       );
@@ -607,6 +625,30 @@ export function ReteachView() {
     setEdited(false);
     setEditing(false);
   }
+  // Work that starting a new plan would throw away: a generated lesson not yet
+  // saved, or an edit in progress. (A saved plan opened read-only is not at
+  // risk, so it needs no warning.)
+  const unsavedWork = !choosing && !!custom && (!savedId || editing);
+  // Return to the "Start a lesson" panel from ANY planning state. Clearing the
+  // URL to /lessons (no params) makes `choosing` true again; the effect on
+  // `params` resets the in-progress lesson, but clear it here too so there is
+  // no flash of the old plan before the navigation lands.
+  function startNewPlan() {
+    setConfirmNew(false);
+    setCustom(undefined);
+    setSavedId(null);
+    setStandard("");
+    setAudience("");
+    setNotes("");
+    setEdited(false);
+    setEditing(false);
+    setTab("build");
+    go("/lessons");
+  }
+  function newPlan() {
+    if (unsavedWork) setConfirmNew(true);
+    else startNewPlan();
+  }
   return (
     <>
       <PageTitle
@@ -614,6 +656,16 @@ export function ReteachView() {
         title="Lesson Planning"
         description="Start from your class's super grid or from scratch, generate the plan, and keep it here."
       >
+        {/* A teacher can start a NEW plan from any state, not only the empty
+            /lessons screen. Without this, opening a saved plan or the Saved
+            tab (or finishing a Generate) left no visible way back to "Start a
+            lesson" and the planner looked stuck (Ricky, 13 Nov 2026). */}
+        {!choosing && (
+          <Action onClick={newPlan}>
+            <Plus size={16} />
+            New lesson plan
+          </Action>
+        )}
         <Action variant="secondary" onClick={() => (choosing ? go("/lessons?tab=plan") : setTab("plan"))}>
           <CalendarDays size={16} />
           Saved lesson plans<Pill>{plans.length}</Pill>
@@ -1446,6 +1498,27 @@ export function ReteachView() {
           <Check size={16} />
         </Action>
       </Modal>
+      <AlertDialog
+        open={confirmNew}
+        onOpenChange={(v) => !v && setConfirmNew(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start a new lesson plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current lesson hasn&rsquo;t been saved. Starting a new plan
+              will clear what&rsquo;s on screen. Save it first if you want to
+              keep it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={startNewPlan}>
+              Start new plan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}

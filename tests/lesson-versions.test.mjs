@@ -59,7 +59,12 @@ test("one generate: the full lesson in the chosen approach and the flow in the o
   // The full lesson, and the other two once it is accepted (its scan id is
   // back): side by side on the deployment, which runs every lesson as a job;
   // never started at all when it is refused (review of #199).
-  assert.match(gen, /startGenerate\(\s*\(onAccepted\) => analyzeRequest\(\{ \.\.\.base, modality: chosen, lessonPart: "full", lessonRun \}, \{ onScanId: onAccepted \}\),\s*others\.map\(\(o\) => \(\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow", lessonRun \}\)\),/);
+  assert.match(gen, /startGenerate\(\s*runFull,\s*others\.map\(\(o\) => \(\) => analyzeRequest\(\{ \.\.\.base, modality: o, lessonPart: "flow", lessonRun \}\)\),/);
+  // The full request captures its scan id (and releases the free flows), and on
+  // a retryable failure where it HAS that id it resumes the paid job rather
+  // than abandoning it half-run (Ricky, 16 Nov 2026).
+  assert.match(gen, /lessonPart: "full", lessonRun \},\s*\{ onScanId: \(id\) => \{ fullScanId = id; onAccepted\(\); \} \}/);
+  assert.match(gen, /if \(fullScanId && isRetryableAnalyzeError\(e\)\) return resumeScan\(fullScanId\);/);
   // Since the #199 review, a missing full lesson no longer throws the flows
   // away: what came back is shown and the credit asked back
   // (tests/lesson-billing.test.mjs).
