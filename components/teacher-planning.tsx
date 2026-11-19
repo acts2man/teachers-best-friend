@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { uprightPage } from "@/lib/image-prep";
 import { uploadFile } from "@/lib/upload-client";
 import { useSearchParams } from "next/navigation";
-import { AnalyzeError, analyzeRequest } from "@/lib/analyze-client";
+import { AnalyzeError, analyzeRequest, isRetryableAnalyzeError, resumeScan } from "@/lib/analyze-client";
 import { OUT_OF_CREDITS_FOR_LESSON, hasCreditForLesson, startGenerate } from "@/lib/lesson-billing";
 import { refundLesson } from "@/lib/lesson-refund-client";
 import { toast } from "sonner";
@@ -239,6 +239,16 @@ async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number }
   return { value, ms: Math.round(performance.now() - started) };
 }
 
+// The URL params that mean "a lesson/standard is open" (so the Start panel is
+// hidden). A plain Lesson Planning menu click carries none of these.
+const OPEN_PARAM_KEYS = ["standard", "assessment", "lesson", "intent", "student", "students", "tab", "start", "dok", "cluster"];
+// The sidebar sets this (sessionStorage for a remount, a window event for a
+// same-view tap) when "Lesson Planning" is tapped, so a stale ?lesson= the
+// force-static router kept on the /lessons URL is dropped instead of re-opening
+// the last lesson (Ricky, 17 Nov 2026: came back to planning and it was stuck
+// on the previous lesson). An in-app "open this lesson" never sets it.
+export const LESSONS_FRESH_KEY = "tbf:lessons-fresh";
+
 export function ReteachView() {
   const { w, classroom, students, save, busy, aiReady, go, quota } = useTeacher();
   const params = useSearchParams(),
@@ -293,17 +303,38 @@ export function ReteachView() {
     [checkLesson, setCheckLesson] = useState<Lesson | null>(null),
     [exitScores, setExitScores] = useState<Record<string, string>>({}),
     [answerKeys, setAnswerKeys] = useState(false),
-    [deleteId, setDeleteId] = useState<string | null>(null);
+    [deleteId, setDeleteId] = useState<string | null>(null),
+    [confirmNew, setConfirmNew] = useState(false);
   const suggestedIds = (params.get("students") || "")
     .split(",")
     .filter((id) => students.some((student) => student.id === id));
   const plans = w.lessons.filter((l) => l.classId === classroom.id),
     s = catalog.find((s) => s.code === standard);
+  // A plain "Lesson Planning" menu tap (sessionStorage flag consumed once, on
+  // mount). When true, any ?lesson=/?standard= still on the URL is a stale one
+  // the force-static router kept, not a lesson the teacher just opened, so it is
+  // ignored and stripped below rather than re-opening the last lesson.
+  const [freshEntry] = useState(() => {
+    try {
+      if (sessionStorage.getItem(LESSONS_FRESH_KEY)) {
+        sessionStorage.removeItem(LESSONS_FRESH_KEY);
+        return true;
+      }
+    } catch {
+      // No sessionStorage (private mode) -- just never a fresh-strip entry.
+    }
+    return false;
+  });
+  const hasOpenParam = OPEN_PARAM_KEYS.some((k) => params.has(k));
+  // We are still clearing a stale param from a fresh menu entry. Stays true only
+  // until the strip lands (params go empty), so a lesson opened deliberately
+  // afterwards in this same mount is not suppressed.
+  const [stripping, setStripping] = useState(freshEntry);
+  const suppressStale = stripping && hasOpenParam;
   // Opened from the menu with nothing to plan from yet: the class super grid
-  // and the two ways to start (Ricky's menu, 23 Oct 2026).
-  const choosing = !["standard", "assessment", "lesson", "intent", "student", "students", "tab", "start", "dok", "cluster"].some((k) =>
-    params.has(k),
-  );
+  // and the two ways to start (Ricky's menu, 23 Oct 2026). A fresh menu entry
+  // that is still shedding a stale param counts as choosing too.
+  const choosing = suppressStale || !hasOpenParam;
   const weakest = weakestStandard(classSuperGrid(w, classroom));
   // A pre-teach lesson from the class super grid (?intent=preteach&cluster=
   // &dok=): worked out again here from the class's own grid -- the cluster,
@@ -322,6 +353,10 @@ export function ReteachView() {
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
       : null;
   useEffect(() => {
+    // A fresh menu entry still shedding a stale param: keep the Start panel and
+    // do not load the stale lesson. The strip effect below clears the URL, and
+    // this effect runs again (params empty) to settle on an empty plan.
+    if (suppressStale) return;
     const l = params.get("lesson"),
       st = params.get("standard");
     if (l) {
@@ -371,7 +406,17 @@ export function ReteachView() {
       setEditing(false);
     }
     setTab(params.get("tab") === "plan" ? "plan" : "build");
-  }, [params, savedPlan?.id, sourceAssessment?.id]);
+  }, [params, savedPlan?.id, sourceAssessment?.id, suppressStale]);
+  // On a fresh menu entry, shed any stale ?lesson=/?standard= the force-static
+  // router kept on the /lessons URL by pushing the bare /lessons (a same-path
+  // pushState, which useSearchParams follows -- the "New lesson plan" button
+  // relies on the same). Once the URL is clean, stop suppressing so a lesson
+  // opened deliberately afterwards (Saved plans, the grid) still opens.
+  useEffect(() => {
+    if (!stripping) return;
+    if (hasOpenParam) go("/lessons");
+    else setStripping(false);
+  }, [hasOpenParam, stripping]); // eslint-disable-line react-hooks/exhaustive-deps
   const modalityLabel = modality === "Kinesthetic" ? "Hands-on" : modality;
   const content = s
       ? custom || (hasCuratedLesson(s) ? lessonContent(s) : null)
@@ -474,6 +519,15 @@ export function ReteachView() {
   async function generateAI() {
     const base = lessonRequestBase();
     if (!base || !aiReady) return;
+    // No credits left: nothing is started, not even the two free versions
+    // (review of #199) -- they would only be spent on a lesson that cannot be
+    // written. Checked BEFORE setAiBusy(true), so the busy state is only ever
+    // entered for a Generate that actually runs and is always cleared by the
+    // `finally` below -- it can never stick "Building your plan…" on.
+    if (quota && !hasCreditForLesson(quota)) {
+      toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
+      return;
+    }
     setAiBusy(true);
     try {
       const chosen = (TEACHING_APPROACHES as readonly string[]).includes(modality)
@@ -484,16 +538,24 @@ export function ReteachView() {
       // the full lesson is charged, the other two versions are not, and all
       // three carry this id so a failure can be refunded on the server's word.
       const lessonRun = crypto.randomUUID();
-      // No credits left: nothing is started, not even the two free versions
-      // (review of #199) -- they would only be spent on a lesson that cannot
-      // be written.
-      if (quota && !hasCreditForLesson(quota)) {
-        toast.error(OUT_OF_CREDITS_FOR_LESSON, { duration: 12000 });
-        return;
-      }
+      // The full lesson is the charged request. If the browser loses its POST
+      // response or a poll mid-flight (status 0 -- a dropped connection, a
+      // slept phone), the job is still running and already billed on the
+      // server, so retry by the scan id the server already handed back rather
+      // than abandoning a paid lesson and leaving its scan 'analyzing' forever
+      // with nobody polling it (Ricky, 16 Nov 2026).
+      let fullScanId: string | null = null;
+      const runFull = (onAccepted: () => void) =>
+        analyzeRequest(
+          { ...base, modality: chosen, lessonPart: "full", lessonRun },
+          { onScanId: (id) => { fullScanId = id; onAccepted(); } },
+        ).catch((e) => {
+          if (fullScanId && isRetryableAnalyzeError(e)) return resumeScan(fullScanId);
+          throw e;
+        });
       const { value: [full, ...flows], ms } = await timed(() =>
         startGenerate(
-          (onAccepted) => analyzeRequest({ ...base, modality: chosen, lessonPart: "full", lessonRun }, { onScanId: onAccepted }),
+          runFull,
           others.map((o) => () => analyzeRequest({ ...base, modality: o, lessonPart: "flow", lessonRun })),
         ),
       );
@@ -607,6 +669,30 @@ export function ReteachView() {
     setEdited(false);
     setEditing(false);
   }
+  // Work that starting a new plan would throw away: a generated lesson not yet
+  // saved, or an edit in progress. (A saved plan opened read-only is not at
+  // risk, so it needs no warning.)
+  const unsavedWork = !choosing && !!custom && (!savedId || editing);
+  // Return to the "Start a lesson" panel from ANY planning state. Clearing the
+  // URL to /lessons (no params) makes `choosing` true again; the effect on
+  // `params` resets the in-progress lesson, but clear it here too so there is
+  // no flash of the old plan before the navigation lands.
+  function startNewPlan() {
+    setConfirmNew(false);
+    setCustom(undefined);
+    setSavedId(null);
+    setStandard("");
+    setAudience("");
+    setNotes("");
+    setEdited(false);
+    setEditing(false);
+    setTab("build");
+    go("/lessons");
+  }
+  function newPlan() {
+    if (unsavedWork) setConfirmNew(true);
+    else startNewPlan();
+  }
   return (
     <>
       <PageTitle
@@ -614,6 +700,16 @@ export function ReteachView() {
         title="Lesson Planning"
         description="Start from your class's super grid or from scratch, generate the plan, and keep it here."
       >
+        {/* A teacher can start a NEW plan from any state, not only the empty
+            /lessons screen. Without this, opening a saved plan or the Saved
+            tab (or finishing a Generate) left no visible way back to "Start a
+            lesson" and the planner looked stuck (Ricky, 13 Nov 2026). */}
+        {!choosing && (
+          <Action onClick={newPlan}>
+            <Plus size={16} />
+            New lesson plan
+          </Action>
+        )}
         <Action variant="secondary" onClick={() => (choosing ? go("/lessons?tab=plan") : setTab("plan"))}>
           <CalendarDays size={16} />
           Saved lesson plans<Pill>{plans.length}</Pill>
@@ -1446,6 +1542,27 @@ export function ReteachView() {
           <Check size={16} />
         </Action>
       </Modal>
+      <AlertDialog
+        open={confirmNew}
+        onOpenChange={(v) => !v && setConfirmNew(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start a new lesson plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current lesson hasn&rsquo;t been saved. Starting a new plan
+              will clear what&rsquo;s on screen. Save it first if you want to
+              keep it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={startNewPlan}>
+              Start new plan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}

@@ -327,6 +327,7 @@ computer can share one scan. They are separate from the workspace.
 | Uploaded files (`teacher-documents`) and `teacher_uploads` rows | 30 days (rows stay, marked `purged_at`) | `20260915005258_teacher_uploads_30_day_retention.sql:10-21`; edge function `supabase/functions/purge-expired-uploads/index.ts`, **200 rows per table per run** (`:18`). Its cron schedule lives only in `cron.job` (`supabase/migrations/README.md:59-79`). The job recorded in `20260909175336_tbf_11_scheduled_purges.sql:2-7` calls a function since **dropped** (`20260915005628…:6-7`). **Not checked on production: run `select * from cron.job`.** |
 | `scans.params/result/error` (AI payloads) | 48 hours | `purge_scan_payloads`, `20260921233844_clear_scan_payloads_after_48_hours.sql:99-137` (09:45 UTC) |
 | AI provider's copy of a background response | Deleted automatically by the provider within ~10 min (`store: false`, `lib/analyze-server.ts`); we also delete it on collect/failure and stamp `scans.provider_deleted_at` (`app/api/analyze/[scanId]`). A poll that finds it gone (404/410) re-reads the scan and fails it (releasing its pages) only while it is still `analyzing` -- a parallel poll may have delivered it -- and skips the DELETE for the id it knows is gone. | `lib/provider-retention.ts`; migration `20261110120000_provider_deleted_at.sql`; one-time admin backfill `app/api/admin/provider-backfill` clears the pre-store:false backlog, skipping only a job that could still be in flight (`analyzing` **and** < 1h old) -- an `analyzing` orphan older than an hour (production has four, created Oct-Nov 2026) IS cleaned up -- ordering by `provider_delete_attempts` then age, and giving up on a row after 5 failed deletes (`gaveUp`). Completeness is two counts, not one: `remaining` (`provider_response_id is not null and provider_deleted_at is null and provider_delete_attempts < 5`, expect 0) and `given_up` (same but `>= 5`, expect 0; if >0, list the ids for a human). The regression runner fails a case whose poll 404/410s rather than polling forever. The provider's own abuse-monitoring logs follow its up-to-30-day API policy and are not ours to shorten. **No cron.** |
+| Lesson scans the browser never collected | Failed after > 1h, credit released for the charged `full` version | A background lesson request returns its scan id in the POST response; if the browser loses that response (`status 0` -- a dropped connection, a slept phone) it never polls, so the row sits `status='analyzing'` forever and the charged version's credit stays spent (Ricky, 16 Nov 2026: flow scan `7108d98b…`). Client side, `generateAI` (`components/teacher-planning.tsx`) retries the **full** lesson by its captured scan id on a retryable failure (`resumeScan`). Server side, admin `POST /api/admin/lesson-orphan-sweep` (`lib/lesson-orphan.ts`) fails every stale (`stage='lesson'`, `analyzing`, no result, > 1h old) lesson scan and releases the `full` version's `gen:<id>` page charge. Counts only, repeatable, **no cron**, no migration. Does not touch the provider copy (`provider-backfill` owns that). |
 | `class_scan_sessions` | 7 days | 09:30 UTC job (above) |
 | `app_events` | 30 days | `20261012190000_app_events_and_regression_replay.sql:91-95` (09:50 UTC) |
 | Camera shots in IndexedDB | **No expiry** | `lib/scan-store.ts`; cleared on Done or Discard (`components/scan-camera.tsx:671`, `:688`, `:701`) |
@@ -663,6 +664,20 @@ Where a small change has the widest effect, roughly in order.
 8. **Migrations applied by hand.** Merging a PR does not apply its SQL. The app can ship ahead
    of the schema, and a field then round-trips in tests and vanishes on production. Confirm on
    production with the round-trip check before merging.
+9. **Force-static screens keep a stale query in the URL** (`app/[view]/page.tsx`, Next 16.2.6).
+   Once a screen has loaded in full with a query (a refresh, a shared link, the phone reloading
+   the tab), the client router keeps that route's cached URL — including its query — when the
+   sidebar `<Link>` navigates back to it. `lib/navigate.ts` (`go()`) works around it for
+   same-page pushes by going through `history.pushState`; a plain sidebar `<Link>` does not.
+   This bit Lesson Planning hardest because `ReteachView` keys off `?lesson=`/`?standard=`: a
+   teacher who opened a saved lesson, refreshed, then returned via the menu found it still on
+   that lesson (Ricky, 17 Nov 2026). Fixed for the lessons view: a plain "Lesson Planning" menu
+   tap sets `LESSONS_FRESH_KEY` in `sessionStorage`; the view, on its next mount (it remounts
+   on `key={view + "-" + classroom.id}`), reads the flag and strips any stale open-param to the
+   bare `/lessons` Start panel. Browser check: `scripts/browser-check/lesson-return-fresh.mjs`
+   (`next build --webpack` + `next start`). An in-app "open this lesson" never sets the flag, so
+   deliberate opens still work. Any other screen that comes to key off its query would need the
+   same guard.
 
 ---
 

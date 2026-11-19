@@ -60,7 +60,7 @@ import {
   DiagnosticsView,
   StudentsView,
 } from "./teacher-insights";
-import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
+import { ReteachView, ResourcesView, SettingsView, LESSONS_FRESH_KEY } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
 import { StudentReportsView } from "./student-reports";
 import { ClassGradingModeField } from "./grading-mode-choice";
@@ -538,7 +538,24 @@ export default function TeacherApp({ view }: { view: string }) {
                   >
                     <Link
                       href={n.id === "home" ? "/app" : "/" + n.id}
-                      onClick={() => setPending({ from: view, to: n.id })}
+                      onClick={() => {
+                        setPending({ from: view, to: n.id });
+                        // A plain Lesson Planning menu tap must start fresh, not
+                        // re-open the lesson the force-static router kept on the
+                        // /lessons URL (Ricky, 17 Nov 2026). The flag is read on
+                        // the next mount of the lessons view (it remounts when
+                        // coming from another view, key=view+class), which drops
+                        // the stale param. Only a menu tap sets it; opening a
+                        // lesson deliberately never does.
+                        if (n.id === "lessons") {
+                          try {
+                            sessionStorage.setItem(LESSONS_FRESH_KEY, "1");
+                          } catch {
+                            // no sessionStorage (private mode): the New lesson
+                            // plan button is still there as the manual way out.
+                          }
+                        }
+                      }}
                     >
                       <n.icon size={19} />
                       <span>{n.label}</span>
