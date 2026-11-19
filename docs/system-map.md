@@ -664,6 +664,20 @@ Where a small change has the widest effect, roughly in order.
 8. **Migrations applied by hand.** Merging a PR does not apply its SQL. The app can ship ahead
    of the schema, and a field then round-trips in tests and vanishes on production. Confirm on
    production with the round-trip check before merging.
+9. **Force-static screens keep a stale query in the URL** (`app/[view]/page.tsx`, Next 16.2.6).
+   Once a screen has loaded in full with a query (a refresh, a shared link, the phone reloading
+   the tab), the client router keeps that route's cached URL — including its query — when the
+   sidebar `<Link>` navigates back to it. `lib/navigate.ts` (`go()`) works around it for
+   same-page pushes by going through `history.pushState`; a plain sidebar `<Link>` does not.
+   This bit Lesson Planning hardest because `ReteachView` keys off `?lesson=`/`?standard=`: a
+   teacher who opened a saved lesson, refreshed, then returned via the menu found it still on
+   that lesson (Ricky, 17 Nov 2026). Fixed for the lessons view: a plain "Lesson Planning" menu
+   tap sets `LESSONS_FRESH_KEY` in `sessionStorage`; the view, on its next mount (it remounts
+   on `key={view + "-" + classroom.id}`), reads the flag and strips any stale open-param to the
+   bare `/lessons` Start panel. Browser check: `scripts/browser-check/lesson-return-fresh.mjs`
+   (`next build --webpack` + `next start`). An in-app "open this lesson" never sets the flag, so
+   deliberate opens still work. Any other screen that comes to key off its query would need the
+   same guard.
 
 ---
 

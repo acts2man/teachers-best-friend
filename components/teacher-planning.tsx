@@ -239,6 +239,16 @@ async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number }
   return { value, ms: Math.round(performance.now() - started) };
 }
 
+// The URL params that mean "a lesson/standard is open" (so the Start panel is
+// hidden). A plain Lesson Planning menu click carries none of these.
+const OPEN_PARAM_KEYS = ["standard", "assessment", "lesson", "intent", "student", "students", "tab", "start", "dok", "cluster"];
+// The sidebar sets this (sessionStorage for a remount, a window event for a
+// same-view tap) when "Lesson Planning" is tapped, so a stale ?lesson= the
+// force-static router kept on the /lessons URL is dropped instead of re-opening
+// the last lesson (Ricky, 17 Nov 2026: came back to planning and it was stuck
+// on the previous lesson). An in-app "open this lesson" never sets it.
+export const LESSONS_FRESH_KEY = "tbf:lessons-fresh";
+
 export function ReteachView() {
   const { w, classroom, students, save, busy, aiReady, go, quota } = useTeacher();
   const params = useSearchParams(),
@@ -300,11 +310,31 @@ export function ReteachView() {
     .filter((id) => students.some((student) => student.id === id));
   const plans = w.lessons.filter((l) => l.classId === classroom.id),
     s = catalog.find((s) => s.code === standard);
+  // A plain "Lesson Planning" menu tap (sessionStorage flag consumed once, on
+  // mount). When true, any ?lesson=/?standard= still on the URL is a stale one
+  // the force-static router kept, not a lesson the teacher just opened, so it is
+  // ignored and stripped below rather than re-opening the last lesson.
+  const [freshEntry] = useState(() => {
+    try {
+      if (sessionStorage.getItem(LESSONS_FRESH_KEY)) {
+        sessionStorage.removeItem(LESSONS_FRESH_KEY);
+        return true;
+      }
+    } catch {
+      // No sessionStorage (private mode) -- just never a fresh-strip entry.
+    }
+    return false;
+  });
+  const hasOpenParam = OPEN_PARAM_KEYS.some((k) => params.has(k));
+  // We are still clearing a stale param from a fresh menu entry. Stays true only
+  // until the strip lands (params go empty), so a lesson opened deliberately
+  // afterwards in this same mount is not suppressed.
+  const [stripping, setStripping] = useState(freshEntry);
+  const suppressStale = stripping && hasOpenParam;
   // Opened from the menu with nothing to plan from yet: the class super grid
-  // and the two ways to start (Ricky's menu, 23 Oct 2026).
-  const choosing = !["standard", "assessment", "lesson", "intent", "student", "students", "tab", "start", "dok", "cluster"].some((k) =>
-    params.has(k),
-  );
+  // and the two ways to start (Ricky's menu, 23 Oct 2026). A fresh menu entry
+  // that is still shedding a stale param counts as choosing too.
+  const choosing = suppressStale || !hasOpenParam;
   const weakest = weakestStandard(classSuperGrid(w, classroom));
   // A pre-teach lesson from the class super grid (?intent=preteach&cluster=
   // &dok=): worked out again here from the class's own grid -- the cluster,
@@ -323,6 +353,10 @@ export function ReteachView() {
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
       : null;
   useEffect(() => {
+    // A fresh menu entry still shedding a stale param: keep the Start panel and
+    // do not load the stale lesson. The strip effect below clears the URL, and
+    // this effect runs again (params empty) to settle on an empty plan.
+    if (suppressStale) return;
     const l = params.get("lesson"),
       st = params.get("standard");
     if (l) {
@@ -372,7 +406,17 @@ export function ReteachView() {
       setEditing(false);
     }
     setTab(params.get("tab") === "plan" ? "plan" : "build");
-  }, [params, savedPlan?.id, sourceAssessment?.id]);
+  }, [params, savedPlan?.id, sourceAssessment?.id, suppressStale]);
+  // On a fresh menu entry, shed any stale ?lesson=/?standard= the force-static
+  // router kept on the /lessons URL by pushing the bare /lessons (a same-path
+  // pushState, which useSearchParams follows -- the "New lesson plan" button
+  // relies on the same). Once the URL is clean, stop suppressing so a lesson
+  // opened deliberately afterwards (Saved plans, the grid) still opens.
+  useEffect(() => {
+    if (!stripping) return;
+    if (hasOpenParam) go("/lessons");
+    else setStripping(false);
+  }, [hasOpenParam, stripping]); // eslint-disable-line react-hooks/exhaustive-deps
   const modalityLabel = modality === "Kinesthetic" ? "Hands-on" : modality;
   const content = s
       ? custom || (hasCuratedLesson(s) ? lessonContent(s) : null)
