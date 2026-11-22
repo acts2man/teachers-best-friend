@@ -7,8 +7,11 @@
 //   - a stale `flow` of a run whose `full` was DELIVERED releases the run's
 //     full credit DIRECTLY by gen:<full id>, of ANY age (a full 3 days old),
 //     counted only when a charge row changed, and never a second time;
-//   - the credit is released BEFORE the scan is failed (crash-safe); and
-//   - a recent job (maybe still running) is left alone.
+//   - the credit is released BEFORE the scan is failed (crash-safe);
+//   - a recent job (maybe still running) is left alone; and
+//   - a flow the sweep CANNOT link to its full (params purged after 48h) is
+//     NEVER failed -- it is left untouched and reported in needsReview, in both
+//     the dry run and apply (review of #216).
 // Modelled tables; no real database. The age check is real, not faked away.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -179,9 +182,61 @@ test("a flow whose run's full was never delivered gives nothing back", async () 
   });
   const counts = await sweepLessonOrphans(db.svc, { now: NOW, apply: true });
   // fullX is itself a charged orphan (its own gen charge would release, but no
-  // charge row exists here), flowX's run full is not 'complete' so no refund.
+  // charge row exists here); flowX's run full is FOUND but not 'complete', so
+  // it is linked (safe to fail) yet owes no refund.
   assert.equal(counts.refunded, 0, "no delivered full, no charge rows -> nothing released");
   assert.equal(counts.failed, 2, "both orphans are still failed");
+  assert.equal(counts.needsReview.length, 0, "both were linkable, so neither needs review");
+});
+
+test("a flow the sweep cannot link to its full (params purged) is held for review, never failed", async () => {
+  // purge_scan_payloads wiped params nightly for rows > 48h. The delivered full
+  // and its lost flow were created milliseconds apart and both lost their
+  // params, so the flow can no longer be linked to the full it would refund.
+  const near1 = "2026-11-10T08:00:00.001Z";
+  const near2 = "2026-11-10T08:00:00.004Z"; // ms apart, both well over 48h old
+  const db = sweepDb({
+    scans: [
+      // The delivered full, params wiped -- complete + has a result, so not an orphan.
+      { id: "fullP", teacher_id: "t1", stage: "lesson", status: "complete", result: { ok: 1 }, billable: true,
+        params: null, created_at: near1 },
+      // The lost flow, params wiped -- a stale orphan the sweep cannot link.
+      { id: "flowP", teacher_id: "t1", stage: "lesson", status: "analyzing", result: null, billable: false,
+        params: null, created_at: near2 },
+    ],
+    charges: [{ id: "cP", teacher_id: "t1", content_sha256: "gen:fullP", released_at: null }],
+  });
+  // Dry run: lists it in needsReview, projects no fail/refund, changes nothing.
+  const dry = await sweepLessonOrphans(db.svc, { now: NOW });
+  assert.equal(dry.wouldFail, 0);
+  assert.equal(dry.wouldRefund, 0);
+  assert.deepEqual(dry.ids, []);
+  assert.deepEqual(dry.needsReview, [{ id: "flowP", teacherId: "t1", createdAt: near2 }]);
+  // Apply: still only needsReview -- the flow is NOT failed, the charge NOT released.
+  const applied = await sweepLessonOrphans(db.svc, { now: NOW, apply: true });
+  assert.equal(applied.failed, 0, "an unlinkable flow is never failed");
+  assert.equal(applied.refunded, 0);
+  assert.deepEqual(applied.needsReview, [{ id: "flowP", teacherId: "t1", createdAt: near2 }]);
+  assert.equal(db.scans.find((s) => s.id === "flowP").status, "analyzing", "left untouched");
+  assert.equal(db.charges[0].released_at, null, "nothing refunded");
+});
+
+test("a flow whose full row survives but whose full's params were purged is also held for review", async () => {
+  const db = sweepDb({
+    scans: [
+      // The full row exists but its params are gone, so a lookup by lessonRun
+      // cannot find it from the flow.
+      { id: "fullQ", teacher_id: "t1", stage: "lesson", status: "complete", result: { ok: 1 }, billable: true,
+        params: null, created_at: THREE_DAYS },
+      { id: "flowQ", teacher_id: "t1", stage: "lesson", status: "analyzing", result: null, billable: false,
+        params: { lessonRun: "runQ", lessonPart: "flow" }, created_at: OLD },
+    ],
+    charges: [{ id: "cQ", teacher_id: "t1", content_sha256: "gen:fullQ", released_at: null }],
+  });
+  const applied = await sweepLessonOrphans(db.svc, { now: NOW, apply: true });
+  assert.equal(applied.failed, 0);
+  assert.equal(applied.refunded, 0);
+  assert.deepEqual(applied.needsReview.map((r) => r.id), ["flowQ"]);
 });
 
 test("two lost flows of one run refund the run's single credit only once", async () => {

@@ -24,12 +24,17 @@ test("New lesson plan is disabled while a generate is running", () => {
 test("a generate captures a run token and drops a stale result", () => {
   assert.match(src, /const runTokenRef = useRef\(0\)/, "a run token ref exists");
   assert.match(src, /const token = \+\+runTokenRef\.current;/, "captured at the start of the generate");
-  // Applied only when still current: the drop guard sits before setCustom/toasts.
+  // Applied only when still current AND still mounted: the drop guard sits
+  // before setCustom/toasts, and returns a delivered-but-dropped lesson with a
+  // truthful message instead of applying it (review of #216).
   assert.match(
     src,
-    /if \(runTokenRef\.current !== token\) return;[\s\S]*?setCustom\(outcome\.lesson\)/,
-    "a stale result returns before it is applied to the open lesson",
+    /if \(runTokenRef\.current !== token \|\| !mountedRef\.current\) \{[\s\S]*?A lesson was finished after you left the page[\s\S]*?return;\s*\n\s*\}[\s\S]*?setCustom\(outcome\.lesson\)/,
+    "a stale/unmounted result returns before it is applied to the open lesson",
   );
+  // The mounted flag is cleared on unmount so a cross-page navigation is caught.
+  assert.match(src, /const mountedRef = useRef\(true\)/);
+  assert.match(src, /mountedRef\.current = false/);
 });
 
 test("moving to another lesson, focus or new plan bumps the token", () => {
@@ -39,6 +44,19 @@ test("moving to another lesson, focus or new plan bumps the token", () => {
   assert.match(src, /function reset\(st: string\) \{\s*\n\s*runTokenRef\.current\+\+;/);
   // … and starting a new plan.
   assert.match(src, /function startNewPlan\(\) \{\s*\n\s*runTokenRef\.current\+\+;/);
+});
+
+test("mid-generate credit-loss doors are blocked (review of #216, blocker 2)", () => {
+  // (a) the Start-panel "Choose a focus directly" picker: routed through
+  //     changeFocus (which waits while aiBusy) and disabled while creating.
+  assert.match(src, /onChoose=\{changeFocus\}/, "ReteachStart focus pick goes through the aiBusy guard");
+  assert.match(src, /label="Choose a reteach focus"[\s\S]*?disabled=\{creating\}/);
+  // (b) Saved lesson plans -> Open lesson is disabled while a generate runs,
+  //     with a note explaining why.
+  assert.match(src, /Open lesson[\s\S]{0,40}/); // the control exists
+  const open = src.slice(src.indexOf('<TabsContent value="plan">'), src.indexOf("Record exit check"));
+  assert.match(open, /Your lesson is still being written\./, "the plan tab shows the note while aiBusy");
+  assert.match(open, /disabled=\{aiBusy\}[\s\S]*?Open lesson/, "Open lesson is disabled while aiBusy");
 });
 
 test("a failed generate's error toast is run-token-guarded (review of #216, nit 9)", () => {

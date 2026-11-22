@@ -18,12 +18,22 @@
  *     the run owes a refund the client's immediate ask could not get -- the
  *     flow was still 'analyzing', not 'failed', when the client asked (Ricky,
  *     16 Nov 2026). This releases that run's full credit DIRECTLY by its
- *     gen:<full scan id> charge, of ANY age, only when that full is complete
- *     and billable. The refund function's own 2-hour window could not help
- *     here: the sweep runs by hand and only on scans already over an hour old,
- *     so by the time a flow is failed the run's full is usually past two hours
- *     (review of #216). Done in TypeScript, guarded on released_at, counted
- *     only when a page-charge row changed.
+ *     gen:<full scan id> charge, found from the flow's `params->>lessonRun`,
+ *     only when that full is complete and billable. The full may be any age
+ *     (the refund function's own 2-hour window could not help a hand-run sweep
+ *     that only touches scans over an hour old); its scan ROW must still carry
+ *     params, though.
+ *
+ * NEEDS REVIEW -- the hard edge (review of #216): `purge_scan_payloads` wipes
+ * `scans.params` nightly for rows older than 48h, including 'analyzing' ones.
+ * A flow orphan whose params (or whose run's full's params) are gone can no
+ * longer be linked to the full it would refund, and a flow is billable=false,
+ * so failing it would strand the refund silently. So the sweep NEVER fails a
+ * flow it cannot link: it leaves it 'analyzing' and reports it in `needsReview`
+ * (id, teacherId, createdAt), in both the dry run and apply, for a human. It
+ * fails + refunds a flow only when the link is certain (its params are present
+ * and the run's full is found). We never guess the link from a timestamp. A
+ * full is self-keyed by its own scan id, so a purge never blocks it.
  * "Stale" means older than an hour: well past the 13-minute client poll
  * deadline, and the longest real job on record was ~95s, so a job this old is
  * never still running.
@@ -68,11 +78,16 @@ export type LessonSweepClient = {
   };
 };
 
+export type NeedsReview = { id: string; teacherId: string | null; createdAt: string | null };
+
 export type LessonOrphanCounts = {
   checked: number;
   more: boolean;
   /** The scan ids this pass failed, or (in a dry run) would fail. */
   ids: string[];
+  /** Flow orphans that could not be linked to their full (params purged): left
+   * untouched for a human, in both the dry run and apply. */
+  needsReview: NeedsReview[];
 } & (
   | { dryRun: true; wouldFail: number; wouldRefund: number }
   | { dryRun: false; failed: number; refunded: number }
@@ -85,46 +100,56 @@ type OrphanRow = {
   id: string;
   teacher_id: string | null;
   billable: boolean | null;
+  created_at: string | null;
   params: { lessonPart?: string | null; lessonRun?: string | null } | null;
 };
 
-/** Only the charged version of a Generate is `full` (flows and questions are free). */
-function isChargedFull(row: OrphanRow): boolean {
-  const part = row.params?.lessonPart ?? "full";
-  return part === "full" && row.billable !== false;
-}
+type Target = { teacher: string; key: string };
+type Verdict =
+  | { action: "fail"; target: Target | null } // fail the scan (and release target, if any)
+  | { action: "review" }; // cannot link -- leave it, report it
 
-/** The teacher + page-charge key whose credit this orphan owes back, or null
- * when it owes none (a free flow of a run whose full was never delivered). */
-async function releaseTargetFor(
-  svc: LessonSweepClient,
-  row: OrphanRow,
-): Promise<{ teacher: string; key: string } | null> {
-  if (!row.teacher_id) return null;
-  // A charged full that was never collected: release its own gen:<id> charge.
-  if (isChargedFull(row)) return { teacher: row.teacher_id, key: "gen:" + row.id };
-  // A flow of a run: the run owes a refund only if its full was delivered
-  // (complete) and billable. Find that full's scan id -- of any age.
-  if (row.params?.lessonPart === "flow" && row.params?.lessonRun) {
+/**
+ * Decide what to do with one orphan.
+ *   - A full (billable != false -- the only charged version) is self-keyed by
+ *     its own scan id, so a params purge never blocks it: fail + release its
+ *     own gen:<id> charge.
+ *   - A free version (billable === false: a flow or a question). We fail +
+ *     refund ONLY when we can see it is a flow and find its run's full: then we
+ *     release the full's credit if it was delivered. A question (identified by
+ *     params) owes nothing, so we fail it with no refund. When params are gone
+ *     we cannot tell a refundable flow from a free question, nor find the full,
+ *     so we must NOT fail it -- it needs review.
+ */
+async function classify(svc: LessonSweepClient, row: OrphanRow): Promise<Verdict> {
+  if (row.billable !== false) {
+    return { action: "fail", target: row.teacher_id ? { teacher: row.teacher_id, key: "gen:" + row.id } : null };
+  }
+  const part = row.params?.lessonPart ?? null;
+  const run = row.params?.lessonRun ?? null;
+  if (part === "flow" && run && row.teacher_id) {
     const { data, error } = await svc
       .from("scans")
       .select("id, status, billable")
       .eq("teacher_id", row.teacher_id)
       .eq("stage", "lesson")
-      .eq("params->>lessonRun", row.params.lessonRun)
+      .eq("params->>lessonRun", run)
       .eq("params->>lessonPart", "full")
       .order("created_at")
       .limit(1);
     if (error) {
       console.error("Looking up a lesson run's full version failed");
-      return null;
+      return { action: "review" }; // can't be certain -- hold it
     }
     const full = ((data ?? []) as { id: string; status?: string; billable?: boolean | null }[])[0];
-    if (full && full.status === "complete" && full.billable !== false) {
-      return { teacher: row.teacher_id, key: "gen:" + full.id };
+    if (!full) return { action: "review" }; // the full's params were purged too
+    if (full.status === "complete" && full.billable !== false) {
+      return { action: "fail", target: { teacher: row.teacher_id, key: "gen:" + full.id } };
     }
+    return { action: "fail", target: null }; // linked, but its full was never delivered -> owes nothing
   }
-  return null;
+  if (part === "question") return { action: "fail", target: null }; // free, identifiable, owes nothing
+  return { action: "review" }; // params purged: can't tell a flow from a question -> hold
 }
 
 /** Is this teacher's charge still unreleased? A read-only check for the dry run. */
@@ -157,7 +182,7 @@ export async function sweepLessonOrphans(
   const nowIso = now.toISOString();
   const { data, error } = await svc
     .from("scans")
-    .select("id, teacher_id, billable, params")
+    .select("id, teacher_id, billable, created_at, params")
     .eq("stage", "lesson")
     .eq("status", "analyzing")
     .is("result", null)
@@ -170,22 +195,33 @@ export async function sweepLessonOrphans(
   let failed = 0;
   let refunded = 0;
   const ids: string[] = [];
+  const needsReview: NeedsReview[] = [];
   // Dry-run projection dedupes refunds by charge key, the way the apply pass's
   // guarded update does naturally: two flow orphans of one run owe one credit.
   const projected = new Set<string>();
   for (const row of rows) {
     checked++;
+    const verdict = await classify(svc, row);
+    if (verdict.action === "review") {
+      // A flow we cannot link to its full: never fail it (that would strand its
+      // refund) -- hand it to a human instead.
+      needsReview.push({ id: row.id, teacherId: row.teacher_id, createdAt: row.created_at });
+      continue;
+    }
+    const target = verdict.target;
     ids.push(row.id);
-    const target = await releaseTargetFor(svc, row);
     if (!apply) {
-      failed++; // every candidate is 'analyzing', so it would be failed
+      failed++; // every candidate here is 'analyzing', so it would be failed
       if (target && !projected.has(target.key) && (await chargeUnreleased(svc, target.teacher, target.key))) {
         projected.add(target.key);
         refunded++;
       }
       continue;
     }
-    // Release FIRST (crash-safe), guarded on released_at; count only a real change.
+    // Release FIRST (crash-safe), guarded on released_at; count only a real
+    // change. The reverse order would risk a 'failed' row with a stuck credit
+    // if the process died between the two writes -- only ever for a scan already
+    // over an hour old, so practically impossible, but cheap to order safely.
     if (target) {
       const { data: rel, error: relErr } = await svc
         .from("page_charges")
@@ -212,6 +248,6 @@ export async function sweepLessonOrphans(
   }
   const more = rows.length >= limit;
   return apply
-    ? { checked, more, ids, dryRun: false, failed, refunded }
-    : { checked, more, ids, dryRun: true, wouldFail: failed, wouldRefund: refunded };
+    ? { checked, more, ids, needsReview, dryRun: false, failed, refunded }
+    : { checked, more, ids, needsReview, dryRun: true, wouldFail: failed, wouldRefund: refunded };
 }

@@ -323,6 +323,11 @@ export function ReteachView() {
   // whose token is stale is dropped instead of applied. A ref, never read
   // during render, so the react-compiler lint stays happy.
   const runTokenRef = useRef(0);
+  // False once the view has unmounted (a cross-page navigation). A generate
+  // that finishes after that must not claim its lesson is ready to save, since
+  // the lesson is gone with the view (review of #216).
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const suggestedIds = (params.get("students") || "")
     .split(",")
     .filter((id) => students.some((student) => student.id === id));
@@ -602,10 +607,20 @@ export function ReteachView() {
       // already -- nothing to ask for (review of #199).
       const refunded = outcome.missing.length && !outcome.fullMissing ? await refundLesson(lessonRun) : null;
       const message = generateMessage(outcome, refunded);
-      // Moved on while this ran: the refund above still settles the billing,
-      // but the lesson (and any toast about it) must not land on whatever
-      // standard or plan is open now (review of #216).
-      if (runTokenRef.current !== token) return;
+      // Moved on while this ran -- the teacher switched standard/plan (token
+      // bumped) or left the page entirely (the view unmounted). The refund
+      // above still settles the billing, but the lesson must not land on
+      // whatever is open now. If a lesson actually came back, say it was not
+      // kept rather than silently vanish -- and never the misleading "ready …
+      // save it" for a lesson the teacher can no longer see (review of #216).
+      if (runTokenRef.current !== token || !mountedRef.current) {
+        if (outcome.lesson)
+          toast.message(
+            "A lesson was finished after you left the page, so it wasn’t kept. If a credit was used, contact support and we’ll return it.",
+            { duration: 12000 },
+          );
+        return;
+      }
       if (!outcome.lesson) {
         toast.error(message + (full.status === "rejected" ? " (" + describeFailure(full.reason, "") + ")" : ""), { duration: 12000 });
         return;
@@ -1508,7 +1523,7 @@ export function ReteachView() {
             <ReteachStart
               standard={s}
               catalog={catalog}
-              onChoose={reset}
+              onChoose={changeFocus}
               onGenerate={generateAI}
               creating={aiBusy}
               notes={notes}
@@ -1521,6 +1536,12 @@ export function ReteachView() {
           )}
         </TabsContent>
         <TabsContent value="plan">
+          {aiBusy && (
+            <p className="field-help" role="status">
+              Your lesson is still being written. Opening another plan now would
+              lose it — this waits until it&rsquo;s done.
+            </p>
+          )}
           {plans.length ? (
             <div className="saved-plans">
               {plans.map((l) => (
@@ -1553,6 +1574,7 @@ export function ReteachView() {
                   <div className="plan-card-actions">
                     <Action
                       variant="secondary small"
+                      disabled={aiBusy}
                       onClick={() => {
                         setTab("build");
                         go("/lessons?lesson=" + l.id);
@@ -1966,6 +1988,7 @@ function ReteachStart({
           label="Choose a reteach focus"
           value={standard?.code || ""}
           onChange={onChoose}
+          disabled={creating}
           options={[
             { value: "", label: "Choose a standard" },
             ...catalog
@@ -1973,6 +1996,9 @@ function ReteachStart({
               .map((s) => ({ value: s.code, label: s.code + " · " + s.title })),
           ]}
         />
+        {creating && (
+          <p className="field-help" role="status">Your lesson is still being written.</p>
+        )}
         <div className="reteach-library-link">
           <TextLink onClick={() => go("/resources")}>
             Browse teaching resources
