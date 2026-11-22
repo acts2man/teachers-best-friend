@@ -90,7 +90,7 @@ for (const [W, H] of [[390, 844], [1366, 768]]) {
         check(/Auditory launch/.test(await page.locator(".lesson-timeline").innerText()), `${tag}: and shows what came back`);
       } else if (run === "the full one fails") {
         check(refunds.length === 0, `${tag}: no refund is asked -- its credit was released when it failed`);
-        check(/^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. Nothing was charged\.$/.test(said), `${tag}: says nothing was charged, not "contact support" ("${said}")`);
+        check(/^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. If a credit was used for it, contact support and we’ll return it\.$/.test(said), `${tag}: points to support, never promises "Nothing was charged" unconfirmed ("${said}")`);
         await page.getByRole("tab", { name: /Hands-on/ }).click();
         check(/HandsOn launch/.test(await page.locator(".lesson-timeline").innerText()), `${tag}: the flows that came back are kept`);
       } else {
