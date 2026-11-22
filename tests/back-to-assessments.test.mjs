@@ -42,6 +42,8 @@ test("another page still goes through the router", () => {
 
 test("the app's go() uses it", () => {
   const app = readFileSync("components/teacher-app.tsx", "utf8");
-  assert.match(app, /go: \(url: string\) => navigate\(router, url\)/);
+  // go() delegates to navigate(router, url); it now also flags a bare-/lessons
+  // entry fresh first (review of #216), so match the call, not the whole body.
+  assert.match(app, /go: \(url: string\) => \{[\s\S]*?navigate\(router, url\);[\s\S]*?\},/);
   assert.doesNotMatch(app, /go: \(url: string\) => router\.push\(url\)/);
 });

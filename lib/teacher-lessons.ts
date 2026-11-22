@@ -201,16 +201,18 @@ export function generateMessage(
 ): string {
   if (!o.missing.length)
     return "Your lesson plan is ready in Visual, Hands-on and Auditory. Review it, edit anything, then save it.";
-  // The full lesson failing released its own credit when it failed: nothing
-  // was charged, whatever else happened (review of #199). Only a version
-  // missing beside a delivered lesson asks for the credit back.
+  // What to say about the one credit. We claim "You weren't charged" only when
+  // the server confirmed the release (refunded === true). Otherwise the charge
+  // may be momentarily spent: the orphan sweep that returns it is admin-run,
+  // not automatic (no cron), so we must not promise an automatic return --
+  // point the teacher at support, who will return it (review of #216).
   const credit = o.fullMissing
-    ? " Nothing was charged."
+    ? " If a credit was used for it, contact support and we’ll return it."
     : refunded === null
       ? ""
       : refunded
         ? " You weren’t charged for this Generate."
-        : " The credit couldn’t be given back automatically — contact support and we will.";
+        : " The credit couldn’t be returned automatically — contact support and we’ll return it.";
   const missing = o.missing.map(approachLabel);
   if (!o.lesson) return "The lesson couldn’t be created: none of the three versions came back." + credit + " Try again in a moment.";
   if (o.fullMissing)

@@ -60,7 +60,7 @@ import {
   DiagnosticsView,
   StudentsView,
 } from "./teacher-insights";
-import { ReteachView, ResourcesView, SettingsView } from "./teacher-planning";
+import { ReteachView, ResourcesView, SettingsView, LESSONS_FRESH_KEY, LESSONS_MENU_TAP } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
 import { StudentReportsView } from "./student-reports";
 import { ClassGradingModeField } from "./grading-mode-choice";
@@ -435,7 +435,23 @@ export default function TeacherApp({ view }: { view: string }) {
       window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
     save,
     reload,
-    go: (url: string) => navigate(router, url),
+    go: (url: string) => {
+      // A move to the bare /lessons from another screen is a non-deliberate
+      // entry (a shortcut, a guide link): flag it fresh so the force-static
+      // router's stale ?lesson= is stripped on the next mount rather than
+      // re-opening the last lesson (review of #216). A deliberate open carries
+      // a param (?lesson=/?standard=/…), and a reset already on /lessons is a
+      // same-route pushState -- neither flags fresh.
+      try {
+        const u = new URL(url, window.location.href);
+        if (u.pathname === "/lessons" && !u.search && window.location.pathname !== "/lessons")
+          sessionStorage.setItem(LESSONS_FRESH_KEY, "1");
+      } catch {
+        // no URL/sessionStorage (SSR, private mode): the "New lesson plan"
+        // button is still the manual way back to the Start panel.
+      }
+      navigate(router, url);
+    },
   };
   const shownView = pending && pending.from === view ? pending.to : view;
   const litNav = navFor[shownView] ?? shownView;
@@ -538,7 +554,34 @@ export default function TeacherApp({ view }: { view: string }) {
                   >
                     <Link
                       href={n.id === "home" ? "/app" : "/" + n.id}
-                      onClick={() => setPending({ from: view, to: n.id })}
+                      onClick={(e) => {
+                        setPending({ from: view, to: n.id });
+                        // A plain Lesson Planning menu tap must start fresh, not
+                        // re-open the lesson the force-static router kept on the
+                        // /lessons URL (Ricky, 17 Nov 2026).
+                        if (n.id === "lessons") {
+                          // Already on /lessons: the view does not remount
+                          // (key=view+class is unchanged), so the fresh flag
+                          // would never be read. Keep the URL off the router's
+                          // stale ?lesson= and tell the mounted lessons view to
+                          // return to Start in place -- it asks first if there
+                          // is unsaved work (review of #216).
+                          if (view === "lessons") {
+                            e.preventDefault();
+                            window.dispatchEvent(new Event(LESSONS_MENU_TAP));
+                            return;
+                          }
+                          // Coming from another view: it remounts, and reads the
+                          // flag on mount to drop the stale param. Only a menu
+                          // tap sets it; opening a lesson deliberately never does.
+                          try {
+                            sessionStorage.setItem(LESSONS_FRESH_KEY, "1");
+                          } catch {
+                            // no sessionStorage (private mode): the New lesson
+                            // plan button is still there as the manual way out.
+                          }
+                        }
+                      }}
                     >
                       <n.icon size={19} />
                       <span>{n.label}</span>

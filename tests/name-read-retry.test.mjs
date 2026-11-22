@@ -59,16 +59,18 @@ const acm = { exports: {} };
 new Function("module", "exports", ac.outputFiles[0].text)(acm, acm.exports);
 const { AnalyzeError, isRetryableAnalyzeError } = acm.exports;
 
-test("never retried: a refusal, the teacher's daily cap (429), the platform cap (503), the poll deadline", async () => {
-  for (const reason of [400, 404, 413, 429, 503, "deadline"]) {
+test("never retried: a refusal, the daily cap (429), the platform cap (503), the poll deadline, a failed job", async () => {
+  // "job-failed" is not retried (review of #216): the background job already
+  // ran and failed, so resuming it only polls the same failure again.
+  for (const reason of [400, 404, 413, 429, 503, "deadline", "job-failed"]) {
     let calls = 0;
     await assert.rejects(withRetry(async () => { calls++; throw new AnalyzeError("no", reason); }, { delays: [1, 1], retryable: isRetryableAnalyzeError, wait: async () => {} }));
     assert.equal(calls, 1, String(reason));
   }
 });
 
-test("retried: a network failure, a failed background job, a 500/502/504 -- each retry reported", async () => {
-  for (const make of [() => new TypeError("fetch failed"), () => new AnalyzeError("x", "job-failed"), () => new AnalyzeError("x", 502), () => new AnalyzeError("x", 500), () => new AnalyzeError("x", 504)]) {
+test("retried: a network failure, a 500/502/504 -- each retry reported", async () => {
+  for (const make of [() => new TypeError("fetch failed"), () => new AnalyzeError("x", 502), () => new AnalyzeError("x", 500), () => new AnalyzeError("x", 504)]) {
     let calls = 0;
     const seen = [];
     const out = await withRetry(async () => { if (++calls < 3) throw make(); return "ok"; }, { delays: [1, 1], retryable: isRetryableAnalyzeError, onRetry: (e, n) => seen.push(n), wait: async () => {} });

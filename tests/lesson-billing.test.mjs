@@ -81,19 +81,23 @@ test("what came back is shown, and the message says whether the credit came back
   assert.deepEqual(oneFlow.missing, ["Kinesthetic"]);
   assert.ok(oneFlow.lesson.flows.Auditory && !oneFlow.lesson.flows.Kinesthetic);
   assert.equal(L.generateMessage(oneFlow, true), "Your lesson plan is ready, but the Hands-on version didn’t come back. You weren’t charged for this Generate. Generate again to try once more.");
-  assert.match(L.generateMessage(oneFlow, false), /The credit couldn’t be given back automatically — contact support and we will\./);
+  // Not confirmed released (the lost version is not yet 'failed'): the sweep
+  // that returns it is admin-run, not automatic, so we point at support and
+  // never claim "nothing charged" or an automatic return (review of #216).
+  assert.match(L.generateMessage(oneFlow, false), /couldn’t be returned automatically — contact support/);
+  assert.doesNotMatch(L.generateMessage(oneFlow, false), /Nothing was charged|will be returned automatically/);
   // The full one failed: the two flows that came back are kept, not thrown away.
   const noFull = L.generateOutcome("Visual", null, [["Kinesthetic", flow(1)], ["Auditory", flow(2)]]);
   assert.deepEqual(noFull.missing, ["Visual"]);
   assert.deepEqual(Object.keys(noFull.lesson.flows).sort(), ["Auditory", "Kinesthetic"]);
   assert.deepEqual(noFull.lesson.practice, []);
-  assert.match(L.generateMessage(noFull, null), /^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. Nothing was charged\.$/);
+  assert.match(L.generateMessage(noFull, null), /^The Visual version didn’t come back, and the practice and exit ticket come with the first one — they are empty below\. Use Add question, or generate again\. If a credit was used for it, contact support and we’ll return it\.$/);
   // The screen copes with a lesson with no practice yet (it crashed on
   // content.practice[0].q -- caught by scripts/browser-check/lesson-billing.mjs).
   assert.match(planning, /\{content\.practice\[0\] && \(\s*<div className="practice-prompt">/);
   const none = L.generateOutcome("Visual", null, [["Kinesthetic", null], ["Auditory", null]]);
   assert.equal(none.lesson, null);
-  assert.match(L.generateMessage(none, null), /none of the three versions came back\. Nothing was charged\./);
+  assert.match(L.generateMessage(none, null), /none of the three versions came back\. If a credit was used for it, contact support and we’ll return it\./);
 });
 
 test("a refusal for credit is said in lesson words", () => {

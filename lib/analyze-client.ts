@@ -28,15 +28,17 @@ export class AnalyzeError extends Error {
 }
 
 /**
- * Whether trying again could help (#125 follow-up review): a network failure,
- * a background job that failed, or a server error other than 503. Never a
- * refusal -- a 4xx, including the teacher's daily cap (429); never 503, which
- * is also the platform's spending cap; never the 13-minute poll deadline, which
- * would only start a duplicate of a job that may still finish.
+ * Whether trying again could help (#125 follow-up review): a network failure or
+ * a server error other than 503. Never a refusal -- a 4xx, including the
+ * teacher's daily cap (429); never 503, which is also the platform's spending
+ * cap; never the 13-minute poll deadline, which would only start a duplicate of
+ * a job that may still finish; and never "job-failed" (review of #216): the
+ * background job has already run and failed, so resuming it only polls a failure
+ * again -- the work must start afresh, not be retried in place.
  */
 export function isRetryableAnalyzeError(e: unknown): boolean {
   if (e instanceof AnalyzeError) {
-    if (e.reason === "job-failed") return true;
+    if (e.reason === "job-failed") return false;
     if (e.reason === "deadline") return false;
     return e.reason >= 500 && e.reason !== 503;
   }
