@@ -435,7 +435,23 @@ export default function TeacherApp({ view }: { view: string }) {
       window.dispatchEvent(new Event(SCAN_COMPLETE_EVENT)),
     save,
     reload,
-    go: (url: string) => navigate(router, url),
+    go: (url: string) => {
+      // A move to the bare /lessons from another screen is a non-deliberate
+      // entry (a shortcut, a guide link): flag it fresh so the force-static
+      // router's stale ?lesson= is stripped on the next mount rather than
+      // re-opening the last lesson (review of #216). A deliberate open carries
+      // a param (?lesson=/?standard=/…), and a reset already on /lessons is a
+      // same-route pushState -- neither flags fresh.
+      try {
+        const u = new URL(url, window.location.href);
+        if (u.pathname === "/lessons" && !u.search && window.location.pathname !== "/lessons")
+          sessionStorage.setItem(LESSONS_FRESH_KEY, "1");
+      } catch {
+        // no URL/sessionStorage (SSR, private mode): the "New lesson plan"
+        // button is still the manual way back to the Start panel.
+      }
+      navigate(router, url);
+    },
   };
   const shownView = pending && pending.from === view ? pending.to : view;
   const litNav = navFor[shownView] ?? shownView;

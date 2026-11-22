@@ -40,3 +40,18 @@ test("moving to another lesson, focus or new plan bumps the token", () => {
   // … and starting a new plan.
   assert.match(src, /function startNewPlan\(\) \{\s*\n\s*runTokenRef\.current\+\+;/);
 });
+
+test("a failed generate's error toast is run-token-guarded (review of #216, nit 9)", () => {
+  // The catch must not toast about a lesson the teacher has moved on from.
+  assert.match(
+    src,
+    /\} catch \(e\) \{[\s\S]*?if \(runTokenRef\.current === token\)\s*\n\s*toast\.error\(describeFailure\(e, "The lesson couldn’t be created\."\)\);/,
+  );
+});
+
+test("Add question carries the run token too (review of #216, blocker 7)", () => {
+  const add = src.slice(src.indexOf("async function addQuestion("), src.indexOf("async function recordExit("));
+  assert.match(add, /const token = runTokenRef\.current;/, "token captured at the start (not bumped)");
+  assert.match(add, /if \(runTokenRef\.current !== token\) return;[\s\S]*?setCustom\(/, "dropped if stale, before setCustom");
+  assert.match(add, /if \(runTokenRef\.current === token\)\s*\n\s*toast\.error/, "error toast guarded too");
+});

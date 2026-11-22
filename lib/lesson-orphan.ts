@@ -17,20 +17,30 @@
  *   - a never-collected `flow` version of a run whose full WAS delivered means
  *     the run owes a refund the client's immediate ask could not get -- the
  *     flow was still 'analyzing', not 'failed', when the client asked (Ricky,
- *     16 Nov 2026). Now that this sweep fails the flow, it releases the run's
- *     full credit exactly as refund_only_on_failed_version intends, through the
- *     same refund_lesson_generation function -- once, server-checked.
+ *     16 Nov 2026). This releases that run's full credit DIRECTLY by its
+ *     gen:<full scan id> charge, of ANY age, only when that full is complete
+ *     and billable. The refund function's own 2-hour window could not help
+ *     here: the sweep runs by hand and only on scans already over an hour old,
+ *     so by the time a flow is failed the run's full is usually past two hours
+ *     (review of #216). Done in TypeScript, guarded on released_at, counted
+ *     only when a page-charge row changed.
  * "Stale" means older than an hour: well past the 13-minute client poll
  * deadline, and the longest real job on record was ~95s, so a job this old is
  * never still running.
  *
+ * CRASH-SAFE ORDER: the credit is released BEFORE the scan is marked failed, so
+ * a crash between the two leaves the scan still 'analyzing' -- a later sweep
+ * picks it up again and the guarded release is a harmless no-op -- rather than a
+ * 'failed' row (which the sweep would never revisit) with its credit stuck.
+ *
  * DRY RUN BY DEFAULT: with `apply` false (the default) it changes nothing and
- * reports the ids it would fail; only `apply: true` writes. Counts only and
- * safe to run repeatedly -- it fails a row only `where status='analyzing'`, so
- * a concurrent pass or the client cannot double-handle one, and a refund is
- * counted only when a page-charge row actually changed. Driven by an admin
- * endpoint, never a cron. It does NOT touch the provider's stored copy --
- * lib/provider-retention owns that and already clears an orphan's copy.
+ * reports the ids it would fail and a projected `wouldFail`/`wouldRefund` from
+ * read-only checks of the real charge state; only `apply: true` writes
+ * (`failed`/`refunded`). Safe to run repeatedly -- it fails a row only `where
+ * status='analyzing'`, and counts a refund only when a page-charge row actually
+ * changed, so a repeat sweep gives nothing back twice. Admin endpoint, no cron.
+ * It does NOT touch the provider's stored copy -- lib/provider-retention owns
+ * that and already clears an orphan's copy.
  */
 
 type Thenable<T = unknown> = PromiseLike<{ data: T; error: unknown }>;
@@ -56,19 +66,17 @@ export type LessonSweepClient = {
     select: (cols: string) => SelectChain;
     update: (v: Record<string, unknown>) => UpdateChain;
   };
-  rpc: (fn: string, args: Record<string, unknown>) => Thenable<number | null>;
 };
 
 export type LessonOrphanCounts = {
   checked: number;
-  failed: number;
-  refunded: number;
   more: boolean;
-  /** True when this pass changed nothing (the default). */
-  dryRun: boolean;
   /** The scan ids this pass failed, or (in a dry run) would fail. */
   ids: string[];
-};
+} & (
+  | { dryRun: true; wouldFail: number; wouldRefund: number }
+  | { dryRun: false; failed: number; refunded: number }
+);
 
 /** A scan still 'analyzing' and younger than this might be a live job; leave it. */
 const STALE_AFTER_MS = 60 * 60 * 1000; // 1 hour
@@ -86,10 +94,59 @@ function isChargedFull(row: OrphanRow): boolean {
   return part === "full" && row.billable !== false;
 }
 
+/** The teacher + page-charge key whose credit this orphan owes back, or null
+ * when it owes none (a free flow of a run whose full was never delivered). */
+async function releaseTargetFor(
+  svc: LessonSweepClient,
+  row: OrphanRow,
+): Promise<{ teacher: string; key: string } | null> {
+  if (!row.teacher_id) return null;
+  // A charged full that was never collected: release its own gen:<id> charge.
+  if (isChargedFull(row)) return { teacher: row.teacher_id, key: "gen:" + row.id };
+  // A flow of a run: the run owes a refund only if its full was delivered
+  // (complete) and billable. Find that full's scan id -- of any age.
+  if (row.params?.lessonPart === "flow" && row.params?.lessonRun) {
+    const { data, error } = await svc
+      .from("scans")
+      .select("id, status, billable")
+      .eq("teacher_id", row.teacher_id)
+      .eq("stage", "lesson")
+      .eq("params->>lessonRun", row.params.lessonRun)
+      .eq("params->>lessonPart", "full")
+      .order("created_at")
+      .limit(1);
+    if (error) {
+      console.error("Looking up a lesson run's full version failed");
+      return null;
+    }
+    const full = ((data ?? []) as { id: string; status?: string; billable?: boolean | null }[])[0];
+    if (full && full.status === "complete" && full.billable !== false) {
+      return { teacher: row.teacher_id, key: "gen:" + full.id };
+    }
+  }
+  return null;
+}
+
+/** Is this teacher's charge still unreleased? A read-only check for the dry run. */
+async function chargeUnreleased(svc: LessonSweepClient, teacher: string, key: string): Promise<boolean> {
+  const { data, error } = await svc
+    .from("page_charges")
+    .select("id")
+    .eq("teacher_id", teacher)
+    .eq("content_sha256", key)
+    .is("released_at", null)
+    .limit(1);
+  if (error) {
+    console.error("Checking a lesson charge failed");
+    return false;
+  }
+  return (data ?? []).length > 0;
+}
+
 /**
  * One bounded pass. With `apply: true` it fails up to `limit` stale,
  * never-collected lesson scans and releases the credit each owes; by default
- * (`apply` false) it changes nothing and only reports what it would fail.
+ * (`apply` false) it changes nothing and only projects what it would do.
  * `more` is true when a full batch came back, so the caller runs it again.
  */
 export async function sweepLessonOrphans(
@@ -109,29 +166,38 @@ export async function sweepLessonOrphans(
     .limit(limit);
   if (error) throw error;
   const rows = (data ?? []) as OrphanRow[];
-  const counts: LessonOrphanCounts = {
-    checked: 0,
-    failed: 0,
-    refunded: 0,
-    more: rows.length >= limit,
-    dryRun: !apply,
-    ids: [],
-  };
+  let checked = 0;
+  let failed = 0;
+  let refunded = 0;
+  const ids: string[] = [];
+  // Dry-run projection dedupes refunds by charge key, the way the apply pass's
+  // guarded update does naturally: two flow orphans of one run owe one credit.
+  const projected = new Set<string>();
   for (const row of rows) {
-    counts.checked++;
-    counts.ids.push(row.id);
+    checked++;
+    ids.push(row.id);
+    const target = await releaseTargetFor(svc, row);
     if (!apply) {
-      // Dry run: write nothing. Report what would be failed, and -- only for a
-      // charged full, whose gen:<id> charge is certain -- what would be
-      // refunded. A flow's refund depends on a guarded write and the run's
-      // state, so it is left to the apply pass rather than guessed here.
-      counts.failed++;
-      if (isChargedFull(row)) counts.refunded++;
+      failed++; // every candidate is 'analyzing', so it would be failed
+      if (target && !projected.has(target.key) && (await chargeUnreleased(svc, target.teacher, target.key))) {
+        projected.add(target.key);
+        refunded++;
+      }
       continue;
     }
-    // Fail the row, but only while it is still 'analyzing' (in the update's own
-    // WHERE), so a concurrent sweep or a late client poll cannot double-handle
-    // it; count it only when the update truly changed a row.
+    // Release FIRST (crash-safe), guarded on released_at; count only a real change.
+    if (target) {
+      const { data: rel, error: relErr } = await svc
+        .from("page_charges")
+        .update({ released_at: nowIso })
+        .eq("teacher_id", target.teacher)
+        .eq("content_sha256", target.key)
+        .is("released_at", null)
+        .select("id");
+      if (relErr) console.error("Releasing a lesson orphan's credit failed");
+      else if (rel && rel.length) refunded++;
+    }
+    // Then fail the row, only while still 'analyzing'; count only a real change.
     const { data: failedRows, error: upErr } = await svc
       .from("scans")
       .update({ status: "failed", error: "Never collected — the request lost its response; released." })
@@ -142,33 +208,10 @@ export async function sweepLessonOrphans(
       console.error("Failing a lesson orphan failed");
       continue;
     }
-    if (!failedRows || failedRows.length === 0) continue; // someone else got it first
-    counts.failed++;
-    if (isChargedFull(row) && row.teacher_id) {
-      // A never-collected full never released its own credit; release the
-      // gen:<id> charge now, guarded on released_at so a second pass is a
-      // no-op, and count it only when a row actually changed.
-      const { data: rel, error: relErr } = await svc
-        .from("page_charges")
-        .update({ released_at: nowIso })
-        .eq("teacher_id", row.teacher_id)
-        .eq("content_sha256", "gen:" + row.id)
-        .is("released_at", null)
-        .select("id");
-      if (relErr) console.error("Releasing a lesson orphan's credit failed");
-      else if (rel && rel.length) counts.refunded++;
-    } else if (row.params?.lessonPart === "flow" && row.teacher_id && row.params?.lessonRun) {
-      // A flow version of a run whose full was delivered and charged: now that
-      // this flow is recorded 'failed', release the run's full credit through
-      // the same server-checked function the client uses -- once (it guards on
-      // released_at and returns the number of rows it released).
-      const { data: hit, error: rpcErr } = await svc.rpc("refund_lesson_generation", {
-        p_teacher: row.teacher_id,
-        p_run: row.params.lessonRun,
-      });
-      if (rpcErr) console.error("Refunding a lesson run on a failed flow failed");
-      else if ((hit ?? 0) > 0) counts.refunded++;
-    }
+    if (failedRows && failedRows.length) failed++;
   }
-  return counts;
+  const more = rows.length >= limit;
+  return apply
+    ? { checked, more, ids, dryRun: false, failed, refunded }
+    : { checked, more, ids, dryRun: true, wouldFail: failed, wouldRefund: refunded };
 }

@@ -31,12 +31,20 @@ test("the lessons view consumes a fresh-entry flag and ignores a stale open para
   assert.match(planning, /if \(hasOpenParam\) go\("\/lessons"\);\s*else setStripping\(false\);/);
 });
 
-test("only a Lesson Planning menu tap sets the fresh-entry flag", () => {
+test("non-deliberate entries into /lessons set the fresh-entry flag (review of #216)", () => {
   assert.match(app, /import \{[^}]*LESSONS_FRESH_KEY[^}]*\} from "\.\/teacher-planning"/);
-  // The flag is set for the lessons nav item on tap; nothing else sets it.
+  // 1. The lessons nav item from another view sets it on tap.
   assert.match(app, /if \(n\.id === "lessons"\) \{[\s\S]*?sessionStorage\.setItem\(LESSONS_FRESH_KEY, "1"\)/);
+  // 2. go() to the BARE /lessons from another route sets it too, so the Classes
+  //    super-grid shortcut and the guide link start fresh rather than landing
+  //    on the force-static router's stale ?lesson=. A deliberate open carries a
+  //    param (!u.search guards that), and a reset already on /lessons does not.
+  assert.match(
+    app,
+    /u\.pathname === "\/lessons" && !u\.search && window\.location\.pathname !== "\/lessons"\)\s*\n\s*sessionStorage\.setItem\(LESSONS_FRESH_KEY, "1"\)/,
+  );
   const sets = [...app.matchAll(/sessionStorage\.setItem\(LESSONS_FRESH_KEY/g)].length;
-  assert.equal(sets, 1, "exactly one place sets the flag");
+  assert.equal(sets, 2, "the menu tap and the bare-/lessons go() -- and nothing else");
 });
 
 test("tapping Lesson Planning while already on it returns to Start in place (review of #216)", () => {
@@ -48,11 +56,24 @@ test("tapping Lesson Planning while already on it returns to Start in place (rev
     /if \(view === "lessons"\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*window\.dispatchEvent\(new Event\(LESSONS_MENU_TAP\)\);/,
     "same-view tap dispatches the event instead of a stale same-path navigation",
   );
-  // … which the mounted lessons view handles by returning to Start, asking
-  // first when there is unsaved work (the same path as the New lesson plan button).
+  // … which the mounted lessons view handles by returning to Start -- but not
+  // while a generate is running (it waits), and asking first when there is
+  // unsaved work (the same path as the New lesson plan button).
   assert.match(planning, /export const LESSONS_MENU_TAP = "tbf:lessons-menu-tap"/);
   assert.match(
     planning,
-    /const onTap = \(\) => \{\s*\n\s*if \(unsavedWork\) setConfirmNew\(true\);\s*\n\s*else startNewPlan\(\);\s*\n\s*\};\s*\n\s*window\.addEventListener\(LESSONS_MENU_TAP, onTap\);/,
+    /const onTap = \(\) => \{[\s\S]*?if \(aiBusy\) \{[\s\S]*?Your lesson is still being written[\s\S]*?return;[\s\S]*?if \(unsavedWork\) setConfirmNew\(true\);\s*\n\s*else startNewPlan\(\);[\s\S]*?window\.addEventListener\(LESSONS_MENU_TAP, onTap\);/,
   );
+});
+
+test("changing the focus skill goes through the unsaved-work confirm, and waits while aiBusy (review of #216)", () => {
+  // The Focus skill selector is disabled mid-generate and routes through
+  // changeFocus, which blocks while aiBusy and otherwise confirms before reset.
+  assert.match(planning, /onChange=\{changeFocus\}\s*\n\s*disabled=\{aiBusy\}/);
+  assert.match(
+    planning,
+    /function changeFocus\(st: string\) \{[\s\S]*?if \(aiBusy\) \{[\s\S]*?return;[\s\S]*?if \(unsavedWork\) \{\s*\n\s*setPendingFocus\(st\);\s*\n\s*setConfirmNew\(true\);\s*\n\s*\} else reset\(st\);/,
+  );
+  // The discard confirm runs the pending focus change, or a new plan.
+  assert.match(planning, /function confirmDiscard\(\) \{[\s\S]*?if \(st !== null\) reset\(st\);\s*\n\s*else startNewPlan\(\);/);
 });

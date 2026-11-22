@@ -72,6 +72,44 @@ test("an untouched saved plan opened read-only needs no warning", () => {
   );
 });
 
+test("jsonb reordering the keys on reload is not a false 'unsaved' (review of #216)", () => {
+  // Same values, keys in a different order (as Postgres jsonb returns them).
+  const onScreen = { objective: "O", materials: ["a", "b"], phases: [{ name: "L", text: "t", time: "0–5" }] };
+  const reloaded = { phases: [{ time: "0–5", text: "t", name: "L" }], materials: ["a", "b"], objective: "O" };
+  assert.equal(
+    hasUnsavedLesson({ choosing: false, custom: onScreen, savedId: "plan-1", editing: false, savedCustom: reloaded }),
+    false,
+    "value-equal, key-reordered custom is not unsaved",
+  );
+  // Arrays still compare by order, so a real reordering of phases IS a change.
+  const movedPhase = { objective: "O", materials: ["a", "b"], phases: [{ name: "L2", text: "t2", time: "5–9" }, { name: "L", text: "t", time: "0–5" }] };
+  assert.equal(
+    hasUnsavedLesson({ choosing: false, custom: movedPhase, savedId: "plan-1", editing: false, savedCustom: reloaded }),
+    true,
+  );
+});
+
+test("notes, date and duration edits on a saved plan count as unsaved (review of #216)", () => {
+  const base = { choosing: false, custom: saved, savedId: "plan-1", editing: false, savedCustom: saved };
+  const savedMeta = { notes: "", date: "2026-11-25", duration: 15 };
+  assert.equal(hasUnsavedLesson({ ...base, meta: { ...savedMeta }, savedMeta }), false, "no meta change");
+  assert.equal(
+    hasUnsavedLesson({ ...base, meta: { ...savedMeta, notes: "added a note" }, savedMeta }),
+    true,
+    "a notes edit is unsaved",
+  );
+  assert.equal(
+    hasUnsavedLesson({ ...base, meta: { ...savedMeta, date: "2026-12-01" }, savedMeta }),
+    true,
+    "a date edit is unsaved",
+  );
+  assert.equal(
+    hasUnsavedLesson({ ...base, meta: { ...savedMeta, duration: 30 }, savedMeta }),
+    true,
+    "a duration edit is unsaved",
+  );
+});
+
 test("nothing to lose while choosing, or with no lesson on screen", () => {
   assert.equal(
     hasUnsavedLesson({ choosing: true, custom: changed, savedId: null, editing: true, savedCustom: saved }),

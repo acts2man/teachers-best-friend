@@ -102,6 +102,24 @@ try {
     check(clean && atStart, `same-page tap from ?${entry.split("?")[1]} returns to Start with a clean URL (${u}, start=${atStart})`);
   }
 
+  // Review of #216, blocker 6 — the OTHER door. Seed a stale ?lesson= (full
+  // load + reload), go to Classes, then take the "Class super grid" shortcut:
+  // it lands on /lessons and must start fresh, not re-open the stale lesson.
+  await page.goto(`${BASE}/lessons?lesson=plan-1`, { waitUntil: "networkidle", timeout: 30000 });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(500);
+  await tapNav(page, /Classes/);
+  const grid = page.getByRole("button", { name: /Class super grid/ }).first();
+  await grid.waitFor({ state: "visible", timeout: 10000 });
+  await grid.click();
+  await page.waitForTimeout(900);
+  {
+    const u = page.url().replace(BASE, "");
+    const clean = !/[?&]lesson=/.test(u) && !/[?&]standard=/.test(u);
+    const atStart = await page.getByRole("heading", { name: "Start a lesson" }).isVisible().catch(() => false);
+    check(clean && atStart, `Class super grid shortcut starts fresh (${u}, start=${atStart})`);
+  }
+
   check(errors.length === 0, `no page errors ${errors.join(" | ")}`);
   await page.screenshot({ path: join(OUT, "lesson-return-fresh.png") });
 } catch (e) {

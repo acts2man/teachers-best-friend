@@ -19,10 +19,38 @@ export function hasUnsavedLesson(args: {
   savedId: string | null;
   editing: boolean;
   savedCustom: unknown;
+  /** Metadata the teacher can change on a saved plan (notes, date, duration). */
+  meta?: Record<string, unknown>;
+  savedMeta?: Record<string, unknown>;
 }): boolean {
-  const { choosing, custom, savedId, editing, savedCustom } = args;
+  const { choosing, custom, savedId, editing, savedCustom, meta, savedMeta } = args;
   if (choosing || !custom) return false;
   if (!savedId) return true;
   if (editing) return true;
-  return JSON.stringify(custom ?? null) !== JSON.stringify(savedCustom ?? null);
+  // Compare by VALUE, not text: Postgres jsonb reorders object keys on a
+  // workspace reload, so a plain JSON.stringify would flag an untouched plan as
+  // unsaved (review of #216). A key-sorted canonical form is order-stable.
+  if (stableStringify(custom ?? null) !== stableStringify(savedCustom ?? null)) return true;
+  // Notes, date and duration are saved with the plan too (review of #216): an
+  // edit to any of them, without a custom change, is still unsaved work.
+  if (meta && savedMeta && stableStringify(meta) !== stableStringify(savedMeta)) return true;
+  return false;
+}
+
+/** JSON with object keys sorted at every depth, so value-equal data with keys
+ * in a different order serialises identically. Arrays keep their order. */
+export function stableStringify(v: unknown): string {
+  return JSON.stringify(canonical(v));
+}
+
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      out[k] = canonical((v as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return v;
 }

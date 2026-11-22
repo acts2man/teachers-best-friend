@@ -310,7 +310,11 @@ export function ReteachView() {
     [exitScores, setExitScores] = useState<Record<string, string>>({}),
     [answerKeys, setAnswerKeys] = useState(false),
     [deleteId, setDeleteId] = useState<string | null>(null),
-    [confirmNew, setConfirmNew] = useState(false);
+    [confirmNew, setConfirmNew] = useState(false),
+    // The focus skill a teacher is switching to while a lesson is unsaved: the
+    // discard confirm names it, and accepting runs reset() with it (review of
+    // #216). null means the confirm is the plain "start a new plan" one.
+    [pendingFocus, setPendingFocus] = useState<string | null>(null);
   // A generate can outlive the lesson it was started for: the teacher switches
   // to another standard or plan while it runs, and the result would otherwise
   // land on whatever is open when it returns -- on a credit already spent
@@ -614,9 +618,10 @@ export function ReteachView() {
       if (outcome.missing.length) toast.warning(message, { duration: 12000 });
       else toast.success(message);
     } catch (e) {
-      toast.error(
-        describeFailure(e, "The lesson couldn’t be created."),
-      );
+      // Only if this run is still the one on screen -- a failure for a lesson
+      // the teacher has moved on from must not pop a toast on another (#216).
+      if (runTokenRef.current === token)
+        toast.error(describeFailure(e, "The lesson couldn’t be created."));
     } finally {
       setAiBusy(false);
     }
@@ -627,6 +632,10 @@ export function ReteachView() {
   async function addQuestion(section: "practice" | "exit") {
     const base = lessonRequestBase();
     if (!base || !content || !aiReady) return;
+    // The lesson this question belongs to: if the teacher switches focus, opens
+    // another plan or starts a new one while it is in flight, the token moves
+    // and the question is dropped rather than added to a different lesson (#216).
+    const token = runTokenRef.current;
     setAddingTo(section);
     try {
       const d = await analyzeRequest({
@@ -638,12 +647,16 @@ export function ReteachView() {
       });
       const q = d.result as { q?: string; a?: string };
       if (!q?.q?.trim()) throw new Error("No question came back. Try again.");
+      // Moved on while it ran: drop the question rather than add it to the
+      // lesson now on screen (review of #216).
+      if (runTokenRef.current !== token) return;
       const next = custom ?? structuredClone(content);
       setCustom({ ...next, [section]: [...next[section], { q: q.q.trim(), a: (q.a ?? "").trim() }] });
       setEdited(true);
       toast.success("Question added to the " + (section === "exit" ? "exit ticket" : "targeted practice") + ".");
     } catch (e) {
-      toast.error(describeFailure(e, "The question couldn’t be added."));
+      if (runTokenRef.current === token)
+        toast.error(describeFailure(e, "The question couldn’t be added."));
     } finally {
       setAddingTo(null);
     }
@@ -697,16 +710,42 @@ export function ReteachView() {
   }
   // Work that starting a new plan (or returning to Start) would throw away: a
   // generated lesson not yet saved, an edit in progress, or a saved plan whose
-  // content now differs from the stored copy -- edits kept after "Done
-  // editing", an "Add question", or a re-generate (review of #216). Based on a
-  // diff against the saved copy, not on `editing`, which missed all three.
+  // content OR its notes/date/duration now differ from the stored copy -- edits
+  // kept after "Done editing", an "Add question", or a re-generate (review of
+  // #216). A value diff against the saved copy, not `editing`, which missed all.
+  const savedCopy = w.lessons.find((l) => l.id === savedId);
   const unsavedWork = hasUnsavedLesson({
     choosing,
     custom,
     savedId,
     editing,
-    savedCustom: w.lessons.find((l) => l.id === savedId)?.custom,
+    savedCustom: savedCopy?.custom,
+    meta: savedCopy ? { notes, date, duration: Number(duration) } : undefined,
+    savedMeta: savedCopy ? { notes: savedCopy.notes, date: savedCopy.date, duration: savedCopy.duration } : undefined,
   });
+  // Switching the focus skill while aiBusy would abandon the running generate
+  // and silently spend its credit, so it waits; otherwise a change that would
+  // discard unsaved work asks first, the same as "New lesson plan" (review of
+  // #216). The actual reset runs from the confirm (or straight away if clean).
+  function changeFocus(st: string) {
+    if (aiBusy) {
+      toast.message("Your lesson is still being written.");
+      return;
+    }
+    if (unsavedWork) {
+      setPendingFocus(st);
+      setConfirmNew(true);
+    } else reset(st);
+  }
+  // The discard confirm's "do it" action: a focus switch (pendingFocus) runs
+  // reset with it; otherwise it starts a new plan. Either way the dialog closes.
+  function confirmDiscard() {
+    setConfirmNew(false);
+    const st = pendingFocus;
+    setPendingFocus(null);
+    if (st !== null) reset(st);
+    else startNewPlan();
+  }
   // Return to the "Start a lesson" panel from ANY planning state. Clearing the
   // URL to /lessons (no params) makes `choosing` true again; the effect on
   // `params` resets the in-progress lesson, but clear it here too so there is
@@ -734,12 +773,18 @@ export function ReteachView() {
   // button (review of #216). Re-subscribes only when unsavedWork flips.
   useEffect(() => {
     const onTap = () => {
+      // Mid-generate, the tap must not abandon the running lesson and spend its
+      // credit silently -- it waits, like the disabled button (review of #216).
+      if (aiBusy) {
+        toast.message("Your lesson is still being written.");
+        return;
+      }
       if (unsavedWork) setConfirmNew(true);
       else startNewPlan();
     };
     window.addEventListener(LESSONS_MENU_TAP, onTap);
     return () => window.removeEventListener(LESSONS_MENU_TAP, onTap);
-  }, [unsavedWork]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [unsavedWork, aiBusy]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <PageTitle
@@ -940,7 +985,8 @@ export function ReteachView() {
                     Focus skill
                     <Pick
                       value={standard}
-                      onChange={reset}
+                      onChange={changeFocus}
+                      disabled={aiBusy}
                       label="Reteach standard"
                       options={catalog.map((s) => ({
                         value: s.code,
@@ -1591,21 +1637,29 @@ export function ReteachView() {
       </Modal>
       <AlertDialog
         open={confirmNew}
-        onOpenChange={(v) => !v && setConfirmNew(false)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setConfirmNew(false);
+            setPendingFocus(null);
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Start a new lesson plan?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingFocus !== null ? "Change the focus skill?" : "Start a new lesson plan?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Your current lesson hasn&rsquo;t been saved. Starting a new plan
+              Your current lesson hasn&rsquo;t been saved.{" "}
+              {pendingFocus !== null ? "Changing the focus skill" : "Starting a new plan"}{" "}
               will clear what&rsquo;s on screen. Save it first if you want to
               keep it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction onClick={startNewPlan}>
-              Start new plan
+            <AlertDialogAction onClick={confirmDiscard}>
+              {pendingFocus !== null ? "Change focus" : "Start new plan"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

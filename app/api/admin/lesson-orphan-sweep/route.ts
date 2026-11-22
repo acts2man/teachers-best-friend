@@ -30,26 +30,32 @@ export async function POST(req: Request) {
     // A narrow slice of the service client; cast so matching the full client's
     // deeply-generic builder doesn't trip TS2589 at the call.
     const svc = createServiceClient() as unknown as LessonSweepClient;
-    const total = { checked: 0, failed: 0, refunded: 0, more: false, passes: 0, dryRun: !apply, ids: [] as string[] };
+    // Dry run reports wouldFail/wouldRefund (projected, nothing changed); apply
+    // reports failed/refunded (actual changes). Review of #216, nit 10.
+    let checked = 0, acted = 0, credited = 0, passes = 0, more = false;
+    const ids: string[] = [];
     const started = Date.now();
     while (Date.now() - started < 22000) {
       const counts = await sweepLessonOrphans(svc, { limit: 200, apply });
-      total.checked += counts.checked;
-      total.failed += counts.failed;
-      total.refunded += counts.refunded;
-      total.ids.push(...counts.ids);
-      total.passes++;
-      total.more = counts.more;
+      checked += counts.checked;
+      acted += counts.dryRun ? counts.wouldFail : counts.failed;
+      credited += counts.dryRun ? counts.wouldRefund : counts.refunded;
+      ids.push(...counts.ids);
+      passes++;
+      more = counts.more;
       // A dry run writes nothing, so a second pass would re-read the same rows
       // forever: report this batch and let the admin apply it in batches.
       if (!apply) break;
       if (!counts.more) break;
       // A pass that failed nothing means the rest are stuck behind a transient
       // problem; stop rather than spin.
-      if (counts.failed === 0) break;
+      if (acted === 0) break;
     }
-    console.info("lesson-orphan-sweep", JSON.stringify({ ...total, ids: total.ids.length }));
-    return Response.json({ ok: true, ...total });
+    const body = apply
+      ? { ok: true, dryRun: false, checked, failed: acted, refunded: credited, more, passes, ids }
+      : { ok: true, dryRun: true, checked, wouldFail: acted, wouldRefund: credited, more, passes, ids };
+    console.info("lesson-orphan-sweep", JSON.stringify({ ...body, ids: ids.length }));
+    return Response.json(body);
   } catch (e) {
     return apiError(e);
   }
