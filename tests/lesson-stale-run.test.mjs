@@ -1,0 +1,42 @@
+// Review of #216, blocker 1: a teacher taps Generate on standard A, then
+// (while "Building your plan…") opens standard B. The A run finished and its
+// lesson landed on B -- on a credit already spent. Two guards fix it:
+//   - "New lesson plan" is disabled while a generate is running, so a second
+//     generate cannot be started on top of the first; and
+//   - every generate captures a run token at the start, anything that moves
+//     the teacher on (the params effect, a focus change via reset, a new plan)
+//     bumps it, and a result whose token is stale is dropped, not applied.
+// Source-pinned so the mechanism cannot be quietly removed. Fails on 064eaed.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const src = readFileSync("components/teacher-planning.tsx", "utf8");
+
+test("New lesson plan is disabled while a generate is running", () => {
+  assert.match(
+    src,
+    /<Action onClick=\{newPlan\} disabled=\{aiBusy\}>/,
+    "the header action is disabled while aiBusy, so no second generate can start",
+  );
+});
+
+test("a generate captures a run token and drops a stale result", () => {
+  assert.match(src, /const runTokenRef = useRef\(0\)/, "a run token ref exists");
+  assert.match(src, /const token = \+\+runTokenRef\.current;/, "captured at the start of the generate");
+  // Applied only when still current: the drop guard sits before setCustom/toasts.
+  assert.match(
+    src,
+    /if \(runTokenRef\.current !== token\) return;[\s\S]*?setCustom\(outcome\.lesson\)/,
+    "a stale result returns before it is applied to the open lesson",
+  );
+});
+
+test("moving to another lesson, focus or new plan bumps the token", () => {
+  // The params effect (navigation to another standard/plan) …
+  assert.match(src, /runTokenRef\.current\+\+;\s*\n\s*\/\/ A fresh menu entry/);
+  // … a focus change via reset …
+  assert.match(src, /function reset\(st: string\) \{\s*\n\s*runTokenRef\.current\+\+;/);
+  // … and starting a new plan.
+  assert.match(src, /function startNewPlan\(\) \{\s*\n\s*runTokenRef\.current\+\+;/);
+});

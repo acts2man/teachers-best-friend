@@ -10,41 +10,59 @@ export const maxDuration = 26;
 /**
  * Admin backstop for lesson scans that were never collected: a background
  * lesson request whose POST response the browser lost (status 0) leaves its
- * scan in `status='analyzing'` forever, and for the charged `full` version its
- * one credit stays spent. This fails every such stale ( > 1h old ) lesson scan
- * and releases the charged ones' credit (lib/lesson-orphan.ts).
+ * scan in `status='analyzing'` forever, and the one credit it owes stays spent.
+ * This fails every such stale ( > 1h old ) lesson scan and releases the credit
+ * each owes -- a never-collected full's own gen:<id> charge, and a run's full
+ * credit when one of its flow versions was the casualty (lib/lesson-orphan.ts).
  *
- * Counts only; safe to call repeatedly until `more` is false. Admin only. No
- * cron. It does NOT touch the provider's stored copy -- provider-backfill owns
- * that.
+ * DRY RUN BY DEFAULT. A plain POST changes nothing and reports the scan ids it
+ * WOULD fail (`dryRun: true`). To actually apply it, POST with `?apply=1` (or a
+ * JSON body `{"apply":true}`). Run the dry run first and read the ids before
+ * applying. Counts only; safe to call repeatedly until `more` is false. Admin
+ * only. No cron. It does NOT touch the provider's stored copy -- provider
+ * retention owns that.
  */
-export async function POST() {
+export async function POST(req: Request) {
   try {
     await requireAdminApi();
     if (!hasSupabaseConfig()) throw new HttpError(404, "Not available here.");
+    const apply = await wantsApply(req);
     // A narrow slice of the service client; cast so matching the full client's
     // deeply-generic builder doesn't trip TS2589 at the call.
     const svc = createServiceClient() as unknown as LessonSweepClient;
-    const total = { checked: 0, failed: 0, refunded: 0, more: false, passes: 0 };
+    const total = { checked: 0, failed: 0, refunded: 0, more: false, passes: 0, dryRun: !apply, ids: [] as string[] };
     const started = Date.now();
     while (Date.now() - started < 22000) {
-      const counts = await sweepLessonOrphans(svc, { limit: 200 });
+      const counts = await sweepLessonOrphans(svc, { limit: 200, apply });
       total.checked += counts.checked;
       total.failed += counts.failed;
       total.refunded += counts.refunded;
+      total.ids.push(...counts.ids);
       total.passes++;
-      if (!counts.more) {
-        total.more = false;
-        break;
-      }
-      total.more = true;
+      total.more = counts.more;
+      // A dry run writes nothing, so a second pass would re-read the same rows
+      // forever: report this batch and let the admin apply it in batches.
+      if (!apply) break;
+      if (!counts.more) break;
       // A pass that failed nothing means the rest are stuck behind a transient
       // problem; stop rather than spin.
       if (counts.failed === 0) break;
     }
-    console.info("lesson-orphan-sweep", JSON.stringify(total));
+    console.info("lesson-orphan-sweep", JSON.stringify({ ...total, ids: total.ids.length }));
     return Response.json({ ok: true, ...total });
   } catch (e) {
     return apiError(e);
+  }
+}
+
+/** Apply only on an explicit opt-in: `?apply=1`/`true`, or a JSON `{apply:true}`. */
+async function wantsApply(req: Request): Promise<boolean> {
+  const truthy = (v: string | null) => v === "1" || v === "true";
+  if (truthy(new URL(req.url).searchParams.get("apply"))) return true;
+  try {
+    const body = (await req.clone().json()) as { apply?: unknown };
+    return body?.apply === true;
+  } catch {
+    return false;
   }
 }

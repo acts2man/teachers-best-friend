@@ -38,3 +38,21 @@ test("only a Lesson Planning menu tap sets the fresh-entry flag", () => {
   const sets = [...app.matchAll(/sessionStorage\.setItem\(LESSONS_FRESH_KEY/g)].length;
   assert.equal(sets, 1, "exactly one place sets the flag");
 });
+
+test("tapping Lesson Planning while already on it returns to Start in place (review of #216)", () => {
+  // A same-view tap does not remount, so the flag would never be read: the
+  // sidebar instead prevents the stale nav and fires a window event …
+  assert.match(app, /import \{[^}]*LESSONS_MENU_TAP[^}]*\} from "\.\/teacher-planning"/);
+  assert.match(
+    app,
+    /if \(view === "lessons"\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*window\.dispatchEvent\(new Event\(LESSONS_MENU_TAP\)\);/,
+    "same-view tap dispatches the event instead of a stale same-path navigation",
+  );
+  // … which the mounted lessons view handles by returning to Start, asking
+  // first when there is unsaved work (the same path as the New lesson plan button).
+  assert.match(planning, /export const LESSONS_MENU_TAP = "tbf:lessons-menu-tap"/);
+  assert.match(
+    planning,
+    /const onTap = \(\) => \{\s*\n\s*if \(unsavedWork\) setConfirmNew\(true\);\s*\n\s*else startNewPlan\(\);\s*\n\s*\};\s*\n\s*window\.addEventListener\(LESSONS_MENU_TAP, onTap\);/,
+  );
+});

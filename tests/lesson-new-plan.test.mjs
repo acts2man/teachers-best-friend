@@ -16,8 +16,8 @@ test("a 'New lesson plan' action exists and is shown when not on the Start panel
   // Shown only when NOT choosing (the Start panel already offers it when choosing).
   assert.match(
     src,
-    /\{!choosing && \(\s*<Action onClick=\{newPlan\}>/,
-    "rendered behind !choosing, so every non-empty planning state shows it",
+    /\{!choosing && \(\s*<Action onClick=\{newPlan\} disabled=\{aiBusy\}>/,
+    "rendered behind !choosing, so every non-empty planning state shows it (disabled mid-generate)",
   );
 });
 
@@ -31,7 +31,9 @@ test("starting a new plan returns to the Start panel by clearing the URL params"
 });
 
 test("unsaved work is confirmed before it is cleared", () => {
-  assert.match(src, /const unsavedWork = [^\n]*custom[^\n]*/);
+  // The decision is a diff against the saved copy (hasUnsavedLesson), not the
+  // old `editing`-only test -- see lesson-dirty.test.mjs for the three cases.
+  assert.match(src, /const unsavedWork = hasUnsavedLesson\(\{[\s\S]*?custom,[\s\S]*?savedCustom:[\s\S]*?\}\)/);
   assert.match(src, /function newPlan\(\)\s*\{\s*if \(unsavedWork\) setConfirmNew\(true\);\s*else startNewPlan\(\);/);
   assert.match(src, /Start a new lesson plan\?/, "the confirm dialog");
   assert.match(src, /open=\{confirmNew\}/);

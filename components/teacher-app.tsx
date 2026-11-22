@@ -60,7 +60,7 @@ import {
   DiagnosticsView,
   StudentsView,
 } from "./teacher-insights";
-import { ReteachView, ResourcesView, SettingsView, LESSONS_FRESH_KEY } from "./teacher-planning";
+import { ReteachView, ResourcesView, SettingsView, LESSONS_FRESH_KEY, LESSONS_MENU_TAP } from "./teacher-planning";
 import { SupportView } from "./teacher-support";
 import { StudentReportsView } from "./student-reports";
 import { ClassGradingModeField } from "./grading-mode-choice";
@@ -538,16 +538,26 @@ export default function TeacherApp({ view }: { view: string }) {
                   >
                     <Link
                       href={n.id === "home" ? "/app" : "/" + n.id}
-                      onClick={() => {
+                      onClick={(e) => {
                         setPending({ from: view, to: n.id });
                         // A plain Lesson Planning menu tap must start fresh, not
                         // re-open the lesson the force-static router kept on the
-                        // /lessons URL (Ricky, 17 Nov 2026). The flag is read on
-                        // the next mount of the lessons view (it remounts when
-                        // coming from another view, key=view+class), which drops
-                        // the stale param. Only a menu tap sets it; opening a
-                        // lesson deliberately never does.
+                        // /lessons URL (Ricky, 17 Nov 2026).
                         if (n.id === "lessons") {
+                          // Already on /lessons: the view does not remount
+                          // (key=view+class is unchanged), so the fresh flag
+                          // would never be read. Keep the URL off the router's
+                          // stale ?lesson= and tell the mounted lessons view to
+                          // return to Start in place -- it asks first if there
+                          // is unsaved work (review of #216).
+                          if (view === "lessons") {
+                            e.preventDefault();
+                            window.dispatchEvent(new Event(LESSONS_MENU_TAP));
+                            return;
+                          }
+                          // Coming from another view: it remounts, and reads the
+                          // flag on mount to drop the stale param. Only a menu
+                          // tap sets it; opening a lesson deliberately never does.
                           try {
                             sessionStorage.setItem(LESSONS_FRESH_KEY, "1");
                           } catch {

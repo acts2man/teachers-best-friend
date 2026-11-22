@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { AnalyzeError, analyzeRequest, isRetryableAnalyzeError, resumeScan } from "@/lib/analyze-client";
 import { OUT_OF_CREDITS_FOR_LESSON, hasCreditForLesson, startGenerate } from "@/lib/lesson-billing";
 import { refundLesson } from "@/lib/lesson-refund-client";
+import { hasUnsavedLesson } from "@/lib/lesson-dirty";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -248,6 +249,11 @@ const OPEN_PARAM_KEYS = ["standard", "assessment", "lesson", "intent", "student"
 // the last lesson (Ricky, 17 Nov 2026: came back to planning and it was stuck
 // on the previous lesson). An in-app "open this lesson" never sets it.
 export const LESSONS_FRESH_KEY = "tbf:lessons-fresh";
+// Tapping "Lesson Planning" while already on /lessons does not remount the
+// view, so the sessionStorage flag above would never be read. The sidebar
+// fires this window event instead, and the mounted lessons view returns to the
+// Start panel in place -- through the same unsaved-work confirm as the button.
+export const LESSONS_MENU_TAP = "tbf:lessons-menu-tap";
 
 export function ReteachView() {
   const { w, classroom, students, save, busy, aiReady, go, quota } = useTeacher();
@@ -305,6 +311,14 @@ export function ReteachView() {
     [answerKeys, setAnswerKeys] = useState(false),
     [deleteId, setDeleteId] = useState<string | null>(null),
     [confirmNew, setConfirmNew] = useState(false);
+  // A generate can outlive the lesson it was started for: the teacher switches
+  // to another standard or plan while it runs, and the result would otherwise
+  // land on whatever is open when it returns -- on a credit already spent
+  // (review of #216). Every generate captures this token at the start; moving
+  // on (the params effect, a focus change, a new plan) bumps it, and a result
+  // whose token is stale is dropped instead of applied. A ref, never read
+  // during render, so the react-compiler lint stays happy.
+  const runTokenRef = useRef(0);
   const suggestedIds = (params.get("students") || "")
     .split(",")
     .filter((id) => students.some((student) => student.id === id));
@@ -353,6 +367,9 @@ export function ReteachView() {
       ? lessonFocus(sourceAssessment, standard, dokLevels, errorsFrom)
       : null;
   useEffect(() => {
+    // Moving to another standard, plan or focus abandons any generate still in
+    // flight: bump the run token so its result is dropped, not applied here.
+    runTokenRef.current++;
     // A fresh menu entry still shedding a stale param: keep the Start panel and
     // do not load the stale lesson. The strip effect below clears the URL, and
     // this effect runs again (params empty) to settle on an empty plan.
@@ -529,6 +546,10 @@ export function ReteachView() {
       return;
     }
     setAiBusy(true);
+    // The lesson this generate belongs to. If the teacher moves on before it
+    // returns (another standard, plan or focus bumps the token), its result is
+    // dropped rather than dropped onto whatever is open now (review of #216).
+    const token = ++runTokenRef.current;
     try {
       const chosen = (TEACHING_APPROACHES as readonly string[]).includes(modality)
         ? (modality as TeachingApproach)
@@ -577,6 +598,10 @@ export function ReteachView() {
       // already -- nothing to ask for (review of #199).
       const refunded = outcome.missing.length && !outcome.fullMissing ? await refundLesson(lessonRun) : null;
       const message = generateMessage(outcome, refunded);
+      // Moved on while this ran: the refund above still settles the billing,
+      // but the lesson (and any toast about it) must not land on whatever
+      // standard or plan is open now (review of #216).
+      if (runTokenRef.current !== token) return;
       if (!outcome.lesson) {
         toast.error(message + (full.status === "rejected" ? " (" + describeFailure(full.reason, "") + ")" : ""), { duration: 12000 });
         return;
@@ -662,6 +687,7 @@ export function ReteachView() {
     }
   }
   function reset(st: string) {
+    runTokenRef.current++;
     setStandard(st);
     setCustom(undefined);
     setSavedId(null);
@@ -669,15 +695,24 @@ export function ReteachView() {
     setEdited(false);
     setEditing(false);
   }
-  // Work that starting a new plan would throw away: a generated lesson not yet
-  // saved, or an edit in progress. (A saved plan opened read-only is not at
-  // risk, so it needs no warning.)
-  const unsavedWork = !choosing && !!custom && (!savedId || editing);
+  // Work that starting a new plan (or returning to Start) would throw away: a
+  // generated lesson not yet saved, an edit in progress, or a saved plan whose
+  // content now differs from the stored copy -- edits kept after "Done
+  // editing", an "Add question", or a re-generate (review of #216). Based on a
+  // diff against the saved copy, not on `editing`, which missed all three.
+  const unsavedWork = hasUnsavedLesson({
+    choosing,
+    custom,
+    savedId,
+    editing,
+    savedCustom: w.lessons.find((l) => l.id === savedId)?.custom,
+  });
   // Return to the "Start a lesson" panel from ANY planning state. Clearing the
   // URL to /lessons (no params) makes `choosing` true again; the effect on
   // `params` resets the in-progress lesson, but clear it here too so there is
   // no flash of the old plan before the navigation lands.
   function startNewPlan() {
+    runTokenRef.current++;
     setConfirmNew(false);
     setCustom(undefined);
     setSavedId(null);
@@ -693,6 +728,18 @@ export function ReteachView() {
     if (unsavedWork) setConfirmNew(true);
     else startNewPlan();
   }
+  // A "Lesson Planning" tap while already on /lessons (no remount, so the
+  // fresh-entry flag is never read): return to the Start panel in place, asking
+  // first when there is unsaved work -- the same path as the New lesson plan
+  // button (review of #216). Re-subscribes only when unsavedWork flips.
+  useEffect(() => {
+    const onTap = () => {
+      if (unsavedWork) setConfirmNew(true);
+      else startNewPlan();
+    };
+    window.addEventListener(LESSONS_MENU_TAP, onTap);
+    return () => window.removeEventListener(LESSONS_MENU_TAP, onTap);
+  }, [unsavedWork]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <PageTitle
@@ -705,7 +752,7 @@ export function ReteachView() {
             tab (or finishing a Generate) left no visible way back to "Start a
             lesson" and the planner looked stuck (Ricky, 13 Nov 2026). */}
         {!choosing && (
-          <Action onClick={newPlan}>
+          <Action onClick={newPlan} disabled={aiBusy}>
             <Plus size={16} />
             New lesson plan
           </Action>
