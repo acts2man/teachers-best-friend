@@ -135,6 +135,7 @@ import { openQuestionForGrading, StudentResponseReview } from "./teacher-review"
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
 import { DokGrid } from "./dok-grid";
+import { WritingTraitGrid } from "./writing-trait-grid";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
 import {
@@ -1007,6 +1008,7 @@ export function AssessmentView() {
                 />
               </TabsContent>
               <TabsContent value="analysis">
+                <WritingTraitGrid assessment={a} students={students} go={go} />
                 <WritingClassPanel assessment={a} students={students} go={go} />
               </TabsContent>
             </Tabs>

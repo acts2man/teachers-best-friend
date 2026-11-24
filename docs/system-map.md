@@ -498,6 +498,18 @@ unassigned is always allowed.
   the count (`writingReplaceWarning`, through `ConfirmRescan`) -- before anything is uploaded
   or scored. `replaceWritingResponses` keeps verified trait scores unless told
   `replaceConfirmed`. Guarded by `tests/invariants/writing-replace-keeps-confirmed.test.mjs`.
+- **Writing trait grid** (Michael, 11 Nov 2026, "option A"): a writing test's Class
+  analysis tab shows rubric traits down the side, score levels 1..max across, each box the
+  count of students at that level on that trait, coloured by the level on the same 0–4 cuts
+  as the DOK grid (`components/writing-trait-grid.tsx`, `writingTraitGrid` in
+  `lib/teacher-class-analysis.ts`). It is computed from the CONFIRMED rubric scores already
+  on the responses (one per student per trait, keyed by the trait id) — **no AI call and no
+  new workspace field** (nothing added to `sync_workspace`/`get_workspace_json`). Tapping a
+  box lists those students and offers "Reteach this trait", which opens the lesson planner
+  with only the trait name, the level and the per-level counts — never a student name or
+  writing (`writingTraitReteachNote`; the identity-minimisation rule in section 2 and
+  `docs/student-data-flow.md` section 4).
+  Guarded by `tests/writing-trait-grid.test.mjs`.
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another
