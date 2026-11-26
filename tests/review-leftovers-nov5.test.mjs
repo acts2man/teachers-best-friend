@@ -27,14 +27,18 @@ const planning = readFileSync("components/teacher-planning.tsx", "utf8");
 const camera = readFileSync("components/scan-camera.tsx", "utf8");
 const flow = { materials: ["m"], phases: [{ time: "0-5", name: "Go", text: "t" }] };
 
-test("#199: the full lesson failing says nothing was charged, never 'contact support'", () => {
+test("#199/#216: a failed full lesson never claims 'nothing charged' or a refund that didn't happen", () => {
+  // Review of #216: a failed full may be a lost POST that left the charge for
+  // the admin sweep (not a cron) to release, so we neither claim "Nothing was
+  // charged" nor promise an automatic return we cannot guarantee -- we point at
+  // support. "weren't charged" is only for a server-confirmed release.
   for (const refunded of [null, false, true]) {
     const flowsOnly = L.generateOutcome("Visual", null, [["Kinesthetic", flow], ["Auditory", flow]]);
     const msg = L.generateMessage(flowsOnly, refunded);
-    assert.match(msg, /Nothing was charged\./);
-    assert.doesNotMatch(msg, /contact support|weren’t charged/);
+    assert.match(msg, /contact support and we’ll return it\./);
+    assert.doesNotMatch(msg, /Nothing was charged|will be returned automatically|weren’t charged/);
     const none = L.generateMessage(L.generateOutcome("Visual", null, [["Kinesthetic", null], ["Auditory", null]]), refunded);
-    assert.match(none, /none of the three versions came back\. Nothing was charged\./);
+    assert.match(none, /none of the three versions came back\. If a credit was used for it, contact support and we’ll return it\./);
   }
   const gen = planning.slice(planning.indexOf("async function generateAI("), planning.indexOf("\"Add question\" (Ricky"));
   assert.match(gen, /const refunded = outcome\.missing\.length && !outcome\.fullMissing \? await refundLesson\(lessonRun\) : null;/, "no refund is asked for a failed full lesson");
