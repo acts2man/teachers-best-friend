@@ -134,7 +134,7 @@ import { ConfirmReread, ConfirmRescan } from "./confirm-reread";
 import { openQuestionForGrading, StudentResponseReview } from "./teacher-review";
 import { AnswerKeyReview } from "./teacher-answer-key";
 import { ScanCamera } from "./scan-camera";
-import { WritingClassScan } from "./writing-class-scan";
+import { ClassScanPanel } from "./teacher-class-scan";
 import { DokGrid } from "./dok-grid";
 import { isWritingAssessment } from "@/lib/ela";
 import { genreLabel, isSimplifiedBand } from "@/lib/writing-rubrics";
@@ -1005,9 +1005,12 @@ export function AssessmentView() {
               </TabsContent>
               <TabsContent value="responses">
                 {writingUpload === "class" ? (
-                  <WritingClassScan
+                  // The writing class set runs on the SAME class-scan machinery
+                  // as a math/reading test (camera, name match, scan session,
+                  // resume, page reservations, Move/Swap/Undo); only grading
+                  // branches to the rubric path (review of PR #218).
+                  <ClassScanPanel
                     assessment={a}
-                    students={students}
                     onUseSingle={() => setWritingUpload("single")}
                   />
                 ) : (

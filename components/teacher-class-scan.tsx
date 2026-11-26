@@ -14,6 +14,7 @@ import {
   ZoomIn,
   AlertCircle,
   RotateCw,
+  Upload,
 } from "lucide-react";
 import { analyzeRequest, resumeScan, isRetryableAnalyzeError } from "@/lib/analyze-client";
 import { uploadFile, type UploadOptions } from "@/lib/upload-client";
@@ -58,9 +59,10 @@ import {
 import { deleteShot, loadShots, markShotFailed, markShotPlace, pagesToPickUp, type HandoffOutcome } from "@/lib/scan-store";
 import { compareByLastName } from "@/lib/teacher-classes";
 import { Action, Pick, Pill, SectionTitle, Score } from "./teacher-shared";
-import { activeQuestions, confirmedGradesAtRisk, preparationGaps } from "@/lib/teacher-workflow";
+import { activeQuestions, confirmedGradesAtRisk, preparationGaps, replaceWritingResponses, writingScored } from "@/lib/teacher-workflow";
 import { ConfirmRescan } from "./confirm-reread";
-import { reconcileEvidence } from "@/lib/teacher-data";
+import { classroomColors, reconcileEvidence } from "@/lib/teacher-data";
+import { isWritingAssessment } from "@/lib/ela";
 import {
   applyScannedGroups,
   groupPagesByCapture,
@@ -87,7 +89,7 @@ import {
   type PageName,
   type ResolvedGroup,
 } from "@/lib/teacher-class-scan";
-import type { Assessment } from "@/lib/teacher-types";
+import type { Assessment, Student, StudentResponse } from "@/lib/teacher-types";
 import { logAppEvent } from "@/lib/app-events-client";
 
 // A whole class set in one batch: Ricky's class is 36 students at up to 5 pages
@@ -262,8 +264,24 @@ function NameCrop({
  * drew is a fact and a boundary read off a name line is a guess, so the
  * student-by-student flow is the one offered first.
  */
-export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
+export function ClassScanPanel({
+  assessment: a,
+  onUseSingle,
+}: {
+  assessment: Assessment;
+  /** A writing test only: switch to the one-student-at-a-time panel, kept as
+   * the secondary option. Given, this panel is the writing class set; absent,
+   * it is the math/reading class set (unchanged). */
+  onUseSingle?: () => void;
+}) {
   const { w, classroom, students, save, busy, aiReady } = useTeacher();
+  // An ELA writing test scores each student's essay against a rubric, not an
+  // answer key. The whole scan-match-session-reserve machinery is identical; a
+  // few steps branch (reserve mode, the grading call, the save), marked
+  // `writing` below (review of PR #218). Per-student page cap matches the
+  // one-student writing panel (the grading request holds one essay).
+  const writing = isWritingAssessment(a);
+  const WRITING_PAGES_PER_STUDENT = 12;
   const online = useOnline();
   const [scanning, setScanning] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -682,7 +700,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
 
   function ready() {
     if (!prep.ready) {
-      toast.error("Confirm the standards and answer key before scanning student work.");
+      toast.error(
+        writing
+          ? "Set up the writing rubric before scanning student work."
+          : "Confirm the standards and answer key before scanning student work.",
+      );
       return false;
     }
     if (!aiReady) {
@@ -697,6 +719,12 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (!list?.length || busyScanning) return;
     const files = Array.from(list);
     if (!ready() || !canAccept(files.length)) return;
+    if (writing && piles[piles.length - 1].length + files.length > WRITING_PAGES_PER_STUDENT) {
+      toast.error(
+        "Up to " + WRITING_PAGES_PER_STUDENT + " pages for one student's writing. Tap Next student to start another.",
+      );
+      return;
+    }
     setGroups(null);
     setAdding(true);
     try {
@@ -847,6 +875,16 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       toast.error("Scan up to " + MAX_PAGES + " pages at a time, then grade and start another batch.");
       return refused;
     }
+    // One writing essay per student, capped like the one-student panel so a
+    // single student's grading request stays one essay (review of PR #218). A
+    // fresh camera student opens a new pile; otherwise the pages join the last.
+    if (writing) {
+      const openLen = cameraPile.current === null ? (pilesNow.current[pilesNow.current.length - 1]?.length ?? 0) : 0;
+      if (openLen + files.length > WRITING_PAGES_PER_STUDENT) {
+        toast.error("Up to " + WRITING_PAGES_PER_STUDENT + " pages for one student's writing. Tap Next student to start another.");
+        return refused;
+      }
+    }
     const outcome: HandoffOutcome[] = [];
     setGroups(null);
     setAdding(true);
@@ -992,7 +1030,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     // BODY ids only: a strip is the top of a page already in this list, and
     // reserving it too would charge every page twice.
     setStatus("Checking your credits…");
-    const reserved = await reserveStack(ids);
+    const reserved = await reserveStack(ids, writing ? "writing" : "class_scan");
     // Say what it actually cost. A re-grade charges nothing, and a teacher
     // watching their meter deserves to be told that rather than left to infer
     // it from a number that did not move.
@@ -1209,9 +1247,13 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       };
 
       // Started now when the groups are already known, so the grading
-      // requests run while the names are still being read.
+      // requests run while the names are still being read. A writing class set
+      // never grades here: the match is made from the name and the page, not
+      // from answers, so there is nothing to grade until the teacher has said
+      // whose paper is whose. Grading waits for the match screen and then runs
+      // per student in saveAll (one rubric call each) -- review of PR #218.
       let grading: Promise<GradedGroup[]> | null = null;
-      if (known) {
+      if (known && !writing) {
         // The pages are grouped now, so a failure from here on releases only
         // the groups that never graded rather than the whole reserved stack.
         runGroups = known;
@@ -1255,15 +1297,19 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       total = pageGroups.length;
       showStatus();
       partial.current = { pageGroups, names, ids, nameIds, graded: banked };
-      const graded = await (grading ?? gradeGroups(pageGroups));
-      // How long the teacher waited, for comparing runs (the same numbers are
-      // in the scans table: see docs/system-map.md, "Grading speed").
-      console.info(
-        `class scan: ${pageGroups.length} students, ${ids.length} pages graded in ${Math.round((Date.now() - started) / 1000)} s ` +
-          `(names done at ${Math.round((namesDoneAt - started) / 1000)} s; grading ${known ? "started with the names" : "waited for the names"}, ${GRADE_CONCURRENCY} at a time)`,
-      );
+      // Writing stops here: no answers are graded, so the matching screen shows
+      // every pile (not only graded ones) for the teacher to check, and the
+      // per-student rubric scoring happens on save (review of PR #218).
+      const graded = writing ? [] : await (grading ?? gradeGroups(pageGroups));
+      if (!writing)
+        // How long the teacher waited, for comparing runs (the same numbers are
+        // in the scans table: see docs/system-map.md, "Grading speed").
+        console.info(
+          `class scan: ${pageGroups.length} students, ${ids.length} pages graded in ${Math.round((Date.now() - started) / 1000)} s ` +
+            `(names done at ${Math.round((namesDoneAt - started) / 1000)} s; grading ${known ? "started with the names" : "waited for the names"}, ${GRADE_CONCURRENCY} at a time)`,
+        );
       setProgress(null);
-      showGraded(pageGroups, names, graded, ids, nameIds);
+      showGraded(pageGroups, names, graded, ids, nameIds, writing);
     } catch (e) {
       // A run that stops partway leaves the pages it reserved up front but never
       // graded still reserved. Hand exactly those back now instead of leaving a
@@ -1295,6 +1341,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     graded: GradedGroup[],
     ids: string[],
     nameIds: (string | null)[],
+    /** Writing: show EVERY pile for matching, not only the graded ones --
+     * nothing is graded before the teacher matches (review of PR #218). */
+    showAll = false,
   ) {
     const done = new Set(graded.map((g) => g.group));
     const resolved = resolveScannedGroups(
@@ -1304,7 +1353,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       ids,
       students,
       nameIds,
-    ).filter((_, i) => done.has(i));
+    ).filter((_, i) => showAll || done.has(i));
     setPageUploadIds(ids);
     setShownRun({ names, ids, nameIds });
     if (!resolved.length)
@@ -1324,11 +1373,11 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
    * grading eighteen students, stopping, and leaving them to work out what
    * they were billed for.
    */
-  async function reserveStack(ids: string[]) {
+  async function reserveStack(ids: string[], mode: "class_scan" | "writing" = "class_scan") {
     const r = await fetch("/api/scans/reserve", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ uploadIds: ids, mode: "class_scan" }),
+      body: JSON.stringify({ uploadIds: ids, mode }),
     });
     const d = await readJson(r).catch(() => ({}) as { error?: string });
     if (!r.ok) throw new Error(d.error || "Couldn't check your remaining credits.");
@@ -1540,6 +1589,159 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     });
   }
 
+  /**
+   * Score a writing class set: one rubric call per matched student, holding all
+   * that student's pages (one essay) -- the same request and cost as the
+   * one-student panel. The pages were reserved up front in gradePages, so each
+   * call finds them already paid and charges nothing again (the ledger charges a
+   * page once, by its content hash). Each student is SAVED as it finishes, so a
+   * reload or a locked phone loses no completed student, and a student already
+   * scored is skipped on a resume -- nobody is scored or charged twice (PR #218).
+   */
+  async function gradeWritingAndSave(kept: ResolvedGroup[], replaceConfirmed: boolean) {
+    setSaving(true);
+    setStatus("Scoring each student’s writing against your rubric…");
+    // Give every kept row a real student id: an existing match, or a student
+    // created here for a row the teacher marked "new".
+    const created: Student[] = [];
+    const rows = kept.map((g) => {
+      let studentId = g.studentId;
+      if (!studentId) {
+        const s: Student = {
+          id: crypto.randomUUID(),
+          classId: classroom.id,
+          name: g.name.trim() || "Unnamed student",
+          color: classroomColors[(students.length + created.length) % classroomColors.length],
+          evidence: [],
+          notes: "",
+        };
+        created.push(s);
+        studentId = s.id;
+      }
+      return { studentId, pageUploadIds: g.pageUploadIds };
+    });
+    const roster = [...students, ...created];
+    let next: Assessment = a;
+    let done = 0;
+    let graded = 0;
+    let outOfScans = false;
+    let saveFailed = false;
+    try {
+      for (const row of rows) {
+        // Resume-safe: a student already scored (a reload mid-scoring, then Save
+        // again) is not scored or charged a second time.
+        if (!replaceConfirmed && writingScored(next, row.studentId)) {
+          done++;
+          continue;
+        }
+        let responses: StudentResponse[] = [];
+        try {
+          const d = await withRetry(
+            () =>
+              analyzeRequest({
+                mode: "writing",
+                text: "",
+                uploadIds: row.pageUploadIds,
+                grade: a.grade,
+                subject: a.subject,
+                framework: a.framework,
+                assessmentId: a.id,
+                // An opaque id, never a name: the server checks the student is in
+                // this assessment's class and does NOT put it in the prompt
+                // (docs/student-data-flow.md section 4).
+                studentId: row.studentId,
+              }),
+            {
+              // One retry on a dropped call, then this student is left for the
+              // teacher to score by hand; the rest of the class carries on.
+              delays: [1500],
+              retryable: isRetryableAnalyzeError,
+              onRetry: (error) =>
+                logAppEvent("ai_failure", {
+                  message: "writing scoring failed; retrying: " + ((error as Error)?.message ?? ""),
+                  assessmentId: a.id,
+                  detail: { mode: "writing", kind: "error", retried: true },
+                }),
+            },
+          );
+          responses = d.result.responses as StudentResponse[];
+        } catch (e) {
+          if (isOutOfScans(describeFailure(e, ""))) {
+            outOfScans = true;
+            break;
+          }
+          logAppEvent("ai_failure", {
+            message: "writing scoring failed: " + ((e as Error)?.message ?? ""),
+            assessmentId: a.id,
+            detail: { mode: "writing", kind: "error" },
+          });
+        }
+        // Fold this student's pages and (when it scored) its suggested trait
+        // scores into the assessment, then save at once so a reload keeps it.
+        next = {
+          ...next,
+          uploadIds: [...new Set([...next.uploadIds, ...row.pageUploadIds])],
+          studentUploadIds: {
+            ...next.studentUploadIds,
+            [row.studentId]: [
+              ...new Set([...(next.studentUploadIds?.[row.studentId] || []), ...row.pageUploadIds]),
+            ],
+          },
+        };
+        if (responses.length) {
+          next = replaceWritingResponses(next, row.studentId, responses, replaceConfirmed);
+          graded++;
+        }
+        done++;
+        setStatus("Scored " + done + " of " + rows.length + "…");
+        const ok = await save(
+          {
+            ...w,
+            students: reconcileEvidence(keepOtherClassStudents(w.students, students, roster), next),
+            assessments: w.assessments.map((x) => (x.id === a.id ? next : x)),
+          },
+          graded + " of " + rows.length + " essays scored — confirm or change each trait",
+        );
+        if (!ok) {
+          saveFailed = true;
+          break;
+        }
+      }
+    } catch (e) {
+      toast.error(describeFailure(e, "The class set couldn’t be scored. The pages are saved."));
+    } finally {
+      setSaving(false);
+      setStatus("");
+    }
+    if (outOfScans) {
+      toast.error("You’ve run out of scan credits, so the rest couldn’t be scored. The pages are saved.", {
+        action: { label: SEE_PLANS.label, onClick: () => window.location.assign(SEE_PLANS.href) },
+      });
+      return;
+    }
+    if (saveFailed) return;
+    // Done: keep any pages no scored row covers (discarded piles) for the next
+    // grading, or clear the scan -- exactly as the math save does.
+    const left = pagesWithoutRow(piles, groups, discarded);
+    if (left.length) keepForNextGrading(left);
+    else reset();
+    toast.success(
+      graded +
+        " student" +
+        (graded === 1 ? "" : "s") +
+        " scored from the scanned class set" +
+        (created.length ? " (" + created.length + " new)" : "") +
+        " — tap “One student at a time” to confirm or change each trait",
+    );
+    if (graded < rows.length)
+      toast.warning(
+        rows.length -
+          graded +
+          (rows.length - graded === 1 ? " student's writing" : " students' writing") +
+          " couldn’t be scored. The pages are saved — score those on the one-student view.",
+      );
+  }
+
   /** `replaceConfirmed`: the teacher's answer to the re-scan question (G5);
    * undefined until asked. */
   async function saveAll(replaceConfirmed?: boolean) {
@@ -1560,6 +1762,41 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           : open.length +
               " papers still need you to say whose they are. Choose a student for each, or discard them.",
       );
+      return;
+    }
+    // Writing branches here: each matched student's essay is scored on its own
+    // against the rubric (review of PR #218). The ambiguity check above already
+    // covers a name the roster could not narrow; this also hard-blocks two
+    // piles confidently matched to ONE student -- in a rubric scoring that would
+    // overwrite one student's scores with the other's. (Math only warns, since
+    // a child can hand in two math sheets; a second essay for one student is the
+    // shape of a misread name and must be resolved first.)
+    if (writing) {
+      const seen = new Set<string>();
+      let duplicate = false;
+      for (const g of kept)
+        if (g.studentId) {
+          if (seen.has(g.studentId)) duplicate = true;
+          else seen.add(g.studentId);
+        }
+      if (duplicate) {
+        toast.error(
+          "Two papers are matched to the same student. Give each paper its own student — or discard one — before scoring.",
+        );
+        return;
+      }
+      if (replaceConfirmed === undefined) {
+        const onRoster = new Set(students.map((s) => s.id));
+        const scannedIds = kept
+          .filter((g) => g.pageUploadIds.length)
+          .map((g) => g.studentId)
+          .filter((id): id is string => !!id && onRoster.has(id));
+        if (confirmedGradesAtRisk(a, scannedIds).answers > 0) {
+          setAskRescan(scannedIds);
+          return;
+        }
+      }
+      await gradeWritingAndSave(kept, replaceConfirmed === true);
       return;
     }
     // Students this scan would re-grade who already have grades the teacher
@@ -1733,6 +1970,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     if (g.studentId) perStudent.set(g.studentId, (perStudent.get(g.studentId) ?? 0) + 1);
   const sharedWith = (g: ResolvedGroup) =>
     g.studentId ? (perStudent.get(g.studentId) ?? 0) : 0;
+  // Writing hard-blocks two piles on one student (a rubric score would
+  // overwrite the other's), unlike math which only warns (review of PR #218).
+  const writingDuplicate = writing && [...perStudent.values()].some((n) => n > 1);
   const nameOfStudent = (id: string) => students.find((s) => s.id === id)?.name ?? "this student";
   const matchedIds = new Set(live.map((g) => g.studentId).filter((id): id is string => !!id));
   /** The teacher's answer for one row: a roster student, or "new". */
@@ -1757,10 +1997,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
     <div className="panel class-scan-panel">
       <SectionTitle
         title="Student work"
-        description="Scan the class, match each paper to a student, then grade by question. Every page you put under one student is graded together, so a test that runs onto a second page still comes back whole."
+        description={
+          writing
+            ? "Photograph the whole class, tapping Next student between students (an essay usually runs several pages). The app reads each name and matches the pages; you check the matches, then each essay is scored against your rubric."
+            : "Scan the class, match each paper to a student, then grade by question. Every page you put under one student is graded together, so a test that runs onto a second page still comes back whole."
+        }
       />
-      {/* One guided path (Ricky and Michael): scan, match names, grade by
-          question. Everything else is still here, under More options. */}
+      {/* One guided path (Ricky and Michael): scan, match names, grade.
+          Everything else is still here, under More options. */}
       <ol className="guided-steps" aria-label="Steps">
         <li className={step === 1 ? "is-current" : step > 1 ? "is-done" : ""}>
           <span>1</span> Scan student work
@@ -1769,7 +2013,7 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
           <span>2</span> Match names
         </li>
         <li className={step === 3 ? "is-current" : ""}>
-          <span>3</span> Grade by question
+          <span>3</span> {writing ? "Score each essay" : "Grade by question"}
         </li>
       </ol>
       <input
@@ -1783,7 +2027,9 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
       />
       {!prep.ready && (
         <p className="cell-meta">
-          Confirm the intended standards and the answer key first, then scanning is enabled.
+          {writing
+            ? "Set up the writing rubric first, then scanning is enabled."
+            : "Confirm the intended standards and the answer key first, then scanning is enabled."}
         </p>
       )}
       {prep.ready && (
@@ -1894,7 +2140,14 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               <p className="cell-meta guided-hint">
                 Take a photo of each page. Tap <strong>Next student</strong> between students,
                 and <strong>Finished</strong> when the class is done.
+                {writing && " Scoring costs one credit per page; all of one student's pages are read together in a single call."}
               </p>
+              {writing && onUseSingle && !captured.length && (
+                <Action variant="secondary" disabled={busyScanning || busy} onClick={onUseSingle}>
+                  <Upload size={16} />
+                  One student at a time
+                </Action>
+              )}
               <p className="cell-meta">
                 {captured.length === 0
                   ? "No pages scanned yet."
@@ -2314,10 +2567,20 @@ export function ClassScanPanel({ assessment: a }: { assessment: Assessment }) {
               {notGraded === 1 ? "It stays" : "They stay"} here after you save, ready to grade.
             </p>
           )}
+          {writingDuplicate && (
+            <p className="key-notice" role="status">
+              Two papers are matched to the same student. Give each paper its own student — or
+              discard one — before scoring.
+            </p>
+          )}
           <div className="review-heading-actions">
-            <Action disabled={saving || busy || !!splitting || undecided.length > 0} onClick={() => void saveAll()}>
+            <Action
+              disabled={saving || busy || !!splitting || undecided.length > 0 || writingDuplicate}
+              onClick={() => void saveAll()}
+            >
               {saving ? <LoaderCircle className="spin" size={16} /> : <Users size={16} />}
-              Confirm &amp; save {groups.length - discarded.size} student
+              {writing ? "Score " : "Confirm & save "}
+              {groups.length - discarded.size} student
               {groups.length - discarded.size === 1 ? "" : "s"}
             </Action>
             <Pill>{pageUploadIds.length} pages scanned</Pill>

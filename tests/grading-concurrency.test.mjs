@@ -187,7 +187,9 @@ test("(A) one at a time is unchanged: the default, and what other callers get", 
   const run = ui.slice(ui.indexOf("async function gradePages("), ui.indexOf("function showGraded("));
   assert.match(run, /const known = resumeGroups \?\? \(explicit && !mixed \? groupPagesByCapture\(explicit\) : null\);/);
   assert.ok(run.indexOf("grading = gradeGroups(known);") > 0 && run.indexOf("grading = gradeGroups(known);") < run.indexOf("names = await readNames();"));
-  assert.match(run, /const graded = await \(grading \?\? gradeGroups\(pageGroups\)\);/);
+  // (A writing class set grades nothing here -- it defers to per-student rubric
+  // calls on save, review of PR #218 -- so the math path is guarded by `!writing`.)
+  assert.match(run, /const graded = writing \? \[\] : await \(grading \?\? gradeGroups\(pageGroups\)\);/);
 });
 
 // ---- (B) the recorded class set ----

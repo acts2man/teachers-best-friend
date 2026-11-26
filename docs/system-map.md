@@ -498,24 +498,35 @@ unassigned is always allowed.
   the count (`writingReplaceWarning`, through `ConfirmRescan`) -- before anything is uploaded
   or scored. `replaceWritingResponses` keeps verified trait scores unless told
   `replaceConfirmed`. Guarded by `tests/invariants/writing-replace-keeps-confirmed.test.mjs`.
-- **Writing class set** (Michael Zotzman, grade 4 ELA, Android — 5 and 16 Nov 2026): a
-  writing test's "Add student work" opens the **class-set camera** by default, like a math or
-  reading test, with the one-student panel (`WritingReview`) kept as the secondary option
-  ("One student at a time" / "Scan the whole class instead"). `components/writing-class-scan.tsx`
-  (`WritingClassScan`) reuses the class-set camera COMPONENT (`ScanCamera mode="class"`, several
-  pages per student with "Next student") and the SAME name-pass + matching library the math set
-  uses (`planNameBatches`, `mergeNameReads`, `resolveScannedGroups`) — it does not touch the
-  `class_scan` grading/billing path (§1.6). Matching is made from the read name and the page
-  (name check, reassign, discard), so grading is deferred to AFTER matching: each matched
-  student's pages then go to the existing per-student writing/rubric path (one `mode: "writing"`
-  request holding that student's ~2–3 pages — the same request and cost as the one-student panel,
-  so a 3-page essay is **one** grading call), and the suggested trait scores persist through
-  `replaceWritingResponses` (keyed by the trait id, their own table — never `student_responses`).
-  No new workspace field; no page reservation (each writing call charges itself, so no double
-  charge). No AI prompt or request-body change — the `name_strip` and `writing` requests are the
-  ones already documented in `docs/student-data-flow.md` section 4, so no student name is sent
-  beyond what the class-set path already sends. Guarded by `tests/writing-class-set.test.mjs` and
-  `scripts/browser-check/writing-class-set.mjs`.
+- **Writing class set** (Michael Zotzman, grade 4 ELA, Android — 5 and 16 Nov 2026; rebuilt
+  per the review of PR #218): a writing test's "Add student work" opens the **class-set camera**
+  by default, like a math or reading test, with the one-student panel (`WritingReview`) kept as
+  the secondary option ("One student at a time" / "Scan the whole class instead"). It is the
+  **same component** as the math/reading class set — `ClassScanPanel`
+  (`components/teacher-class-scan.tsx`), rendered for a writing assessment with an `onUseSingle`
+  prop — so it reuses that machinery unchanged: the `ScanCamera mode="class"` camera with
+  `onStudent`/`onFinish` (a photo of each page never leaves the camera's saved copy until it has
+  uploaded), the scan session (`/api/scans/session`) and `resumeScan`, the up-front page
+  reservation (`/api/scans/reserve`, the "doesn't fit your credits" 402 check), Move/Swap/Undo
+  with new ids, and the "no two piles to one student without resolving" rule — for writing made a
+  **hard block** (a rubric score would overwrite the other pile's), where math only warns.
+  Only the **grading step branches** (`writing = isWritingAssessment(a)`): a writing scan does the
+  name pass + matching but grades nothing up front (an essay match is made from the name and the
+  page, not from answers); the teacher checks the matches, then each student's pages go to the
+  existing per-student `mode: "writing"` rubric call — **one call per student, all of that
+  student's pages together** (one essay; cost is one credit per page, and the pages were already
+  reserved so the call charges nothing again). Scores persist through `replaceWritingResponses`
+  (keyed by the trait id, their own table — never `student_responses`), each student **saved as it
+  finishes** so a reload or a locked phone loses no completed student, and a student already scored
+  is skipped on a resume (no double score, no double charge). A dropped scoring call is retried
+  once (`withRetry`); a 402 shows the out-of-credits message. Per-student page cap is **12** (the
+  one-student panel's; the server caps a request at 24). No new workspace field. No AI prompt or
+  request-body change — the `name_strip` and `writing` requests are the ones already documented in
+  `docs/student-data-flow.md` section 4 (the `name_strip` pass now runs on writing pages too, to
+  match them to students; the `writing` request adds no name or roster). Guarded by
+  `tests/writing-class-set.test.mjs` and `scripts/browser-check/writing-class-set.mjs`. (PR #217,
+  if it adds a sibling bullet here, is independent and both stand — this one owns the writing
+  class-set grading branch.)
 
 **R7. A stale browser tab never overwrites newer data.**
 - **Why:** every save replaces the whole workspace (R1), so a tab that loaded before another

@@ -1029,7 +1029,7 @@ test("the review screen asks, blocks and flags rather than defaulting", () => {
   assert.match(ui, /candidateIds\.length/, "ambiguity reaches the UI");
   assert.match(ui, /"Which " \+ \(firstNameRead\(g\) \|\| "student"\) \+ "\?"/, "and is asked as a question");
   // (#125 follow-up: it also waits while a "2 different students" split grades.)
-  assert.match(ui, /disabled=\{saving \|\| busy \|\| !!splitting \|\| undecided\.length > 0\}/, "saving waits for the answer");
+  assert.match(ui, /disabled=\{saving \|\| busy \|\| !!splitting \|\| undecided\.length > 0( \|\| writingDuplicate)?\}/, "saving waits for the answer");
   assert.match(ui, /papers matched to/, "and two papers on one student are named");
   assert.ok(
     !/value=\{g\.studentId \? "existing:" \+ g\.studentId : "new"\}/.test(ui),
