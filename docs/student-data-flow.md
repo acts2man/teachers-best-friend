@@ -4,7 +4,7 @@ Internal record. Not a published policy page, but the published pages must stay
 consistent with it. Update this file whenever a hop, a vendor, or a retention window
 changes.
 
-Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-03 for three lesson versions per generate and "Add question", against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live. Section 4 corrected 2026-11-10 for AI-provider retention: background requests are sent store:false (provider deletes the response ~10 min after finishing), abuse logs up to 30 days, no zero data retention -- built, not yet live. Section 8 re-checked 2026-11-11 for the review follow-ups: the auto-delete is described as "within about 10 minutes" (OpenAI does not state from when), a gone poll (404/410) fails the scan only if it is still analyzing, and the backfill skips in-flight jobs and gives up on a row after 5 failed deletes -- built, not yet live. Section 8 corrected 2026-11-17 for the second review round: every request goes background under ANALYZE_ASYNC=1 ("Requests are sent as background jobs", not "Longer requests"); a note added that requests sent before store:false went live (PR #215, November 2026) were stored at least 30 days; the backfill now cleans up 'analyzing' orphans older than an hour (skipping only recent in-flight jobs) -- built, not yet live.
+Last verified against the running system: 2026-10-12 (sections 4, 7 and 8 against the code on the PR 1 and PR 2 branches, since merged as #124 and #125). Section 7 re-checked 2026-10-13 against the code on the #128 branch; what #128 changes there is marked "built, not yet live". Section 4 re-checked 2026-10-21 for lesson plans and the DOK grid's cell panel (D2), against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-27 for the new Math error list and its typed "Other" label, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-10-28 for pre-teach lessons from the class super grid, against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-03 for three lesson versions per generate and "Add question", against the code on its branch -- built, not yet live. Section 4 re-checked 2026-11-04 for the class-set grading response's `nameSeen` and 3-page grading requests, against the code on its branch -- built, not yet live. Section 4 corrected 2026-11-10 for AI-provider retention: background requests are sent store:false (provider deletes the response ~10 min after finishing), abuse logs up to 30 days, no zero data retention -- built, not yet live. Section 8 re-checked 2026-11-11 for the review follow-ups: the auto-delete is described as "within about 10 minutes" (OpenAI does not state from when), a gone poll (404/410) fails the scan only if it is still analyzing, and the backfill skips in-flight jobs and gives up on a row after 5 failed deletes -- built, not yet live. Section 8 corrected 2026-11-17 for the second review round: every request goes background under ANALYZE_ASYNC=1 ("Requests are sent as background jobs", not "Longer requests"); a note added that requests sent before store:false went live (PR #215, November 2026) were stored at least 30 days; the backfill now cleans up 'analyzing' orphans older than an hour (skipping only recent in-flight jobs) -- built, not yet live. Section 4 re-checked 2026-11-26 for scanning a WRITING test as a class set (PR #218): the `name_strip` pass now runs on writing pages too (to match pages to students, exactly as for a math/reading class set), and each student's essay is scored by the same per-student `writing` request as the one-student path -- no new field reaches the provider; the single-student writing path still reads no name -- built, not yet live.
 
 ---
 
@@ -158,7 +158,7 @@ This is the hop districts ask about, so it is the most specific.
 |---|---|
 | What is transmitted | The uploaded work, grade level, subject, the relevant standards, question IDs, and -- where the teacher has uploaded one -- the transcribed text of the shared reading passage |
 | What is **not** transmitted | The class roster or any student list, teacher name, school name, district name. No student name is sent as text |
-| Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; since 4 Nov 2026 it says the name it reads on each student's group of pages in one field (`nameSeen`), used only to check the pages were read as grouped, and it is told to put a name nowhere else |
+| Name read from the image | Single-student mode: no. Whole-class stack scan: yes, by decision on the 28 Sep 2026 call -- a `name_strip` request reads the name off the top 45% of each page (no questions, no answer key, no roster), and the `class_scan` request grades the whole page, so its image may show the name the student wrote; since 4 Nov 2026 it says the name it reads on each student's group of pages in one field (`nameSeen`), used only to check the pages were read as grouped, and it is told to put a name nowhere else. A **writing** test scanned as a class set (PR #218, built, not yet live) uses the same `name_strip` pass to match pages to students; its per-student rubric grading request (`writing`) carries no name as text and no roster, exactly as the one-student writing path does |
 | Encrypted | Yes, TLS |
 | Stored there | Requests are sent as background jobs with `store: false` (app/api/analyze), so the provider keeps the response only long enough for us to collect the result. Production uses this path (every scan carries a `provider_response_id`) |
 | Retained | The provider deletes the background response automatically within ~10 minutes (`store: false`); we also delete it on collect and stamp `scans.provider_deleted_at` (app/api/analyze/[scanId]). Requests sent before `store: false` went live (PR #215, November 2026) were stored by the provider for at least 30 days; the one-time admin backfill is deleting those older copies as well. Separately, abuse-monitoring logs of API traffic may be kept up to 30 days under the API data policy, then deleted. Not used to train models; zero data retention is not enabled |
@@ -325,14 +325,33 @@ piece), the rubric traits with their descriptors and maximums, the genre, the
 grade, and any teacher notes. **What it does not send:** no roster, no student
 list, no teacher/school/district name, and no student name as text.
 
-**Name read from the image.** No name is read or asked for: this is
-single-student, so the app already knows whose work it is. Until 8 Oct 2026 the
+**Name read from the image.** In the one-student path no name is read or asked
+for: the app already knows whose work it is. Until 8 Oct 2026 the
 app cut the top 18% off the **first** page before upload so the scored essay
 carried no name. That cut also removed the first lines of writing on a phone
 photo, so since 8 Oct every page is sent whole (per the 28 Sep decision that the
 AI may see a name written on the page). The image may therefore show the
 student's handwritten name. The prompt tells the model to ignore it and never to
 report, guess or reproduce a name.
+
+**Writing as a class set (PR #218, built, not yet live).** A writing test's
+"Add student work" can now scan the whole class with the class-set camera —
+the same component and flow as a math or reading class set (ScanCamera
+mode="class", a pile per student). On that path the app reads the name off each
+page with a `name_strip` request to match the pages to students, **exactly the
+request the math/reading class set already sends**: the top 45% of each page,
+no questions, no answer key, no roster, not billed (the `name_strip` section
+above). So a writing class set now reads the handwritten name the same way
+every other class set does; **the single-student writing path still reads no
+name.** Each matched student's essay is then scored by the SAME per-student
+`writing` request as the one-student path — one essay per call, holding only
+that student's pages. **Nothing new reaches the provider:** the `writing`
+request carries what it always did (the pages, grade, subject, framework,
+assessmentId, teacher notes, and the opaque `studentId` the server uses only to
+check the student is in this assessment's class — it is never put in the
+prompt), and matching to a student record still happens only in the app
+(`resolveScannedGroups`/`matchRosterStudent`). The roster and any name as text
+are still never sent.
 
 **The trade-off, stated plainly.** Rubric scoring is the one mode where the model
 exercises judgment, and the original reason for the cut was that a name could

@@ -142,9 +142,14 @@ test("no other save hands sync_workspace the context's one-class `students`", ()
   // keepOtherClassStudents.
   // The trap is the bare context variable `students` (one class). It is
   // fine only as keepOtherClassStudents's `before` argument.
+  // The `after` argument can be any active-class roster-after expression: the
+  // math save passes result.students; the writing save passes `roster` (the
+  // active class plus any students created in the scan, review of PR #218).
+  // Both keep w.students as `all`, so the other classes survive -- any third
+  // argument here is safe.
   const usesClassOnly = (v) =>
     /(?<![.\w$])students\b|\bresult\.students\b/.test(
-      v.replace(/keepOtherClassStudents\(\s*w\.students,\s*students,\s*result\.students\s*\)/g, "keepOtherClassStudents(ALL, BEFORE, AFTER)"),
+      v.replace(/keepOtherClassStudents\(\s*w\.students,\s*students,\s*[^)]*\)/g, "keepOtherClassStudents(ALL, BEFORE, AFTER)"),
     );
   let checked = 0;
   for (const f of readdirSync("components").filter((x) => x.endsWith(".tsx"))) {
